@@ -199,8 +199,6 @@ running process can answer, and it hands every address over as
   is one, for Unreal (UE5 layouts, built against your SDK dump).
 - **Not a debugger, decompiler or signature maker.** It checks and reports;
   analysis stays with your static tool and your agent.
-- **Not for online or protected games.** It is a development tool for
-  offline use on software you are entitled to modify.
 
 ## Status
 

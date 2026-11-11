@@ -140,11 +140,9 @@ deferred until an investigation and an outside program must run together
 - **Not a debugger, a disassembler suite or a signature maker.** Those
   exist; ReAgentLive checks and reports, and leaves analysis and decisions to
   the agent and the static tool.
-- **Not for online or protected games.** It is a development tool for
-  offline use on software you are entitled to modify. It is not described
-  or built as a way around what stops other tools: it still needs a host
-  loaded into the process, and a title that blocks one usually blocks the
-  other.
+- **Not a way around protection.** It is not described or built as a way
+  around what stops other tools: it still needs a host loaded into the
+  process, and a title that blocks one usually blocks the other.
 
 ## The parts, by audience
 
@@ -181,8 +179,8 @@ what has shipped.
   own-thread example host exist ([hosting](hosting.md),
   [clients](client.md)); still missing are a minimal client example and a
   "bring your own SDK" guide ([backlog](ideas.md#20--example-client-and-sdk-guide)).
-- A plain statement of intended use (offline, development, no protected
-  games) and of the safety model (what is guarded, what needs the user's
+- A plain statement of intended use (a development tool) and of the safety
+  model (what is guarded, what needs the user's
   approval).
 - The docs stay free of any one game; the `reagentlive.docs` test checks
   that no host or game name appears.
