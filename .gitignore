@@ -1,0 +1,5 @@
+# Build trees (the docs build into build/) and Python caches.
+build/
+out/
+__pycache__/
+*.pyc

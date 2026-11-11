@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/doctest/doctest",
+  "version": "v2.5.3",
+  "commit": "2d0a9359a60c51affe2a9bebb1be1dca47868151",
+  "files": {
+    "doctest.h": {
+      "source": "doctest/doctest.h",
+      "sha256": "cfd518a3ef90f67e1f3ba514df23fb3627437de1a2feeba78cf5062a40021421"
+    },
+    "LICENSE.txt": {
+      "source": "LICENSE.txt",
+      "sha256": "0fe0b331fa1513dcce8604ff1fa925f32d1cea17d8aeb1c2471fad40d291adc5"
+    },
+    "cmake/doctest.cmake": {
+      "source": "scripts/cmake/doctest.cmake",
+      "sha256": "6a60f778f86958c23d308d532356b37ec6e735137be7adf02cb17d688b559711"
+    },
+    "cmake/doctestAddTests.cmake": {
+      "source": "scripts/cmake/doctestAddTests.cmake",
+      "sha256": "3ec2839f12b7a12b0d7ef6244b60eecae40ad797caa3f016fc09875956a518dc"
+    },
+    "cmake/COPYRIGHT-CMAKE.txt": {
+      "source_url": "https://raw.githubusercontent.com/Kitware/CMake/v3.25.0/Copyright.txt",
+      "sha256": "352396f7f158a827713e1be662d5fc394f19228f72a4e40f4d1a634fc1a7074b"
+    }
+  }
+}
