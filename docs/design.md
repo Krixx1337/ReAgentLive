@@ -662,8 +662,8 @@ The layout itself and its rules are in
   core files take no `#if`. Its table holds core and host rows only, less
   the core rows marked `needsPack`, and `help`, the generated functions and
   the MCP tools all read the table, so none of them needs a switch. A
-  non-Unreal target then pays for no pack tool schemas (most of the full
-  set). The tests build this console beside the default one: a core
+  non-Unreal target then pays for no pack tool schemas (about two fifths
+  of the full set; the core's are the rest). The tests build this console beside the default one: a core
   console file that leans on the pack no longer compiles, which the layout
   test only approximates from `#include` lines.
 - **Rejected for the pack-less console:** a flag on the MCP adapter or the
