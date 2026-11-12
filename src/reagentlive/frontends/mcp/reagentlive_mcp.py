@@ -66,7 +66,7 @@ def load_module(path):
 
 def console_hash(console):
     """The console's table hash, from `help --json` (no target needed)."""
-    run = subprocess.run([console, '-c', 'help --json'], capture_output=True, text=True, check=False)
+    run = subprocess.run([os.path.abspath(console), '-c', 'help --json'], capture_output=True, text=True, check=False)
     for line in run.stdout.splitlines():
         if line.lstrip().startswith('{'):
             envelope = json.loads(line)
@@ -79,7 +79,7 @@ class Live:
     """The console process and the generated Console over it, started on first use."""
 
     def __init__(self, module, console, args=()):
-        self.module, self.console, self.args = module, console, list(args)
+        self.module, self.console, self.args = module, os.path.abspath(console), list(args)
         self.session = self.wrapped = None
 
     def get(self):

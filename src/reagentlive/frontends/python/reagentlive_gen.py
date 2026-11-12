@@ -47,7 +47,7 @@ def class_name(name):
 
 def table_of(console):
     """`help --json` from a console, with no target needed."""
-    run = subprocess.run([console, '-c', 'help --json'], capture_output=True, text=True, check=False)
+    run = subprocess.run([os.path.abspath(console), '-c', 'help --json'], capture_output=True, text=True, check=False)
     for line in run.stdout.splitlines():
         if line.lstrip().startswith('{'):
             envelope = json.loads(line)
