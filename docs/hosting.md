@@ -206,14 +206,19 @@ request per tick in practice). Refusals log at warning level.
 
 A host's console (`RunConsole`) can add verbs of its own. Each is a row
 of the console's verb table (`ConsoleConfig::verbs`, the row type in
-`syntax/verb.h`): name, origin `host`, a summary, positionals and flags
-with a line of description each, and a result type from a struct with
-`Describe` (`results/schema.h`). `parse` stays null: a line whose verb has
-a row goes to `ConsoleConfig::hostCommand` whole, which answers an
-envelope with `ok` and `result` or `error`. The row gives the verb what
-the library's have: `help`, usage errors before the host sees the line,
-strict results in the Python client, and a check that the result matches
-its declared type (a mismatch is an `internal` error). Why rows:
+`syntax/verb.h`): name, origin `host`, a summary, positionals (key, usage
+name, arity, type, help) and flags (name, takes, type, placeholder, help),
+and a result type from a struct with `Describe` (`results/schema.h`); mark
+`writes` on a verb that writes the target or calls into it and `blocks` on
+one that holds the console for seconds. `parse` stays null: the console
+sorts and checks a call's arguments against the row, from a typed line or
+a JSON call alike, and passes them to `ConsoleConfig::hostCommand(client,
+verb, args, envelope)`, which answers an envelope with `ok` and `result`
+or `error`. The row gives the verb what the library's have: `help`, usage
+and type errors before the host sees the call, JSON calls, a generated
+Python method (`c.host.<verb>`) and an MCP tool (`host_<verb>`), strict
+results, and a check that the result matches its declared type (a
+mismatch is an `internal` error). Why rows:
 [design](design.md#self-describing-console).
 
 ## AI agents

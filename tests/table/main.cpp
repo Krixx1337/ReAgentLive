@@ -20,8 +20,9 @@ int main(int argc, char** argv) {
     using namespace reagentlive::cli;
     auto verbs = CoreVerbs();
     for (const auto& verb : UnrealVerbs()) verbs.push_back(verb);
-    auto help = MakeHelpTable(verbs);
-    help.tableHash = TableHash(verbs);
+    const Origin origins[] = {CoreOrigin, UnrealOrigin, HostOrigin};
+    auto help = MakeHelpTable(verbs, origins);
+    help.tableHash = TableHash(verbs, origins);
     const Json table = ToJson(help);
     const std::string_view mode = argc > 1 ? argv[1] : "";
     if (mode.empty()) {

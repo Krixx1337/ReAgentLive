@@ -143,9 +143,11 @@ borrowed from the tool that already does it:
   tools take (`module` and `rva`) and accept them back; that is ReAgentLive's
   whole integration surface. No link between the tools: the agent driving
   them is the bridge.
-- **No large tool surface.** A frontend with a tool per operation costs an
-  agent context before it does anything; the console and its Python wrapper
-  stay the way agents drive ReAgentLive.
+- **Tools come from the table, not by hand.** A tool per operation was
+  declined while each would have been one more copy to keep in step; the
+  verb table removed that cost, so the MCP tools are generated from it
+  ([tool interface](#tool-interface)). Their schemas still cost context
+  in a client that loads them all up front.
 - **Before pairing in one process:** a tool that only reads from outside is
   harmless. One that hooks or injects can clash with the host's own hooks;
   try it on a throwaway session first. A debugger is not paired at all.
@@ -218,19 +220,19 @@ client API, never on the section.
 
 | Frontend | Shape | Notes |
 |---|---|---|
-| **CLI** | text REPL, `$N` refs, `base+off`, hex dump | exists, on the client API; one [verb table](#self-describing-console) describes every command |
+| **CLI** | text REPL and JSON calls, `$N` refs (typed lines), `base+off`, hex dump | exists, on the client API; one [verb table](#self-describing-console) describes every command |
 | **GUI** (later) | ImGui desktop window, calls from a worker thread | tables, watch panels |
-| **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON line per command | exists; a thin wrapper with no logic of its own, so every command lands in the console first; results are strict against the console's table |
+| **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON call per command; `reagentlive_gen.py` generates typed functions per console | exists; no logic of its own, so every command lands in the console first; results are strict against the console's table |
 | **Static-tool script** | `frontends/ida/import_labels.py`: imports the console's label file | exists; reads a file, never talks to the agent |
-| **MCP** | not planned (see [place among other tools](#place-among-other-tools)) | if ever built, on the console's JSON mode |
+| **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per generated function | exists; on the console's JSON calls ([tool interface](#tool-interface)) |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
 
 The console has become the command layer: `dump`, `get`, `batch`, `entries`
 and the cache exist only there. A frontend that wants those commands goes
-through the console's JSON mode, as the Python client does; only a frontend
-that needs raw requests links the client. A new console command ships with
-its row in the verb table and a Python method of its name (a test fails
-without one).
+through the console's JSON calls, as the Python client does; only a
+frontend that needs raw requests links the client. A new console command
+ships with its row in the verb table; its Python function and its tool are
+generated from it.
 
 ## Self-describing console
 
@@ -283,12 +285,10 @@ the console.
   game does.
 - **Not `describe --json`:** `describe` is the Unreal pack's object lookup,
   and one verb with two meanings is what the first decision removes.
-- **Strict Python results, no generated code.** The session reads
-  `help --json` at start and wraps each result; an unknown key raises and
-  names the valid ones, an absent optional key gives `None`. A method
-  named after a verb returns the console's result as it is; one that
-  reshapes says so in its name (`read_bytes`, `search_addresses`,
-  `find_all`).
+- **Strict Python results.** The session reads `help --json` at start and
+  wraps each result; an unknown key raises and names the valid ones, an
+  absent optional key gives `None`. The typed functions generated on top
+  ([tool interface](#tool-interface)) return these same records.
 - **Host verbs are rows of the same kind.** A host hands the console a
   constant list of rows (`ConsoleConfig::verbs`) in place of help text, so
   its commands get help, usage errors and checked results the same way.
@@ -300,25 +300,121 @@ the console.
   a client. What this settles for a second pack: that a pack's verbs and
   help are rows. State, the cache block, the `status` line and what core
   commands borrow stay plain functions, undecided.
-- **Each row also says where the verb comes from (`origin`) and whether it
-  writes** (the target's memory, or a call into it), and each argument
-  has a line of description: a caller that picks a command, not types one,
-  needs all three.
+- **Each row also says where the verb comes from (`origin`), whether it
+  writes** (the target's memory, or a call into it) **and whether it
+  blocks** (holds the console for seconds), and each argument has a key, a
+  type from a small vocabulary, a default where it has one and a line of
+  description: a caller that picks a command, not types one, needs them
+  all. The types that need no target state (`int`, an enum) are checked
+  with the counts, before a verb's parser runs.
+- **Named types.** A struct several results share names itself
+  (`TypeName`): `help --json` lists it once under `types`, rows refer to it
+  (`{"named": "Chain"}`), and `help <verb>` prints the name and its
+  definition. A pack's names carry its prefix (`ue.Name`), so the core
+  never lists a pack's shapes. `Object` (ref, name, class) is the core's,
+  filled by a pack: `peek` is core and its object rows are typed without
+  naming the pack.
+- **A pack gives its own title.** Each origin (`core`, a pack, `host`)
+  comes with a title in `help --json`; the generated results page takes
+  its headings from there, so no core file spells a pack's id.
+- **Mixed verbs stay on the side of their state.** `trial` is the core's
+  (the write, the undo, the guard); its owner check is borrowed from the
+  pack through `console/pack.h`, and without a pack it is refused.
 
 Rejected:
 
 | Option | Why not |
 |---|---|
 | A schema data file as the source | needs C++ generated from it, or stays one more copy the builders can drift from |
-| Generated `TypedDict` per result | fails only under a type checker; `.get()` on a wrong key stays silent |
-| JSON input lines | the text line is compact and already what agents type; the argument table removes the guessing |
+| `TypedDict` in place of strict records at run time | fails only under a type checker; `.get()` on a wrong key stays silent. The generated functions annotate with them and return records |
 | Every optional key present as `null` | a fixed shape, paid for in output on every call |
 | A separate frontend for AI agents | the console is that frontend; a second one splits the contract |
 | `--select <key>` on every command | deferred until a shell caller needs the strict layer's error where a JSON filter prints null |
 
 Open: how far `value` can be typed (a tagged shape for FNames, structs and
-containers, or documented rules as today). What comes next, generated from
-this table: [tool interface](tool-interface.md).
+containers, or documented rules as today).
+
+## Tool interface
+
+An AI agent should pick a command and fill in named values, not write a
+command line or a script by hand: hand-written input is where guesses
+enter. The [self-describing console](#self-describing-console) made those
+guesses fail loudly; this removes the writing. Use: [clients](client.md).
+
+Every fact flows one way: the console's table, then `help --json`, then
+the generated Python functions, then the MCP tools. No layer defines what
+the one before it did not.
+
+- **JSON calls are the console's input; the text line is shorthand.** A
+  line starting with `{` is `{verb, args}` with arguments named by the
+  row's keys. It sorts into the same arguments as a typed line, so one
+  check and one parser per verb cover both, and nothing is quoted or
+  escaped. The text line stays while agents and people type in a shell.
+- **Literal refs only in JSON calls.** `$N` is refused: "the last `find`"
+  is session state a picked argument should not depend on. A call takes
+  the `ref` a result carries, and the ids of pins, trials and captures.
+- **Typed Python functions, generated per console** (`reagentlive_gen.py`)
+  from its `help --json`, so a host's verbs are included. One method per
+  verb, positionals then keyword-only flags, typed from the row; results
+  annotated with `TypedDict`s of the console's keys, so a type checker
+  reads a script before it runs. At run time they return the strict
+  records: the annotations for the checker, the records for the run. The
+  module carries the table hash and refuses a console whose table differs.
+- **Named by origin:** `c.read` for core, `c.ue.find` for a pack,
+  `c.host.world` for the host; as tools `read`, `ue_find`, `host_world`. An
+  agent sees what needs a pack when it picks, and a host verb cannot take
+  a core verb's name.
+- **MCP tools wrap the functions** (`frontends/mcp/reagentlive_mcp.py`, the
+  only file that needs the dependency): schemas from the functions'
+  types, descriptions from their docstrings, `readOnlyHint` or
+  `destructiveHint` from `writes`. No tool and no JSON Schema is written by
+  hand or exported from the console. Verbs marked `blocks` and `quit` are
+  left out; `batch` takes a list of calls and runs them held.
+- **Same shape as the console.** A function returns the console's result
+  key for key; an `addr` stays its hex text. A helper that converts says
+  so in its name. **Behaviour lives in the console:** paging to the end,
+  filtering and retrying are verbs, flags and cursors, so the shell,
+  scripts and tools all have them; the Python paging helpers went.
+- **A stale module does not start.** The adapter compares the module's
+  table hash with the console's (`help --json` needs no target) before it
+  serves, and starts the console itself on the first call.
+- **The generator and the adapter name no pack**; the layout test checks
+  that they never spell a pack's id, that no core console file does, and
+  that nothing in `core/` includes `ue/`.
+- **FastMCP as the MCP Python SDK ships it** (`mcp.server.fastmcp`). The
+  plan named the standalone `fastmcp` package; the SDK's FastMCP already
+  makes a tool from a typed function with its argument and result schemas,
+  and the SDK was at hand. The adapter returns the console's result as it
+  is, with the schema from the annotation: the SDK would otherwise dump an
+  absent optional key as `null`, which its own output schema refuses.
+- **The protocol revision is the SDK's.** The plan targeted the
+  2026-07-28 revision only; the SDK in use negotiates up to 2025-11-25.
+  Nothing in the adapter depends on the revision.
+
+| Place | Form | Why |
+|---|---|---|
+| Target and console | binary structs over shared memory | both ends compile the same structs and the layout hash refuses a mismatch; JSON would add a writer, a parser and allocation to the agent, on the host's thread |
+| Console results | JSON Lines | |
+| A call from the generated functions or the adapter | a JSON call on one line | no text line is built and parsed back, so nothing is escaped |
+| A call typed in a shell | the text line | JSON is hard to quote in a shell and several times the length |
+| An address or chain, a layout, a byte pattern | text, as one string argument | a compact notation for one value |
+
+Rejected:
+
+| Option | Why not |
+|---|---|
+| MCP inside the console (`<console> --mcp`) | no second process, but the protocol's messages and every later revision would be written and followed by hand in C++ |
+| Two tools (`help`, `run`) | `run` takes a text line, so the input is still written by hand and unchecked |
+| Tool definitions written by hand, or a JSON Schema export from the console | one more copy of every shape; the functions' types already give the schemas |
+| A remote server (HTTP, authorisation) | one local console and one target; nothing here is remote |
+| Dropping the text line now | an agent in a shell still types it |
+| JSON between the target and the console | see the table above |
+| Python paging helpers (`find_all`, `search_addresses`) | behaviour in one frontend only; the console's cursors and limits serve all of them |
+
+Open: whether a smaller default tool set is needed (core lookups only, the
+rest on request): every tool's schema together is about 110 KB. Confirmed
+writes (a dry run the client repeats with a confirmation) wait until the
+marks and the client's own prompt are not enough.
 
 ## Unreal pack
 

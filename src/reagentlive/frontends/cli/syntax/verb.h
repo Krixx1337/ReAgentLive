@@ -24,9 +24,12 @@ namespace schema {
 //   {k: T, k?: T}  an object; `?` marks a key that is omitted when it does not apply
 //   value   game data: dynamic, shaped by what was read
 struct Field;
+//   Name    a named type: help --json lists it once under `types`, a pack's
+//           under its own prefix (ue.Name); a struct names itself with TypeName.
 struct Type {
     enum class Kind { Bool, U32, U64, I32, I64, F64, Str, Addr, Hex, Bytes, Ref, Value, Enum, List, Map, Struct };
     Kind kind = Kind::Value;
+    std::string name;           // A named type's name; its definition stays here too.
     std::string values;         // Enum: "a|b|c"; a last word "..." leaves it open.
     std::vector<Type> element;  // List, Map: the element type (one entry).
     bool nullable = false;      // List: an element may be null.
@@ -56,7 +59,9 @@ inline std::string_view ScalarName(Type::Kind kind) {
 }
 
 // The compact notation `help <verb>` prints: {address: addr, kind: code|data, module?: str}.
-inline std::string Notation(const Type& type) {
+// A named type prints its name; `full` prints the outer one's definition.
+inline std::string Notation(const Type& type, bool full = false) {
+    if (!type.name.empty() && !full) return type.name;
     switch (type.kind) {
     case Type::Kind::Enum: return type.values;
     case Type::Kind::List:
@@ -77,31 +82,73 @@ inline std::string Notation(const Type& type) {
 }
 }
 
+// An argument's type: what a value must be, for the checks here, a JSON
+// call and the generated Python functions. A small vocabulary:
+//   addr     an address: 0x hex or decimal, $N[+off], base+off, <module>+off, ->off chains
+//   ref      an object: a literal ref, an address, or $N in a typed line
+//   int      a number: 0x hex or decimal
+//   dur      a duration: N seconds, or Nms, Ns, Nm
+//   bytes    hex pairs, spaced or packed: 00 00 80 3f
+//   pattern  a byte signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89
+//   text     free text; the tokens of a list are joined by spaces
+//   str      one token: a name, a class, a field path
+//   path     a file path
+//   layout   read --as: a type or a layout
+//   range    <addr>:<len>, or following a root <offset>:<len>
+//   span     an address, then a length
+//   line     a command line, verbatim
+//   calls    batch's commands
+//   a|b      one of the words
+//   bool     a switch: a flag that takes nothing
+// bytes, pattern and text are one value however many tokens they span (a
+// JSON call gives them as one string); the other types take one token each,
+// and a positional that takes several takes a JSON list.
+namespace arg {
+inline bool Enum(std::string_view type) { return type.find('|') != std::string_view::npos; }
+inline bool OneOf(std::string_view type, std::string_view word) {
+    while (!type.empty()) {
+        const size_t bar = type.find('|');
+        if (type.substr(0, bar) == word) return true;
+        type = bar == std::string_view::npos ? std::string_view{} : type.substr(bar + 1);
+    }
+    return false;
+}
+}
+
 // How many tokens a positional takes. Rest: the remainder of the line, verbatim.
 enum class Arity { One, Optional, Some, Any, Rest };
 struct Positional {
+    std::string_view key;       // Its name in a JSON call and a generated function: "addr", "data".
     std::string_view name;      // As usage shows it, without brackets: "addr", "hex bytes".
     Arity arity = Arity::One;
+    std::string_view type = "str";
     std::string_view help = {}; // One line: what to put there.
+    std::string_view fallback = {}; // The default when left out, as text; empty: none, or not one value.
 };
 // What follows a flag: nothing (a switch), one token, one token unless the
 // next is a flag or the line ends, every token up to the next flag, or the
 // remainder of the line.
 enum class Takes { Nothing, One, Maybe, Some, Rest };
 struct Flag {
-    std::string_view name;      // "--from".
+    std::string_view name;      // "--from"; its key is the name without the dashes ("from").
     Takes takes = Takes::Nothing;
-    std::string_view value;     // Placeholder in usage: "N", "addr".
-    std::string_view help;
+    std::string_view type = "bool";
+    std::string_view value = {};    // Placeholder in usage: "N", "addr".
+    std::string_view help = {};
+    std::string_view fallback = {};
     bool required = false;
 };
+inline std::string_view FlagKey(const Flag& flag) { return flag.name.substr(2); }
 
 // A line's tokens sorted by its verb's row: positionals in order, flags by name.
 struct Args {
     struct Given { std::string_view flag; std::vector<std::string> values; std::string rest; };
+    // batch's commands from a JSON call: each one's verb and its call as JSON text.
+    struct Call { std::string verb, text; };
     std::vector<std::string> positionals;
     std::string rest;           // The Arity::Rest positional.
     std::vector<Given> flags;
+    std::vector<Call> calls;
 
     const Given* Find(std::string_view flag) const {
         const auto found = std::ranges::find(flags, flag, &Given::flag);
@@ -156,6 +203,15 @@ struct Verb {
     // Writes the target's memory or calls into it: a caller may allow the
     // other verbs without asking and ask first for these.
     bool writes = false;
+    // Holds the console for seconds by design (a blocking capture): a tool
+    // client leaves it out, since a call would outlast its timeout.
+    bool blocks = false;
+};
+
+// Where verbs come from, as a caller sees it: "core", a pack's id or "host",
+// with a title for headings. The core, each pack and the host give one each.
+struct Origin {
+    std::string_view id, title;
 };
 
 // "read <addr> [len] [--as <type>]": the verb's usage line, from its row.
@@ -192,6 +248,62 @@ inline const Verb* FindVerb(std::span<const Verb> verbs, std::string_view name) 
         if (std::ranges::find(verb.aliases, name) != verb.aliases.end()) return &verb;
     }
     return nullptr;
+}
+
+// Why the arguments do not fit the row; empty when they do: the counts
+// against the arities, the required flags, and the types that need none of
+// the target's state (an int is a number, an enum's value one of its words).
+// A typed line and a JSON call both pass here, so both are checked the same way.
+inline std::string CheckArgs(const Verb& verb, const Args& args) {
+    const auto rest0 = std::ranges::find(verb.positionals, Arity::Rest, &Positional::arity);
+    const size_t restAt = static_cast<size_t>(rest0 - verb.positionals.begin());
+    size_t least = 0, most = 0;
+    bool unbounded = false;
+    for (const auto& positional : verb.positionals) {
+        switch (positional.arity) {
+        case Arity::One: ++least; ++most; break;
+        case Arity::Optional: ++most; break;
+        case Arity::Some: ++least; unbounded = true; break;
+        case Arity::Any: unbounded = true; break;
+        case Arity::Rest: break;
+        }
+    }
+    if (rest0 != verb.positionals.end() && verb.positionals[restAt].arity == Arity::Rest && args.rest.empty() &&
+        args.positionals.size() >= restAt) {
+        // A required remainder (batch's body, a call line) that is missing.
+        return ("missing " + std::string(verb.positionals[restAt].name));
+    }
+    if (args.positionals.size() < least) return ("too few arguments");
+    for (const auto& flag : verb.flags)
+        if (flag.required && !args.Has(flag.name)) return ("missing " + std::string(flag.name));
+    if (!unbounded && args.positionals.size() > most) return ("too many arguments");
+    const auto bad = [](std::string_view type, std::string_view value) {
+        uint64_t number = 0;
+        if (type == "int") return !text::Number(value, number);
+        if (arg::Enum(type)) return !arg::OneOf(type, value);
+        return false;
+    };
+    const auto wrong = [](std::string_view name, std::string_view type, const std::string& value) {
+        return std::string(name) + ": '" + value + "' is not " +
+            (arg::Enum(type) ? "one of " + std::string(type) : std::string("a number"));
+    };
+    // A positional's tokens in order: one each, a list takes the rest.
+    size_t at = 0;
+    for (const auto& positional : verb.positionals) {
+        const size_t left = args.positionals.size() - std::min(at, args.positionals.size());
+        const size_t count = positional.arity == Arity::One || positional.arity == Arity::Optional ?
+            std::min<size_t>(1, left) : positional.arity == Arity::Rest ? 0 : left;
+        for (size_t i = at; i < at + count; ++i)
+            if (bad(positional.type, args.positionals[i])) return wrong(positional.name, positional.type, args.positionals[i]);
+        at += count;
+    }
+    for (const auto& given : args.flags) {
+        const auto flag = std::ranges::find(verb.flags, given.flag, &Flag::name);
+        if (flag == verb.flags.end()) continue;
+        for (const auto& value : given.values)
+            if (bad(flag->type, value)) return wrong(flag->name, flag->type, value);
+    }
+    return {};
 }
 
 // Sorts what follows the verb into the row's positionals and flags. A token
@@ -266,26 +378,7 @@ inline std::expected<Args, std::string> Tokenise(const Verb& verb, std::string_v
         args.flags.push_back(std::move(given));
     }
     if (open) return fail("the quote is not closed");
-    size_t least = 0, most = 0;
-    bool unbounded = false;
-    for (const auto& positional : verb.positionals) {
-        switch (positional.arity) {
-        case Arity::One: ++least; ++most; break;
-        case Arity::Optional: ++most; break;
-        case Arity::Some: ++least; unbounded = true; break;
-        case Arity::Any: unbounded = true; break;
-        case Arity::Rest: break;
-        }
-    }
-    if (rest0 != verb.positionals.end() && verb.positionals[restAt].arity == Arity::Rest && args.rest.empty() &&
-        args.positionals.size() >= restAt) {
-        // A required remainder (batch's body, a call line) that is missing.
-        return fail("missing " + std::string(verb.positionals[restAt].name));
-    }
-    if (args.positionals.size() < least) return fail("too few arguments");
-    for (const auto& flag : verb.flags)
-        if (flag.required && !args.Has(flag.name)) return fail("missing " + std::string(flag.name));
-    if (!unbounded && args.positionals.size() > most) return fail("too many arguments");
+    if (auto problem = CheckArgs(verb, args); !problem.empty()) return fail(problem);
     return args;
 }
 }

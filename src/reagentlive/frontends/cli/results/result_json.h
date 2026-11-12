@@ -69,6 +69,23 @@ struct Quit {
     template<class V> static void Describe(V& v) { v("quit", &Quit::quit); }
 };
 
+// An object as a pack names it: peek's object rows, describe, and every
+// object a pack's result names. The core defines the shape; a pack fills it.
+// class_size only from a single describe: the object's class size, which
+// reaches past the last reflected field (native members, object tails).
+struct Object {
+    static constexpr std::string_view TypeName = "Object";
+    RefId ref;
+    std::string name, className;
+    std::optional<uint32_t> classSize;
+    template<class V> static void Describe(V& v) {
+        v("ref", &Object::ref);
+        v("name", &Object::name);
+        v("class", &Object::className);
+        v("class_size", &Object::classSize);
+    }
+};
+
 // A resolved pointer chain: the base, each hop (where a pointer was read and
 // what it held), and the final address; in an error, the broken hop's index
 // and reason instead.
@@ -84,6 +101,7 @@ struct ChainHop {
     }
 };
 struct Chain {
+    static constexpr std::string_view TypeName = "Chain";
     Addr base;
     std::vector<ChainHop> hops;
     std::optional<Addr> address;
@@ -209,6 +227,7 @@ struct Search {
 };
 
 struct Pin {
+    static constexpr std::string_view TypeName = "Pin";
     uint32_t id = 0;
     Addr address;
     HexBytes bytes;
@@ -236,6 +255,7 @@ struct PinClear {
 };
 
 struct Trial {
+    static constexpr std::string_view TypeName = "Trial";
     uint32_t id = 0;
     Addr address;
     HexBytes bytes, original;
@@ -273,6 +293,7 @@ struct TrialClear {
 
 // watch: a range is at an address, or following a root at an offset from it.
 struct WatchRange {
+    static constexpr std::string_view TypeName = "WatchRange";
     std::optional<Addr> address;
     std::optional<HexNum> offset;
     uint32_t length = 0;
@@ -287,6 +308,7 @@ struct WatchRange {
 // One sample: a value per range (null while unreadable). Following a root,
 // `lost` rows and `resumed` ones (with the new object's address) bound each gap.
 struct WatchSample {
+    static constexpr std::string_view TypeName = "WatchSample";
     uint64_t tick = 0, us = 0;
     std::optional<std::vector<std::optional<HexBytes>>> values;
     std::optional<bool> lost, resumed;
@@ -396,7 +418,7 @@ struct PeekRow {
     Location where;
     std::string label;
     std::optional<HexNum> value;
-    std::optional<Json> object;     // The pack's description of the object.
+    std::optional<Object> object;   // Filled by the pack.
     Location valueWhere;
     std::optional<std::vector<Json>> f32;
     std::optional<Json> f64;
@@ -485,62 +507,92 @@ struct Status {
 };
 
 // help: one row per verb, with where it comes from (`origin`: the core, a
-// pack or the host) and `writes` on a verb that writes the target's memory
-// or calls into it. `help <verb>` adds the positionals, the flags, the
-// result in notation and the notes; `help --json` adds the result's type
-// for programs.
+// pack or the host), `writes` on a verb that writes the target's memory or
+// calls into it and `blocks` on one that holds the console for seconds.
+// `help <verb>` adds the positionals and flags (each with its key, type and
+// default), the result in notation, the named types it uses and the notes;
+// `help --json` adds the result's type for programs, every named type once
+// and each origin's title.
 struct HelpFlag {
-    std::string flag;
-    std::string takes;
-    std::optional<std::string> value, help;
+    std::string flag, key, takes, type;
+    std::optional<std::string> value, help, fallback;
     std::optional<bool> required;
     template<class V> static void Describe(V& v) {
         v("flag", &HelpFlag::flag);
+        v("key", &HelpFlag::key);
         v("takes", &HelpFlag::takes, "nothing|one|maybe|some|rest");
+        v("type", &HelpFlag::type);
         v("required", &HelpFlag::required);
         v("value", &HelpFlag::value);
+        v("default", &HelpFlag::fallback);
         v("help", &HelpFlag::help);
     }
 };
 struct HelpPositional {
-    std::string name, arity;
-    std::optional<std::string> help;
+    std::string key, name, arity, type;
+    std::optional<std::string> help, fallback;
     template<class V> static void Describe(V& v) {
+        v("key", &HelpPositional::key);
         v("name", &HelpPositional::name);
         v("arity", &HelpPositional::arity, "one|optional|some|any|rest");
+        v("type", &HelpPositional::type);
+        v("default", &HelpPositional::fallback);
         v("help", &HelpPositional::help);
     }
 };
 struct HelpRow {
     std::string verb, origin, usage, summary;
-    std::optional<bool> writes;
+    std::optional<bool> writes, blocks;
     std::optional<std::vector<std::string>> aliases;
     std::optional<std::vector<HelpFlag>> flags;
     std::optional<std::string> result, notes;
     std::optional<std::vector<HelpPositional>> positionals;
+    std::optional<std::map<std::string, std::string>> types;
     std::optional<Json> type;
     template<class V> static void Describe(V& v) {
         v("verb", &HelpRow::verb);
-        v("origin", &HelpRow::origin, "core|ue|host|...");
+        v("origin", &HelpRow::origin);
         v("usage", &HelpRow::usage);
         v("summary", &HelpRow::summary);
         v("writes", &HelpRow::writes);
+        v("blocks", &HelpRow::blocks);
         v("aliases", &HelpRow::aliases);
         v("flags", &HelpRow::flags);
         v("result", &HelpRow::result);
         v("notes", &HelpRow::notes);
         v("positionals", &HelpRow::positionals);
+        v("types", &HelpRow::types);
         v("type", &HelpRow::type);
+    }
+};
+// help --json: a named type's notation and its type for programs.
+struct HelpType {
+    std::string notation;
+    Json type;
+    template<class V> static void Describe(V& v) {
+        v("notation", &HelpType::notation);
+        v("type", &HelpType::type);
+    }
+};
+struct HelpOrigin {
+    std::string origin, title;
+    template<class V> static void Describe(V& v) {
+        v("origin", &HelpOrigin::origin);
+        v("title", &HelpOrigin::title);
     }
 };
 struct Help {
     std::vector<HelpRow> rows;
     std::optional<std::vector<std::string>> notes;
     std::optional<std::string> tableHash;
+    std::optional<std::map<std::string, HelpType>> types;
+    std::optional<std::vector<HelpOrigin>> origins;
     template<class V> static void Describe(V& v) {
         v("rows", &Help::rows);
         v("notes", &Help::notes);
         v("table_hash", &Help::tableHash);
+        v("types", &Help::types);
+        v("origins", &Help::origins);
     }
 };
 }
@@ -551,7 +603,7 @@ struct Help {
 struct PeekValue {
     uint64_t address = 0, value = 0;
     bool read = false;                  // False: this qword could not be read.
-    std::optional<Json> object;         // The value is a live object: the pack's description of it.
+    std::optional<shape::Object> object; // The value is a live object, as the pack names it.
     bool readable = false;              // The value points to readable memory.
     std::string name;                   // The pack's name for the low 32 bits, empty if none.
     std::string region;                 // Readable pointer: its region kind when the agent has region.

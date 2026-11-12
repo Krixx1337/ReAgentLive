@@ -17,6 +17,12 @@ inline const std::vector<reagentlive::cli::Verb>& AllVerbs() {
     return verbs;
 }
 
+inline std::span<const reagentlive::cli::Origin> AllOrigins() {
+    static const reagentlive::cli::Origin origins[] = {reagentlive::cli::CoreOrigin, reagentlive::cli::UnrealOrigin,
+                                                       reagentlive::cli::HostOrigin};
+    return origins;
+}
+
 // The result as JSON, after checking it against the type its struct describes.
 template<class T> reagentlive::cli::Json Checked(const T& result) {
     const reagentlive::cli::Json json = reagentlive::cli::ToJson(result);

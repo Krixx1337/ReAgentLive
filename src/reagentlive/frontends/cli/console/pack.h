@@ -26,6 +26,7 @@ std::vector<CachePack> SavePackCache(const Session& session);
 // The pack's rows of the verb table and the notes `help` prints under them.
 // status: `packs`, the packs this host offers.
 std::span<const Verb> PackVerbs();
+Origin PackOrigin();
 std::span<const std::string> PackNotes();
 std::vector<std::string> OfferedPacks(Session& session);
 // Pack verbs: whether a parsed command is one, whether it runs held (several

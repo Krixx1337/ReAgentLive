@@ -16,13 +16,12 @@ when an investigation needs a larger read budget across ticks.
 `each` compares one field or getter across a class. Whole-object snapshots
 across instances (every reflected field) remain open.
 
-### 11 · MCP frontend
+### 11 · A smaller default tool set
 
-Declined for now: a tool per operation costs an agent context before it does
-anything ([design](design.md#place-among-other-tools)). If one is ever
-built, it sits on the console's JSON mode, not on the raw client, so it
-reuses `dump`, `get`, `batch` and the cache. The plan that would reverse
-this, generated from the verb table: [tool interface](tool-interface.md).
+The MCP tools ([clients](client.md#mcp-tools)) serve every verb; with the
+Unreal pack their schemas are about 110 KB. When a client that loads every
+schema up front runs short of context: serve core lookups by default and
+the rest on request (an adapter flag naming origins or verbs).
 
 ### 15 · Call probe (caution)
 

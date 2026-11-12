@@ -11,6 +11,10 @@
 //           v("kind", &Row::kind, "code|data");     // A string enum.
 //       }
 //   };
+//
+// A struct used by several verbs names itself with
+// `static constexpr std::string_view TypeName = "Chain";` (a pack's carry its
+// prefix: "ue.Name"): help --json then lists it once under `types`.
 #pragma once
 #include <cinttypes>
 #include <cstdint>
@@ -180,6 +184,7 @@ template<class T> struct Codec {
     static Type Describe() {
         Describer describer;
         T::Describe(describer);
+        if constexpr (requires { T::TypeName; }) describer.type.name = std::string(T::TypeName);
         return std::move(describer.type);
     }
     static Json Write(const T& value) {
@@ -199,10 +204,24 @@ struct Nothing {
     template<class V> static void Describe(V&) {}
 };
 
+// The named types inside a type, by name. `top`: leave out the outermost one.
+using NamedTypes = std::map<std::string, Type>;
+inline void CollectNamed(const Type& type, NamedTypes& out, bool top = false) {
+    if (!top && !type.name.empty()) {
+        if (out.contains(type.name)) return;
+        out.emplace(type.name, type);
+    }
+    for (const auto& element : type.element) CollectNamed(element, out);
+    for (const auto& field : type.fields) CollectNamed(field.type, out);
+}
+
 // The type for programs (`help --json`): scalars by name, {"enum": [...]},
 // {"list": T} (with "nullable": true), {"map": T},
-// {"struct": {key: {"type": T, "optional": true}}}.
-inline Json TypeJson(const Type& type) {
+// {"struct": {key: {"type": T, "optional": true}}}, {"named": "Chain"} for a
+// named type (help --json's `types` holds it). `full`: the outermost one's
+// definition even when it is named.
+inline Json TypeJson(const Type& type, bool full = false) {
+    if (!type.name.empty() && !full) return {{"named", type.name}};
     switch (type.kind) {
     case Kind::Enum: {
         Json words = Json::array();

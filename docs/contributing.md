@@ -16,7 +16,7 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 | Core client | typed C++ API: attach, read, write, modules, search, xrefs, region, pointer chains, supported ops, raw `Send` | `core/client.*` | protocol |
 | Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls over a Dumper-7 SDK | `ue/` | core; agent side also the host's `SDK/` headers |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |
-| Python, IDA | session client over the console; label importer | `frontends/python/`, `frontends/ida/` | the console's JSON mode, its label file |
+| Python, MCP, IDA | session client, the generator of typed functions, the MCP adapter over them; label importer | `frontends/python/`, `frontends/mcp/`, `frontends/ida/` | the console's JSON calls and `help --json` (MCP: the MCP Python SDK), its label file |
 | Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch --follow` | the host's code ([hosting](hosting.md)) | core, packs |
 
 Dependencies point one way: host → pack → core. Frontends use the client API,
@@ -34,20 +34,25 @@ never the section directly. ReAgentLive never includes host code.
    at the top of `results/result_json.h`. One verb has one result type: a
    mode with another shape is another verb.
 3. **Its row** in the verb table (`results/verbs.h`): name, summary,
-   positionals and flags with a line of description each, the result
-   type, the parser, `writes` when it writes the target or calls into it.
+   positionals (key, usage name, arity, type, help, default) and flags
+   (name, takes, type, placeholder, help, default), the result type, the
+   parser, `writes` when it writes the target or calls into it, `blocks`
+   when it holds the console for seconds. Types come from the vocabulary
+   in `syntax/verb.h`; a struct several results share names itself with
+   `TypeName` (a pack's with its prefix).
 4. **Its parser:** `frontends/cli/syntax/parse_<area>.cpp`, declared in
-   `parse_internal.h`. It gets the line's tokens already sorted by the row
-   (`Args`); unknown flags, missing values and arity are refused before it
+   `parse_internal.h`. It gets the arguments already sorted by the row
+   (`Args`), from a typed line or a JSON call alike; unknown flags or keys,
+   missing values, arity and `int` and enum values are refused before it
    runs. Parse tests.
 5. **Running it:** `frontends/cli/console/<area>.cpp`, ending in `Emit`
    with the result struct.
    A pack command puts steps 2 to 5 in the layers' `ue/` folders (its row
    in `results/ue/verbs_ue.h`), and `PackCommand` (`console/ue/pack.cpp`)
    claims it.
-6. **Python:** a method of the verb's name in
-   `frontends/python/reagentlive_session.py` that sends the line and
-   returns the result as it is (`test_every_verb_has_a_method`).
+6. **Python and MCP:** nothing to write. The generated module
+   (`reagentlive_gen.py`) and the MCP tools read the row; regenerate a
+   module you keep.
 7. **Docs:** the command's page under `docs/commands/` and its line in the
    [INDEX](INDEX.md#commands) lookup table. Regenerate
    [result shapes](commands/results.md):
@@ -163,10 +168,10 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, the tokeniser, usage errors, help), the parsers, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
 | `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |
-| `reagentlive.python-session`, `reagentlive.ida-labels` (`tests/python/`) | the Python session client against a scripted fake console that serves the real table (strict results, a method per verb, canned replies checked against their types), and the IDA label importer |
+| `reagentlive.python-session`, `reagentlive.python-mcp`, `reagentlive.ida-labels` (`tests/python/`) | the session client and a module generated from the real table, against a scripted fake console (`fake_console.py`) that serves it (strict results, a method per verb, JSON calls, canned replies checked against their types); the MCP tools made from that module, through an in-memory client (skipped without the MCP SDK); and the IDA label importer |
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack |
 | `reagentlive.consumer` (`tests/consumer/`) | an agent-only host project built in its own tree: no downloads with the console off, and nothing past `src/` reachable through the include path |
-| `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines and `ue::` names |
+| `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
 | `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, and no host or game name appears in the library |
 
 The Unreal agent handlers need a live object table, so hosts check them in

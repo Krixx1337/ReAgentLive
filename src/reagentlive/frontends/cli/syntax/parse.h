@@ -23,4 +23,8 @@ namespace reagentlive::cli {
 // then fail). An error names what is wrong and ends with the verb's usage line.
 Parsed Parse(std::span<const Verb> verbs, std::string_view line, std::span<const Ref> refs,
              std::span<const Module> modules = {});
+// A verb's sorted arguments to a Command, by its row's parser: the second
+// half of Parse, and all of a JSON call once its arguments are read
+// (results/verbs.h CallArgs). Errors end with the verb's usage line.
+Parsed Build(const Verb& verb, const Args& args, std::span<const Ref> refs, std::span<const Module> modules = {});
 }

@@ -13,12 +13,17 @@ Parsed Parse(std::span<const Verb> verbs, std::string_view line, std::span<const
     if (!verb || !verb->parse) return parse::Fail("unknown command '" + std::string(name) + "' (try help)");
     auto args = Tokenise(*verb, rest);
     if (!args) return parse::Fail(args.error());
-    auto parsed = verb->parse(*args, ParseContext{refs, modules});
+    return Build(*verb, *args, refs, modules);
+}
+
+Parsed Build(const Verb& verb, const Args& args, std::span<const Ref> refs, std::span<const Module> modules) {
+    if (!verb.parse) return parse::Fail("unknown command '" + std::string(verb.name) + "' (try help)");
+    auto parsed = verb.parse(args, ParseContext{refs, modules});
     if (!parsed) {
-        const std::string usage = "usage: " + Usage(*verb);
+        const std::string usage = "usage: " + Usage(verb);
         return parse::Fail(parsed.error().empty() ? usage : parsed.error() + "; " + usage);
     }
-    parsed->verb = verb;
+    parsed->verb = &verb;
     return parsed;
 }
 
@@ -44,10 +49,29 @@ Parsed Quit(const Args&, const ParseContext&) {
     return command;
 }
 
+namespace {
+// Timed commands hold the console, not the tick; the rest have nothing to hold.
+bool NotInBatch(std::string_view verb) {
+    return verb == "batch" || verb == "watch" || verb == "record" || verb == "quit" || verb == "exit" || verb == "q" ||
+        verb == "help" || verb == "?" || verb == "status";
+}
+}
+
 // batch { <command>; <command>; ... }: the lines, split on ';' outside quotes.
+// From a JSON call: its calls, each kept as JSON text.
 Parsed Batch(const Args& args, const ParseContext&) {
     using namespace text;
     Command command;
+    if (!args.calls.empty()) {
+        for (const auto& call : args.calls) {
+            if (NotInBatch(call.verb)) return Fail("not allowed in a batch: " + call.verb);
+            if (command.fields.size() == MaxBatchCommands)
+                return Fail("at most " + std::to_string(MaxBatchCommands) + " commands");
+            command.fields.push_back(call.text);
+        }
+        command.kind = Kind::Batch;
+        return command;
+    }
     const std::string_view rest = Trim(args.rest);
     if (!rest.starts_with('{') || !rest.ends_with('}') || rest.size() < 2) return Fail();
     const auto body = rest.substr(1, rest.size() - 2);
@@ -58,10 +82,7 @@ Parsed Batch(const Args& args, const ParseContext&) {
         if (!item.empty()) {
             std::string_view probe = item;
             const auto inner = Next(probe);
-            // Timed commands hold the console, not the tick; the rest have nothing to hold.
-            if (inner == "batch" || inner == "watch" || inner == "record" || inner == "quit" || inner == "exit" ||
-                inner == "q" || inner == "help" || inner == "?" || inner == "status")
-                return Fail("not allowed in a batch: " + std::string(inner));
+            if (NotInBatch(inner)) return Fail("not allowed in a batch: " + std::string(inner));
             if (command.fields.size() == MaxBatchCommands)
                 return Fail("at most " + std::to_string(MaxBatchCommands) + " commands");
             command.fields.emplace_back(item);

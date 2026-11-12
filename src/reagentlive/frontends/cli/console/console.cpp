@@ -68,11 +68,11 @@ bool RefreshModules(Session& session) {
 namespace {
 // help: the verbs, one verb in full, or the whole table for programs. It
 // reads the table only, so it also answers with no agent to attach to.
-std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, const std::string& hash,
-                                                  const Command& command) {
+std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, std::span<const Origin> origins,
+                                                  const std::string& hash, const Command& command) {
     shape::Help help;
     if (command.all) {
-        help = MakeHelpTable(verbs);
+        help = MakeHelpTable(verbs, origins);
         help.tableHash = hash;
     } else if (!command.target.empty()) {
         const Verb* verb = FindVerb(verbs, command.target);
@@ -87,7 +87,7 @@ std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, c
 }
 
 void RunHelp(Session& session, const Command& command, std::string_view jsonCommand) {
-    auto help = BuildHelp(session.verbs, session.tableHash, command);
+    auto help = BuildHelp(session.verbs, session.origins, session.tableHash, command);
     if (!help) return JsonError(session, jsonCommand, "syntax", help.error());
     Emit(session, jsonCommand, std::move(*help));
 }
@@ -99,6 +99,20 @@ std::vector<Verb> AllVerbs(const ConsoleConfig& config) {
     for (const auto& verb : config.verbs) verbs.push_back(verb);
     return verbs;
 }
+std::vector<Origin> AllOrigins() { return {CoreOrigin, PackOrigin(), HostOrigin}; }
+
+// A JSON call's own keys: the verb, its arguments, and the console's two line flags.
+std::string CallProblem(const Json& call) {
+    if (!call.is_object() || !call.contains("verb") || !call["verb"].is_string())
+        return "a JSON call is {\"verb\": \"<verb>\", \"args\": {...}}";
+    for (const auto& [key, value] : call.items()) {
+        if (key == "verb" || key == "args") continue;
+        if (key != "meta" && key != "timing") return "unknown key '" + key + "' (a call has verb, args, meta, timing)";
+        if (!value.is_boolean()) return key + " is true or false";
+    }
+    return {};
+}
+bool CallFlag(const Json& call, const char* key) { return call.contains(key) && call[key].is_boolean() && call[key].get<bool>(); }
 
 // One-shot lines that are all `help`: answered from the table, no agent needed.
 bool HelpOnly(std::span<const Verb> verbs, const std::vector<std::string>& lines) {
@@ -297,19 +311,37 @@ bool Execute(Session& session, const std::string& original, bool inBatch) {
     } lineScope{session, session.meta, session.current};
     session.current = nullptr;
     std::string line = original;
-    if (TakeFlag(line, "--meta")) session.meta = true;
+    // A JSON call: the verb's row reads its named arguments; nothing is tokenised or quoted.
+    std::optional<Json> call;
     std::string_view rest = line;
-    const auto jsonCommand = text::Next(rest);
+    std::string name;
+    if (text::Trim(line).starts_with('{')) {
+        call = Json::parse(line, nullptr, false);
+        if (const auto problem = call->is_discarded() ? std::string("not JSON") : CallProblem(*call); !problem.empty()) {
+            JsonError(session, "call", "syntax", problem);
+            return false;
+        }
+        if (CallFlag(*call, "meta")) session.meta = true;
+        name = (*call)["verb"].get<std::string>();
+    } else {
+        if (TakeFlag(line, "--meta")) session.meta = true;
+        rest = line;
+        name = text::Next(rest);
+    }
+    const std::string_view jsonCommand = name;
     if (jsonCommand.empty()) return false;
+    const Json noArgs;
+    const Json& callArgs = call && call->contains("args") ? (*call)["args"] : noArgs;
     // A host's verb: its row checks the arguments and the result, the host does the rest.
     if (const Verb* host = FindVerb(session.config.verbs, jsonCommand); host && session.config.hostCommand) {
         session.current = host;
-        if (auto args = Tokenise(*host, rest); !args) {
+        auto args = call ? CallArgs(*host, callArgs) : Tokenise(*host, rest);
+        if (!args) {
             JsonError(session, jsonCommand, "syntax", args.error());
             return false;
         }
         Json envelope;
-        if (!session.config.hostCommand(client, line, envelope) || !envelope.is_object() || !envelope.contains("ok") ||
+        if (!session.config.hostCommand(client, *host, *args, envelope) || !envelope.is_object() || !envelope.contains("ok") ||
             !envelope["ok"].is_boolean()) {
             JsonError(session, jsonCommand, "host", "host command returned no result");
         } else if (envelope["ok"].get<bool>()) {
@@ -324,9 +356,17 @@ bool Execute(Session& session, const std::string& original, bool inBatch) {
     // Module addresses (base+0x10, game.exe+0x10) need the list; a name it
     // lacks may be a module loaded since it was read.
     const bool moduleAddress = line.find('+') != std::string::npos || line.find("base") != std::string::npos;
-    auto parsed = Parse(session.verbs, line, session.refs, moduleAddress ? LoadedModules(session) : std::span<const Module>{});
-    if (!parsed && moduleAddress && RefreshModules(session))
-        parsed = Parse(session.verbs, line, session.refs, LoadedModules(session));
+    // A JSON call carries literal refs only (CallArgs refuses $N), so it parses without them.
+    const auto parse = [&](std::span<const Module> modules) -> Parsed {
+        if (!call) return Parse(session.verbs, line, session.refs, modules);
+        const Verb* verb = FindVerb(session.verbs, jsonCommand);
+        if (!verb) return Parsed(std::unexpect, "unknown command '" + name + "' (try help)");
+        auto args = CallArgs(*verb, callArgs);
+        if (!args) return Parsed(std::unexpect, args.error());
+        return Build(*verb, *args, {}, modules);
+    };
+    auto parsed = parse(moduleAddress ? LoadedModules(session) : std::span<const Module>{});
+    if (!parsed && moduleAddress && RefreshModules(session)) parsed = parse(LoadedModules(session));
     if (!parsed) {
         JsonError(session, jsonCommand, "syntax", parsed.error());
         return false;
@@ -490,14 +530,15 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     }
     if (oneShot && oneShot->empty()) return startupError("provide commands via -c");
     const auto verbs = AllVerbs(config);
-    const auto tableHash = TableHash(verbs);
+    const auto origins = AllOrigins();
+    const auto tableHash = TableHash(verbs, origins);
     if (oneShot && HelpOnly(verbs, *oneShot)) {
         int failed = 0;
         for (const auto& line : *oneShot) {
             std::string_view rest = line;
             const auto name = text::Next(rest);
             const auto parsed = Parse(verbs, line, {});
-            const auto help = parsed ? BuildHelp(verbs, tableHash, *parsed) :
+            const auto help = parsed ? BuildHelp(verbs, origins, tableHash, *parsed) :
                 std::expected<shape::Help, std::string>(std::unexpect, parsed.error());
             if (help) printStartup(ResultEnvelope(name, ToJson(*help)));
             else {
@@ -531,6 +572,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     });
     Session session(*client, config);
     session.verbs = verbs;
+    session.origins = origins;
     session.tableHash = tableHash;
     session.pack = MakePackState(session);
     if (const auto problem = LoadPackFiles(session); !problem.empty()) return startupError(problem);
@@ -551,10 +593,15 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     while (nextLine()) {
         // --timing and --meta in either order; Execute takes --meta.
         bool timing = false, meta = false;
-        for (bool more = true; more;) {
-            more = false;
-            if (TakeFlag(line, "--timing")) timing = more = true;
-            if (TakeFlag(line, "--meta")) meta = more = true;
+        if (text::Trim(line).starts_with('{')) {
+            const Json call = Json::parse(line, nullptr, false);
+            timing = !call.is_discarded() && CallFlag(call, "timing");
+        } else {
+            for (bool more = true; more;) {
+                more = false;
+                if (TakeFlag(line, "--timing")) timing = more = true;
+                if (TakeFlag(line, "--meta")) meta = more = true;
+            }
         }
         if (meta) line += " --meta";
         if (timing) session.timing = Timing{&*client, client->Stats(), Clock::now()};

@@ -2,7 +2,10 @@
 
 Two kinds of rule: layers (syntax, the middle folders, console) and the pack
 boundary (each layer's Unreal part lives in its ue/ folder; nothing outside a
-ue/ folder includes the Unreal pack or names ue::).
+ue/ folder includes the Unreal pack, names ue:: or spells the pack's id as a
+string). The boundary holds beyond frontends/cli too: core/ never includes
+ue/, and the Python generator and the MCP adapter, which read only
+`help --json`, never spell the pack's id.
 
 Usage: test_cli_layout.py [--host FILE ...]. Host files may include only the
 console's public header, the parser, the verb table's row and the result schema.
@@ -13,7 +16,13 @@ import sys
 import tempfile
 import unittest
 
-CLI = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'cli')
+SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive')
+CLI = os.path.join(SRC, 'frontends', 'cli')
+CORE = os.path.join(SRC, 'core')
+# Frontends that read the table only, so they must name no pack.
+TABLE_READERS = (os.path.join(SRC, 'frontends', 'python', 'reagentlive_gen.py'),
+                 os.path.join(SRC, 'frontends', 'python', 'reagentlive_session.py'),
+                 os.path.join(SRC, 'frontends', 'mcp', 'reagentlive_mcp.py'))
 PREFIX = 'reagentlive/frontends/cli/'
 SYNTAX = 'syntax'
 MIDDLE = ('values', 'state', 'results', 'code')
@@ -24,9 +33,11 @@ HOST_HEADERS = (PREFIX + 'console/console.h', PREFIX + 'syntax/parse.h', PREFIX 
                 PREFIX + 'results/schema.h')
 IO_HEADERS = ('fstream', 'iostream', 'filesystem')
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.M)
-# ue:: as a name, outside comments.
+# ue:: as a name, outside comments; the pack's id as a string literal.
 PACK_NAME = re.compile(r'(?<![A-Za-z0-9_])ue::')
+PACK_STRING = re.compile(r'["\']ue["\'.]')
 COMMENT = re.compile(r'//[^\n]*|/\*.*?\*/', re.S)
+PY_COMMENT = re.compile(r'#[^\n]*')
 
 HOSTS = []
 
@@ -73,13 +84,21 @@ def files(cli):
     return found, problems
 
 
-def check(cli, hosts=()):
+def core_files(core):
+    if not core or not os.path.isdir(core):
+        return []
+    return [os.path.join(root, name) for root, _, names in os.walk(core) for name in sorted(names)]
+
+
+def check(cli, hosts=(), core=None, readers=()):
     """Every broken rule, as 'file: reason'."""
     found, problems = files(cli)
     for folder, in_pack, where, full in found:
         text = read(full)
         if not in_pack and PACK_NAME.search(COMMENT.sub('', text)):
             problems.append(f'{where}: names ue::; the Unreal part goes in {folder}/{PACK}/')
+        if not in_pack and PACK_STRING.search(COMMENT.sub('', text)):
+            problems.append(f'{where}: spells the pack id "{PACK}"; a pack gives its own id and title')
         for quoted, target in includes(text):
             if not quoted:
                 if folder != CONSOLE and target.split('/')[0] in IO_HEADERS:
@@ -105,6 +124,13 @@ def check(cli, hosts=()):
                 problems.append(f'{where}: "{target}": syntax/ includes only syntax/, core/ and the pack')
             elif folder in MIDDLE and layer == CONSOLE:
                 problems.append(f'{where}: "{target}": {folder}/ never includes console/')
+    for path in core_files(core):
+        for quoted, target in includes(read(path)):
+            if quoted and (target.startswith('reagentlive/ue/') or pack_include(target)):
+                problems.append(f'core/{os.path.basename(path)}: "{target}": core/ never includes the pack')
+    for path in readers:
+        if os.path.exists(path) and PACK_STRING.search(PY_COMMENT.sub('', read(path))):
+            problems.append(f'{os.path.basename(path)}: spells the pack id "{PACK}"; it reads help --json only')
     for host in hosts:
         for quoted, target in includes(read(host)):
             if quoted and target.startswith(PREFIX) and target not in HOST_HEADERS:
@@ -136,7 +162,16 @@ def inc(target):
 
 class CliLayout(unittest.TestCase):
     def test_the_tree_keeps_every_rule(self):
-        self.assertEqual(check(CLI, HOSTS), [])
+        self.assertEqual(check(CLI, HOSTS, CORE, TABLE_READERS), [])
+
+    def test_the_pack_id_outside_the_pack_fails(self):
+        with Tree({'cli/results/docs.h': 'auto t = origin == "ue" ? 1 : 0;\n// "ue" in a comment is fine\n',
+                   'cli/results/ue/verbs_ue.h': 'Origin o{"ue", "Unreal pack"};\n',
+                   'core/agent.h': inc('reagentlive/ue/protocol_ue.h'),
+                   'gen.py': "if origin == 'ue': pass\n# 'ue' in a comment is fine\n"}) as root:
+            problems = check(os.path.join(root, 'cli'), core=os.path.join(root, 'core'),
+                             readers=[os.path.join(root, 'gen.py')])
+            self.assertEqual(len(problems), 3, problems)  # docs.h, core/agent.h, gen.py.
 
     def test_a_clean_planted_tree_passes(self):
         with Tree({'syntax/parse.h': inc('reagentlive/core/protocol.h'),

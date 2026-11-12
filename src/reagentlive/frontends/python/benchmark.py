@@ -22,8 +22,8 @@ def timed(session, line):
 
 
 def tick_rate(session):
-    session.status()  # Starts a fresh interval.
-    return lambda: session.status()['ticks_per_second']
+    session.call('status')  # Starts a fresh interval.
+    return lambda: session.call('status')['ticks_per_second']
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
         rate = tick_rate(s)
         started = time.perf_counter()
         for _ in range(200):
-            s.read(base, 8)
+            s.call('read', {'addr': base, 'len': 8})
         out['read_ms'] = (time.perf_counter() - started) / 200 * 1000
         out['read_ticks_per_second'] = rate()
         rate = tick_rate(s)

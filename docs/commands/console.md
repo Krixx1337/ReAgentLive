@@ -1,7 +1,8 @@
 # Console
 
-How to drive any ReAgentLive console: the command line, addresses and
-refs, keeping round trips down, one-shot runs and the JSON Lines output.
+How to drive any ReAgentLive console: the command line, JSON calls,
+addresses and refs, keeping round trips down, one-shot runs and the JSON
+Lines output.
 What each command does lives in its area page ([index](../INDEX.md#commands));
 what each takes and returns, in [result shapes](results.md) and in `help`.
 
@@ -9,15 +10,22 @@ what each takes and returns, in [result shapes](results.md) and in `help`.
 
 A line is a verb, its positionals and its flags:
 `dump $1 --match Health --nonzero`. One table says what every verb takes
-and returns (a row per verb: positionals, flags, result type); the parser,
-`help`, the [result shapes](results.md) page and the Python client's strict
-results all read it, so none of them can disagree with the console.
+and returns (a row per verb: positionals and flags, each with a key, a
+type and a default, and the result type); the parser, JSON calls, `help`,
+the [result shapes](results.md) page, the generated Python functions and
+the MCP tools all read it, so none of them can disagree with the console.
 
 - **Ask the console, not a page.** `help` lists the verbs, one line each
-  with usage. `help <verb>` shows one verb's flags, its result's keys in
-  [notation](results.md#notation) and its notes. `help --json` prints the
-  whole table for programs. A `-c` run of only `help` lines needs no target
-  running.
+  with usage. `help <verb>` shows one verb's positionals and flags (each
+  with its `key`, `type` and `default`), its result's keys in
+  [notation](results.md#notation), the named types it uses and its notes.
+  `help --json` prints the whole table for programs: every row with its
+  result's `type`, the named `types` once, each origin's title
+  (`origins`) and `table_hash`. A `-c` run of only `help` lines needs no
+  target running.
+- **Marks:** `writes` on a verb that writes the target's memory or calls
+  into it, `blocks` on one that holds the console for seconds by design
+  (`watch`, `record`).
 - **`status`** reports the agent's pid, ticks per second since attach or the
   last status (at least 100 ms), the answering agent's build time, replaced
   agents, `host_thread` ([host thread](../hosting.md#host-thread)), `roots`,
@@ -31,7 +39,8 @@ results all read it, so none of them can disagree with the console.
   add optional keys and never changes a key's type.
 - **A usage error names what is wrong and ends with the verb's usage
   line**: an unknown flag, a flag given twice, a missing value, too few or
-  too many arguments.
+  too many arguments, or a value its type refuses (an `int` that is not a
+  number, a word not in an enum).
 - **Tokens.** Numbers are `0x` hex or decimal. A token in double quotes is
   taken exactly (spaces, `;` and `--` included; `\"` and `\\` escape) and is
   never a flag: quote a path or search text that needs it. Hex bytes may be
@@ -39,6 +48,33 @@ results all read it, so none of them can disagree with the console.
 - **`--timing`** and **`--meta`** go at the end of any line
   ([fewer round trips](#fewer-round-trips)).
 - `<addr>` and `<object>` accept `$N`, result N of the last `find`.
+
+## JSON calls
+
+A line starting with `{` is a JSON call:
+`{"verb": "read", "args": {"addr": "0x1000", "len": 16, "as": "f32"}}`.
+The typed line is shorthand for it; both sort into the same arguments and
+are checked once, against the row, by the same parser. Nothing is quoted
+or escaped: a path with spaces, search text with `;` or a layout is one
+string.
+
+- **Keys** are the row's: a positional's `key`, a flag's name without
+  `--` (`help <verb>` shows both). An unknown key is a usage error.
+- **Values:** a string or number for one value; a list for a positional
+  that takes several (`"paths": ["A.B", "C"]`; `read-batch` spans as
+  `[["0x10", 8], ["0x20", 4]]`); bytes, a pattern or text as one string
+  (`"data": "00 00 80 3f"`). A switch is `true` (or `false`, left out); a
+  flag with an optional value is `true` or its value. A number is hex for
+  an `addr` and seconds for a `dur` (`1.5` is `1500ms`).
+- **Literal refs only.** A string starting with `$` is refused: a call
+  carries the `ref` a result printed (works across runs), never "the last
+  `find`".
+- `"meta": true` and `"timing": true` beside `verb` and `args` do what the
+  line flags do.
+- **`batch`** takes `"calls"`, a list of calls: `{"verb": "batch", "args":
+  {"calls": [{"verb": "read", "args": {"addr": "0x10"}}, {"verb": "base"}]}}`.
+- The envelope's `command` is the verb, as for a typed line. A host's
+  verbs take JSON calls too.
 
 ## Addresses and refs
 

@@ -237,6 +237,11 @@ if(REAGENTLIVE_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_session.py"
                 --table "$<TARGET_FILE:reagentlive-table>")
         set_tests_properties(reagentlive.python-session PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # The MCP adapter over a generated module (skips itself without the MCP Python SDK).
+        add_test(NAME reagentlive.python-mcp
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_mcp.py"
+                --table "$<TARGET_FILE:reagentlive-table>")
+        set_tests_properties(reagentlive.python-mcp PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         add_test(NAME reagentlive.ida-labels
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_ida_labels.py")
         set_tests_properties(reagentlive.ida-labels PROPERTIES LABELS "reagentlive" TIMEOUT 60)

@@ -16,20 +16,6 @@
 
 namespace reagentlive::cli {
 namespace shape {
-// describe, and every object a result names. class_size only from a single
-// describe: the object's class size, which reaches past the last reflected
-// field (native members, object tails).
-struct Object {
-    RefId ref;
-    std::string name, className;
-    std::optional<uint32_t> classSize;
-    template<class V> static void Describe(V& v) {
-        v("ref", &Object::ref);
-        v("name", &Object::name);
-        v("class", &Object::className);
-        v("class_size", &Object::classSize);
-    }
-};
 struct Find {
     std::vector<Object> rows;
     std::optional<uint64_t> total;      // Only the first page counts.
@@ -65,6 +51,7 @@ struct Funcs {
 
 // A reflected field's layout, as fields, dump and params list it.
 struct FieldInfo {
+    static constexpr std::string_view TypeName = "ue.FieldInfo";
     std::string name, owner, type;
     uint32_t offset = 0, size = 0;
     std::optional<std::string> structName;
@@ -268,6 +255,7 @@ struct Params {
 };
 
 struct NameRow {
+    static constexpr std::string_view TypeName = "ue.Name";
     int32_t index = 0;
     std::optional<std::string> name;    // Absent: no pooled name at that index.
     template<class V> static void Describe(V& v) {

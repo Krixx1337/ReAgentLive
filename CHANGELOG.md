@@ -7,6 +7,26 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Typed calls and MCP tools, generated from the verb table**
+  ([design](docs/design.md#tool-interface), [clients](docs/client.md)):
+  - JSON calls: a line starting with `{` is `{verb, args}` with named
+    arguments, checked against the row like a typed line; literal refs
+    only (`$N` is refused). `batch` takes a list of calls.
+  - Every argument in the table has a key, a type and a default;
+    `int` and enum values are checked before the parser runs. `help
+    --json` adds `types` (named types such as `Chain`, `Object`,
+    `ue.Name`), `origins` (each with its title) and `blocks` on `watch`
+    and `record`. `Object` is a core type a pack fills (`peek`'s rows).
+  - `reagentlive_gen.py` writes typed Python functions for one console,
+    a host's verbs included, refusing to run against another table.
+    The session's hand-written per-verb methods and its paging helpers
+    (`find_all`, `search_addresses`, ...) are gone; `s.call(verb, args)`
+    sends any verb.
+  - `frontends/mcp/reagentlive_mcp.py` serves those functions as MCP tools
+    (needs the MCP Python SDK), read-only or destructive per `writes`.
+  - Hosts: `ConsoleConfig::hostCommand` takes the verb's row and its
+    checked `Args` in place of the line; rows give keys and types.
+
 - **The console describes itself; every caller breaks once.** One verb
   table says what each command takes and returns
   ([design](docs/design.md#self-describing-console)):

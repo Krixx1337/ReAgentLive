@@ -10,7 +10,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 
 | I want to | Read |
 |---|---|
-| Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [Python client](client.md#python-session-client) |
+| Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
 | Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
 | Try it in any process, no mod or SDK | [own-thread example](hosting.md#own-thread-example) |
 | Put the agent into a process | [hosting](hosting.md) |
@@ -35,13 +35,12 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | [commands/capture.md](commands/capture.md) | which command for which question about change; `snap`, `record`, replay |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
 | [hosting.md](hosting.md) | own-thread example, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
-| [client.md](client.md) | C++ client library, Python session client |
+| [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
 | [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |
 | [protocol.md](protocol.md) | shared section, exchange and hold, handshake, ops, statuses, limits |
 | [design.md](design.md) | principles, decisions (the self-describing console among them), rejected alternatives, not now |
 | [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
 | [ideas.md](ideas.md) | backlog with triggers; what is out |
-| [tool-interface.md](tool-interface.md) | plan: typed Python functions generated from the verb table, then MCP tools an agent picks |
 | [positioning.md](positioning.md) | the pitch, role among other tools, what it is not |
 
 ## Commands
@@ -92,5 +91,6 @@ and `status` lists the packs a host offers (`packs`).
 | Pin | bytes rewritten every tick until it expires ([memory](commands/memory.md#pin)) |
 | Trial | one guarded write that restores itself on expiry or clear ([memory](commands/memory.md)) |
 | Root | an object the host can always find again, for `watch-start --follow` |
-| Verb table | one row per console verb: its arguments and result type; `help`, parsing, the results page and strict Python results read it ([design](design.md#self-describing-console)) |
+| Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](design.md#self-describing-console)) |
+| JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the typed line is shorthand for it ([console](commands/console.md#json-calls)) |
 | Cache file | `%TEMP%\reagentlive-<pid>.cache`: state kept between console runs ([console](commands/console.md#fewer-round-trips)) |

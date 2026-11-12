@@ -18,10 +18,10 @@
   call afterwards.
 - **Getters or mixed sources:** one `batch { call ...; read ... }` per sample
   keeps a getter and raw reads in the same tick; loop it from the Python
-  session client (`items, same_tick = s.batch_results([...])`). Console polling gets
+  session client (`items, same_tick = s.batch_results([('call', {...}), ('read', {...})])`). Console polling gets
   at most one sample per host tick and misses ticks.
 - **Named fields:** `record` for 1-10 s of up to 8 fields; `snap`, then
-  `dump --changed` for before and after (`s.snap(ref)`, `s.dump(ref,
+  `dump --changed` for before and after (`c.ue.snap(ref)`, `c.ue.dump(ref,
   changed=True)['rows']`; a snapshot file carries the baseline across runs).
 - **Commands that always span ticks** (`each`, `census`, `search`, `refs`,
   `xrefs`, `touches`) break a `batch`'s tick: an `each` ran about 300 ticks

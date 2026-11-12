@@ -8,16 +8,18 @@
 #include "reagentlive/frontends/cli/values/json.h"
 
 namespace reagentlive::cli {
-// `table`: the result of `help --json` ({rows: [{verb, pack, usage, summary, result, ...}]}).
+// `table`: the result of `help --json` ({rows: [{verb, origin, usage, summary, result, ...}], types, origins}).
+// Headings are the origins' own titles: this file names no pack.
 inline std::string ResultsMarkdown(const Json& table) {
     const auto cell = [](std::string text) {
         // A table cell: `|` would end it.
         for (size_t at = 0; (at = text.find('|', at)) != std::string::npos; at += 2) text.insert(at, "\\");
         return text;
     };
-    const auto heading = [](const std::string& origin) {
-        return origin == "core" ? std::string("Core") : origin == "ue" ? std::string("Unreal pack") :
-            origin == "host" ? std::string("Host") : origin;
+    const auto heading = [&](const std::string& origin) {
+        for (const auto& item : table.value("origins", Json::array()))
+            if (item.at("origin") == origin) return item.at("title").get<std::string>();
+        return origin;
     };
     std::string out =
         "# Result shapes\n\n"
@@ -37,7 +39,8 @@ inline std::string ResultsMarkdown(const Json& table) {
         "| `[T]` | a list; `[T\\|null]`: elements may be null |\n"
         "| `{<key>: T}` | a map |\n"
         "| `{k: T, k?: T}` | an object; `?` marks a key that is omitted when it does not apply |\n"
-        "| `value` | game data: dynamic, shaped by what was read |\n\n"
+        "| `value` | game data: dynamic, shaped by what was read |\n"
+        "| `Name` | a named type, defined once under [Named types](#named-types); a pack's carry its prefix |\n\n"
         "## Conventions\n\n"
         "- `rows` is a result's list; `total` is how many there are in all when `rows` may show fewer.\n"
         "- A page carries `from` (where it began) and `next_cursor` (pass it as `--from`; absent when done).\n"
@@ -60,6 +63,10 @@ inline std::string ResultsMarkdown(const Json& table) {
             (row.value("writes", false) ? " **Writes or calls.**" : "") +
             " | `" + cell(row.at("result").get<std::string>()) + "` |\n";
     }
+    out += "\n## Named types\n\nTypes that several results share, as `help --json` lists them under `types`.\n\n"
+           "| Type | Definition |\n|---|---|\n";
+    for (const auto& [name, named] : table.value("types", Json::object()).items())
+        out += "| `" + name + "` | `" + cell(named.at("notation").get<std::string>()) + "` |\n";
     out +=
         "\n## Envelopes\n\n"
         "Every line is an envelope: `command`, `ok`, and `result` or `error`. Errors carry `kind` and\n"

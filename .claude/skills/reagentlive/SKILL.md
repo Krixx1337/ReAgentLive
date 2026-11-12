@@ -178,6 +178,6 @@ At the end of every ReAgentLive session, ask what would have saved time:
 - A lesson that fits no reference starts a new one only when there are three
   or more such lessons; until then it goes to the closest file.
 - References do not link to each other.
-- Code written twice goes into the ReAgentLive Python session client with a
-  test, not into the skill.
+- Code written twice goes into the console (a verb or a flag, so the generated
+  functions and tools get it) with a test, not into the skill.
 - Rewrite or delete stale lessons; no dated logs.

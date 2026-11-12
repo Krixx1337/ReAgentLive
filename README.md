@@ -103,7 +103,7 @@ see [what it is not](#what-it-is-not).
 | Test an idea without rebuilding | guarded writes, pins that hold a value, trial writes that undo themselves, engine calls |
 | Understand code without waiting | the fast lane: instructions, references, functions using an offset, signature checks |
 | Name what you found | label unreflected members once; export labels to your static tool |
-| Let an AI do all of the above | one console with JSON in and out, a Python client, and a skill that teaches the method |
+| Let an AI do all of the above | one console with JSON in and out, MCP tools and typed Python functions generated from its own verb table, and a skill that teaches the method |
 
 ## Try it in five minutes
 
@@ -207,7 +207,7 @@ running process can answer, and it hands every address over as
 **Version 0.1.0** ([changelog](CHANGELOG.md)): usable, and the API can still
 change before 1.0. Windows x64, C++23. Shipped: the in-process agent, tick-accurate reads,
 guarded writes, pins and trials, the Unreal pack, the fast lane, native
-objects, the console, the Python client and the own-thread example.
+objects, the console, the generated Python functions and MCP tools, and the own-thread example.
 Planned items wait for a real need ([backlog](docs/ideas.md)).
 
 **Docs: start at [docs/INDEX.md](docs/INDEX.md)**: pages by task, every

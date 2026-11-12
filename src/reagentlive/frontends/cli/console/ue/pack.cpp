@@ -247,6 +247,7 @@ std::vector<CachePack> SavePackCache(const Session& session) {
 }
 
 std::span<const Verb> PackVerbs() { return UnrealVerbs(); }
+Origin PackOrigin() { return UnrealOrigin; }
 std::span<const std::string> PackNotes() { return UnrealNotes(); }
 
 std::vector<std::string> OfferedPacks(Session& session) {
@@ -366,7 +367,7 @@ void DescribePeek(Session& session, std::span<PeekValue> values) {
         for (auto& value : values) {
             if (!value.read || !PointerShaped(value.value) || value.value & 7) continue;
             auto object = ue::Describe(client, ue::AddressRef(value.value));
-            if (object) value.object = ToJson(MakeObject(*object));
+            if (object) value.object = MakeObject(*object);
             else if (object.error().kind == Error::Kind::Timeout) break;
         }
     }
