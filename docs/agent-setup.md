@@ -145,11 +145,14 @@ Load the host DLL into a throwaway Python process and ask it for its
 status:
 
 ```powershell
-$p = Start-Process python -ArgumentList '-c', '"import ctypes,time; ctypes.WinDLL(r''<dir>\build\own-thread\reagentlive-own-thread.dll''); time.sleep(20)"' -PassThru -WindowStyle Hidden
+Start-Process python -ArgumentList '-c', '"import ctypes,time; ctypes.WinDLL(r''<dir>\build\own-thread\reagentlive-own-thread.dll''); time.sleep(20)"' -WindowStyle Hidden
 Start-Sleep 2
-& "<dir>\build\own-thread\reagentlive.exe" $p.Id -c "status"
-Stop-Process $p -Force
+& "<dir>\build\own-thread\reagentlive.exe" -c "status"
 ```
+
+No pid: the console finds the one process with the agent (the pid
+`Start-Process` returns can be a launcher's, such as the Microsoft Store
+Python's, which has already exited). The Python process ends by itself.
 
 Pass when the result has `"ok":true`, `"ticking":true` and
 `"host_thread":"own"`. If it fails, report the output; do not work around

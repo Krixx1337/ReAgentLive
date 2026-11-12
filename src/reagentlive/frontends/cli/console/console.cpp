@@ -729,7 +729,9 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     };
     if (oneShot && OfflineOnly(verbs, *oneShot)) return offline("");
     if (!pid) pid = FindProcess(config.exeName);
-    if (!pid) return offline(std::string("Target not running. ") + usage);
+    // A console with no exe name to look for (the own-thread example's) needs the pid.
+    if (!pid)
+        return offline(std::string(config.exeName.empty() ? "No target: pass its pid. " : "Target not running. ") + usage);
     if (!namesFile.empty()) {
         std::ifstream file(namesFile);
         if (!file && namesRequired) return startupError("cannot open names file");

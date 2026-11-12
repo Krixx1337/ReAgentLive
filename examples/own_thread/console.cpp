@@ -1,6 +1,7 @@
 // reagentlive: the generic console for the own-thread host (host.cpp). Core
 // layout only, so Unreal commands are refused by the agent's op list. With no
-// pid it attaches to the one process that has an own-thread agent.
+// pid it attaches to the one process that has an own-thread agent; with none
+// or several it answers help and stats only.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -24,11 +25,12 @@ bool IsNumber(std::wstring_view text) {
     return !text.empty() && std::ranges::all_of(text, [](wchar_t c) { return c >= L'0' && c <= L'9'; });
 }
 
-// True when the arguments already name a pid or replay a file.
+// True when the arguments already name a pid or replay a file. The values of
+// the console's flags are skipped: a session id may be all digits.
 bool HasTarget(int argc, wchar_t** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::wstring_view arg(argv[i]);
-        if (arg == L"-c" || arg == L"--names") { ++i; continue; }
+        if (arg == L"-c" || arg == L"--names" || arg == L"--caller" || arg == L"--session") { ++i; continue; }
         if (arg == L"--replay" || IsNumber(arg)) return true;
     }
     return false;
@@ -56,12 +58,13 @@ int wmain(int argc, wchar_t** argv) {
     std::vector<wchar_t*> args(argv, argv + argc);
     std::wstring pid;
     if (!HasTarget(argc, argv)) {
+        // With several, none is picked: the console still answers help and
+        // stats, and refuses the rest until a pid is given.
         const auto processes = AgentProcesses();
         if (processes.size() > 1) {
             std::fprintf(stderr, "Several processes have an agent; pass one pid:");
             for (const DWORD process : processes) std::fprintf(stderr, " %lu", process);
             std::fprintf(stderr, "\n");
-            return 1;
         }
         if (processes.size() == 1) {
             pid = std::to_wstring(processes[0]);

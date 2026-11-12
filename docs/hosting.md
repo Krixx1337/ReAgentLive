@@ -11,7 +11,8 @@ The fast way in, for any x64 process with no mod and no SDK:
 `examples/own_thread/host.cpp`, an ordinary DLL that starts one thread on
 load and ticks the core every couple of milliseconds, and the generic
 console `reagentlive.exe` (`examples/own_thread/console.cpp`). Its
-`CMakeLists.txt` consumes the library the way any host project would.
+`CMakeLists.txt` consumes the library the way any host project would; its
+[README](../examples/own_thread/README.md) is the quick start.
 
 ```powershell
 # From a VS x64 developer shell, in the ReAgentLive folder; the example builds on its own:
@@ -22,8 +23,9 @@ reagentlive -c "status; modules; region <module>+0x1000"
 ```
 
 - With no pid, the console attaches to the one process that has the
-  example's section (`Local\reagentlive-<pid>`); with several it lists
-  them.
+  example's section (`Local\reagentlive-<pid>`). With none or several (it
+  lists them on stderr) it answers `help` and `stats` only, so the MCP
+  server still starts; pass a pid for the rest.
 - **Works:** [memory commands](commands/memory.md), the
   [fast lane](commands/fast-lane.md) and
   [native objects](commands/native-objects.md).
