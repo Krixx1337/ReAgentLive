@@ -2,6 +2,7 @@
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/state/names.h"
+#include "reagentlive/frontends/cli/state/usage.h"
 #include "reagentlive/frontends/cli/state/ue/native_names.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
@@ -60,6 +61,7 @@ TEST_CASE("names files report their first malformed line") {
 TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     cli::CacheData data;
     data.owner = 0xabc;
+    data.session = "20260101T000000-42";
     data.modules = {{"Game.exe", 0x7ff600000000, 0x1000}, {"engine dll.dll", 0x7ffa00000000, 0x2000}};
     // The last one is address-only: a pointer get followed, kept as its address.
     data.refs = {{0x7000, 1, 2}, {0x8000, 3, 4}, {0x9000, -1, 0}};
@@ -68,6 +70,7 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     const auto loaded = LoadCache(text);
     REQUIRE(loaded.has_value());
     CHECK(loaded->owner == data.owner);
+    CHECK(loaded->session == data.session);
     REQUIRE(loaded->modules.size() == 2);
     CHECK(loaded->modules[1].name == "engine dll.dll");
     CHECK(loaded->modules[1].base == 0x7ffa00000000);
@@ -75,11 +78,11 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     CHECK(loaded->refs == data.refs);
     CHECK(loaded->packs == data.packs); // Kept verbatim, trailing tabs included.
     CHECK_FALSE(LoadCache(text.substr(0, text.size() - 4)).has_value()); // No end line.
-    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t0\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\nbogus\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\npack\tue\t3\nclass\tA\t0x10#1:1\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\npack\t\t0\nend\n").has_value()); // A pack has a name.
-    CHECK(LoadCache("reagentlive cache 8\nowner\t5\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 9\nowner\t0\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 9\nowner\t5\nbogus\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 9\nowner\t5\npack\tue\t3\nclass\tA\t0x10#1:1\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 9\nowner\t5\npack\t\t0\nend\n").has_value()); // A pack has a name.
+    CHECK(LoadCache("reagentlive cache 9\nowner\t5\nend\n").has_value());
     CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
     CHECK_FALSE(LoadCache("reagentlive cache 3\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
 }
@@ -224,4 +227,60 @@ TEST_CASE("label files a member under its class and appends a line the names fil
     CHECK(layout::Value(member.field, bytes) == Json{1.0, 2.0, 3.0});
     std::error_code ignored;
     std::filesystem::remove_all(folder, ignored);
+}
+
+namespace {
+UsageLine Usage(std::string session, std::string verb, uint64_t out, std::string hash = "h") {
+    UsageLine line;
+    line.time = "2026-01-02T03:04:05Z";
+    line.session = std::move(session);
+    line.verb = std::move(verb);
+    line.origin = "core";
+    line.caller = "tool";
+    line.hash = std::move(hash);
+    line.out = out;
+    return line;
+}
+}
+
+TEST_CASE("a usage line round-trips, and a torn or foreign line is skipped") {
+    auto line = Usage("s1", "read", 120);
+    line.flags = {"--type"};
+    line.in = 30;
+    line.ok = false;
+    line.refused = "syntax";
+    line.ms = 1.26;
+    line.batch = true;
+    const auto text = UsageText(line);
+    CHECK(text.find('\n') == std::string::npos);
+    const auto parsed = ParseUsageLine(text);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->session == "s1");
+    CHECK(parsed->flags == std::vector<std::string>{"--type"});
+    CHECK(parsed->in == 30);
+    CHECK(parsed->out == 120);
+    CHECK_FALSE(parsed->ok);
+    CHECK(parsed->refused == "syntax");
+    CHECK(parsed->ms == doctest::Approx(1.3));
+    CHECK(parsed->batch);
+    CHECK_FALSE(ParseUsageLine(text.substr(0, text.size() / 2)).has_value());
+    CHECK_FALSE(ParseUsageLine("{\"verb\": \"read\"}").has_value());
+    CHECK(ParseUsage(text + "\n{torn\n" + UsageText(Usage("s2", "find", 1)) + "\n").size() == 2);
+    CHECK(UsageHash("read 0x1000") == UsageHash("read 0x1000"));
+    CHECK(UsageHash("read 0x1000") != UsageHash("read 0x1001"));
+}
+
+TEST_CASE("the usage log past its cap keeps its newest whole sessions") {
+    std::string text;
+    for (const char* session : {"old", "mid", "new"})
+        for (int i = 0; i < 4; ++i) text += UsageText(Usage(session, "read", 1)) + "\n";
+    CHECK_FALSE(TrimUsage(text, text.size()).has_value());
+    const uint64_t perSession = text.size() / 3;
+    // Room for two sessions in three quarters of the cap: old goes, mid and new stay whole.
+    const auto trimmed = TrimUsage(text, perSession * 2 * 4 / 3 + 8);
+    REQUIRE(trimmed.has_value());
+    const auto lines = ParseUsage(*trimmed);
+    REQUIRE(lines.size() == 8);
+    CHECK(lines.front().session == "mid");
+    CHECK(lines.back().session == "new");
 }

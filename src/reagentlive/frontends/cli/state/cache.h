@@ -16,7 +16,8 @@
 // agent never matches. It holds what costs round trips to rebuild: the loaded
 // modules and their headers, the last $N list, and a block per engine pack
 // (state/ue/cache_ue.h) that the core keeps without reading it. Refs carry
-// index and serial, so the agent refuses stale ones.
+// index and serial, so the agent refuses stale ones. It also names the usage
+// log's session (state/usage.h), which one-shot runs share.
 namespace reagentlive::cli {
 // A pack's block: its name and its lines, verbatim.
 struct CachePack {
@@ -26,12 +27,13 @@ struct CachePack {
 };
 struct CacheData {
     uint32_t owner = 0;
+    std::string session;                                            // The usage log's; empty: none.
     std::vector<Ref> refs;                                          // $1..$N.
     std::vector<Module> modules;                                    // Exe first.
     std::vector<std::pair<uint64_t, image::Layout>> layouts;        // Module headers by module base.
     std::vector<CachePack> packs;
 };
-constexpr std::string_view CacheHeader = "reagentlive cache 8";
+constexpr std::string_view CacheHeader = "reagentlive cache 9";
 constexpr size_t MaxCachedModules = 1024, MaxCachedPackLines = size_t{1} << 22;
 
 namespace cache_detail {
@@ -49,6 +51,7 @@ inline std::vector<std::string_view> SplitTabs(std::string_view line) {
 inline std::string SaveCache(const CacheData& data) {
     std::ostringstream out;
     out << CacheHeader << "\nowner\t" << data.owner << '\n';
+    if (!data.session.empty()) out << "session\t" << data.session << '\n';
     for (const auto& module : data.modules)
         out << "module\t0x" << std::hex << module.base << std::dec << '\t' << module.size << '\t' << module.name << '\n';
     for (const auto& [base, layout] : data.layouts) {
@@ -91,6 +94,10 @@ inline std::optional<CacheData> LoadCache(std::string_view text) {
     for (size_t i = 2; i < lines.size(); ++i) {
         parts = cache_detail::SplitTabs(lines[i]);
         if (parts[0] == "end") return data;
+        if (parts[0] == "session" && parts.size() == 2 && !parts[1].empty()) {
+            data.session = parts[1];
+            continue;
+        }
         if (parts[0] == "module" && parts.size() == 4) {
             Module module{std::string(parts[3]), 0, 0};
             if (!text::Number(parts[1], module.base) || !module.base || !text::Number(parts[2], module.size) ||

@@ -170,11 +170,16 @@ def _wrap(value, kind, where, named):
 
 
 class Session:
-    """One console process; not thread-safe. Use as a context manager."""
+    """One console process; not thread-safe. Use as a context manager.
 
-    def __init__(self, console, args=()):
-        self._process = subprocess.Popen([console, *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                         stderr=subprocess.DEVNULL, text=True, bufsize=1)
+    `caller` tells the console's usage log who reads the results: 'script'
+    (the default: a script's output never reaches an agent's context) or
+    'tool' (an agent reads every result, as through the MCP adapter).
+    """
+
+    def __init__(self, console, args=(), caller='script'):
+        self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         self._types = {}
         try:
             table = self.send('help --json')

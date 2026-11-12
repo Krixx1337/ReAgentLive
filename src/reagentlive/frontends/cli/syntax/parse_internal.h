@@ -14,6 +14,7 @@ inline Parsed Fail(std::string why = {}) { return Parsed(std::unexpect, std::mov
 Parsed Help(const Args& args, const ParseContext& context);
 Parsed Status(const Args& args, const ParseContext& context);
 Parsed Quit(const Args& args, const ParseContext& context);
+Parsed Stats(const Args& args, const ParseContext& context);
 Parsed Batch(const Args& args, const ParseContext& context);
 Parsed Read(const Args& args, const ParseContext& context);
 Parsed Peek(const Args& args, const ParseContext& context);

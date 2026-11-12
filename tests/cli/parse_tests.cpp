@@ -393,6 +393,11 @@ TEST_CASE("local commands do not build a request") {
     CHECK(Parse("help", NoRefs)->kind == Kind::Help);
     CHECK(Parse("status", NoRefs)->kind == Kind::Status);
     CHECK(Parse("quit", NoRefs)->kind == Kind::Quit);
+    CHECK(Parse("stats", NoRefs)->kind == Kind::Stats);
+    CHECK_FALSE(Parse("stats", NoRefs)->all);
+    CHECK(Parse("stats --all", NoRefs)->all);
+    CHECK_FALSE(Parse("stats extra", NoRefs).has_value());
+    CHECK_FALSE(Parse("batch { stats }", NoRefs).has_value());
     CHECK_FALSE(Parse("frobnicate", NoRefs).has_value());
 }
 

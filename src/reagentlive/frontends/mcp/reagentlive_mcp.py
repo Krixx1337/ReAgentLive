@@ -21,7 +21,9 @@ ticks as possible.
 The module is checked against the console before the server starts: a
 module generated from another table is refused. The console starts on the
 first tool call and again after it exits, so the tool list is known with
-no target running. Transport: standard input and output; the protocol
+no target running; with none, it answers `help` and `stats` (the usage log
+outlives the target) and refuses the rest. Its usage log marks these calls
+`tool`: their results reach the agent's context. Transport: standard input and output; the protocol
 revision is whichever the installed SDK negotiates.
 
 Needs the MCP Python SDK (its FastMCP, mcp.server.fastmcp); the session
@@ -84,7 +86,7 @@ class Live:
 
     def get(self):
         if self.session is None:
-            self.session = Session(self.console, self.args)
+            self.session = Session(self.console, self.args, caller='tool')
             self.wrapped = self.module.Console(self.session)
         return self.wrapped
 
@@ -110,7 +112,8 @@ def make_tool(live, verb, method):
         try:
             result = getattr(target, verb['method'])(**kwargs)
         except ReAgentLiveError as error:
-            if error.error.get('message') == 'console exited' or error.command == 'startup':
+            # No target (kind startup): the console has ended; the next call starts it again.
+            if error.error.get('message') == 'console exited' or error.error.get('kind') == 'startup':
                 live.drop()
             # The whole error object, not only its message: a refused --expect carries `found`, every error its kind.
             raise RuntimeError(f'{error}; error: {json.dumps(error.error)}') from None

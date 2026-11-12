@@ -37,6 +37,17 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   (`console/no_pack.cpp`). Its table, `help`, generated functions and MCP
   tools hold no pack verbs and no core verb marked `needsPack` (`trial`).
   The default console's table and hash are unchanged.
+- **Usage log and `stats`** ([console](docs/commands/console.md#usage-log-and-stats),
+  [design](docs/design.md#usage-log)): the console appends one line of
+  facts per call to `<console>.usage.jsonl` (verb, flag names, input hash,
+  sizes, refusal kind, time; never values). `stats` ranks a session's
+  verbs by output with `unfiltered`, `repeated` and `refused` marks and
+  the largest calls; `--all` covers the log and lists verbs never called.
+  `--caller tool|script|shell` (the Python session passes `script`, the
+  MCP adapter `tool`) separates context cost; `--no-usage` turns it off.
+  With no target the console answers `help` and `stats` and refuses the
+  rest as `startup`, then ends. The cache file is format 9 (it names the
+  usage session one-shot runs share).
 - **Typed watches:** a range may be `<addr>:f64` or `<addr>:i32[2]`; its
   samples are numbers and the result adds a `summary` per value (first,
   last, least, greatest, `per_second`). The type is kept in the agent's

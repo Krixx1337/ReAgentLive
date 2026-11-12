@@ -122,6 +122,13 @@ to cross to the static tool (native-code reference).
   `census`, `search`, `refs`, `xrefs` or `touches` spans ticks: read
   `spans_ticks`.
 - Add `--timing` to a line to see its round trips.
+- **Measure the session, don't recall it.** `stats` (a tool and a verb;
+  works after the target has gone) ranks this session's verbs by output
+  and marks `unfiltered`, `repeated` and `refused` calls. Call it before a
+  long step and change course on the marks (filter, batch, keep a result
+  instead of asking again, read `help <verb>` after a refusal). End the
+  final report with its totals (`out_by_caller.tool` is the context cost)
+  and the two or three costliest habits.
 - One console per agent: a second one is refused as `busy`.
 
 ## Pitfalls that bite any session
@@ -163,7 +170,9 @@ with the evidence.
 
 ## Keeping this skill current
 
-At the end of every ReAgentLive session, ask what would have saved time:
+At the end of every ReAgentLive session, read `stats` and ask what would
+have saved time; `stats --all` shows patterns across sessions and the
+verbs nobody uses:
 
 - **Scope first.** A lesson that would hold in another game goes here,
   worded without the game (an Unreal-only one under `references/unreal/`).

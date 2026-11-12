@@ -75,6 +75,7 @@ and `status` lists the packs a host offers (`packs`).
 | `get`, `--meta` | Unreal pack | [console](commands/console.md#fewer-round-trips) |
 | `batch`, `--timing` | core | [console](commands/console.md#fewer-round-trips) |
 | `status`, `base`, `help`, `quit`, `-c` | core | [console](commands/console.md) |
+| `stats`, `--caller`, `--no-usage` | core; no target needed | [console](commands/console.md#usage-log-and-stats) |
 
 ## Glossary
 
@@ -96,3 +97,4 @@ and `status` lists the packs a host offers (`packs`).
 | Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](design.md#self-describing-console)) |
 | JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the typed line is shorthand for it ([console](commands/console.md#json-calls)) |
 | Cache file | `%TEMP%\reagentlive-<pid>.cache`: state kept between console runs ([console](commands/console.md#fewer-round-trips)) |
+| Usage log | `<console>.usage.jsonl`: one line of facts per console call, read by `stats` ([console](commands/console.md#usage-log-and-stats)) |

@@ -40,6 +40,20 @@ struct Timing {
 // measured over that interval, at least 100 ms.
 struct Beat { uint64_t ticks; Clock::time_point at; };
 
+// The usage log (state/usage.h): where it goes, this run's session and caller.
+struct Usage {
+    std::filesystem::path path;             // <console>.usage.jsonl; stats reads it.
+    bool record = false;                    // False with --no-usage.
+    std::string session, caller = "shell";
+};
+// The line being run: its output so far and how it ended. A batch's items
+// add their own output to `inner`, so the batch's line keeps its wrapper alone.
+struct LineUsage {
+    uint64_t out = 0, inner = 0;
+    bool ok = true;
+    std::string refused;
+};
+
 // The engine pack's state for one console run (ue/internal_ue.h).
 struct PackState;
 
@@ -67,6 +81,8 @@ struct Session {
     std::map<uint64_t, image::Layout> layouts;
     std::map<uint64_t, std::unique_ptr<unwind::Table>> unwindTables;
     std::shared_ptr<PackState> pack;        // Made by the pack (pack.h).
+    Usage usage;
+    LineUsage* line = nullptr;              // The line being run, for the usage log.
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}
 };
@@ -107,6 +123,7 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
 void RunTouches(Session& session, const Command& command, std::string_view jsonCommand);
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand);
 void RunRegion(Session& session, const Command& command, std::string_view jsonCommand);
+void RunStats(Session& session, const Command& command, std::string_view jsonCommand);
 // The region kind at an address (code, data, private, mapped...), nullopt
 // when the agent has no region op or the query fails.
 std::optional<std::string> RegionKind(Session& session, uint64_t address);

@@ -100,6 +100,10 @@ module calls through it; scripts use it for the rest.
   console's: follow `next_cursor` with `start`, or use the verb's limit
   flag (`census --limit 0`).
 - `s.table_hash` is the console's `table_hash`.
+- `Session(console, args, caller='script')` starts the console with
+  `--caller`: its [usage log](commands/console.md#usage-log-and-stats)
+  counts a script's output apart from an agent's context. Pass
+  `caller='tool'` when an agent reads every result.
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
   value into bytes; `f32`/`u64`/... decoders and `pack` go the other way.
 
@@ -141,7 +145,12 @@ python reagentlive_mcp.py --console <console.exe> --module my_console.py [-- <pi
 - **Startup:** the adapter compares the module's table hash with the
   console's (`help --json`, no target) and refuses to start on a
   mismatch. The console itself starts on the first tool call and again
-  after it exits, so the tool list is there with no target running.
+  after it exits, so the tool list is there with no target running. With
+  no target the console answers `help` and `stats` and refuses the rest
+  as `startup`, after which the adapter starts it again on the next call.
+- **Usage:** the console runs with `--caller tool`, so `stats` counts
+  every tool result as context. Each result goes to the client twice,
+  as text and as structured content.
 - **Cost:** with every pack verb the tool list is about 110 KB of schema;
   a client that loads every tool's schema up front pays that before any
   work.

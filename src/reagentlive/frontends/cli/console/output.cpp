@@ -34,8 +34,24 @@
 namespace reagentlive::cli::detail {
 
 
+namespace {
+// The usage log's view of a printed record: its size and whether it was refused.
+void Count(Session& session, const Json& record, size_t size) {
+    if (!session.line) return;
+    session.line->out += size;
+    if (session.line->ok && record.contains("ok") && record["ok"].is_boolean() && !record["ok"].get<bool>()) {
+        session.line->ok = false;
+        const auto& error = record.contains("error") ? record["error"] : Json();
+        session.line->refused = error.is_object() && error.contains("kind") && error["kind"].is_string() ?
+            error["kind"].get<std::string>() : "error";
+    }
+}
+std::string Text(const Json& record) { return record.dump(-1, ' ', true, Json::error_handler_t::replace); }
+}
+
 void PrintJson(Session& session, Json record) {
     if (session.capture) {
+        if (session.line && session.usage.record) Count(session, record, Text(record).size() + 1);
         session.capture->push_back(std::move(record));
         return;
     }
@@ -46,7 +62,9 @@ void PrintJson(Session& session, Json record) {
             {"wait_ms", static_cast<double>(stats.waitMicroseconds - session.timing->start.waitMicroseconds) / 1000.0},
             {"total_ms", total}};
     }
-    std::puts(record.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
+    const std::string text = Text(record);
+    Count(session, record, text.size() + 1);
+    std::puts(text.c_str());
     std::fflush(stdout);
 }
 

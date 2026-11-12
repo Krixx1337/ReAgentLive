@@ -145,6 +145,52 @@ where every question was answered and the cost was output and turns:
   (game knowledge, a host's verb). A bool's `--nonzero` already tested its
   bit; readable names already worked in `get` paths.
 
+## Usage log
+
+Those session lessons were reconstructed afterwards from memory, as
+estimates. The console now records each call, and `stats` reads it back
+([console](commands/console.md#usage-log-and-stats)), for two readers: the
+agent in the session (before a long step, and for its final report) and
+whoever improves the tool or a skill across sessions.
+
+- **The console records, because every path ends there:** typed lines,
+  JSON calls, the generated functions and the MCP tools all run a console
+  command. Nothing is recorded in the target or the adapter.
+- **One file beside the console, one line per call.** Per-session and
+  all-time figures come from the same lines, so neither had to be chosen.
+- **Facts, never values.** No addresses, names, paths or results: they are
+  large, mean nothing later and would keep the target's data in a file
+  that outlives the session. A hash of the input finds the same call made
+  again.
+- **The caller says who it is** (`--caller`): only a tool's output lands in
+  an agent's context, so context cost is its own number.
+- **`stats` is a core verb**, a tool and a function like any other, and it
+  answers with no target, so an agent can reflect after the target has
+  gone. For that, a console with no target answers `help` and `stats` and
+  ends on any other verb (kind `startup`), so a client starts it again.
+- **Marks, not advice.** `unfiltered`, `repeated` and `refused` state what
+  happened; the skill says what to do. `unfiltered` uses a fixed list of
+  filter flags (`--match`, `--nonzero`, `--own`, `--changed`, `--cls`,
+  `--limit`) rather than a mark on each flag's row: the same names mean
+  the same thing on every verb, and a row mark would change `help --json`
+  and every generated module for no caller's gain.
+- **A batch's commands get their own lines**, under their own verbs, and
+  the batch one for its wrapper alone, so per-verb figures stay true and
+  totals count nothing twice.
+- **The caller's own calls are not recorded:** `help --json` (every
+  session client reads the table at start) and `quit`.
+
+| Rejected | Why |
+|---|---|
+| Recording in the MCP adapter | misses scripts and the text line, and a second log would be wanted for them |
+| A stats service or a database | the console keeps state in files; there is no daemon ([round trips](#round-trips)) |
+| Storing arguments or results | size, and the target's data in a file that outlives the session |
+| A warning inside a large result | more output to cure output; the agent asks `stats` when it wants to know |
+| Counting tokens | depends on the model; characters rank the same verbs |
+| Advice in the result ("use `--match`") | a rule wrong for one call misleads; the marks state what happened |
+| Per-session files | all-time figures would read many files; one file with a session on each line gives both |
+| A `caller` key on each JSON call (to leave out a client's table read) | another key on every call for one line; leaving `help --json` out covers it |
+
 ## Place among other tools
 
 ReAgentLive overlaps general tools at its base and should not grow further into

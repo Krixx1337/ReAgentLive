@@ -1,5 +1,5 @@
 // reagentlive CLI: Parse, the console syntax entry point (parse.h), and the
-// verbs that reach no agent (help, status, quit, batch).
+// verbs that reach no agent (help, status, quit, stats, batch).
 #include <string>
 #include "reagentlive/frontends/cli/syntax/parse_internal.h"
 
@@ -49,11 +49,18 @@ Parsed Quit(const Args&, const ParseContext&) {
     return command;
 }
 
+Parsed Stats(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::Stats;
+    command.all = args.Has("--all");
+    return command;
+}
+
 namespace {
 // Timed commands hold the console, not the tick; the rest have nothing to hold.
 bool NotInBatch(std::string_view verb) {
     return verb == "batch" || verb == "watch" || verb == "record" || verb == "quit" || verb == "exit" || verb == "q" ||
-        verb == "help" || verb == "?" || verb == "status";
+        verb == "help" || verb == "?" || verb == "status" || verb == "stats";
 }
 }
 

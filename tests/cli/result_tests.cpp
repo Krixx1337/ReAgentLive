@@ -780,3 +780,73 @@ TEST_CASE("each refusals and kept reasons speak of the parameter they name") {
     CHECK(calls::EachRefusal(plain, Structs).empty());
     CHECK(calls::KeptReason(plain, Structs).empty());
 }
+
+TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeated and refused calls") {
+    const auto line = [](std::string session, std::string verb, uint64_t out, std::string hash,
+                         std::vector<std::string> flags = {}) {
+        UsageLine usage;
+        usage.time = "2026-01-02T03:04:0" + std::to_string(hash.size()) + "Z";
+        usage.session = std::move(session);
+        usage.verb = std::move(verb);
+        usage.origin = "ue";
+        usage.caller = "tool";
+        usage.hash = std::move(hash);
+        usage.flags = std::move(flags);
+        usage.in = 10;
+        usage.out = out;
+        usage.ms = 2;
+        return usage;
+    };
+    std::vector<UsageLine> lines = {
+        line("s1", "dump", 5000, "a"),                        // No filter: unfiltered.
+        line("s1", "dump", 300, "bb", {"--match"}),
+        line("s1", "dump", 5000, "a"),                        // The same input again: repeated, unfiltered.
+        line("s1", "find", 200, "ccc"),
+        line("s1", "batch", 40, "dddd"),
+        line("s1", "read", 100, "eeeee"),
+        line("s2", "describe", 9000, "f"),                    // Another session: not in s1's figures.
+    };
+    lines[3].ok = false;
+    lines[3].refused = "syntax";
+    lines[4].origin = lines[5].origin = "core";
+    lines[5].batch = true;                                  // Inside the batch: counted under read.
+    const auto stats = MakeStats(lines, std::string("s1"), AllVerbs());
+    const auto json = Checked(stats);
+    CHECK(json["session"] == "s1");
+    CHECK_FALSE(json.contains("never_called"));
+    CHECK(stats.totals.calls == 5);                         // The batched read is inside the batch's call.
+    CHECK(stats.totals.out == 10640);
+    CHECK(stats.totals.outByCaller.at("tool") == 10640);
+    CHECK(stats.totals.in == 50);
+    CHECK(stats.totals.refused == 1);
+    REQUIRE(stats.rows.size() == 4);
+    CHECK(stats.rows[0].verb == "dump");
+    CHECK(stats.rows[0].calls == 3);
+    CHECK(stats.rows[0].out == 10300);
+    CHECK(stats.rows[0].largest == 5000);
+    CHECK(stats.rows[0].unfiltered == 2u);
+    CHECK(stats.rows[0].repeated == 1u);
+    CHECK(stats.rows[1].verb == "find");
+    CHECK(stats.rows[1].unfiltered == 1u);                  // find has --cls.
+    CHECK(stats.rows[1].refused == 1u);
+    CHECK(stats.rows[1].refusedBy->at("syntax") == 1);
+    const auto read = std::ranges::find(stats.rows, std::string("read"), &shape::StatsVerb::verb);
+    REQUIRE(read != stats.rows.end());
+    CHECK(read->batched == 1u);
+    CHECK_FALSE(read->unfiltered.has_value());              // read has no filter flags.
+    REQUIRE(stats.largest.size() == 5);
+    CHECK(stats.largest[0].verb == "dump");
+    CHECK(stats.largest[0].out == 5000);
+
+    const auto all = MakeStats(lines, std::nullopt, AllVerbs());
+    Checked(all);
+    CHECK(all.sessions == 2u);
+    CHECK(all.since == "2026-01-02T03:04:01Z");
+    CHECK(all.rows[0].verb == "dump");                      // 10300 over describe's 9000.
+    CHECK(std::ranges::find(*all.neverCalled, "census") != all.neverCalled->end());
+    CHECK(std::ranges::find(*all.neverCalled, "dump") == all.neverCalled->end());
+
+    const auto none = MakeStats({}, std::string(), AllVerbs());
+    CHECK_FALSE(Checked(none).contains("session"));
+    CHECK(none.rows.empty());
+}

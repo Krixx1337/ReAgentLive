@@ -70,8 +70,8 @@ rule.
 |---|---|---|
 | `syntax/` | `reagentlive::cli`: the parsed `Command`, `Parse` (`parse.h`), tokens, layouts, byte patterns (`pattern.h`) | includes only `syntax/` and `core/`; no nlohmann/json, no decoder, no I/O (the loopback tests build it without JSON) |
 | `values/` | how a value prints: `format.h`, `json.h`, `layout_json.h` | pure; never `console/` |
-| `state/` | files that outlive a run: `cache.h`, `names.h` | pure; never `console/` |
-| `results/` | result builders: `result_json.h`, `labels.h` | pure; never `console/` |
+| `state/` | files that outlive a run: `cache.h`, `names.h`, `usage.h` (the usage log's line and trim) | pure; never `console/` |
+| `results/` | result builders: `result_json.h`, `labels.h`, `stats.h` | pure; never `console/` |
 | `code/` | the fast lane and native objects: decoder, unwind, image, xrefs, touches, `sig` checker | pure; never `console/` |
 | `console/` | `reagentlive::console`: the only folder with I/O (agent, files, stdout) | `internal.h` and `pack.h` are for `console/` only |
 
@@ -111,8 +111,8 @@ one file:
 |---|---|
 | `syntax/verb.h`, `results/verbs.h`, `results/ue/verbs_ue.h` | the verb table: the row type with the tokeniser and usage, the core's rows, the pack's rows |
 | `results/schema.h`, `results/docs.h` | typed result structs (one field list writes and describes the JSON), and the results page generated from the table |
-| `console/console.cpp` | `help`, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole` |
-| `console/output.cpp` | JSON records, the check of a result against its row, errors, `--timing`, batch capture |
+| `console/console.cpp` | `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole` and its no-target mode |
+| `console/output.cpp` | JSON records, the check of a result against its row, errors, `--timing`, batch capture, each line's output size for the usage log |
 | `console/memory.cpp` | `status`, read decoding, `pin`, trials, `watch` (blocking and detached), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
 | `console/sig.cpp` | `sig-check`, `sig-file`, `sig-bytes`: byte signatures against the live image |

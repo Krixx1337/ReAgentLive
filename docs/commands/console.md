@@ -1,8 +1,8 @@
 # Console
 
 How to drive any ReAgentLive console: the command line, JSON calls,
-addresses and refs, keeping round trips down, one-shot runs and the JSON
-Lines output.
+addresses and refs, keeping round trips down, one-shot runs, the usage log
+and `stats`, and the JSON Lines output.
 What each command does lives in its area page ([index](../INDEX.md#commands));
 what each takes and returns, in [result shapes](results.md) and in `help`.
 
@@ -204,13 +204,73 @@ then `dump <ref> --changed file` in a later run). Literal refs always work. With
 `-c`, send one command per stdin line. The console keeps refs and the
 baseline until EOF or `quit`.
 
+Console arguments: `[pid] [-c "..."] [--names <file>] [--caller
+tool|script|shell] [--no-usage]`; the last two are the
+[usage log](#usage-log-and-stats)'s.
+
+**No target.** When the target is not running or the agent cannot be
+attached, the console answers `help` and `stats` from its table and its
+log; any other verb is refused with an error of kind `startup` (why there
+is no target) and the console ends, so a client starts it again once the
+target runs. `-c` lines that are all `help` or `stats` never attach.
+
+## Usage log and stats
+
+Every call the console runs appends one line to `<console>.usage.jsonl`
+beside the console executable, so an agent can look back at what its
+session cost. Every path ends in the console (typed lines, JSON calls,
+the generated functions, the MCP tools), so one log covers them
+([design](../design.md#usage-log)).
+
+- **A line holds facts about the call, never its values:** time, session,
+  verb and origin, caller, the names of the flags given, a hash of the
+  input line, input and output characters, `ok` or the refusal's error
+  kind, milliseconds, and `batch` for a command that ran inside one. No
+  addresses, names, paths or results.
+- **A session** is one console run. One-shot (`-c`) runs against the same
+  agent instance share one through the [cache file](#fewer-round-trips).
+- **The caller** is `tool` (an agent reads every result, as through the
+  MCP adapter), `script` (the Python session's default: only what the
+  script returns reaches the agent) or `shell` (started by hand, the
+  default). Only `tool` output is context cost.
+- **Not recorded:** `help --json` and `quit` (a program's own start and
+  end), runs with no target, and anything with `--no-usage`.
+- **A batch** writes a line per command, under its own verb, and one for
+  itself holding only its wrapper, so no output counts twice.
+- **Capped:** past 4 MB the oldest sessions are dropped when a console
+  starts, down to three quarters of that. `stats --all` gives `since`, the
+  oldest line kept.
+
+`stats` reports the session the console is in (with no target: the log's
+latest); `stats --all` every session in the log, plus `never_called`, the
+verbs of this table none of them used. Ranked by output, largest first:
+
+| Key | Holds |
+|---|---|
+| `totals` | `calls` (what was sent: a batch's commands are inside its call), `in`, `out`, `out_by_caller` (`tool` is the context cost), `refused`, `ms` |
+| `rows` | per verb: `calls`, `out` and its `largest`, `ms`, `batched`, and the marks |
+| `largest` | the five largest single calls: verb, flag names, output, caller |
+
+| Mark | Counts calls that... |
+|---|---|
+| `unfiltered` | went to a verb with `--match`, `--nonzero`, `--own`, `--changed`, `--cls` or `--limit` and gave none of them |
+| `repeated` | sent an input already sent in the same session |
+| `refused`, `refused_by` | the console refused, by error kind (`syntax`, `validation`, `agent`...) |
+
+The marks state what happened; what to do about them is the
+[`reagentlive` skill](../../.claude/skills/reagentlive/SKILL.md)'s. Sizes
+are the console's JSON Lines: the MCP adapter hands a client each result
+twice (as text and as structured content), and which one a model sees is
+the client's choice.
+
 ## JSON Lines
 
 Each command from `-c` or stdin emits one object with `command`, `ok` and
 either `result` or `error` ([envelopes](results.md#envelopes)). A result is
 checked against its verb's row before it is printed: one that does not match
 is an `internal` error, so what `help <verb>` shows is what arrives. Records are flushed immediately. Startup failures
-emit a `startup` error. Exit status is 1 if any command failed. Capture
+emit a `startup` error, and so does every verb but `help` and `stats` with
+no target. Exit status is 1 if any command failed. Capture
 countdowns and start markers go to stderr.
 
 ```powershell

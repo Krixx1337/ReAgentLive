@@ -11,6 +11,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
+#include "reagentlive/frontends/cli/results/stats.h"
 #include "reagentlive/frontends/cli/syntax/parse_internal.h"
 
 namespace reagentlive::cli {
@@ -28,6 +29,14 @@ inline const std::vector<Verb>& CoreVerbs() {
             {}, {}, Of<shape::Status>, parse::Status,
             "table_hash changes when any verb's arguments or result change: a cached script or skill is then stale."},
         {"quit", "core", "end the console", {}, {}, Of<shape::Quit>, parse::Quit, {}, {"exit", "q"}},
+        {"stats", "core", "what this session cost: calls, output and refusals per verb, largest output first",
+            {}, {{"--all", Takes::Nothing, "bool", "", "every session in the log, and the verbs none called"}},
+            Of<shape::Stats>, parse::Stats,
+            "From the usage log beside the console; works with no target (then: the log's latest session). out is "
+            "characters; out_by_caller.tool is what reached an agent's context. Marks per verb: unfiltered (it has "
+            "--match, --nonzero, --own, --changed, --cls or --limit and the call gave none), repeated (the same input "
+            "again in its session), refused (by error kind). A batch's items count under their own verbs (batched); "
+            "the batch row holds its wrapper."},
         {"batch", "core", "up to 64 commands in as few host ticks as possible; one envelope each",
             {{"calls", "{ <command>; <command>; ... }", Rest, "calls",
               "command lines between braces, split by ;  (a JSON call: a list of {verb, args})"}},
@@ -185,6 +194,8 @@ inline const std::vector<std::string>& GeneralNotes() {
         "One console per agent: a second one is refused as busy.",
         "The module list, $N and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
         "One-shot: <console> [pid] -c \"status; modules\" emits JSON Lines.",
+        "Each call is logged beside the console as facts (verb, flags, sizes, refusal), never values; stats reads it, "
+        "also with no target. --caller tool|script|shell says who reads the output; --no-usage turns it off.",
     };
     return notes;
 }

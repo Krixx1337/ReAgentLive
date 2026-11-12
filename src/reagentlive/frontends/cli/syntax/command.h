@@ -17,7 +17,7 @@
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
-    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label };
+    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label, Stats };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -60,7 +60,7 @@ struct Command {
     // should land (with --resolve: its target) and how far past that the
     // match lies; `target` names the module (empty: the exe). sig-file:
     // `file`. sig-bytes: request address and length.
-    // help: `target` is the verb asked about (empty: all), `all` is --json.
+    // help: `target` is the verb asked about (empty: all), `all` is --json. stats: `all` is --all.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     sig::Pattern pattern;
     std::optional<uint64_t> expect;

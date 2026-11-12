@@ -525,7 +525,7 @@ TEST_CASE("the cache keeps module layouts") {
     REQUIRE(loaded->layouts.size() == 1);
     CHECK(loaded->layouts[0].first == Base);
     CHECK(loaded->layouts[0].second == data.layouts[0].second);
-    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\nimage\t0x10\t0x0\t0\t2\nsection\t.text\t0x1\t0x2\t0x3\nend\n"));
+    CHECK_FALSE(LoadCache("reagentlive cache 9\nowner\t5\nimage\t0x10\t0x0\t0\t2\nsection\t.text\t0x1\t0x2\t0x3\nend\n"));
 }
 
 TEST_CASE("vtable syntax and result") {
