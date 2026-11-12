@@ -51,8 +51,10 @@ get <object> <Field.Path> [...]   named fields, following pointers (see Fewer ro
 batch { <command>; ... }          up to 64 commands, held
 status | help | quit              handled by the console itself; status reports pid, ticks per
                                   second since attach or the last status (at least 100 ms),
-                                  the answering agent's build time, replaced agents and
-                                  host_thread (see Host thread)
+                                  the answering agent's build time, replaced agents,
+                                  host_thread (see Host thread) and packs (the engine
+                                  packs the host offers; a pack's verbs are refused
+                                  without it)
 watch <seconds|Nms> <addr>:<len>... [--then call ...]
 watch --start <duration> [--every <duration>] [--follow <root>] <addr|offset>:<len>...
 watch --read | watch --stop       the agent's capture: rows so far / end it

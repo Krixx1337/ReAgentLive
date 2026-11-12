@@ -11,27 +11,27 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "reagentlive/frontends/cli/state/native_names.h"
+#include "reagentlive/frontends/cli/state/ue/native_names.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 
-#include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/ue/internal_ue.h"
 
 namespace reagentlive::cli::detail {
 
 uint32_t ExeTimestamp(Session& session) {
-    if (!session.exeTimestamp) {
+    if (!Ue(session).exeTimestamp) {
         const auto modules = LoadedModules(session);
         if (modules.empty()) return 0;
         const auto stamp = ImageTimestamp(session, modules.front());
         if (!stamp) return 0;
-        session.exeTimestamp = *stamp;
+        Ue(session).exeTimestamp = *stamp;
     }
-    return *session.exeTimestamp;
+    return *Ue(session).exeTimestamp;
 }
 
 NativeShown NativeMembers(Session& session, const Ref& object, std::span<const ue::Field> reflected, bool instance) {
     NativeShown out;
-    const auto members = session.native.For(reflected);
+    const auto members = Ue(session).native.For(reflected);
     if (members.empty()) return out;
     // The class size reaches past the last reflected field; a class or struct
     // object's own size says nothing about the layout it describes.
@@ -61,7 +61,7 @@ Json NativeRefusedJson(std::span<const NativeCheck> refused) {
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, "validation", message); };
-    if (session.nativeFile.empty()) return fail("no native file: the console's path is unknown");
+    if (Ue(session).nativeFile.empty()) return fail("no native file: the console's path is unknown");
     if (!client.Supports(ue::op::Fields)) return JsonError(session, jsonCommand, "unsupported", "label needs an agent with fields");
     Ref object = ue::GetRef(command.request);
     if (!command.className.empty()) {
@@ -84,19 +84,19 @@ void RunLabel(Session& session, const Command& command, std::string_view jsonCom
         return fail(member.field.name + " " + check.problem);
     const auto line = NativeLine(member.owner, member.field, member.timestamp);
     {
-        std::ofstream file(session.nativeFile, std::ios::app);
-        if (!(file << line << '\n')) return fail("cannot write " + session.nativeFile.string());
+        std::ofstream file(Ue(session).nativeFile, std::ios::app);
+        if (!(file << line << '\n')) return fail("cannot write " + Ue(session).nativeFile.string());
     }
     // Read the whole file again, so line numbers and replacements match it.
-    std::ifstream in(session.nativeFile);
+    std::ifstream in(Ue(session).nativeFile);
     NativeNames reloaded;
     std::string why;
     if (const size_t bad = reloaded.Load(in, &why)) return fail("native file line " + std::to_string(bad) + ": " + why);
     size_t number = 0;
     for (const auto* found : reloaded.For(*fields))
         if (found->owner == member.owner && found->field.offset == member.field.offset) number = found->line;
-    session.native = std::move(reloaded);
-    JsonResult(session, jsonCommand, {{"path", session.nativeFile.string()}, {"line", number}, {"owner", member.owner},
+    Ue(session).native = std::move(reloaded);
+    JsonResult(session, jsonCommand, {{"path", Ue(session).nativeFile.string()}, {"line", number}, {"owner", member.owner},
         {"offset", member.field.offset}, {"type", NativeType(member.field)}, {"name", member.field.name},
         {"size", member.field.Size()}, {"timestamp", member.timestamp}});
 }

@@ -23,16 +23,16 @@
 #include <unordered_map>
 #include <vector>
 #include "reagentlive/frontends/cli/console/console.h"
-#include "reagentlive/frontends/cli/state/cache.h"
+#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
-#include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/format_ue.h"
+#include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/ue/client_ue.h"
 
-#include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/ue/internal_ue.h"
 
 namespace reagentlive::cli::detail {
 
@@ -56,13 +56,13 @@ std::span<const uint8_t> FieldBytes(std::span<const uint8_t> bytes, const ue::Fi
 Result<std::vector<ue::Field>> ObjectFields(Session& session, const Ref& object) {
     Client& client = session.client;
     const ue::KnownTable known = [&](int32_t type) -> const std::vector<ue::Field>* {
-        const auto found = session.tables.find(type);
-        return found == session.tables.end() ? nullptr : &found->second;
+        const auto found = Ue(session).tables.find(type);
+        return found == Ue(session).tables.end() ? nullptr : &found->second;
     };
     auto table = ue::Fields(client, object, known);
     if (!table) return std::unexpected(table.error());
-    if (!table->cached && table->type >= 0 && (session.tables.size() < MaxCachedTables || session.tables.contains(table->type)))
-        session.tables[table->type] = table->fields;
+    if (!table->cached && table->type >= 0 && (Ue(session).tables.size() < MaxCachedTables || Ue(session).tables.contains(table->type)))
+        Ue(session).tables[table->type] = table->fields;
     return std::move(table->fields);
 }
 
@@ -335,10 +335,10 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         bool partial = false;
         Json row = FieldMetadata(field);
         row["label"] = session.names.Display(field);
-        row["value"] = JsonFieldValue(field, data, structs, lookupName, partial, session.Style());
+        row["value"] = JsonFieldValue(field, data, structs, lookupName, partial, Style(session));
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);
-            row["before"] = JsonFieldValue(field, old, structs, lookupName, partial, session.Style(), 1);
+            row["before"] = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);
         }
         AddLocation(row, PointerRef(field.type, data).address, modules, "value_");
         if (const auto* named = describePointer(field.type, data, fieldLookups)) {
@@ -357,7 +357,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                     Json item = Json::object();
                     for (const auto& part : layout.parts) {
                         const auto element = elementBytes.subspan(offset + part.offset, part.field.size);
-                        item[part.name] = JsonFieldValue(part.field, element, structs, lookupName, partial, session.Style(), 1);
+                        item[part.name] = JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1);
                         if (const auto* named = describePointer(part.field.type, element, elementLookups)) {
                             item[map ? std::string(part.name) + "_object" : std::string("object")] = ObjectJson(*named);
                             RememberRef(refs, named->ref);

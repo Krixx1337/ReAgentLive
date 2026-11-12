@@ -8,7 +8,7 @@
 #include <span>
 #include <string>
 #include "reagentlive/frontends/cli/code/disasm.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/code/native.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/code/touches.h"

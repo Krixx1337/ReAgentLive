@@ -11,7 +11,7 @@
 #include <vector>
 #include "reagentlive/frontends/cli/results/labels.h"
 
-#include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/ue/internal_ue.h"
 
 namespace reagentlive::cli::detail {
 namespace {

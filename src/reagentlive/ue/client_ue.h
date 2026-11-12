@@ -157,6 +157,4 @@ struct EachResult {
 // All pages; the values were all read in one agent tick.
 Result<EachResult> Each(Client& client, const EachQuery& query,
                         std::chrono::milliseconds timeout = std::chrono::minutes(2));
-// A raw address as a ref the agent identifies.
-inline Ref AddressRef(uint64_t address) { return {static_cast<uintptr_t>(address), -1, 0}; }
 }

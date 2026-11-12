@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 #include "reagentlive/frontends/cli/syntax/parse.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/ue/client_ue.h"
 
 namespace reagentlive::cli {

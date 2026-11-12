@@ -4,8 +4,10 @@
 #include <string>
 #include "reagentlive/frontends/cli/syntax/layout.h"
 #include "reagentlive/frontends/cli/syntax/parse_internal.h"
+#include "reagentlive/ue/protocol_ue.h"
 
 namespace reagentlive::cli::parse {
+static_assert(MaxTypeName == ue::MaxClassName);
 std::optional<Parsed> Unreal(std::string_view verb, std::string_view rest, [[maybe_unused]] std::span<const Ref> refs,
     [[maybe_unused]] std::span<const Module> modules) {
     using namespace text;

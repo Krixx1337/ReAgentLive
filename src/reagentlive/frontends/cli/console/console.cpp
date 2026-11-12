@@ -22,19 +22,17 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "reagentlive/frontends/cli/results/call_text.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
 #include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/core/client.h"
-#include "reagentlive/ue/client_ue.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/pack.h"
 
 namespace reagentlive::cli {
 uint32_t FindProcess(std::wstring_view exeName) {
@@ -69,37 +67,18 @@ namespace {
 std::string HelpText() {
     char buffer[12288];
     std::snprintf(buffer, sizeof(buffer),
-        "  find [text] [--class C] [--from N]   names containing text and/or instances of class C or a subclass;\n"
-        "                                       24 per page (results become $1..$N), prints the next page's cursor;\n"
-        "                                       only the first page counts the total\n"
-        "  census [--class C] [--match text] [--changed] [--limit N] [--from N]\n"
-        "                                       live instances per class (most first, pages of 100 rows, 0 = all;\n"
-        "                                       --from next_cursor pages the stored census without a new scan);\n"
-        "                                       --match keeps class names containing text; --changed prints only\n"
-        "                                       classes whose count differs from the last census of that --class;\n"
-        "                                       class refs become $1..$N\n"
-        "  name-find <text> [--from N]          FName indices whose text contains text (gameplay tags, row names)\n"
-        "  each <Class> <Field|[Owner:]Function> [--seconds N]\n"
-        "                                       one value per live instance, read in one tick; functions must be\n"
-        "                                       const or pure with outputs only; --seconds repeats and prints changes\n"
+        "  Core (any process):\n"
         "  read <addr> [len] [--as T]           hex dump, len 1..%zu (default 64); --as i8..u64|f32|f64|ptr adds\n"
         "                                       decoded values; --as \"u8 phase, pad 3, f64[3] start\" decodes a block\n"
         "                                       of mixed types as {name: value}\n"
         "  read-batch <addr> <len> [...]        read up to 8 ranges in one host tick\n"
         "  peek <addr> [count] [--label <file> [name]]\n"
-        "                                       what 1..64 qwords hold (default 8): object, module (+rva), heap\n"
-        "                                       or value (floats, double, name_hint); --label appends one\n"
+        "                                       what 1..64 qwords hold (default 8): object (with a pack), module\n"
+        "                                       (+rva), heap or value (floats, double, name_hint); --label appends one\n"
         "                                       confirmed global to a labels file (default name FName_<hint>)\n"
         "  write <addr> <hex bytes> [--expect <hex>]\n"
         "                                       e.g. write $1+0x120 00 00 80 3f (max %zu bytes); --expect writes only\n"
         "                                       while memory still holds those bytes, else prints what it found\n"
-        "  call <object> <[Class:]Function> [hex params]\n"
-        "  call <object> <[Class:]Function> Name=value [...] | --typed\n"
-        "                                       params must match the function's size; prints the block after the call;\n"
-        "                                       kept: true when outputs own memory (handles, strings): the agent\n"
-        "                                       reuses the block so the next call releases the old values\n"
-        "  release <object> <[Class:]Function> [hex params]\n"
-        "                                       one more call (zeroed inputs by default) that drops the kept block\n"
         "  base                                 exe base and size\n"
         "  modules                              loaded modules, exe first (also refreshes the cached list)\n"
         "  search <hex|u32|i32|u64|ptr|f32|f64|text> <value> [--wide] [--from A] [--to A] [--module M] [--align N]\n"
@@ -117,33 +96,16 @@ std::string HelpText() {
         "  write <addr> <hex> --trial --owner <ref> [--object <addr>] --expect <hex> [--seconds N]\n"
         "                                       one write the agent undoes (default 10 s, up to 60 s); stops\n"
         "                                       as conflict if the game changes it, abandoned if the owner or\n"
-        "                                       --object's vtable changes; owner: a live actor or component\n"
+        "                                       --object's vtable changes; owner: a live actor or component (Unreal pack)\n"
         "  write --trial list | write --trial clear [id]  states (active, restored, conflict, abandoned);\n"
         "                                       clear restores active trials\n"
         "  watch <seconds|Nms> <addr>:<len>... [--then call <object> <Function> [hex]]\n"
         "                                       sample up to 8 ranges every tick (up to 30 s) and print the\n"
-        "                                       rows; --then runs the call right after sampling starts\n"
+        "                                       rows; --then runs the call (Unreal pack) right after sampling starts\n"
         "  watch --start <duration> [--every <duration>] [--follow <root>] <addr|offset>:<len>...\n"
         "                                       a capture the agent keeps (up to 60 min with --every); returns at\n"
         "                                       once; --follow continues on a host root's replacement (status lists\n"
         "                                       roots); watch --read: the rows so far; watch --stop: end it\n"
-        "  fields <object|Class>                reflected properties by offset; a class or struct lists its own\n"
-        "  dump <object|Class> [--match text] [--nonzero] [--changed [file]]\n"
-        "                                       fields with their current values (use on instances, incl. Default__\n"
-        "                                       objects); filters keep matching names, non-zero values, or fields\n"
-        "                                       changed since snap (or a snapshot file)\n"
-        "  label <object|Class> <offset> <type>[n] <Name>\n"
-        "                                       name an unreflected member in <console>.native.txt; fields, dump\n"
-        "                                       and get then show it (native, stale after a patch)\n"
-        "  export-labels <file> [--module M] [--kinds exec,vtable,interface,global]\n"
-        "                                       names for a static-analysis tool (JSON lines, one build): native\n"
-        "                                       exec thunks, vtables, interface implementations, and the globals\n"
-        "                                       peek --label put in the file (always kept); import with\n"
-        "                                       import_labels.py. After another tool's mappings: interface,global\n"
-        "  entries <object> <[Owner:]Field> [--from N]\n"
-        "                                       one page of an array, set or map: elements, or key and value;\n"
-        "                                       names and object pointers resolved; prints the next page's cursor\n"
-        "  get <object> <Field[.Field...]>...   named fields, following object pointers and structs (up to 16 paths)\n"
         "  batch { <command>; <command>; ... }  up to 64 commands in as few host ticks as possible; one result each\n"
         "                                       plus same_tick; a $N from an earlier find in the batch works\n"
         "  sig --check <pattern> [--module M] [--expect <addr>] [--offset N | --resolve next,field[,size]]\n"
@@ -176,79 +138,19 @@ std::string HelpText() {
         "                                       section), mapped, private, reserved, free; base, size, protection\n"
         "  <addr>->0x10->0x8                    a pointer chain in read, peek, vtable, disasm, region: each ->off\n"
         "                                       but the last reads a pointer; read --as cstr|wstr reads text\n"
-        "  describe <address|$N>                object name, class and reusable ref\n"
-        "  name <index>...                      FName comparison indices as text (FName #N in dumps)\n"
-        "  func <object|class> <[Owner:]Function>  reflected metadata and exec entry address\n"
-        "  func <object|class> <[Owner:]Function> --script\n"
-        "                                       a Blueprint function's bytecode: the names, functions and\n"
-        "                                       properties right after their opcodes, each confirmed live\n"
-        "  refs <name|#index>                   Blueprint functions whose bytecode names it (EX_NameConst)\n"
-        "  funcs <object|class> [text] [--from N]   list functions on the class chain\n"
-        "  params <object|class> <[Owner:]Function>  reflected parameter signature\n"
-        "  snap <ref> [file]                    save a baseline for dump --changed (file: across runs)\n"
-        "  record <ref> <seconds> <file> <field>...  sample 1..8 named fields for 1..10 seconds after countdown\n"
-        "  status                               agent pid and tick rate\n"
+        "  status                               agent pid, tick rate and the packs the host offers\n"
         "  quit\n"
         "  Numbers: 0x hex or decimal. <addr> accepts $N, $N+offset, base+offset and <module>+offset\n"
         "  (game.exe+0x1a2b3c, offset inside the image). Addresses inside a module print module and rva.\n"
-        "  Refs: $N from the last find, or the printed literal 0x<address>#<index>:<serial> (works across runs).\n"
-        "  A bare class or struct name works where <object|Class> is shown; the first lookup scans the table.\n"
         "  One console per agent: a second one is refused as busy.\n"
         "  Any command ending in --timing adds trips, wait_ms and total_ms to its output.\n"
-        "  Struct values print as {Name: value}; --meta at the end of a line adds their member layout.\n"
-        "  Class refs, field tables, the module list and $N persist for the agent instance in %%TEMP%%\\reagentlive-<pid>.cache.\n"
-        "  One-shot: <console> [pid] -c \"find X; dump $1\" emits JSON Lines.\n", MaxRead, MaxWrite);
+        "  The module list, $N and the pack's lookups persist for the agent instance in %%TEMP%%\\reagentlive-<pid>.cache.\n"
+        "  One-shot: <console> [pid] -c \"status; modules\" emits JSON Lines.\n", MaxRead, MaxWrite);
     return buffer;
 }
 
-// census, or with --changed only the classes whose count differs from the
-// last census under the same --class. Either way the new census becomes the
-// baseline; --match and --limit only shape what is printed.
-void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
-    const Request& request = command.request;
-    const std::string filter(request.length ? reinterpret_cast<const char*>(request.data) : "");
-    const CensusPage page{command.from, command.limit};
-    ue::CensusResult census;
-    int64_t ms = 0;
-    if (page.from) {
-        // A later page: the stored census, sliced; no scan, and the baselines stay.
-        if (const auto problem = CensusPageProblem(session.census, session.censusBefore, filter, command.changed);
-            !problem.empty()) return JsonError(session, jsonCommand, "validation", problem);
-        census = StoredCensus(*session.census);
-    } else {
-        if (command.changed)
-            if (const auto problem = CensusBaselineProblem(session.census, filter); !problem.empty())
-                return JsonError(session, jsonCommand, "validation", problem);
-        const auto started = Clock::now();
-        auto scanned = ue::Census(session.client, filter);
-        if (!scanned) return CommandError(session, jsonCommand, scanned.error());
-        ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
-        census = std::move(*scanned);
-        session.censusBefore = std::move(session.census);
-        session.census = MakeCensusBaseline(filter, census);
-    }
-    refs.clear();
-    Json result;
-    if (command.changed) {
-        auto changes = CensusChanges(*session.censusBefore, census);
-        KeepMatching(changes, command.match, [](const CensusChange& c) -> const std::string& { return c.name; });
-        const auto [first, shown] = CensusSlice(changes.size(), page);
-        for (const auto& change : std::span(changes).subspan(first, shown)) refs.push_back(change.ref);
-        result = CensusChangedJson(*session.censusBefore, census, changes, page, ms);
-    } else {
-        auto rows = census.rows;
-        KeepMatching(rows, command.match, [](const ue::CensusRow& r) -> const std::string& { return r.type.name; });
-        const auto [first, shown] = CensusSlice(rows.size(), page);
-        for (const auto& row : std::span(rows).subspan(first, shown)) refs.push_back(row.type.ref);
-        result = CensusJson(filter, census, rows, page, ms);
-    }
-    JsonResult(session, jsonCommand, std::move(result));
-}
-
-void Run(Session& session, const Command& original, std::vector<Ref>& refs, StructCache& structs,
-         const std::optional<Snapshot>& baseline, std::string_view jsonCommand) {
+void Run(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    Command command = original;
     const Request& request = command.request;
     if (command.kind == Kind::Base) {
         const auto modules = LoadedModules(session);
@@ -257,67 +159,6 @@ void Run(Session& session, const Command& original, std::vector<Ref>& refs, Stru
     }
     if (!client.Supports(request.op))
         return JsonError(session, jsonCommand, "unsupported", "agent does not support this operation");
-    if (command.kind == Kind::Each) return RunEach(session, command, refs, structs, jsonCommand);
-    if (!command.className.empty()) {
-        auto type = ResolveClass(session, command.className);
-        if (!type) return CommandError(session, jsonCommand, type.error());
-        ue::SetRef(command.request, *type);
-    }
-    if (command.kind == Kind::Dump) return PrintDump(session, ue::GetRef(request), refs, structs, command, baseline);
-    if (command.kind == Kind::Script) {
-        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, "unsupported", "agent does not support --script");
-        const auto object = ue::GetRef(request);
-        auto function = ue::Function(client, object, request.text);
-        if (!function) return CommandError(session, jsonCommand, function.error());
-        auto script = ue::Script(client, Ref{static_cast<uintptr_t>(function->address), -1, 0});
-        if (!script) return CommandError(session, jsonCommand, script.error());
-        return JsonResult(session, jsonCommand, ScriptJson(object, function->owner + ":" + function->name, *script));
-    }
-    if (command.kind == Kind::Refs) {
-        auto index = static_cast<int32_t>(request.args[0]);
-        std::string name = request.text;
-        if (!index) { // Exact text: walk the name pool's matches until it appears.
-            for (uint32_t from = 0;;) {
-                auto found = ue::NameFind(client, name, from);
-                if (!found) return CommandError(session, jsonCommand, found.error());
-                for (const auto& match : found->names) if (match.name == name) { index = match.index; break; }
-                if (index || !found->next) break;
-                from = found->next;
-            }
-            if (!index) return JsonError(session, jsonCommand, "validation", "no pooled name is exactly '" + name + "'");
-        } else if (auto names = ue::Names(client, std::span(&index, 1)); names && !names->front().empty()) {
-            name = names->front();
-        }
-        auto found = ue::Refs(client, index);
-        if (!found) return CommandError(session, jsonCommand, found.error());
-        return JsonResult(session, jsonCommand, RefsJson(index, name, *found));
-    }
-    // release without a block: zeroed inputs of the function's size. A call
-    // without one: the same, when the call fills every parameter.
-    std::optional<ue::Signature> callSignature;
-    if (request.op == ue::op::Call && command.kind != Kind::TypedCall && !request.length) {
-        auto function = ue::Function(client, ue::GetRef(request), request.text);
-        if (!function) return CommandError(session, jsonCommand, function.error());
-        auto signature = ue::Parameters(client, function->address);
-        if (!signature) return CommandError(session, jsonCommand, signature.error());
-        if (signature->size > ue::MaxParams) return JsonError(session, jsonCommand, "validation", "parameter block too large");
-        if (command.kind != Kind::Release)
-            if (const auto refusal = calls::ZeroBlockRefusal(*signature); !refusal.empty())
-                return JsonError(session, jsonCommand, "validation", refusal);
-        command.request.length = signature->size;
-        memset(command.request.data, 0, signature->size);
-        callSignature = std::move(*signature);
-    }
-    if (request.op == ue::op::Parameters || command.kind == Kind::TypedCall) {
-        const auto object = ue::GetRef(request);
-        auto function = ue::Function(client, object, request.text);
-        if (!function) return CommandError(session, jsonCommand, function.error());
-        auto signature = ue::Parameters(client, function->address);
-        if (!signature) return CommandError(session, jsonCommand, signature.error());
-        if (command.kind == Kind::TypedCall)
-            return RunTypedCall(session, command, function->address, *signature, structs, jsonCommand);
-        return PrintParameters(session, *function, *signature, object);
-    }
     switch (request.op) {
     case op::Read: {
         auto bytes = client.Read(request.address, request.length);
@@ -425,57 +266,6 @@ void Run(Session& session, const Command& original, std::vector<Ref>& refs, Stru
         session.modulesListed = true;
         return JsonResult(session, jsonCommand, {{"modules", std::move(rows)}});
     }
-    case ue::op::Find: {
-        const std::string_view className = request.length ? reinterpret_cast<const char*>(request.data) : "";
-        const auto from = static_cast<uint32_t>(request.args[1]);
-        auto found = ue::Find(client, request.text, {className, from});
-        if (!found) return CommandError(session, jsonCommand, found.error());
-        refs.clear();
-        for (const auto& object : found->objects) refs.push_back(object.ref);
-        return JsonResult(session, "find", FindJson(*found, from));
-    }
-    case ue::op::Call: {
-        bool kept = false;
-        auto block = ue::Call(client, ue::GetRef(request), request.text, std::span(request.data, request.length), 0,
-            request.flags, &kept);
-        if (!block) return CommandError(session, jsonCommand, block.error());
-        auto record = CallJson(request, *block, command.kind == Kind::Release ? "release" : "raw", kept);
-        if (kept) {
-            // Named from the parameters: fetched now unless the zeroed block already did.
-            if (!callSignature)
-                if (auto function = ue::Function(client, ue::GetRef(request), request.text); function)
-                    if (auto signature = ue::Parameters(client, function->address); signature) callSignature = std::move(*signature);
-            if (callSignature) record["kept_reason"] = calls::KeptReason(*callSignature, structs);
-        }
-        return JsonResult(session, jsonCommand, std::move(record));
-    }
-    case ue::op::Fields: return PrintFields(session, ue::GetRef(request), command.className.empty(), jsonCommand);
-    case ue::op::Names: {
-        std::vector<int32_t> indices(request.length / 4);
-        memcpy(indices.data(), request.data, request.length);
-        auto names = ue::Names(client, indices);
-        if (!names) return CommandError(session, jsonCommand, names.error());
-        return JsonResult(session, jsonCommand, NamesJson(indices, *names));
-    }
-    case ue::op::Census: return RunCensus(session, command, refs, jsonCommand);
-    case ue::op::NameFind: {
-        const auto from = static_cast<uint32_t>(request.args[1]);
-        auto found = ue::NameFind(client, request.text, from);
-        if (!found) return CommandError(session, jsonCommand, found.error());
-        return JsonResult(session, jsonCommand, NameFindJson(*found, from));
-    }
-    case ue::op::Function: return PrintFunction(session, ue::GetRef(request), request.text, jsonCommand);
-    case ue::op::Functions: {
-        auto functions = ue::Functions(client, ue::GetRef(request), request.text, request.length);
-        if (!functions) return CommandError(session, jsonCommand, functions.error());
-        return JsonResult(session, jsonCommand, FunctionsJson(ue::GetRef(request), *functions, request.length));
-    }
-    case ue::op::Describe: {
-        auto object = ue::Describe(client, ue::GetRef(request));
-        if (!object) return CommandError(session, jsonCommand, object.error());
-        RememberRef(refs, object->ref);
-        return JsonResult(session, jsonCommand, ObjectJson(*object));
-    }
     }
     JsonError(session, jsonCommand, "unsupported", "unsupported operation");
 }
@@ -484,18 +274,8 @@ void Run(Session& session, const Command& original, std::vector<Ref>& refs, Stru
 // host ticks as the agent's budget allows. Single requests and timed loops
 // (watch, record, each --seconds) do not: a hold would only add one wait.
 bool Held(const Command& command) {
-    switch (command.kind) {
-    case Kind::Dump: case Kind::Snap: case Kind::Get: case Kind::TypedCall: case Kind::Release:
-    case Kind::Script: case Kind::Peek: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: return true;
-    case Kind::Each: return !command.seconds;
-    case Kind::Remote: break;
-    default: return false;
-    }
-    if (!command.className.empty()) return true;
-    const uint32_t op = command.request.op;
-    if (op == ue::op::Call && !command.request.length) return true; // Looks up the function's size first.
-    return op == ue::op::Fields || op == ue::op::Names || op == ue::op::Census ||
-        op == ue::op::Functions || op == ue::op::Parameters || op == ue::op::Function || op == reagentlive::op::Modules;
+    if (command.kind == Kind::Peek) return true;
+    return command.kind == Kind::Remote && command.request.op == reagentlive::op::Modules;
 }
 
 bool Execute(Session& session, const std::string& line, bool inBatch);
@@ -594,6 +374,7 @@ bool Execute(Session& session, const std::string& original, bool inBatch) {
         return true;
     case Kind::Help: {
         auto help = HelpText();
+        help += PackHelp();
         help += session.config.hostHelp;
         JsonResult(session, jsonCommand, {{"usage", help}});
         return false;
@@ -612,39 +393,16 @@ bool Execute(Session& session, const std::string& original, bool inBatch) {
     default: break;
     }
     std::optional<Client::Hold> hold;
-    if (!inBatch && Held(*parsed)) hold.emplace(client);
-    if (parsed->kind == Kind::Label) {
-        RunLabel(session, *parsed, jsonCommand);
-        return false;
-    }
-    if (parsed->kind == Kind::ExportLabels) {
-        RunExportLabels(session, *parsed, jsonCommand);
-        return false;
-    }
-    if (parsed->kind == Kind::Entries) {
-        RunEntries(session, *parsed, jsonCommand);
-        return false;
-    }
+    if (!inBatch && (Held(*parsed) || (PackCommand(*parsed) && PackHeld(*parsed)))) hold.emplace(client);
     if (parsed->kind == Kind::Peek) {
         RunPeek(session, *parsed, jsonCommand);
         return false;
     }
-    if (parsed->kind == Kind::Get) {
-        if (!client.Supports(ue::op::Fields)) JsonError(session, jsonCommand, "unsupported", "get needs an agent with fields");
-        else RunGet(session, *parsed, session.structs, session.refs, jsonCommand);
+    if (PackCommand(*parsed)) {
+        RunPackCommand(session, *parsed, jsonCommand);
         return false;
     }
-    if (parsed->kind == Kind::Snap || parsed->kind == Kind::Record) {
-        if (!client.Supports(ue::op::ReadObject) || !client.Supports(ue::op::Fields)) {
-            JsonError(session, jsonCommand, "unsupported", "this command needs an agent with fields and object reads");
-            return false;
-        }
-        const auto object = ue::GetRef(parsed->request);
-        if (parsed->kind == Kind::Record) Record(session, object, *parsed, session.structs, jsonCommand);
-        else Snap(session, object, parsed->file, session.baseline, jsonCommand);
-        return false;
-    }
-    Run(session, *parsed, session.refs, session.structs, session.baseline, jsonCommand);
+    Run(session, *parsed, jsonCommand);
     return false;
 }
 
@@ -661,23 +419,16 @@ void LoadSessionCache(Session& session, const std::filesystem::path& path) {
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     auto data = LoadCache(text);
     if (!data || data->owner != session.client.AgentOwner()) return; // Another agent instance: start fresh.
-    for (auto& [name, ref] : data->classes) session.classRefs.push_back({std::move(name), ref, false});
-    for (auto& [type, fields] : data->tables) session.tables[type] = std::move(fields);
     session.refs = std::move(data->refs);
     session.modules = std::move(data->modules);
     for (auto& [base, layout] : data->layouts) session.layouts[base] = std::move(layout);
-    session.census = std::move(data->census);
-    session.censusBefore = std::move(data->censusBefore);
+    LoadPackCache(session, data->packs);
 }
 
 void SaveSessionCache(const Session& session, const std::filesystem::path& path) {
     CacheData data;
     data.owner = session.client.AgentOwner();
     if (!data.owner) return;
-    for (const auto& entry : session.classRefs)
-        if (data.classes.size() < MaxCachedClasses) data.classes.emplace_back(entry.name, entry.ref);
-    for (const auto& [type, fields] : session.tables)
-        if (data.tables.size() < MaxCachedTables) data.tables.emplace_back(type, fields);
     for (const auto& ref : session.refs) {
         if (!ref.address) break; // Not expressible as a literal ref; $N past it would shift.
         data.refs.push_back(ref);
@@ -686,8 +437,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     for (const auto& [base, layout] : session.layouts)
         if (std::ranges::any_of(session.modules, [base](const Module& m) { return m.base == base; }))
             data.layouts.emplace_back(base, layout);
-    data.census = session.census;
-    data.censusBefore = session.censusBefore;
+    data.packs = SavePackCache(session);
     const auto temporary = std::filesystem::path(path).concat(L".tmp");
     {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
@@ -762,20 +512,6 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     if (!pid) {
         return startupError(std::string("Target not running. ") + usage);
     }
-    // Native members: <console>.native.txt beside the console, hand-owned (the
-    // names file may be regenerated; nothing writes into it).
-    std::filesystem::path nativeFile;
-    NativeNames native;
-    {
-        wchar_t module[MAX_PATH];
-        const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
-        if (length && length < MAX_PATH) nativeFile = std::filesystem::path(module).replace_extension(L".native.txt");
-        if (std::ifstream file(nativeFile); !nativeFile.empty() && file) {
-            std::string why;
-            if (const size_t bad = native.Load(file, &why))
-                return startupError("malformed native file at line " + std::to_string(bad) + ": " + why);
-        }
-    }
     if (!namesFile.empty()) {
         std::ifstream file(namesFile);
         if (!file && namesRequired) return startupError("cannot open names file");
@@ -795,9 +531,9 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         std::fflush(stderr);
     });
     Session session(*client, config);
+    session.pack = MakePackState(session);
+    if (const auto problem = LoadPackFiles(session); !problem.empty()) return startupError(problem);
     session.names = std::move(names);
-    session.native = std::move(native);
-    session.nativeFile = std::move(nativeFile);
     session.lastBeat = {client->Heartbeat(), Clock::now()};
     const auto cachePath = CachePath(pid);
     if (!cachePath.empty()) LoadSessionCache(session, cachePath);

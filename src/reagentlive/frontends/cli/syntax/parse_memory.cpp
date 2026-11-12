@@ -358,7 +358,7 @@ std::optional<Parsed> Memory(std::string_view verb, std::string_view rest, [[may
             auto where = colon == std::string_view::npos ? std::string_view{} : item.substr(0, colon);
             if (!command.root.empty() && where.starts_with('+')) where.remove_prefix(1);
             const bool placed = command.root.empty() ? Address(where, refs, modules, range.address) :
-                Number(where, range.address) && range.address < ue::MaxObjectBytes;
+                Number(where, range.address) && range.address < MaxRootOffset;
             if (colon == std::string_view::npos || !placed || !Number(item.substr(colon + 1), range.length) ||
                 !range.length || range.length > MaxWatchRange)
                 return fail(usage);

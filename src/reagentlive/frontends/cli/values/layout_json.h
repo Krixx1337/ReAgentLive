@@ -5,7 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/syntax/layout.h"
 
 namespace reagentlive::cli::layout {

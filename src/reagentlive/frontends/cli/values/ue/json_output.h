@@ -1,15 +1,12 @@
+// reagentlive CLI, Unreal pack: reflected field values as JSON.
 #pragma once
 #include <algorithm>
-#include <cmath>
-#include <type_traits>
-#include <nlohmann/json.hpp>
-#include "reagentlive/frontends/cli/values/format.h"
+#include "reagentlive/frontends/cli/values/ue/format_ue.h"
+#include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/ue/client_ue.h"
 
 namespace reagentlive::cli {
-using Json = nlohmann::json;
-
 inline Json FieldMetadata(const ue::Field& field) {
     Json row = {{"name", field.name}, {"owner", field.owner}, {"type", field.type},
         {"offset", field.offset}, {"size", field.size}};
@@ -27,15 +24,6 @@ inline Json FieldMetadata(const ue::Field& field) {
     }
     if (field.stride) row["stride"] = field.stride;
     return row;
-}
-
-template<class T> Json JsonNumber(std::span<const uint8_t> bytes) {
-    T number{};
-    format_detail::Load(bytes, number);
-    if constexpr (std::is_floating_point_v<T>) {
-        if (!std::isfinite(number)) return {{"non_finite", std::isnan(number) ? "nan" : number < 0 ? "-inf" : "inf"}};
-    }
-    return number;
 }
 
 // How decoded values print. Compact (the default): a struct is {Name: value}

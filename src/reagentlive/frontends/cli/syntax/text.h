@@ -178,12 +178,12 @@ inline bool Object(std::string_view s, std::span<const Ref> refs, Request& reque
         if (!Number(s, address) || !address) return false;
         ref = {static_cast<uintptr_t>(address), -1, 0};
     }
-    ue::SetRef(request, ref);
+    SetRef(request, ref);
     return true;
 }
 // A bare identifier names a class or struct, e.g. Character or BP_Door_C.
 inline bool ClassName(std::string_view s) {
-    if (s.empty() || s.size() >= ue::MaxClassName || s == "base" || (s[0] >= '0' && s[0] <= '9')) return false;
+    if (s.empty() || s.size() >= MaxTypeName || s == "base" || (s[0] >= '0' && s[0] <= '9')) return false;
     for (char c : s)
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) return false;
     return true;

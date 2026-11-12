@@ -84,7 +84,7 @@ target_compile_features(reagentlive-cli INTERFACE cxx_std_23)
 target_sources(reagentlive-cli INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse_memory.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse_unreal.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/ue/parse_unreal.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse_code.cpp")
 
 if(REAGENTLIVE_CONSOLE)
@@ -121,15 +121,16 @@ if(REAGENTLIVE_CONSOLE)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/console.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/output.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/memory.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/dump.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/capture.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/calls.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/query.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/labels.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/sig.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/code.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/native.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/members.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/pack.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/dump.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/capture.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/calls.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/query.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/labels.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/members.cpp")
     target_link_libraries(reagentlive-console INTERFACE reagentlive-ue-client reagentlive-cli nlohmann_json::nlohmann_json Zydis)
 endif()
 

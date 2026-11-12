@@ -417,6 +417,21 @@ The layout itself and its rules are in
   logic and console). Commands cross areas (`dump` uses value formatting,
   state files and results), and the two CMake targets and the no-JSON rule
   would be split across every folder.
+- **The pack's part of each layer is its `ue/` folder**, and nothing
+  outside one names the pack. A reader sees at a glance what works in any
+  process, and a core change cannot lean on Unreal types by accident: the
+  layout test fails. Object identity (`Ref`) is core, since `$N`, pins and
+  watches carry it whatever the engine.
+- **The core reaches the pack through plain functions** (`console/pack.h`):
+  its state, cache block, help, `status` line, its commands, and what core
+  commands borrow. With one pack they need no interface.
+- **Rejected for now:** a pack interface or registry (a table of packs
+  each registering verbs, help and hooks). Designed around one pack it would
+  guess the shape a second one needs; the seams list exactly what that
+  table must hold, so a second pack (Unity, Source 2) turns them into one.
+- **Rejected:** one `frontends/cli/ue/` tree beside the layers. The layer
+  rules (no JSON in syntax, no I/O outside console) would need restating
+  for it, and the pack's syntax would join the JSON-carrying target.
 
 ## Not now
 

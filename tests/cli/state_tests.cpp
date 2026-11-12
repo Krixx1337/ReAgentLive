@@ -1,8 +1,10 @@
 // reagentlive CLI state files: readable names files and the console cache file.
 #include "reagentlive/frontends/cli/state/cache.h"
+#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/state/names.h"
+#include "reagentlive/frontends/cli/state/ue/native_names.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
-#include "reagentlive/frontends/cli/results/result_json.h"
+#include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -59,16 +61,8 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     cli::CacheData data;
     data.owner = 0xabc;
     data.modules = {{"Game.exe", 0x7ff600000000, 0x1000}, {"engine dll.dll", 0x7ffa00000000, 0x2000}};
-    data.classes = {{"PlayerController", Ref{0x5000, 12, 3}}};
-    ue::Field field{0x10, 4, 0, "FloatProperty", "Health", "Pawn", 0, "", Ref{}, ""};
-    ue::Field structField{0x20, 24, 0, "StructProperty", "Location", "Actor", 0, "", Ref{0x6000, 40, 1}, "Vector"};
-    ue::Field mapField{0x30, 80, 0, "MapProperty", "Attributes", "Comp", 8, "StructProperty", Ref{0x7000, 41, 1},
-        "GameplayTag", 0, 20, 8, 4, "FloatProperty", Ref{}, ""};
-    data.tables = {{12, {field, structField, mapField}}};
     data.refs = {{0x7000, 1, 2}, {0x8000, 3, 4}};
-    data.census = CensusBaseline{"Actor", {{"Projectile Base", Ref{0x9000, 50, 2}, 7, {Ref{0x9100, 60, 1}, Ref{0x9200, 61, 1}}},
-        {"Pawn", Ref{0xa000, 51, 0}, 1}}};
-    data.censusBefore = CensusBaseline{"Actor", {{"Pawn", Ref{0xa000, 51, 0}, 2, {Ref{0xa100, 62, 3}}}}};
+    data.packs = {{"ue", {"class\tA\t0x10#1:1", "table\t1\t0", "field\tends\tin\ta\ttab\t"}}, {"other", {}}};
     const auto text = SaveCache(data);
     const auto loaded = LoadCache(text);
     REQUIRE(loaded.has_value());
@@ -77,26 +71,54 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     CHECK(loaded->modules[1].name == "engine dll.dll");
     CHECK(loaded->modules[1].base == 0x7ffa00000000);
     CHECK(loaded->modules[1].size == 0x2000);
+    CHECK(loaded->refs == data.refs);
+    CHECK(loaded->packs == data.packs); // Kept verbatim, trailing tabs included.
+    CHECK_FALSE(LoadCache(text.substr(0, text.size() - 4)).has_value()); // No end line.
+    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t0\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\nbogus\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\npack\tue\t3\nclass\tA\t0x10#1:1\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 8\nowner\t5\npack\t\t0\nend\n").has_value()); // A pack has a name.
+    CHECK(LoadCache("reagentlive cache 8\nowner\t5\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
+    CHECK_FALSE(LoadCache("reagentlive cache 3\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
+}
+
+TEST_CASE("the Unreal pack's cache block round-trips and refuses malformed lines") {
+    UnrealCache data;
+    data.classes = {{"PlayerController", Ref{0x5000, 12, 3}}};
+    ue::Field field{0x10, 4, 0, "FloatProperty", "Health", "Pawn", 0, "", Ref{}, ""};
+    ue::Field structField{0x20, 24, 0, "StructProperty", "Location", "Actor", 0, "", Ref{0x6000, 40, 1}, "Vector"};
+    ue::Field mapField{0x30, 80, 0, "MapProperty", "Attributes", "Comp", 8, "StructProperty", Ref{0x7000, 41, 1},
+        "GameplayTag", 0, 20, 8, 4, "FloatProperty", Ref{}, ""};
+    data.tables = {{12, {field, structField, mapField}}};
+    data.census = CensusBaseline{"Actor", {{"Projectile Base", Ref{0x9000, 50, 2}, 7, {Ref{0x9100, 60, 1}, Ref{0x9200, 61, 1}}},
+        {"Pawn", Ref{0xa000, 51, 0}, 1}}};
+    data.censusBefore = CensusBaseline{"Actor", {{"Pawn", Ref{0xa000, 51, 0}, 2, {Ref{0xa100, 62, 3}}}}};
+    // Through the whole file, as the console stores it.
+    cli::CacheData file;
+    file.owner = 5;
+    file.packs = {{std::string(UnrealCachePack), SaveUnrealCache(data)}};
+    const auto stored = LoadCache(SaveCache(file));
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->packs.size() == 1);
+    const auto loaded = LoadUnrealCache(stored->packs[0].lines);
+    REQUIRE(loaded.has_value());
     CHECK(loaded->classes == data.classes);
     CHECK(loaded->tables == data.tables);
-    CHECK(loaded->refs == data.refs);
     CHECK(loaded->census == data.census);
     CHECK(loaded->censusBefore == data.censusBefore);
     data.census = CensusBaseline{"", {}}; // The whole table, no rows.
-    CHECK(LoadCache(SaveCache(data))->census == data.census);
+    CHECK(LoadUnrealCache(SaveUnrealCache(data))->census == data.census);
     data.census.reset();
-    CHECK_FALSE(LoadCache(SaveCache(data))->census.has_value());
+    CHECK_FALSE(LoadUnrealCache(SaveUnrealCache(data))->census.has_value());
+    const auto block = [](std::initializer_list<std::string> lines) { return std::vector<std::string>(lines); };
     // Fewer rows than its census line says.
-    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\ncensus\tActor\t2\ncensus-row\t0x10#1:1\t3\t-\tA\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\ncensus\tActor\t1\ncensus-row\t0x10#1:1\t3\tbad\tA\nend\n").has_value());
-    CHECK(LoadCache("reagentlive cache 7\nowner\t5\ncensus\tActor\t1\ncensus-row\t0x10#1:1\t3\t-\tA\nend\n").has_value());
-    CHECK_FALSE(LoadCache(text.substr(0, text.size() - 4)).has_value()); // No end line.
-    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t0\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\nbogus\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\ntable\t1\t3\nend\n").has_value());
-    CHECK(LoadCache("reagentlive cache 7\nowner\t5\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 6\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
-    CHECK_FALSE(LoadCache("reagentlive cache 3\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
+    CHECK_FALSE(LoadUnrealCache(block({"census\tActor\t2", "census-row\t0x10#1:1\t3\t-\tA"})).has_value());
+    CHECK_FALSE(LoadUnrealCache(block({"census\tActor\t1", "census-row\t0x10#1:1\t3\tbad\tA"})).has_value());
+    CHECK(LoadUnrealCache(block({"census\tActor\t1", "census-row\t0x10#1:1\t3\t-\tA"})).has_value());
+    CHECK_FALSE(LoadUnrealCache(block({"table\t1\t3"})).has_value());
+    CHECK_FALSE(LoadUnrealCache(block({"bogus"})).has_value());
+    CHECK(LoadUnrealCache(block({})).has_value());
 }
 
 namespace {

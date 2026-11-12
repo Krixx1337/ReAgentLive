@@ -26,15 +26,17 @@
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
 #include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
-#include "reagentlive/ue/client_ue.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
 
 namespace reagentlive::cli::detail {
 
+
+Json ModuleJson(const Module& module) {
+    return {{"name", module.name}, {"base", format_detail::Pointer(module.base)}, {"size", module.size}};
+}
 
 void PrintJson(Session& session, Json record) {
     if (session.capture) {

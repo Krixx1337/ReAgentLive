@@ -27,13 +27,13 @@
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
 #include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
-#include "reagentlive/ue/client_ue.h"
 #include "reagentlive/version.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/pack.h"
 
 namespace reagentlive::cli::detail {
 
@@ -58,6 +58,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     // What watch --follow can follow.
     if (client.Supports(op::Watch))
         if (auto roots = client.WatchRoots(); roots) result["roots"] = *roots;
+    AddPackStatus(session, result);
     JsonResult(session, jsonCommand, std::move(result));
 }
 
@@ -91,19 +92,6 @@ Json PinJson(const PinState& pin) {
         {"remaining_ms", pin.remaining}};
 }
 
-// Guards an address given relative to an object on that object's identity,
-// read now, so a pin or watch stops when the object is freed or replaced.
-Result<Guard> ObjectGuard(Session& session, uint64_t object) {
-    Client& client = session.client;
-    Guard guard{};
-    if (!object) return guard;
-    auto bytes = client.Read(object + ue::ObjectIdentityOffset, ue::ObjectIdentityLength);
-    if (!bytes) return std::unexpected(bytes.error());
-    guard.address = object + ue::ObjectIdentityOffset;
-    guard.length = ue::ObjectIdentityLength;
-    memcpy(guard.bytes, bytes->data(), bytes->size());
-    return guard;
-}
 }
 
 void RunPin(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -174,27 +162,6 @@ Json TrialRows(const std::vector<TrialState>& trials) {
     Json rows = Json::array();
     for (const auto& trial : trials) rows.push_back(TrialJson(trial));
     return rows;
-}
-// Trials need a live actor or component as owner: not a class default object,
-// archetype or asset. Returns the owner's size, or an error text: its class
-// size from the agent, which covers native members past the last reflected
-// field, else the end of its reflected fields.
-std::expected<uint32_t, std::string> TrialOwnerSize(Session& session, const Ref& owner) {
-    Client& client = session.client;
-    auto object = ue::Describe(client, owner);
-    if (!object) return std::unexpected(object.error().message);
-    if (object->name.starts_with("Default__") || object->name.ends_with("_GEN_VARIABLE"))
-        return std::unexpected("owner is a class default object or an archetype");
-    auto fields = ObjectFields(session, owner);
-    if (!fields) return std::unexpected(fields.error().message);
-    const bool live = std::ranges::any_of(*fields, [](const ue::Field& field) {
-        return field.owner == "Actor" || field.owner == "ActorComponent";
-    });
-    if (!live) return std::unexpected("owner is not an actor or a component (" + object->className + ")");
-    const size_t reflected = DumpEnd(*fields);
-    if (!reflected) return std::unexpected("owner has no reflected fields");
-    // A class size smaller than its own reflected fields is not believed.
-    return object->size >= reflected ? object->size : static_cast<uint32_t>(reflected);
 }
 }
 
@@ -344,7 +311,7 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
     std::optional<Parsed> then;
     if (!command.then.empty()) {
         then = Parse(command.then, refs, modules);
-        if (!*then || (*then)->request.op != ue::op::Call || (*then)->kind != Kind::Remote)
+        if (!*then || !PackCall(**then))
             return JsonError(session, jsonCommand, "syntax", "--then needs a raw call: call <object> <[Class:]Function> [hex params]");
     }
     const auto started = std::chrono::steady_clock::now();
@@ -352,10 +319,7 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
     if (!capacity) return CommandError(session, jsonCommand, capacity.error());
     Json thenJson = nullptr;
     if (then) {
-        const Request& call = (**then).request;
-        auto block = ue::Call(client, ue::GetRef(call), call.text, std::span(call.data, call.length));
-        thenJson = block ? Json{{"ok", true}, {"hex", format_detail::Hex(*block, block->size())}} :
-            Json{{"ok", false}, {"message", block.error().message}};
+        thenJson = RunPackCall(session, **then);
     }
     // Wait out the duration, then for the agent to finish.
     std::this_thread::sleep_until(started + std::chrono::milliseconds(command.milliseconds));
@@ -430,15 +394,8 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
     }
 
     const auto modules = LoadedModules(session);
-    // Objects first: aligned, pointer-shaped values the agent identifies.
-    if (client.Supports(ue::op::Describe)) {
-        for (auto& value : values) {
-            if (!value.read || !PointerShaped(value.value) || value.value & 7) continue;
-            auto object = ue::Describe(client, ue::AddressRef(value.value));
-            if (object) value.object = std::move(*object);
-            else if (object.error().kind == Error::Kind::Timeout) break;
-        }
-    }
+    // Objects first: aligned, pointer-shaped values the pack identifies.
+    DescribePeek(session, values);
     std::vector<uint64_t> probes;
     std::vector<size_t> probed;
     for (size_t i = 0; i < count; ++i) {
@@ -456,21 +413,7 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
             if (auto kind = RegionKind(session, value.value)) value.region = *kind;
     }
     // Name hints for value rows, in one lookup.
-    if (client.Supports(ue::op::Names)) {
-        std::vector<int32_t> indices;
-        std::vector<size_t> named;
-        for (size_t i = 0; i < count; ++i) {
-            const auto& value = values[i];
-            const auto index = static_cast<int32_t>(value.value & 0xffffffff);
-            if (!value.read || value.object || ModuleAt(value.value, modules) ||
-                (value.readable && PointerShaped(value.value)) || index <= 0) continue;
-            indices.push_back(index);
-            named.push_back(i);
-        }
-        if (!indices.empty())
-            if (auto names = ue::Names(client, indices); names)
-                for (size_t i = 0; i < named.size() && i < names->size(); ++i) values[named[i]].name = (*names)[i];
-    }
+    NamePeek(session, values, modules);
 
     Json rows = Json::array();
     for (const auto& value : values) rows.push_back(PeekRowJson(value, modules));

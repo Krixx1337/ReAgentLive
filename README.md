@@ -119,7 +119,9 @@ reagentlive -c "status; modules"
 ```
 
 You get memory, the fast lane and native objects (`vtable`, pointer chains,
-`region`, strings). With no pid the console finds the process on its own.
+`region`, strings): the core, which needs no SDK. Unreal pack commands are
+refused here, and `status` says which packs a host offers (`packs`). With
+no pid the console finds the process on its own.
 More: [own-thread example](docs/hosting.md#own-thread-example).
 
 ## Best on the game thread

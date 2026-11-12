@@ -22,27 +22,23 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "reagentlive/frontends/cli/results/call_text.h"
+#include "reagentlive/frontends/cli/results/ue/call_text.h"
 #include "reagentlive/frontends/cli/console/console.h"
-#include "reagentlive/frontends/cli/state/cache.h"
+#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
-#include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/format_ue.h"
+#include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/ue/client_ue.h"
 
-#include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/ue/internal_ue.h"
 
 namespace reagentlive::cli::detail {
 
 Json CallJson(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept) {
     return {{"ref", ReusableRef(ue::GetRef(request))}, {"function", request.text}, {"mode", mode},
         {"block_size", block.size()}, {"hex", format_detail::Hex(block, block.size())}, {"kept", kept}};
-}
-
-Json ModuleJson(const Module& module) {
-    return {{"name", module.name}, {"base", format_detail::Pointer(module.base)}, {"size", module.size}};
 }
 
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand) {
@@ -130,7 +126,7 @@ void RunTypedCall(Session& session, const Command& command, uint64_t functionAdd
         row["direction"] = parameter.parameterFlags & ue::Return ? "return" : "out";
         bool partial = false;
         row["value"] = JsonFieldValue(parameter, FieldBytes(*result, parameter), structs,
-            format_detail::UnresolvedName{}, partial, session.Style());
+            format_detail::UnresolvedName{}, partial, Style(session));
         row["truncated"] = partial;
         truncated |= partial;
         outputs.push_back(std::move(row));

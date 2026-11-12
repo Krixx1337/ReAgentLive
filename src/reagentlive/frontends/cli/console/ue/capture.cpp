@@ -23,15 +23,15 @@
 #include <unordered_map>
 #include <vector>
 #include "reagentlive/frontends/cli/console/console.h"
-#include "reagentlive/frontends/cli/state/cache.h"
+#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
-#include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/format_ue.h"
+#include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/ue/client_ue.h"
 
-#include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/ue/internal_ue.h"
 
 namespace reagentlive::cli::detail {
 namespace {

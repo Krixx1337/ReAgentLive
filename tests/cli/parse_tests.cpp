@@ -1,5 +1,6 @@
 // reagentlive CLI syntax: command lines to requests.
 #include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/ue/protocol_ue.h"
 #include "reagentlive/version.h"
 #include "doctest.h"
 #include <cstring>

@@ -35,22 +35,11 @@ constexpr uint32_t ExecEntries = Find + 16;
 constexpr uint32_t Entries = Find + 17;
 }
 
-// UObject identity: address, object-table index and serial. index < 0 means
-// address only; the agent identifies it. Serial 0 = not assigned yet.
-struct Ref {
-    uintptr_t address;
-    int32_t index, serial;
-    bool operator==(const Ref&) const = default;
-};
-// On the wire a ref is Request::address plus args[0] (index low, serial high).
-inline void SetRef(Request& request, const Ref& ref) {
-    request.address = ref.address;
-    request.args[0] = static_cast<uint32_t>(ref.index) | static_cast<uint64_t>(static_cast<uint32_t>(ref.serial)) << 32;
-}
-inline Ref GetRef(const Request& request) {
-    return {static_cast<uintptr_t>(request.address), static_cast<int32_t>(static_cast<uint32_t>(request.args[0])),
-            static_cast<int32_t>(static_cast<uint32_t>(request.args[0] >> 32))};
-}
+// A UObject ref: core's Ref, with the object-table index and its serial.
+using reagentlive::Ref;
+using reagentlive::SetRef;
+using reagentlive::GetRef;
+using reagentlive::AddressRef;
 constexpr size_t MaxParams = 1024;
 // Guards for pins and watch ranges on an object: its object-table index
 // (int32) and class pointer, adjacent in UE5's UObject. A freed or replaced

@@ -24,10 +24,11 @@ rules. They win over this skill.
 - Ask the user first for any `write`, `pin`, and any `call` that could change
   game state or crash: give the address, current bytes, new bytes and expected
   effect. One approval covers one write.
-- Start a session with `status` and read `host_thread`. On a host that is
-  not `engine`, a tick is a frame, not a game moment: confirm a value with
-  a second read before relying on two values lining up, and expect Unreal
-  pack commands to be refused.
+- Start a session with `status` and read `host_thread` and `packs`. On a
+  host that is not `engine`, a tick is a frame, not a game moment: confirm a
+  value with a second read before relying on two values lining up. Without
+  `ue` in `packs`, work with the core (memory, fast lane, native objects):
+  Unreal pack commands are refused.
 - Only the user's live session is evidence; synthetic tests are not. Record
   live results where the project keeps them, stating what is and is not
   established. If the project's own rules differ from these, theirs win.

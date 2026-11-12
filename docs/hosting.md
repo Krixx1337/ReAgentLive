@@ -28,8 +28,9 @@ reagentlive -c "status; modules; region <module>+0x1000"
   [fast lane](commands/fast-lane.md) and
   [native objects](commands/native-objects.md).
 - **Not included:** object commands and engine calls: they need a pack and a
-  host on the engine's thread. `status` says `host_thread: own`; reads can be
-  torn and a write can race the game.
+  host on the engine's thread. The console refuses them with a message
+  saying the host has no Unreal pack. `status` says `host_thread: own` and
+  `packs: []`; reads can be torn and a write can race the game.
 - Its own section prefix keeps it apart from another host's agent in the
   same process. It is never unloaded. It is a starting point for a real
   host, not a supported one; how it gets into a process is the user's

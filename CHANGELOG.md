@@ -5,6 +5,17 @@ layout can change in any minor release; agent and client are always built
 from the same revision, and the handshake's layout check refuses a
 mismatched pair. The version lives in `src/reagentlive/version.h`.
 
+## Unreleased
+
+- The console keeps the core and the Unreal pack apart: each `frontends/cli`
+  layer has a `ue/` folder for the pack's part, the core reaches the pack
+  only through `console/pack.h`, and the layout test enforces both.
+- `status` lists the packs the host offers (`packs`); a pack's verbs on a
+  host without it are refused with a message that says so; `help` groups
+  the verbs into core and Unreal pack.
+- `Ref` moved to the core protocol. The cache file keeps each pack's state
+  in its own block (format 8; older files are dropped).
+
 ## 0.1.0
 
 First versioned release.

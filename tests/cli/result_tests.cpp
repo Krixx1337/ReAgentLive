@@ -1,10 +1,11 @@
 // reagentlive CLI result shapes: each lookup command's result keys, pinned against
 // the "Result shapes" table in docs/commands/results.md. Builders take canned client
 // results, so no agent or object table is needed.
-#include "reagentlive/frontends/cli/results/call_text.h"
-#include "reagentlive/frontends/cli/results/census.h"
+#include "reagentlive/frontends/cli/results/ue/call_text.h"
+#include "reagentlive/frontends/cli/results/ue/census.h"
 #include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
+#include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
 #include "doctest.h"
 #include <set>
 #include <string>
@@ -121,7 +122,7 @@ TEST_CASE("addresses inside a module carry module and rva, others nothing") {
 TEST_CASE("peek labels each qword by the first that holds: object, module, heap, value") {
     const std::vector<Module> modules{{"game.exe", 0x7ff600000000, 0x100000}};
     PeekValue object{0x7ff600000010, 0x1aac568d980, true};
-    object.object = ue::Object{Pawn, "Pawn_0", "Pawn"};
+    object.object = ObjectJson(ue::Object{Pawn, "Pawn_0", "Pawn"});
     object.readable = true;
     object.name = "Ignored";
     auto row = PeekRowJson(object, modules);

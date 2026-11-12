@@ -14,12 +14,10 @@
 #include "reagentlive/core/client.h"
 #include "reagentlive/core/protocol.h"
 #include "reagentlive/frontends/cli/syntax/pattern.h"
-#include "reagentlive/ue/protocol_ue.h"
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label };
-using ue::Ref;
 struct Command {
     Kind kind = Kind::Remote;
     Request request{};
@@ -78,6 +76,10 @@ struct Command {
     uint64_t range = 0;
 };
 constexpr uint32_t MaxEachSeconds = 60;
+// A class or struct name as the console accepts it (the Unreal pack's wire limit).
+constexpr size_t MaxTypeName = 64;
+// watch --follow: an offset from the root object, inside the object.
+constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;
 constexpr uint32_t DefaultCensusLimit = 100;
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.

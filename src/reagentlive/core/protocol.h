@@ -302,6 +302,26 @@ struct Response {
     char reason[MaxReason];
     alignas(16) uint8_t data[MaxRead];
 };
+// An engine object: address, the engine's slot for it and that slot's
+// serial, so a replaced object is told apart from the one a ref named.
+// index < 0 means address only (the pack identifies it); serial 0 = not
+// assigned yet. Core commands treat it as an address; packs give it meaning.
+struct Ref {
+    uintptr_t address;
+    int32_t index, serial;
+    bool operator==(const Ref&) const = default;
+};
+// On the wire a ref is Request::address plus args[0] (index low, serial high).
+inline void SetRef(Request& request, const Ref& ref) {
+    request.address = ref.address;
+    request.args[0] = static_cast<uint32_t>(ref.index) | static_cast<uint64_t>(static_cast<uint32_t>(ref.serial)) << 32;
+}
+inline Ref GetRef(const Request& request) {
+    return {static_cast<uintptr_t>(request.address), static_cast<int32_t>(static_cast<uint32_t>(request.args[0])),
+            static_cast<int32_t>(static_cast<uint32_t>(request.args[0] >> 32))};
+}
+// A raw address as a ref the pack identifies.
+inline Ref AddressRef(uint64_t address) { return {static_cast<uintptr_t>(address), -1, 0}; }
 // One loaded module; the process exe comes first.
 struct ModuleEntry {
     uint64_t base, size;

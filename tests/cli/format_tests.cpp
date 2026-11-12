@@ -1,6 +1,6 @@
 // reagentlive CLI value formatting: field values, JSON values and struct expansion.
-#include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/format_ue.h"
+#include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "doctest.h"
 #include <cstring>

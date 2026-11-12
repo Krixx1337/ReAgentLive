@@ -45,27 +45,33 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 
 ## Commands
 
-Every console verb and its page.
+Every console verb and its page. **Core** commands work in any process,
+the own-thread example included. **Unreal pack** commands need a host built
+with the pack; on any other host they are refused with a message saying so,
+and `status` lists the packs a host offers (`packs`).
 
-| Command | Page |
-|---|---|
-| `read`, `read-batch`, `peek`, `write`, `modules` | [memory](commands/memory.md) |
-| `write --trial`, `pin`, `watch` | [memory](commands/memory.md) |
-| `search` | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
-| `read --as "<layout>"` | [memory](commands/memory.md#typed-layouts) |
-| `read --as cstr\|wstr`, `<addr>->off`, `vtable`, `region` | [native objects](commands/native-objects.md) |
-| `disasm`, `xrefs`, `touches` | [fast lane](commands/fast-lane.md) |
-| `sig --check`, `sig --bytes` | [fast lane](commands/fast-lane.md#signatures) |
-| `find`, `describe`, `name`, `name-find`, `fields`, `entries`, `refs` | [Unreal pack](commands/unreal.md) |
-| `call`, `release`, `func`, `funcs`, `params`, `func --script` | [Unreal pack](commands/unreal.md) |
-| `each` | [Unreal pack](commands/unreal.md#each) |
-| `census` | [Unreal pack](commands/unreal.md#census) |
-| `dump` | [Unreal pack](commands/unreal.md#dump), filters: [console](commands/console.md#fewer-round-trips) |
-| `export-labels`, `peek --label` | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
-| `label` | [Unreal pack](commands/unreal.md#native-members) |
-| `snap`, `record`, `--replay` | [capture](commands/capture.md) |
-| `get`, `batch`, `--timing`, `--meta` | [console](commands/console.md#fewer-round-trips) |
-| `status`, `base`, `help`, `quit`, `-c` | [console](commands/console.md) |
+| Command | Needs | Page |
+|---|---|---|
+| `read`, `read-batch`, `peek`, `write`, `modules` | core | [memory](commands/memory.md) |
+| `pin`, `watch` | core | [memory](commands/memory.md) |
+| `write --trial` | core; its owner check needs the Unreal pack | [memory](commands/memory.md) |
+| `search` | core | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
+| `read --as "<layout>"` | core | [memory](commands/memory.md#typed-layouts) |
+| `read --as cstr\|wstr`, `<addr>->off`, `vtable`, `region` | core | [native objects](commands/native-objects.md) |
+| `disasm`, `xrefs`, `touches` | core | [fast lane](commands/fast-lane.md) |
+| `sig --check`, `sig --bytes` | core | [fast lane](commands/fast-lane.md#signatures) |
+| `find`, `describe`, `name`, `name-find`, `fields`, `entries`, `refs` | Unreal pack | [Unreal pack](commands/unreal.md) |
+| `call`, `release`, `func`, `funcs`, `params`, `func --script` | Unreal pack | [Unreal pack](commands/unreal.md) |
+| `each` | Unreal pack | [Unreal pack](commands/unreal.md#each) |
+| `census` | Unreal pack | [Unreal pack](commands/unreal.md#census) |
+| `dump` | Unreal pack | [Unreal pack](commands/unreal.md#dump), filters: [console](commands/console.md#fewer-round-trips) |
+| `export-labels` | Unreal pack | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
+| `peek --label` | core | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
+| `label` | Unreal pack | [Unreal pack](commands/unreal.md#native-members) |
+| `snap`, `record`, `--replay` | Unreal pack | [capture](commands/capture.md) |
+| `get`, `--meta` | Unreal pack | [console](commands/console.md#fewer-round-trips) |
+| `batch`, `--timing` | core | [console](commands/console.md#fewer-round-trips) |
+| `status`, `base`, `help`, `quit`, `-c` | core | [console](commands/console.md) |
 
 ## Glossary
 

@@ -32,6 +32,8 @@ never the section directly. ReAgentLive never includes host code.
 3. **Pure logic and JSON:** the matching middle folder ([source
    layout](#source-layout)), unit-tested in `tests/cli/`.
 4. **Running it:** `frontends/cli/console/<area>.cpp`.
+   A pack command puts steps 2 to 4 in the layers' `ue/` folders, and
+   `PackCommand` (`console/ue/pack.cpp`) claims it.
 5. **Python:** a wrapper in `frontends/python/reagentlive_session.py`, or
    its row in [result shapes](commands/results.md) says why it has none.
 6. **Docs:** the command's page under `docs/commands/`, its row in
@@ -40,18 +42,31 @@ never the section directly. ReAgentLive never includes host code.
 
 ## Source layout
 
-`frontends/cli/` is grouped by layer. Each folder has one rule, and
-`tests/python/test_cli_layout.py` (ctest `reagentlive.cli-layout`) reads the
-`#include` lines and fails on a broken one:
+`frontends/cli/` is grouped by layer, and each layer is split into the
+core and the Unreal pack's part. `tests/python/test_cli_layout.py` (ctest
+`reagentlive.cli-layout`) reads the `#include` lines and fails on a broken
+rule.
 
 | Folder | Holds | Rule |
 |---|---|---|
-| `syntax/` | `reagentlive::cli`: the parsed `Command`, `Parse` (`parse.h`), tokens, layouts, byte patterns (`pattern.h`) | includes only `syntax/`, `core/` and `ue/` client headers; no nlohmann/json, no decoder, no I/O (the loopback tests build it without JSON) |
-| `values/` | how a value prints: `format.h`, `json_output.h`, `layout_json.h` | pure; never `console/` |
-| `state/` | files that outlive a run: `cache.h`, `names.h`, `native_names.h` | pure; never `console/` |
-| `results/` | result builders: `result_json.h`, `census.h`, `call_text.h`, `labels.h` | pure; never `console/` |
+| `syntax/` | `reagentlive::cli`: the parsed `Command`, `Parse` (`parse.h`), tokens, layouts, byte patterns (`pattern.h`) | includes only `syntax/` and `core/`; no nlohmann/json, no decoder, no I/O (the loopback tests build it without JSON) |
+| `values/` | how a value prints: `format.h`, `json.h`, `layout_json.h` | pure; never `console/` |
+| `state/` | files that outlive a run: `cache.h`, `names.h` | pure; never `console/` |
+| `results/` | result builders: `result_json.h`, `labels.h` | pure; never `console/` |
 | `code/` | the fast lane and native objects: decoder, unwind, image, xrefs, touches, `sig` checker | pure; never `console/` |
-| `console/` | `reagentlive::console`: the only folder with I/O (agent, files, stdout) | `internal.h` is for `console/` only |
+| `console/` | `reagentlive::console`: the only folder with I/O (agent, files, stdout) | `internal.h` and `pack.h` are for `console/` only |
+
+**The pack boundary.** Each layer keeps the Unreal pack's part in its own
+`ue/` folder (`syntax/ue/`, `values/ue/`, `state/ue/`, `results/ue/`,
+`console/ue/`), under the same layer rule. Outside a `ue/` folder no file
+includes `reagentlive/ue/` or a `ue/` header, or names `ue::`. The core
+console reaches the pack only through `console/pack.h`, which
+`console/ue/pack.cpp` implements: the pack's state for a run, its cache
+block, its help and `status` line, which commands are its own, and what core
+commands borrow (object guards, the trial owner check, `watch --then`,
+`peek`'s objects and names). `console/ue/internal_ue.h` is for
+`console/ue/` only. Why seams and not a pack interface:
+[design](design.md#source-layout).
 
 - The middle folders (`values/` to `code/`) may include each other and
   `syntax/`. Their headers are unit-tested in `tests/cli/`.
@@ -60,9 +75,10 @@ never the section directly. ReAgentLive never includes host code.
 - `code/` is the one feature-shaped folder: the decoders form a closed group
   with their own dependency (Zydis). Why layers and not feature folders:
   [design](design.md#source-layout).
-- A new area gets `syntax/parse_<area>.cpp` and `console/<area>.cpp`. It
-  gets a new middle folder only once it has three headers of its own;
-  until then they go in the closest one.
+- A new area gets `syntax/parse_<area>.cpp` and `console/<area>.cpp` (in
+  the `ue/` folders when it belongs to the pack). It gets a new middle
+  folder only once it has three headers of its own; until then they go in
+  the closest one.
 - Namespaces do not follow folders (`reagentlive::cli`, `cli::detail`,
   `cli::sig`): folders are for finding files.
 
@@ -71,37 +87,41 @@ one file:
 
 | Files | Holds |
 |---|---|
-| `console/console.cpp` | help, the `Run` dispatcher, sessions, `batch`, the cache file, `RunConsole` |
+| `console/console.cpp` | help, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole` |
 | `console/output.cpp` | JSON records, errors, `--timing`, batch capture |
-| `console/memory.cpp` | `status`, read decoding, `pin`, `watch` (blocking and detached) |
-| `console/members.cpp`, `state/native_names.h` | native members: `label`, the native file and its checks |
-| `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --as "<layout>"`, native member types) |
-| `console/dump.cpp` | field tables, struct layouts, `fields`, `dump` |
+| `console/memory.cpp` | `status`, read decoding, `pin`, trials, `watch` (blocking and detached), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
 | `console/sig.cpp` | `sig`: byte signatures against the live image |
 | `console/native.cpp` | `vtable` and `region` (native objects) |
-| `console/labels.cpp` | `export-labels` |
-| `console/capture.cpp` | snapshots, `snap`, `record`, replay |
-| `console/calls.cpp` | `func`, `params`, typed calls |
-| `console/query.cpp` | class lookup, `each`, `get` |
+| `console/pack.h`, `console/ue/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
+| `console/ue/members.cpp`, `state/ue/native_names.h` | native members: `label`, the native file and its checks |
+| `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --as "<layout>"`, native member types) |
+| `console/ue/dump.cpp` | field tables, struct layouts, `fields`, `dump` |
+| `console/ue/labels.cpp` | `export-labels` |
+| `console/ue/capture.cpp` | snapshots, `snap`, `record`, replay |
+| `console/ue/calls.cpp` | `func`, `params`, typed calls |
+| `console/ue/query.cpp` | class lookup, `each`, `get`, `entries` |
+| `state/ue/cache_ue.h`, `values/ue/format_ue.h`, `values/ue/json_output.h`, `results/ue/` | the pack's cache block, property values as text and JSON, its result builders |
 | `syntax/command.h`, `syntax/text.h` | the parsed `Command` and its limits; token, number, ref and address parsing |
 | `syntax/parse.cpp` | `Parse` (declared in `parse.h`): help, status, quit, `batch`, then the areas below |
-| `syntax/parse_memory.cpp`, `parse_unreal.cpp`, `parse_code.cpp` | the verbs of each area; each answers nothing for a verb not its own |
+| `syntax/parse_memory.cpp`, `parse_code.cpp`, `ue/parse_unreal.cpp` | the verbs of each area; each answers nothing for a verb not its own |
 | `ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, array previews, `name`) and the shared helpers with their caches |
 | `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, `fields` and parameters |
 | `agent_ue_scan.cpp` | the cached table and pool scans: `census`, `name-find`, `each` |
 
 - Shared helpers live in a `detail` namespace (console) or the pack's
   namespace, declared in an internal header (`console/internal.h`,
-  `agent_ue_internal.h`); a helper used by one file stays anonymous there.
+  `console/ue/internal_ue.h`, `agent_ue_internal.h`); a helper used by one
+  file stays anonymous there.
 - Agent files keep the mapped-image limits: constant-initialised globals,
   each defined in one file and declared `extern` in the internal header.
 - New files join `target_sources`; hosts need no change.
 - No file past 1000 lines: split by subject before it gets there.
 - The console keeps no file-level state: everything one run keeps (refs,
-  names, field tables, class refs, modules, output capture and timing) is a
-  member of `Session` (`console/internal.h`), passed to every command, so
-  each file can be tested alone.
+  names, modules, output capture and timing) is a member of `Session`
+  (`console/internal.h`), and the pack's (field tables, class refs, census,
+  snapshots) of its `PackState` (`console/ue/internal_ue.h`), passed to
+  every command, so each file can be tested alone.
 
 ## Tests
 
@@ -127,7 +147,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive.python-session`, `reagentlive.ida-labels` (`tests/python/`) | the Python session client against a scripted fake console, and the IDA label importer |
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack |
 | `reagentlive.consumer` (`tests/consumer/`) | an agent-only host project built in its own tree: no downloads with the console off, and nothing past `src/` reachable through the include path |
-| `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules, from `#include` lines |
+| `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines and `ue::` names |
 | `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, and no host or game name appears in the library |
 
 The Unreal agent handlers need a live object table, so hosts check them in

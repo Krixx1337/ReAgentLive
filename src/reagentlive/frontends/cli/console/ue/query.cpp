@@ -22,24 +22,24 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "reagentlive/frontends/cli/results/call_text.h"
+#include "reagentlive/frontends/cli/results/ue/call_text.h"
 #include "reagentlive/frontends/cli/console/console.h"
-#include "reagentlive/frontends/cli/state/cache.h"
+#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
-#include "reagentlive/frontends/cli/values/format.h"
-#include "reagentlive/frontends/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/format_ue.h"
+#include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/ue/client_ue.h"
 
-#include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/ue/internal_ue.h"
 
 namespace reagentlive::cli::detail {
 
 Result<Ref> ResolveClass(Session& session, const std::string& name) {
     Client& client = session.client;
-    for (auto entry = session.classRefs.begin(); entry != session.classRefs.end(); ++entry) {
+    for (auto entry = Ue(session).classRefs.begin(); entry != Ue(session).classRefs.end(); ++entry) {
         if (entry->name != name) continue;
         if (entry->verified) return entry->ref;
         auto object = ue::Describe(client, entry->ref);
@@ -48,7 +48,7 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
             return entry->ref;
         }
         if (!object && object.error().kind != Error::Kind::Agent) return std::unexpected(object.error());
-        session.classRefs.erase(entry);
+        Ue(session).classRefs.erase(entry);
         break;
     }
     uint32_t from = 0;
@@ -57,7 +57,7 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
         if (!found) return std::unexpected(found.error());
         for (const auto& object : found->objects) {
             if (object.name != name) continue;
-            session.classRefs.push_back({name, object.ref, true});
+            Ue(session).classRefs.push_back({name, object.ref, true});
             return object.ref;
         }
         if (!found->next) break;
@@ -137,7 +137,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     std::vector<std::pair<Ref, std::vector<uint8_t>>> last;
     for (const auto& row : result->rows) {
         refs.push_back(row.object);
-        Json item = {{"ref", RefText(row.object)}, {"value", EachValue(field, signature, row.value, structs, session.Style(), truncated)}};
+        Json item = {{"ref", RefText(row.object)}, {"value", EachValue(field, signature, row.value, structs, Style(session), truncated)}};
         if (session.meta) item["hex"] = format_detail::Hex(row.value, row.value.size());
         rows.push_back(std::move(item));
         last.emplace_back(row.object, row.value);
@@ -165,8 +165,8 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                 if (previous == last.end()) { last.emplace_back(row.object, row.value); continue; }
                 if (previous->second == row.value) continue;
                 Json change = {{"ms", ms}, {"tick", tick}, {"ref", RefText(row.object)},
-                    {"before", EachValue(field, signature, previous->second, structs, session.Style(), truncated)},
-                    {"after", EachValue(field, signature, row.value, structs, session.Style(), truncated)}};
+                    {"before", EachValue(field, signature, previous->second, structs, Style(session), truncated)},
+                    {"after", EachValue(field, signature, row.value, structs, Style(session), truncated)}};
                 std::fprintf(stderr, "  +%lld ms  %s  %s -> %s\n", static_cast<long long>(ms), RefText(row.object).c_str(),
                     change["before"].dump().c_str(), change["after"].dump().c_str());
                 std::fflush(stderr);
@@ -242,7 +242,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             const auto* field = FindField(session.names, *table, name, out.error);
             if (!field) {
                 // A native member, as the last step on the object itself.
-                if (rest.empty() && table == &objectFields && !session.native.Empty()) {
+                if (rest.empty() && table == &objectFields && !Ue(session).native.Empty()) {
                     const auto native = NativeMembers(session, object, objectFields, object.index >= 0);
                     const auto named = [&](const NativeCheck& c) { return NativeMatches(*c.member, name); };
                     if (const auto refused = std::ranges::find_if(native.refused, named); refused != native.refused.end()) {
@@ -342,7 +342,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         }
         bool partial = false;
         Json row = {{"path", value.path}, {"ok", true},
-            {"value", JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, session.Style())},
+            {"value", JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session))},
             {"address", format_detail::Pointer(value.address)}, {"object", ReusableRef(value.object)}, {"truncated", partial}};
         if (session.meta) {
             row["type"] = value.field.type;
@@ -401,7 +401,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     // FNames in one lookup, object pointers in one describe-many.
     std::vector<int32_t> indices;
     std::vector<std::string> names;
-    StructCache& structs = session.structs;
+    StructCache& structs = Ue(session).structs;
     if (client.Supports(ue::op::Names)) {
         const auto collect = [&](int32_t index) -> std::string_view {
             if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
@@ -436,7 +436,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     Json rows = Json::array();
     bool partial = false;
     const auto add = [&](Json& row, const char* name, const ue::Field& part, std::span<const uint8_t> data) {
-        row[name] = JsonFieldValue(part, data, structs, lookupName, partial, session.Style(), 1);
+        row[name] = JsonFieldValue(part, data, structs, lookupName, partial, Style(session), 1);
         if (const auto* named = objectOf(PointerRef(part.type, data))) {
             row[std::string(name) + "_object"] = ObjectJson(*named);
             RememberRef(session.refs, named->ref);
