@@ -1,6 +1,7 @@
 // reagentlive CLI, Unreal pack: its block of the cache file (state/cache.h):
-// class names to refs, field tables by type and the census baselines (so
-// one-shot runs can use census --changed). Field tables are checked against
+// class names to refs, field tables by type, the census baselines and the
+// last snap (so one-shot runs, and the MCP adapter's console per call, can
+// use census --changed and dump --changed). Field tables are checked against
 // page 0 of every lookup (ue::Fields with a cache). Field lines are shared
 // with snapshot files.
 #pragma once
@@ -14,16 +15,26 @@
 #include <vector>
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/results/ue/census.h"
+#include "reagentlive/frontends/cli/values/format.h"
 #include "reagentlive/ue/client_ue.h"
 
 namespace reagentlive::cli {
+// snap's baseline for dump --changed: the object, its field table and its bytes.
+struct Snapshot {
+    Ref object;
+    std::vector<ue::Field> fields;
+    std::vector<uint8_t> bytes;
+    bool operator==(const Snapshot&) const = default;
+};
 struct UnrealCache {
     std::vector<std::pair<std::string, Ref>> classes;
     std::vector<std::pair<int32_t, std::vector<ue::Field>>> tables; // By the type's object-table index.
     std::optional<CensusBaseline> census, censusBefore;
+    std::optional<Snapshot> snap;
 };
 constexpr std::string_view UnrealCachePack = "ue";
 constexpr size_t MaxCachedTables = 512, MaxCachedClasses = 512, MaxCachedCensusRows = 65536;
+constexpr size_t MaxCachedSnapBytes = size_t{1} << 20; // A larger snap stays in its run (or its file).
 
 // "field\t..." with every ue::Field member; shared with snapshot files.
 inline std::string FieldLine(const ue::Field& f) {
@@ -81,6 +92,12 @@ inline std::vector<std::string> SaveUnrealCache(const UnrealCache& data) {
     };
     census("census", data.census);
     census("census-before", data.censusBefore);
+    // snap: ref and field count, the field lines, then snap-bytes as hex.
+    if (data.snap && data.snap->bytes.size() <= MaxCachedSnapBytes) {
+        out << "snap\t" << RefText(data.snap->object) << '\t' << data.snap->fields.size() << '\n';
+        for (const auto& field : data.snap->fields) out << FieldLine(field) << '\n';
+        out << "snap-bytes\t" << format_detail::Hex(data.snap->bytes, data.snap->bytes.size()) << '\n';
+    }
     std::vector<std::string> lines;
     std::string line;
     for (std::istringstream in(out.str()); std::getline(in, line);) lines.push_back(std::move(line));
@@ -132,6 +149,24 @@ inline std::optional<UnrealCache> LoadUnrealCache(std::span<const std::string> b
                 entry.name = row[4];
                 census.rows.push_back(std::move(entry));
             }
+        } else if (parts[0] == "snap" && parts.size() == 3) {
+            uint64_t count = 0;
+            Snapshot snap;
+            if (data.snap || !text::LiteralRef(parts[1], snap.object) || !text::Number(parts[2], count) ||
+                count > ue::MaxFieldStart || count + 1 > lines.size() - i - 1) return std::nullopt;
+            for (uint64_t n = 0; n < count; ++n) {
+                auto field = ParseFieldLine(lines[++i]);
+                if (!field) return std::nullopt;
+                snap.fields.push_back(std::move(*field));
+            }
+            const auto row = cache_detail::SplitTabs(lines[++i]);
+            uint32_t length = 0;
+            if (row.size() != 2 || row[0] != "snap-bytes") return std::nullopt;
+            snap.bytes.resize(row[1].size() / 3 + 1);
+            if (snap.bytes.size() > MaxCachedSnapBytes + 1 || !text::Bytes(row[1], snap.bytes.data(), snap.bytes.size(), length))
+                return std::nullopt;
+            snap.bytes.resize(length);
+            data.snap = std::move(snap);
         } else {
             return std::nullopt;
         }

@@ -33,7 +33,9 @@ Parsed Help(const Args& args, const ParseContext&) {
     command.kind = Kind::Help;
     command.target = args.At(0);
     command.all = args.Has("--json");
+    command.hashOnly = args.Has("--hash");
     if (command.all && !command.target.empty()) return Fail("--json prints every verb");
+    if (command.hashOnly && (command.all || !command.target.empty())) return Fail("--hash prints the hash alone");
     return command;
 }
 

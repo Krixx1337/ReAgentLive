@@ -71,8 +71,9 @@ small. Unreal support needs a host built into the user's own mod
 python src/reagentlive/frontends/python/reagentlive_gen.py --console build/own-thread/reagentlive.exe -o build/own-thread/console_api.py
 ```
 
-It prints the number of verbs and the table hash. The MCP server and
-scripts use this module.
+It prints the number of verbs and the table hash. Scripts use this
+module; the MCP server makes its own from the console each time it
+starts, so a rebuilt console needs no new module for it.
 
 ## 4. Register the MCP server
 
@@ -80,8 +81,7 @@ Use absolute paths. The server is the same for every client:
 
 - command: `python`
 - args: `<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py`,
-  `--console`, `<dir>\build\own-thread\reagentlive.exe`, `--module`,
-  `<dir>\build\own-thread\console_api.py`
+  `--console`, `<dir>\build\own-thread\reagentlive.exe`
 
 Register it under the name `reagentlive` in the user's scope, using the
 section for your client. If an entry with that name exists, replace it.
@@ -89,13 +89,13 @@ section for your client. If an entry with that name exists, replace it.
 ### Claude Code
 
 ```powershell
-claude mcp add reagentlive --scope user -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\build\own-thread\reagentlive.exe" --module "<dir>\build\own-thread\console_api.py"
+claude mcp add reagentlive --scope user -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\build\own-thread\reagentlive.exe"
 ```
 
 ### Codex
 
 ```powershell
-codex mcp add reagentlive -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\build\own-thread\reagentlive.exe" --module "<dir>\build\own-thread\console_api.py"
+codex mcp add reagentlive -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\build\own-thread\reagentlive.exe"
 ```
 
 ### Cursor, GitHub Copilot and other clients
@@ -109,8 +109,7 @@ Add this under `"mcpServers"` in the client's MCP config file, for example
   "command": "python",
   "args": [
     "<dir>/src/reagentlive/frontends/mcp/reagentlive_mcp.py",
-    "--console", "<dir>/build/own-thread/reagentlive.exe",
-    "--module", "<dir>/build/own-thread/console_api.py"
+    "--console", "<dir>/build/own-thread/reagentlive.exe"
   ]
 }
 ```

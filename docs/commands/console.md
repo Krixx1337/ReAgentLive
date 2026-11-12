@@ -198,15 +198,21 @@ request costs up to a host tick. The console cuts both:
 order. Split commands with `;` or newlines. Stdout is [JSON Lines](#json-lines).
 The exit code is 1 if any command was malformed or failed. A `;` inside
 braces belongs to a `batch`. Each run starts with the previous run's `$N`
-list from the [cache file](#fewer-round-trips) (same agent instance only) but
-without a baseline, so carry baselines as snapshot files (`snap <ref> file`,
-then `dump <ref> --changed file` in a later run). Literal refs always work. Without
+list, census baselines and last `snap` from the [cache file](#fewer-round-trips)
+(same agent instance only; a snap over 1 MB stays in its run), so `snap` in
+one run and `dump --changed` in the next work. A snapshot file (`snap <ref>
+file`, then `dump <ref> --changed file`) keeps a baseline past the agent
+instance and beside a later snap. Literal refs always work. Without
 `-c`, send one command per stdin line. The console keeps refs and the
 baseline until EOF or `quit`.
 
 Console arguments: `[pid] [-c "..."] [--names <file>] [--caller
-tool|script|shell] [--no-usage]`; the last two are the
+tool|script|shell] [--session <id>] [--no-usage]`; the last three are the
 [usage log](#usage-log-and-stats)'s.
+
+`help --hash` answers the verb table's hash alone (`{rows: [],
+table_hash}`), with no target: a program that keeps a table reads it to
+know whether the console changed.
 
 **No target.** When the target is not running or the agent cannot be
 attached, the console answers `help` and `stats` from its table and its
@@ -228,13 +234,15 @@ the generated functions, the MCP tools), so one log covers them
   kind, milliseconds, and `batch` for a command that ran inside one. No
   addresses, names, paths or results.
 - **A session** is one console run. One-shot (`-c`) runs against the same
-  agent instance share one through the [cache file](#fewer-round-trips).
+  agent instance share one through the [cache file](#fewer-round-trips);
+  `--session <id>` names it outright (the MCP adapter passes one per
+  server to the console it starts for each call).
 - **The caller** is `tool` (an agent reads every result, as through the
   MCP adapter), `script` (the Python session's default: only what the
   script returns reaches the agent) or `shell` (started by hand, the
   default). Only `tool` output is context cost.
-- **Not recorded:** `help --json` and `quit` (a program's own start and
-  end), runs with no target, and anything with `--no-usage`.
+- **Not recorded:** `help --json`, `help --hash` and `quit` (a program's
+  own start and end), runs with no target, and anything with `--no-usage`.
 - **A batch** writes a line per command, under its own verb, and one for
   itself holding only its wrapper, so no output counts twice.
 - **Capped:** past 4 MB the oldest sessions are dropped when a console

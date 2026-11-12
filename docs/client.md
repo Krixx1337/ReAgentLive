@@ -103,7 +103,9 @@ module calls through it; scripts use it for the rest.
 - `Session(console, args, caller='script')` starts the console with
   `--caller`: its [usage log](commands/console.md#usage-log-and-stats)
   counts a script's output apart from an agent's context. Pass
-  `caller='tool'` when an agent reads every result.
+  `caller='tool'` when an agent reads every result. `table=` takes a
+  `help --json` result read before: the session then asks only for the
+  hash (`help --hash`) and reads the table again only when it changed.
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
   value into bytes; `f32`/`u64`/... decoders and `pack` go the other way.
 
@@ -116,18 +118,20 @@ host.
 
 ## MCP tools
 
-`frontends/mcp/reagentlive_mcp.py` serves the generated module's methods
-as MCP tools over standard input and output, so an agent picks a tool and
-fills in checked, named arguments instead of writing a command line:
+`frontends/mcp/reagentlive_mcp.py` serves the console's verbs as MCP
+tools over standard input and output, so an agent picks a tool and fills
+in checked, named arguments instead of writing a command line:
 
 ```
-python reagentlive_mcp.py --console <console.exe> --module my_console.py [-- <pid>]
+python reagentlive_mcp.py --console <console.exe> [-- <pid>]
 ```
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
-  host's with its origin (`ue_find`, `host_world`). Argument and result
-  schemas come from the functions' types; descriptions from their
-  docstrings. Nothing is written per tool.
+  host's with its origin (`ue_find`, `host_world`). The adapter reads the
+  console's `help --json` (no target needed) and makes the functions in
+  memory with the generator's code; argument and result schemas come
+  from their types, descriptions from their docstrings. Nothing is
+  written per tool and no module file is involved.
 - **Marks:** a verb that writes the target's memory or calls into it is
   `destructiveHint`, every other one `readOnlyHint`, so a client can
   allow the read-only tools and ask first for the rest. The host's own
@@ -142,15 +146,22 @@ python reagentlive_mcp.py --console <console.exe> --module my_console.py [-- <pi
   them in as few host ticks as possible, one envelope each.
 - **State in arguments:** tools take the literal refs results carry and
   the ids of pins, trials and captures; `$N` is refused.
-- **Startup:** the adapter compares the module's table hash with the
-  console's (`help --json`, no target) and refuses to start on a
-  mismatch. The console itself starts on the first tool call and again
-  after it exits, so the tool list is there with no target running. With
-  no target the console answers `help` and `stats` and refuses the rest
-  as `startup`, after which the adapter starts it again on the next call.
-- **Usage:** the console runs with `--caller tool`, so `stats` counts
-  every tool result as context. Each result goes to the client twice,
-  as text and as structured content.
+- **A console per call:** each tool call starts the console and ends it,
+  one call at a time. Nothing holds the executable between calls, so the
+  console can be rebuilt while the server runs and the next call runs the
+  new build. With no target the console answers `help` and `stats` and
+  refuses the rest as `startup`.
+- **A rebuilt console's tools:** each start reads the table's hash
+  (`help --hash`). When it changed, the adapter makes the tools again
+  before the call runs and tells the client the list changed (the server
+  says it sends that notice). A client that asks again gets the new list
+  with no reconnect; one that ignores the notice keeps working for verbs
+  whose arguments and result did not change, and needs a reconnect for
+  the rest ([design](design.md#tool-interface)).
+- **Usage:** every console runs with `--caller tool` and one `--session`
+  per server, so `stats` counts every tool result as context and groups
+  the server's calls. Each result goes to the client twice, as text and
+  as structured content.
 - **Cost:** with every pack verb the tool list is about 110 KB of schema;
   a client that loads every tool's schema up front pays that before any
   work.

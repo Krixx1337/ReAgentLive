@@ -14,6 +14,7 @@
 #include "reagentlive/frontends/cli/results/ue/census.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
 #include "reagentlive/frontends/cli/results/ue/verbs_ue.h"
+#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
 #include "reagentlive/frontends/cli/state/ue/native_names.h"
 #include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/ue/client_ue.h"
@@ -45,12 +46,6 @@ private:
     };
     Session& session_;
     std::vector<Entry> entries_;
-};
-
-struct Snapshot {
-    Ref object;
-    std::vector<ue::Field> fields;
-    std::vector<uint8_t> bytes;
 };
 
 // Class and struct objects by exact name, for the session (they live as long as the process).

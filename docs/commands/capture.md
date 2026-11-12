@@ -14,7 +14,9 @@ Use `snap $N` on a live instance, perform an action, then run `dump $N
 --changed`. It compares reflected fields and prints the changed ones with
 `before` and `value`; `--match` narrows them. It checks that the ref and
 field layout match the baseline. Reads can span ticks, and fields outside the
-64 KB dump window are skipped.
+64 KB dump window are skipped. The last snap is kept in the cache file, so
+`dump --changed` works in a later run against the same agent instance
+(one-shot runs, and the MCP adapter's console per call).
 
 Use `fields $N` to choose exact field names for a recording. Qualify duplicate
 names with `Owner:Field`. Select up to eight fields of up to 64 bytes each

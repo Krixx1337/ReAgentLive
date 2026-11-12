@@ -60,7 +60,9 @@ struct Command {
     // should land (with --resolve: its target) and how far past that the
     // match lies; `target` names the module (empty: the exe). sig-file:
     // `file`. sig-bytes: request address and length.
-    // help: `target` is the verb asked about (empty: all), `all` is --json. stats: `all` is --all.
+    // help: `target` is the verb asked about (empty: all), `all` is --json, `hashOnly` is --hash.
+    // stats: `all` is --all.
+    bool hashOnly = false;
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     sig::Pattern pattern;
     std::optional<uint64_t> expect;

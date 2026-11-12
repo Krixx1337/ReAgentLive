@@ -307,7 +307,7 @@ client API, never on the section.
 | **GUI** (later) | ImGui desktop window, calls from a worker thread | tables, watch panels |
 | **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON call per command; `reagentlive_gen.py` generates typed functions per console | exists; no logic of its own, so every command lands in the console first; results are strict against the console's table |
 | **Static-tool script** | `frontends/ida/import_labels.py`: imports the console's label file | exists; reads a file, never talks to the agent |
-| **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per generated function | exists; on the console's JSON calls ([tool interface](#tool-interface)) |
+| **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per function generated in memory from the console's table | exists; on the console's JSON calls ([tool interface](#tool-interface)) |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
 
 The console has become the command layer: `dump`, `get`, `batch`, `entries`
@@ -450,19 +450,51 @@ the one before it did not.
   agent sees what needs a pack when it picks, and a host verb cannot take
   a core verb's name.
 - **MCP tools wrap the functions** (`frontends/mcp/reagentlive_mcp.py`, the
-  only file that needs the dependency): schemas from the functions'
-  types, descriptions from their docstrings, `readOnlyHint` or
-  `destructiveHint` from `writes`. No tool and no JSON Schema is written by
-  hand or exported from the console. Verbs marked `blocks` and `quit` are
-  left out; `batch` takes a list of calls and runs them held.
+  only file that needs the dependency): the adapter reads the console's
+  `help --json`, makes the functions in memory with the generator's code,
+  and takes schemas from their types, descriptions from their docstrings,
+  `readOnlyHint` or `destructiveHint` from `writes`. No tool and no JSON
+  Schema is written by hand or exported from the console, and there is no
+  module file to go stale. Verbs marked `blocks` and `quit` are left out;
+  `batch` takes a list of calls and runs them held.
 - **Same shape as the console.** A function returns the console's result
   key for key; an `addr` stays its hex text. A helper that converts says
   so in its name. **Behaviour lives in the console:** paging to the end,
   filtering and retrying are verbs, flags and cursors, so the shell,
   scripts and tools all have them; the Python paging helpers went.
-- **A stale module does not start.** The adapter compares the module's
-  table hash with the console's (`help --json` needs no target) before it
-  serves, and starts the console itself on the first call.
+- **A console per tool call, never one kept open.** A kept console locked
+  the executable (a rebuild failed to link) and kept running the old build;
+  the tools, made once from a module file, kept the old list until the
+  client reconnected. Now each call starts a console and ends it: nothing
+  holds the executable, and the next call runs the new build. JSON calls
+  carry no session state; what runs share (class refs, field tables,
+  census baselines, the last `snap`) is in the cache file. Calls hold a
+  lock, since a second console would be refused as busy. Measured with the
+  own-thread host: about 17 ms a call against 2.4 ms on a kept console,
+  most of it the table read that a hash read replaced; a 530 KB cache file
+  adds under 1 ms. Not yet measured: a pack-heavy `dump` with the game's
+  cache loaded.
+- **A changed table remakes the tools before the call runs.** Each start
+  reads only the hash (`help --hash`, no target needed; `status` would
+  need one) and the full table when it changed. The functions still refuse
+  a session from another table, which keeps scripts honest, so the call
+  that saw the change runs through the new tools; the adapter then tells
+  the client the list changed. A client that ignores the notice keeps its
+  list: a tool whose verb kept its arguments and result works; changed
+  arguments are refused with the usage, a changed result by the client's
+  own check against the old type, a removed verb by the adapter. Those
+  need a reconnect.
+- **One usage-log session per server:** the adapter passes the same
+  `--session` to every console it starts.
+
+| Rejected for the adapter | Why |
+|---|---|
+| A `reload`, `reconnect` or `disconnect` tool | the agent has to know it is stale to call it, and the client's list stays as it was |
+| A private copy of the console to run | the usage log, native names and labels are files named after the console beside it; a copy splits them |
+| Keeping the console and closing it when idle | a timer thread and a window in which a rebuild still fails; only if a start per call is measured too slow |
+| Regenerating the module file on every build, and nothing else | a second copy, and the running server keeps its old list |
+| Watching the executable for changes | the next call sees the new table anyway |
+| Skipping the stale-table check for the adapter | reopens for scripts what the check closes |
 - **The generator and the adapter name no pack**; the layout test checks
   that they never spell a pack's id, that no core console file does, and
   that nothing in `core/` includes `ue/`.

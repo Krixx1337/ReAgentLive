@@ -98,6 +98,7 @@ TEST_CASE("the Unreal pack's cache block round-trips and refuses malformed lines
     data.census = CensusBaseline{"Actor", {{"Projectile Base", Ref{0x9000, 50, 2}, 7, {Ref{0x9100, 60, 1}, Ref{0x9200, 61, 1}}},
         {"Pawn", Ref{0xa000, 51, 0}, 1}}};
     data.censusBefore = CensusBaseline{"Actor", {{"Pawn", Ref{0xa000, 51, 0}, 2, {Ref{0xa100, 62, 3}}}}};
+    data.snap = Snapshot{Ref{0xb000, 52, 4}, {field, structField}, {0x00, 0x00, 0x80, 0x3f, 0xff}};
     // Through the whole file, as the console stores it.
     cli::CacheData file;
     file.owner = 5;
@@ -111,6 +112,12 @@ TEST_CASE("the Unreal pack's cache block round-trips and refuses malformed lines
     CHECK(loaded->tables == data.tables);
     CHECK(loaded->census == data.census);
     CHECK(loaded->censusBefore == data.censusBefore);
+    CHECK(loaded->snap == data.snap);
+    data.snap->bytes.clear(); // A snap of no bytes still round-trips.
+    CHECK(LoadUnrealCache(SaveUnrealCache(data))->snap == data.snap);
+    data.snap->bytes.assign(MaxCachedSnapBytes + 1, 0); // Too large: stays in its run.
+    CHECK_FALSE(LoadUnrealCache(SaveUnrealCache(data))->snap.has_value());
+    data.snap.reset();
     data.census = CensusBaseline{"", {}}; // The whole table, no rows.
     CHECK(LoadUnrealCache(SaveUnrealCache(data))->census == data.census);
     data.census.reset();
@@ -121,6 +128,9 @@ TEST_CASE("the Unreal pack's cache block round-trips and refuses malformed lines
     CHECK_FALSE(LoadUnrealCache(block({"census\tActor\t1", "census-row\t0x10#1:1\t3\tbad\tA"})).has_value());
     CHECK(LoadUnrealCache(block({"census\tActor\t1", "census-row\t0x10#1:1\t3\t-\tA"})).has_value());
     CHECK_FALSE(LoadUnrealCache(block({"table\t1\t3"})).has_value());
+    CHECK_FALSE(LoadUnrealCache(block({"snap\t0x10#1:1\t0"})).has_value());              // No bytes line.
+    CHECK_FALSE(LoadUnrealCache(block({"snap\t0x10#1:1\t0", "snap-bytes\tzz"})).has_value());
+    CHECK(LoadUnrealCache(block({"snap\t0x10#1:1\t0", "snap-bytes\t01 02"}))->snap->bytes.size() == 2);
     CHECK_FALSE(LoadUnrealCache(block({"bogus"})).has_value());
     CHECK(LoadUnrealCache(block({})).has_value());
 }

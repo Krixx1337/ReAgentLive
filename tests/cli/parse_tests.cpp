@@ -391,6 +391,9 @@ TEST_CASE("fields takes one object as a ref or raw address") {
 
 TEST_CASE("local commands do not build a request") {
     CHECK(Parse("help", NoRefs)->kind == Kind::Help);
+    CHECK(Parse("help --hash", NoRefs)->hashOnly);
+    CHECK_FALSE(Parse("help --hash --json", NoRefs).has_value());
+    CHECK_FALSE(Parse("help read --hash", NoRefs).has_value());
     CHECK(Parse("status", NoRefs)->kind == Kind::Status);
     CHECK(Parse("quit", NoRefs)->kind == Kind::Quit);
     CHECK(Parse("stats", NoRefs)->kind == Kind::Stats);

@@ -37,6 +37,17 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   (`console/no_pack.cpp`). Its table, `help`, generated functions and MCP
   tools hold no pack verbs and no core verb marked `needsPack` (`trial`).
   The default console's table and hash are unchanged.
+- **MCP tools that follow a rebuilt console** ([design](docs/design.md#tool-interface)):
+  the adapter starts a console per tool call (one at a time) instead of
+  keeping one open, so a rebuild links and the next call runs it. Tools
+  are made in memory from the console's `help --json`; `--module` is
+  gone. Each start reads `help --hash` (new: the table's hash alone, no
+  target needed); on a change the tools are made again before the call
+  runs and the client is told the list changed. New console flag
+  `--session <id>` names the usage-log session (the adapter passes one
+  per server). The last `snap` is kept in the cache file, so `dump
+  --changed` works across runs. `Session(..., table=)` reads only the
+  hash when it already has the table.
 - **Usage log and `stats`** ([console](docs/commands/console.md#usage-log-and-stats),
   [design](docs/design.md#usage-log)): the console appends one line of
   facts per call to `<console>.usage.jsonl` (verb, flag names, input hash,

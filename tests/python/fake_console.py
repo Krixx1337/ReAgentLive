@@ -1,10 +1,12 @@
 """A scripted console for the Python tests: no agent or game.
 
 Run as a console: `-c "help --json"` prints the table and exits (as a real
-console does with no target); on stdin, `help --json` answers the table, a
+console does with no target); on stdin, `help --json` answers the table
+and `help --hash` its hash (read at start: a test may change it between
+runs), a
 JSON call is answered by matching its verb and arguments, a typed line by
 its exact text. Every other line gets a syntax error. Lines but the table
-are logged. Its replies file: {"table": ..., "calls": [[call, reply]...],
+are logged, after a `session <id>` line for a console given --session. Its replies file: {"table": ..., "calls": [[call, reply]...],
 "lines": {line: reply}}, from REAGENTLIVE_FAKE_REPLIES; the log is
 REAGENTLIVE_FAKE_LOG.
 """
@@ -25,11 +27,17 @@ def main():
         return
     calls = {key(call): reply for call, reply in replies['calls']}
     log = open(os.environ['REAGENTLIVE_FAKE_LOG'], 'a')
+    if '--session' in sys.argv:
+        log.write(f'session {sys.argv[sys.argv.index("--session") + 1]}\n')
     unknown = {'ok': False, 'error': {'kind': 'syntax', 'message': 'unknown'}}
     for line in sys.stdin:
         line = line.strip()
         if line == 'help --json':
             print(json.dumps(dict(table, command='help')), flush=True)
+            continue
+        if line == 'help --hash':
+            print(json.dumps({'command': 'help', 'ok': True,
+                              'result': {'rows': [], 'table_hash': replies['table'].get('table_hash')}}), flush=True)
             continue
         log.write(line + '\n')
         log.flush()

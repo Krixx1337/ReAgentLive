@@ -175,20 +175,29 @@ class Session:
     `caller` tells the console's usage log who reads the results: 'script'
     (the default: a script's output never reaches an agent's context) or
     'tool' (an agent reads every result, as through the MCP adapter).
+    `table`: a `help --json` result already read from this console; the
+    session then asks only for its hash (`help --hash`) and reads the whole
+    table again only when it changed.
     """
 
-    def __init__(self, console, args=(), caller='script'):
+    def __init__(self, console, args=(), caller='script', table=None):
         self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         self._types = {}
         try:
-            table = self.send('help --json')
-            if not table.get('ok'):
-                raise ReAgentLiveError(table.get('command', 'help --json'), table.get('error'))
+            if table is not None:
+                current = self.send('help --hash')
+                if not (current.get('ok') and current['result'].get('table_hash') == table.get('table_hash')):
+                    table = None
+            if table is None:
+                reply = self.send('help --json')
+                if not reply.get('ok'):
+                    raise ReAgentLiveError(reply.get('command', 'help --json'), reply.get('error'))
+                table = reply['result']
         except BaseException:
             self.close()
             raise
-        self.table = table['result']
+        self.table = table
         self.table_hash = self.table.get('table_hash')
         self._named = self.table.get('types', {})
         for row in self.table['rows']:

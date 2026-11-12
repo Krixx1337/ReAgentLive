@@ -93,7 +93,9 @@ namespace {
 std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, std::span<const Origin> origins,
                                                   const std::string& hash, const Command& command) {
     shape::Help help;
-    if (command.all) {
+    if (command.hashOnly) {
+        help.tableHash = hash;
+    } else if (command.all) {
         help = MakeHelpTable(verbs, origins);
         help.tableHash = hash;
     } else if (!command.target.empty()) {
@@ -331,8 +333,8 @@ struct UsageScope {
             if (given) record.flags.emplace_back(flag.name);
         }
         // A program's own reads of the table and its quit are not the agent's calls.
-        skip = record.verb == "quit" || (record.verb == "help" &&
-            std::ranges::find(record.flags, std::string("--json")) != record.flags.end());
+        const auto has = [&](const char* flag) { return std::ranges::find(record.flags, flag) != record.flags.end(); };
+        skip = record.verb == "quit" || (record.verb == "help" && (has("--json") || has("--hash")));
     }
     ~UsageScope() {
         session.line = outer;
@@ -659,7 +661,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         return 1;
     }
     constexpr const char* usage = "Usage: <console> [pid] [-c \"command; command ...\"] [--names <file>] "
-        "[--caller tool|script|shell] [--no-usage]";
+        "[--caller tool|script|shell] [--session <id>] [--no-usage]";
     // Before a session exists: print the envelope directly.
     const auto printStartup = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
@@ -673,7 +675,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     uint32_t pid = 0;
     std::filesystem::path namesFile, usagePath;
     bool namesRequired = false, record = true;
-    std::string caller = "shell";
+    std::string caller = "shell", sessionId;
     wchar_t module[MAX_PATH];
     if (const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH); length && length < MAX_PATH) {
         if (!config.namesFile.empty()) namesFile = std::filesystem::path(module).parent_path() / config.namesFile;
@@ -698,6 +700,16 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             if (value != L"tool" && value != L"script" && value != L"shell") return startupError("--caller is tool, script or shell");
             caller.clear();
             for (const wchar_t c : value) caller += static_cast<char>(c); // ASCII: one of the three words.
+        } else if (arg == L"--session" && i + 1 < argc) {
+            // The usage log's session for this run: a client that starts a console per call keeps one.
+            const std::wstring_view value(argv[++i]);
+            const auto plain = [](wchar_t c) {
+                return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || c == L'-' ||
+                    c == L'_' || c == L'.';
+            };
+            if (value.empty() || value.size() > 64 || !std::ranges::all_of(value, plain))
+                return startupError("--session is 1 to 64 letters, digits, '-', '_' or '.'");
+            for (const wchar_t c : value) sessionId += static_cast<char>(c);
         } else if (arg == L"--no-usage") {
             record = false;
         } else if (!pid && !arg.empty() && std::ranges::all_of(arg, [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
@@ -747,6 +759,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             GetCurrentProcessId()), caller};
     if (session.usage.record) TrimUsageFile(usagePath);
     if (!cachePath.empty()) LoadSessionCache(session, cachePath, oneShot.has_value());
+    if (!sessionId.empty()) session.usage.session = sessionId;
     size_t next = 0;
     std::string line;
     const auto nextLine = [&] {

@@ -23,7 +23,8 @@ inline const std::vector<Verb>& CoreVerbs() {
     static const std::vector<Verb> verbs = {
         {"help", "core", "the verbs, one line each; help <verb>: its flags, result and notes",
             {{"verb", "verb", Optional, "str", "a verb to show in full"}},
-            {{"--json", Takes::Nothing, "bool", "", "the whole table for programs"}},
+            {{"--json", Takes::Nothing, "bool", "", "the whole table for programs"},
+             {"--hash", Takes::Nothing, "bool", "", "only the table's hash: has it changed since a program read it?"}},
             Of<shape::Help>, parse::Help, {}, {"?"}},
         {"status", "core", "agent pid, tick rate, the packs the host offers and the verb table's hash",
             {}, {}, Of<shape::Status>, parse::Status,

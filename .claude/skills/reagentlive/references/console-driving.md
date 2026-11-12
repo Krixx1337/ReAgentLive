@@ -11,13 +11,15 @@
 - Pass a `find` row's `ref` (`result.rows[].ref`) or a dump row's
   `object.ref` verbatim to the next command.
 - For stateful automation, keep stdin open and alternate one command line
-  with one JSON response. Refs and the snapshot baseline persist until EOF or
-  `quit`.
+  with one JSON response. `$N` lasts until EOF or `quit`; the last `snap`
+  is also in the cache file, so a later run can `dump --changed`.
 - **MCP tools, when the client has them** (`reagentlive_mcp.py`, see the
   library's client docs): pick the tool, fill its named arguments, pass
   the literal `ref` a result carries to the next tool. Read-only tools
   are marked; destructive ones (writes, calls) still need the host's
-  approval. `batch` for reads that must share a tick.
+  approval. `batch` for reads that must share a tick. Each call is its
+  own console run, so the console can be rebuilt between calls; a tool
+  that says it changed since the rebuild needs the client to reconnect.
 - **Otherwise script through the generated functions** whenever one step's
   output feeds the next, even a short chain. A one-line `-c` is for
   independent commands you read by eye. Generate the module once per
