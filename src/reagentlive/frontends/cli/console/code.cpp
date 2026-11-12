@@ -117,7 +117,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     const auto modules = LoadedModules(session);
     if (auto strings = dis::AddStrings(AgentRead(session), listing->rows, modules); !strings)
         return JsonError(session, jsonCommand, "read", strings.error());
-    JsonResult(session, jsonCommand, DisasmJson(address, *listing, *function, modules));
+    Emit(session, jsonCommand, MakeDisasm(address, *listing, *function, modules));
 }
 
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -190,7 +190,7 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
         if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
         functions[i] = *function;
     }
-    JsonResult(session, jsonCommand, XrefsJson(target, module, hits, functions, command.all,
+    Emit(session, jsonCommand, MakeXrefs(target, module, hits, functions, command.all,
         fields->second || pointers->second, ms, LoadedModules(session)));
 }
 void RunTouches(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -246,7 +246,7 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
     for (auto& [start, row] : functions) rows.push_back(std::move(row));
     touch::Rank(rows);
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
-    JsonResult(session, jsonCommand, TouchesJson(address, command.offsets, command.range, from, to, ranges->size(),
+    Emit(session, jsonCommand, MakeTouches(address, command.offsets, command.range, from, to, ranges->size(),
         code.size(), rows, ms, LoadedModules(session)));
 }
 }

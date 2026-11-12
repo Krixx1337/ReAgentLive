@@ -18,8 +18,10 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label };
+struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
+    const Verb* verb = nullptr; // The row this line parsed with (verb.h).
     Request request{};
     std::string file;
     std::vector<std::string> fields;
@@ -37,15 +39,15 @@ struct Command {
     // console guards those on the object's identity.
     std::vector<uint64_t> guardObjects;
     uint32_t milliseconds = 0;  // pin, watch: duration.
-    // watch: `target` is "start", "read", "stop" or empty (a blocking
-    // watch); the sample interval (0: every tick) and a host root to follow.
+    // watch, watch-start, watch-read, watch-stop: `target` is empty (a
+    // blocking watch), "start", "read" or "stop"; the sample interval (0: every tick) and a host root to follow.
     uint32_t interval = 0;
     std::string root;
     std::string then;           // watch --then: a call line run right after the start.
     // dump filters: rows whose name contains `match` (case-insensitive), with
     // non-zero bytes, or changed against the snapshot (`file`, else the
-    // session's baseline). census: `match` filters class names, `changed`
-    // compares with the census baseline. batch: `fields` holds the command
+    // session's baseline). census: `match` filters class names; census-diff
+    // sets `changed`, comparing with the census baseline. batch: `fields` holds the command
     // lines. get: `fields` holds the paths.
     std::string match;
     bool nonzero = false, changed = false;
@@ -53,10 +55,11 @@ struct Command {
     // optional native object base inside it whose vtable is guarded too.
     Ref owner{};
     uint64_t object = 0;
-    // sig: the mode; --check's pattern, where it should land (with
-    // --resolve: its target) and how far past that the match lies; `target`
-    // names the module (empty: the exe). --file: `file`. --bytes: request
-    // address and length.
+    // sig-check, sig-file, sig-bytes: the mode; sig-check's pattern, where it
+    // should land (with --resolve: its target) and how far past that the
+    // match lies; `target` names the module (empty: the exe). sig-file:
+    // `file`. sig-bytes: request address and length.
+    // help: `target` is the verb asked about (empty: all), `all` is --json.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     sig::Pattern pattern;
     std::optional<uint64_t> expect;

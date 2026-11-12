@@ -53,7 +53,10 @@ struct Session {
     std::vector<Json>* capture = nullptr;   // batch: records collected instead of printed.
     std::optional<Timing> timing;
     bool meta = false;                      // --meta: struct values with their member layout.
-    std::optional<Json> chain;              // The pointer chain this command resolved; added to its result.
+    std::optional<shape::Chain> chain;      // The pointer chain this command resolved; added to its result.
+    std::vector<Verb> verbs;                // The verb table: core, pack and host rows.
+    std::string tableHash;                  // Of the whole table (status, help --json).
+    const Verb* current = nullptr;          // The row of the line being run; its result type checks what is printed.
     Beat lastBeat{};
     std::vector<Module> modules;            // Exe first.
     bool modulesListed = false;             // Listed by this run, not only loaded from the cache.
@@ -74,15 +77,24 @@ std::span<const Module> LoadedModules(Session& session);
 bool RefreshModules(Session& session);
 
 void PrintJson(Session& session, Json record);
+// A result object, checked against the running verb's row: one that does not
+// match its declared type is an internal error, never printed as a result.
 void JsonResult(Session& session, std::string_view command, Json result);
+// A typed result (results/schema.h); a resolved pointer chain goes into its `chain`.
+template<class T> void Emit(Session& session, std::string_view command, T result) {
+    if constexpr (requires { result.chain; }) {
+        if (session.chain) result.chain = std::move(*session.chain);
+    }
+    session.chain.reset();
+    JsonResult(session, command, ToJson(result));
+}
 void JsonError(Session& session, std::string_view command, std::string_view kind, std::string_view message);
 void CommandError(Session& session, std::string_view jsonCommand, const Error& error);
 void PrintStatus(Session& session, std::string_view jsonCommand);
 // False when the host does not tick on the engine's thread: same_tick then
 // means one host tick, not one moment of the game.
 inline bool TickAccurate(const Session& session) { return session.client.AgentHostThread() == HostThread::Engine; }
-Json DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type);
-Json ModuleJson(const Module& module);
+std::vector<Json> DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type);
 void RunPin(Session& session, const Command& command, std::string_view jsonCommand);
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);

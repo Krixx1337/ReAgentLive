@@ -197,7 +197,7 @@ ue/                Unreal over a Dumper-7 SDK
   protocol_ue.h, agent_ue.h/.cpp                                    exist
   client_ue.h/.cpp Find, Fields (paging hidden), Call               exists
 frontends/
-  cli/             syntax, formatting, console on the client API     exists (verb table planned)
+  cli/             syntax, formatting, console on the client API     exists
   (gui/, mcp/ later)
 ```
 
@@ -218,9 +218,9 @@ client API, never on the section.
 
 | Frontend | Shape | Notes |
 |---|---|---|
-| **CLI** | text REPL, `$N` refs, `base+off`, hex dump | exists, on the client API; a verb table is planned |
+| **CLI** | text REPL, `$N` refs, `base+off`, hex dump | exists, on the client API; one [verb table](#self-describing-console) describes every command |
 | **GUI** (later) | ImGui desktop window, calls from a worker thread | tables, watch panels |
-| **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON line per command | exists; a thin wrapper with no logic of its own, so every command lands in the console first |
+| **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON line per command | exists; a thin wrapper with no logic of its own, so every command lands in the console first; results are strict against the console's table |
 | **Static-tool script** | `frontends/ida/import_labels.py`: imports the console's label file | exists; reads a file, never talks to the agent |
 | **MCP** | not planned (see [place among other tools](#place-among-other-tools)) | if ever built, on the console's JSON mode |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
@@ -229,8 +229,96 @@ The console has become the command layer: `dump`, `get`, `batch`, `entries`
 and the cache exist only there. A frontend that wants those commands goes
 through the console's JSON mode, as the Python client does; only a frontend
 that needs raw requests links the client. A new console command ships with
-its Python wrapper, or its row in [result shapes](commands/results.md)
-says why it has none.
+its row in the verb table and a Python method of its name (a test fails
+without one).
+
+## Self-describing console
+
+Nothing in the console used to answer "what does this command take and
+return?". A read-only sweep of about 50 commands, written by an AI agent
+from memory of the keys, misread three results (`suggested.text` for
+`list`, `hops` at the top for `chain.hops`, `protection` for `protect`),
+skipped a check because of it and still reported it as passed. Every
+command was correct; only the caller was wrong. Two failures: no
+discoverable keys, and dict access that lets a wrong guess look like
+success. The failure only happens in scripts (a one-shot caller sees the
+result), so type safety belongs in the scripting layer and discovery in
+the console.
+
+- **The console executable is the source of truth.** One C++ verb table
+  (`syntax/verb.h`; rows in `results/verbs.h` and `results/ue/verbs_ue.h`)
+  describes each command's positionals, flags and result type. Parsing,
+  usage errors, `help`, `help <verb>`, `help --json`, the generated
+  [result shapes](commands/results.md) page and the Python client's
+  strictness all read it. Each shape used to be written five times
+  (builder, key pins in a test, the docs row, a Python docstring, the
+  skill) and agreed only because they were edited together.
+- **One verb, one result type.** Modes became verbs (`sig-check`,
+  `sig-bytes`, `watch-start`, `census-diff`, `pin-list`, `trial`). A flag
+  may add optional keys and never changes a key's type (`read --as` with a
+  layout fills `layout`, not `values`). One name for a result's list
+  (`rows`), one paging convention (`from`, `next_cursor`), `capped` for a
+  list cut at a hard limit and `truncated` for an incomplete value.
+- **Typed result structs with one field list.** A result is a struct
+  whose `Describe` lists key and member once (`results/schema.h`); that
+  list writes the JSON and describes it, so a builder cannot emit a key
+  the description lacks. The tests that pinned key sets are gone; value
+  checks stay, each also checked against its own type.
+- **A small type vocabulary, not a schema language:** `addr`, `hex`,
+  `bytes`, `ref`, the plain scalars, string enums, optional keys, lists,
+  maps, nested objects, and `value` for game data, which is dynamic and
+  stays untyped.
+- **Optional keys are omitted, never null.** Output weight is a
+  [principle](#output-weight-and-dead-ends), and the strict layer gives
+  `None` either way. Nulls remain only inside game values and as list
+  elements where position matters (a `watch` row's `values`).
+- **The console checks what it prints.** A result that does not match its
+  row's type is an `internal` error. This binds a runner to its row and
+  covers a host's verbs, whose results arrive as JSON.
+- **`status` carries a hash of the table,** so a cached script or skill
+  can tell it is stale. It describes the console build; agent
+  compatibility stays the layout hash's job
+  ([protocol](protocol.md#handshake)). `help --json` carries it too and
+  answers with no target running, so tools can read the table before a
+  game does.
+- **Not `describe --json`:** `describe` is the Unreal pack's object lookup,
+  and one verb with two meanings is what the first decision removes.
+- **Strict Python results, no generated code.** The session reads
+  `help --json` at start and wraps each result; an unknown key raises and
+  names the valid ones, an absent optional key gives `None`. A method
+  named after a verb returns the console's result as it is; one that
+  reshapes says so in its name (`read_bytes`, `search_addresses`,
+  `find_all`).
+- **Host verbs are rows of the same kind.** A host hands the console a
+  constant list of rows (`ConsoleConfig::verbs`) in place of help text, so
+  its commands get help, usage errors and checked results the same way.
+- **The row type is core; the rows are not a registry.** The core's rows
+  and the pack's are constant lists; the core reaches the pack's through
+  one more plain function in `console/pack.h`, as it reaches the pack's
+  state. Nothing registers at run time. The rows live in `results/`
+  (not `console/`) so the pure tests and the table tool reach them without
+  a client. What this settles for a second pack: that a pack's verbs and
+  help are rows. State, the cache block, the `status` line and what core
+  commands borrow stay plain functions, undecided.
+- **Each row also says where the verb comes from (`origin`) and whether it
+  writes** (the target's memory, or a call into it), and each argument
+  has a line of description: a caller that picks a command, not types one,
+  needs all three.
+
+Rejected:
+
+| Option | Why not |
+|---|---|
+| A schema data file as the source | needs C++ generated from it, or stays one more copy the builders can drift from |
+| Generated `TypedDict` per result | fails only under a type checker; `.get()` on a wrong key stays silent |
+| JSON input lines | the text line is compact and already what agents type; the argument table removes the guessing |
+| Every optional key present as `null` | a fixed shape, paid for in output on every call |
+| A separate frontend for AI agents | the console is that frontend; a second one splits the contract |
+| `--select <key>` on every command | deferred until a shell caller needs the strict layer's error where a JSON filter prints null |
+
+Open: how far `value` can be typed (a tagged shape for FNames, structs and
+containers, or documented rules as today). What comes next, generated from
+this table: [tool interface](tool-interface.md).
 
 ## Unreal pack
 
@@ -430,8 +518,9 @@ The layout itself and its rules are in
   layout test fails. Object identity (`Ref`) is core, since `$N`, pins and
   watches carry it whatever the engine.
 - **The core reaches the pack through plain functions** (`console/pack.h`):
-  its state, cache block, help, `status` line, its commands, and what core
-  commands borrow. With one pack they need no interface.
+  its state, cache block, its rows of the [verb table](#self-describing-console),
+  `status` line, its commands, and what core commands borrow. With one pack
+  they need no interface.
 - **Rejected for now:** a pack interface or registry (a table of packs
   each registering verbs, help and hooks). Designed around one pack it would
   guess the shape a second one needs; the seams list exactly what that

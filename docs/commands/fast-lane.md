@@ -6,7 +6,7 @@ database for this build, or for a quick check; switch to the static tool
 for whole functions, types, call graphs and anything that needs the whole
 program ([design](../design.md#fast-lane)). The lane: `peek` (what a global
 holds), `func` (a reflected function's native entry), `disasm`, `xrefs`,
-`touches` and `sig --check`.
+`touches` and `sig-check`.
 
 ```text
 disasm <addr> [count] [--function] [--follow]
@@ -25,7 +25,7 @@ continuation (chained unwind data; `start` and `end` are then the
 function's first entry). A lookup is a few held reads: up to seven sampled
 entries per `read-batch` while the range is wide, then one window of 340.
 Sampled entries are kept for the console run, and the directory's location
-goes in the cache file. No entry is `function: null`: a leaf function,
+goes in the cache file. With no entry, `function` is absent: a leaf function,
 data, or chance bytes. Bounds are never guessed from padding or prologues.
 
 ## disasm
@@ -40,7 +40,7 @@ unreadable, up to the page end and on from there.
   target, at most 3 times inside the same limits, listed in `followed`.
   With `--function` each target's own entry bounds it. Calls, conditional
   jumps and indirect jumps are never followed.
-- Per instruction: `address`, `module`, `rva`, `bytes`, `text`; `target`
+- Per instruction (`rows`): `address`, `module`, `rva`, `bytes`, `text`; `target`
   (with `target_module`, `target_rva`) for a relative call, jump or branch
   and for a `[rip + disp]` operand; `string` when a RIP-relative target in
   a loaded module holds at least 4 printable characters and a terminator
@@ -48,8 +48,8 @@ unreadable, up to the page end and on from there.
   `read-batch`es for the whole listing; `fields` (`offset`, `size`, `kind`:
   `relative`, `rip`, `displacement`, `immediate`), which bytes of the
   instruction hold each value; `ends` on a return or unconditional jump.
-- `stop` says why it ended (`count`, `bytes`, `function end`, or `end`'s
-  reason). Bytes that do not decode, an instruction running past the byte
+- `size` is the bytes the rows cover; `stop` says why it ended (`count`,
+  `bytes`, `function end`, or `end`'s reason). Bytes that do not decode, an instruction running past the byte
   limit or the function end, or into unreadable memory end it with `end`
   {`address`, `offset` (bytes listed before it), `reason`}, never a guess.
 - No summary of what a function does, no names beyond `string`.
@@ -78,8 +78,9 @@ tick slices, resident pages only:
   field is fixed (none for `rip`: a linear decoder cannot walk backwards;
   `disasm --function` shows it in place), `module` and `rva` of the
   instruction (else the field), and `function` for that address. A row
-  other than `pointer` with `function: null` may be chance bytes.
-- `truncated` when a cap cut a scan; `scan_ms` for both scans.
+  other than `pointer` without `function` may be chance bytes.
+- `kinds` counts every hit per kind, listed or not; `capped` when a cap
+  cut a scan; `scan_ms` for both scans.
 - An agent without the op answers `unsupported`.
 
 ## touches
@@ -99,7 +100,8 @@ offsets that should appear together.
 - Uses group by function (a continuation joins its function). Rows rank by
   how many distinct asked offsets the function uses, then writers first,
   then by uses: the setup that writes most of a block comes first, its
-  readers after. At most 24 rows of 12 uses; `truncated` when more matched.
+  readers after. At most 24 rows of 12 uses (`total` counts all of each);
+  `capped` when more functions matched.
 - Unrelated classes share small offsets: ask for several that only one
   layout has together, and confirm the top row with `disasm --function` or
   a decompiler before naming anything.
@@ -137,9 +139,9 @@ a byte signature; ReAgentLive checks it against the live image, which is what a
 host's scanner reads, and says what to change when it fails.
 
 ```text
-sig --check <pattern> [--module M] [--expect <addr>] [--offset N | --resolve next,field[,size]]
-sig --check --file <patterns>
-sig --bytes <addr> [len]
+sig-check <pattern> [--module M] [--expect <addr>] [--offset N | --resolve next,field[,size]]
+sig-file <patterns>
+sig-bytes <addr> [len]
 ```
 
 - **Pattern**, up to 96 bytes, in either form so it pastes into or out of a
@@ -156,7 +158,8 @@ sig --bytes <addr> [len]
   refused: lengthen the pattern. A match lies wholly inside the module.
 - **Unique** means one match in the whole module image, data included:
   stricter than "one match in code", and safe whichever sections a scanner
-  reads. No match is a result, not an error.
+  reads. No match is a result, not an error. `total` counts the matches;
+  `rows` shows the first of them.
 - **`--expect`** (any address form: `game.exe+0x1a2b3c`) adds `resolves`:
   whether the only match is that address. `--offset N` is for a signature
   that starts N bytes inside the function: the match must be `expect + N`.
@@ -165,13 +168,13 @@ Feedback, each pointing at the next correction:
 
 - **`mismatches`** (with `--expect`, when no match lies there): each fixed
   byte that differs from the live bytes at `expect + offset` (`offset`,
-  `wanted`, `found`); null when those bytes are unreadable. A slipped byte
-  count or a typo shows at once.
-- **`diverges_at`** (several matches): per hit, the first offset past the
-  pattern where its bytes differ from the reference hit (`reference: true`:
-  the expected one, else the first); null when they agree for the 64 bytes
+  `wanted`, `found`); `mismatch_error` in its place when those bytes are
+  unreadable. A slipped byte count or a typo shows at once.
+- **`diverges_at`** (several matches): per row, the first offset past the
+  pattern where its bytes differ from the reference row (`reference: true`:
+  the expected one, else the first); absent when they agree for the 64 bytes
   read after it. `unique_at_length` is the length that separates them all,
-  null when one never diverges.
+  absent when one never diverges.
 - **`warnings`:** fixed fields that hold an address that moves with every
   build: a rel32 after `E8` (`call`), `E9` (`jump`) or `0F 8x` (`branch`), a
   disp32 after a ModRM byte selecting `[rip + disp32]` behind an opcode the
@@ -189,12 +192,12 @@ Feedback, each pointing at the next correction:
   apply alone without `--expect`.
 - **`--resolve next,field[,size]`** (size 1, 2 or 4, default 4) checks a
   reference signature: `target = match + next + signed value at match +
-  field`; each hit gets `resolved`, and `--expect` is the target, so
+  field`; each row gets `resolved`, and `--expect` is the target, so
   `resolves` proves a signature at a caller or at code that loads a global
   end to end. The field may lie in the 64 bytes read past the pattern.
   `--offset` does not combine with it.
 
-`sig --check --file <patterns>` checks a JSON-lines file, one signature per
+`sig-file <patterns>` checks a JSON-lines file, one signature per
 line: `pattern` (text, or an array of bytes with `-1`), optional `module`,
 `rva` (number or `0x` string: the expect inside that module), `offset`,
 `resolve` (`"7,3"` or `[7, 3, 4]`); blank and `#` lines are skipped. Each
@@ -203,7 +206,7 @@ with the same module and anchor. `winner` is the line number of the first
 that is unique and, when it has an `rva`, resolves. So the agent tries
 several candidates in one call, and a host checks every signature it ships.
 
-`sig --bytes <addr> [len]` (default 64, up to 96) prints the live bytes in
+`sig-bytes <addr> [len]` (default 64, up to 96) prints the live bytes in
 both forms with `module` and `rva`, and `suggested`: the same bytes with
 the address fields wildcarded, each listed with where it points. `addr` is
 taken as an instruction boundary, so the fields come from the decoder
@@ -213,4 +216,4 @@ end the pattern on a boundary. `func` gives a reflected function's native
 entry to start from.
 
 Python: `s.sig_check(pattern, module=None, expect=None, offset=0,
-resolve=None)`, `s.sig_check_file(path)`, `s.sig_bytes(address, length=64)`.
+resolve=None)`, `s.sig_file(path)`, `s.sig_bytes(address, length=64)`.

@@ -12,6 +12,7 @@
 #include "reagentlive/frontends/cli/code/unwind.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
 #include "doctest.h"
+#include "verbs.h"
 #include <array>
 #include <cstring>
 #include <set>
@@ -391,7 +392,7 @@ TEST_CASE("decoder-exact sig fields, falling back to the byte heuristic") {
     CHECK(fallback[0].kind == std::string_view("call"));
     CHECK(fallback[0].offset == 2);
 
-    const Json json = SigBytesJson(at, bytes, modules, ExactFields{exact, decoded});
+    const Json json = Checked(MakeSigBytes(at, bytes, modules, ExactFields{exact, decoded}));
     CHECK(json["suggested"]["fields"].size() == 1);
     CHECK(json["suggested"].contains("decoded"));
 }
@@ -484,10 +485,8 @@ TEST_CASE("the xrefs request is checked like a search") {
 TEST_CASE("fast-lane results have their documented keys") {
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     const unwind::Function function{{Base + 0x1000, Base + 0x1040}, unwind::Range{Base + 0x1200, Base + 0x1210}};
-    const auto fn = FunctionJson(function, modules);
-    CHECK(Keys(fn) == KeySet{"start", "end", "module", "rva", "chunk"});
-    CHECK(Keys(fn["chunk"]) == KeySet{"start", "end"});
-    CHECK(FunctionJson(std::nullopt, modules).is_null());
+    const auto fn = Checked(MakeFunction(function, modules));
+    CHECK(!MakeFunction(std::nullopt, modules).has_value());
 
     dis::Listing listing;
     dis::Instruction row;
@@ -502,27 +501,18 @@ TEST_CASE("fast-lane results have their documented keys") {
     listing.followed.push_back({Base + 0x1000, Base + 0x1005});
     listing.end = dis::End{Base + 0x1005, 5, "undecodable"};
     listing.stop = "undecodable";
-    const auto json = DisasmJson(Base + 0x1000, listing, function, modules);
-    CHECK(Keys(json) == KeySet{"address", "module", "rva", "count", "bytes", "stop", "instructions", "function", "end",
-        "followed"});
-    CHECK(Keys(json["instructions"][0]) == KeySet{"address", "module", "rva", "bytes", "text", "target",
-        "target_module", "target_rva", "string", "fields", "ends"});
-    CHECK(Keys(json["instructions"][0]["fields"][0]) == KeySet{"offset", "size", "kind"});
-    CHECK(Keys(json["end"]) == KeySet{"address", "offset", "reason"});
-    CHECK(Keys(json["followed"][0]) == KeySet{"from", "to", "to_module", "to_rva"});
+    const auto json = Checked(MakeDisasm(Base + 0x1000, listing, function, modules));
 
     const std::vector<xref::Hit> hits{{Base + 0x2001, "call", Base + 0x2000}, {Base + 0x3000, "unknown", std::nullopt},
         {Base + 0x4000, "pointer", std::nullopt}};
     const std::vector<std::optional<unwind::Function>> functions{function, std::nullopt, std::nullopt};
-    const auto xr = XrefsJson(Base + 0x1000, modules[0], hits, functions, false, true, 12, modules);
-    CHECK(Keys(xr) == KeySet{"address", "module", "rva", "scanned", "count", "shown", "rows", "truncated", "scan_ms"});
-    CHECK(xr["shown"] == 2);
-    CHECK(xr["count"]["unknown"] == 1);
-    CHECK(xr["count"]["call"] == 1);
-    CHECK(Keys(xr["rows"][0]) == KeySet{"kind", "field", "instruction", "function", "module", "rva"});
+    const auto xr = Checked(MakeXrefs(Base + 0x1000, modules[0], hits, functions, false, true, 12, modules));
+    CHECK(xr["rows"].size() == 2);
+    CHECK(xr["capped"] == true);
+    CHECK(xr["kinds"]["unknown"] == 1);
+    CHECK(xr["kinds"]["call"] == 1);
     CHECK(xr["rows"][0]["rva"] == "0x2000");
-    CHECK(Keys(xr["rows"][1]) == KeySet{"kind", "field", "function", "module", "rva"});
-    CHECK(XrefsJson(Base, modules[0], hits, functions, true, false, 0, modules)["shown"] == 3);
+    CHECK(Checked(MakeXrefs(Base, modules[0], hits, functions, true, false, 0, modules))["rows"].size() == 3);
 }
 
 TEST_CASE("the cache keeps module layouts") {
@@ -552,13 +542,9 @@ TEST_CASE("vtable syntax and result") {
 
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     native::Slots slots{{{0, Base + 0x1100, Base + 0x1800}}, "not code", 5};
-    const auto json = VtableJson(Base + 0x9000, 0, Base + 0x5000, std::nullopt, slots, modules);
-    CHECK(Keys(json) == KeySet{"address", "module", "rva", "offset", "table", "table_module", "table_rva", "count",
-        "slots", "stop", "stop_value"});
-    CHECK(Keys(json["slots"][0]) == KeySet{"slot", "offset", "target", "module", "rva", "body", "body_module", "body_rva"});
-    const auto none = VtableJson(0x1000, 0, std::nullopt, 0x1234, {}, modules);
-    CHECK(Keys(none) == KeySet{"address", "offset", "table", "count", "slots", "found"});
-    CHECK(none["table"].is_null());
+    const auto json = Checked(MakeVtable(Base + 0x9000, 0, Base + 0x5000, std::nullopt, slots, modules));
+    const auto none = Checked(MakeVtable(0x1000, 0, std::nullopt, 0x1234, {}, modules));
+    CHECK_FALSE(none.contains("table"));
 }
 
 TEST_CASE("pointer chains in read-only commands, refused for writes") {
@@ -578,10 +564,10 @@ TEST_CASE("pointer chains in read-only commands, refused for writes") {
     std::string tooLong = "read 0x1000";
     for (size_t i = 0; i <= MaxChainHops; ++i) tooLong += "->0x1";
     CHECK_FALSE(Parse(tooLong, refs));
-    for (const char* line : {"write 0x1000->0x8 01", "pin 0x1000->0x8 01", "write 0x1000->0x8 01 --trial --owner $1 --expect 00"}) {
+    for (const char* line : {"write 0x1000->0x8 01", "pin 0x1000->0x8 01", "trial 0x1000->0x8 01 --owner $1 --expect 00"}) {
         auto refused = Parse(line, refs);
         REQUIRE_FALSE(refused);
-        CHECK(refused.error() == text::ChainRefused);
+        CHECK(refused.error().starts_with(text::ChainRefused));
     }
 }
 
@@ -614,13 +600,10 @@ TEST_CASE("chain results name each hop and the broken one") {
     PointerChain chain;
     chain.address = 0x7010;
     chain.hops = {{Base + 0x100, 0x7000}};
-    const auto ok = ChainJson(Base + 0xf8, chain, modules);
-    CHECK(Keys(ok) == KeySet{"base", "hops", "address"});
-    CHECK(Keys(ok["hops"][0]) == KeySet{"hop", "address", "value", "module", "rva"});
+    const auto ok = Checked(MakeChain(Base + 0xf8, chain, modules));
     chain.broken = 0;
     chain.reason = "null pointer";
-    const auto broken = ChainJson(Base + 0xf8, chain, modules);
-    CHECK(Keys(broken) == KeySet{"base", "hops", "broken", "reason"});
+    const auto broken = Checked(MakeChain(Base + 0xf8, chain, modules));
     CHECK(broken["broken"] == 0);
 }
 
@@ -654,18 +637,16 @@ TEST_CASE("region kinds, protection text, syntax and result") {
 
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     const RegionInfo code{Base + 0x1000, 0x4000, Base, r::Commit, 0x20, 0x80, r::Image};
-    const auto json = RegionJson(Base + 0x1234, code, "code", ".text", modules);
-    CHECK(Keys(json) == KeySet{"address", "module", "rva", "kind", "base", "size", "allocation_base", "state", "type",
-        "protect", "allocation_protect", "section"});
+    const auto json = Checked(MakeRegion(Base + 0x1234, code, "code", ".text", modules));
     CHECK(json["protect"] == "rx");
     CHECK(json["type"] == "image");
 
     PeekValue mapped{0x1000, 0x1aac568d980, true};
     mapped.readable = true;
     mapped.region = "mapped";
-    CHECK(PeekRowJson(mapped, modules)["label"] == "mapped");
+    CHECK(Checked(MakePeekRow(mapped, modules))["label"] == "mapped");
     mapped.region = "private";
-    CHECK(PeekRowJson(mapped, modules)["label"] == "heap");
+    CHECK(Checked(MakePeekRow(mapped, modules))["label"] == "heap");
 }
 
 TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes and ranks functions") {
@@ -737,11 +718,7 @@ TEST_CASE("touches syntax and result") {
     row.start = Base + 0x1000; row.end = Base + 0x1100; row.distinct = 1;
     row.uses.push_back({Base + 0x1004, 0x538, true, "mov [rcx+0x538], eax"});
     const std::vector<uint32_t> offsets{0x538};
-    const auto json = TouchesJson(Base + 0x2000, offsets, 0x1000, Base + 0x1000, Base + 0x3000, 3, 0x2000, {row}, 7, modules);
-    CHECK(Keys(json) == KeySet{"address", "module", "rva", "offsets", "range", "scanned", "count", "rows", "truncated", "scan_ms"});
-    CHECK(Keys(json["scanned"]) == KeySet{"from", "to", "functions", "bytes"});
-    CHECK(Keys(json["rows"][0]) == KeySet{"function", "distinct", "writes", "count", "uses"});
-    CHECK(Keys(json["rows"][0]["uses"][0]) == KeySet{"offset", "instruction", "module", "rva", "write", "text"});
+    const auto json = Checked(MakeTouches(Base + 0x2000, offsets, 0x1000, Base + 0x1000, Base + 0x3000, 3, 0x2000, {row}, 7, modules));
     CHECK(json["rows"][0]["uses"][0]["rva"] == "0x1004");
     CHECK(json["offsets"][0] == "0x538");
 }

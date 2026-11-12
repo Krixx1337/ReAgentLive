@@ -133,20 +133,22 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     if (!result) return CommandError(session, jsonCommand, result.error());
     refs.clear();
     bool truncated = false;
-    Json rows = Json::array();
+    shape::Each record;
     std::vector<std::pair<Ref, std::vector<uint8_t>>> last;
     for (const auto& row : result->rows) {
         refs.push_back(row.object);
-        Json item = {{"ref", RefText(row.object)}, {"value", EachValue(field, signature, row.value, structs, Style(session), truncated)}};
-        if (session.meta) item["hex"] = format_detail::Hex(row.value, row.value.size());
-        rows.push_back(std::move(item));
+        shape::EachRow item{FullRef(row.object), EachValue(field, signature, row.value, structs, Style(session), truncated), {}};
+        if (session.meta) item.hex = HexBytes(row.value);
+        record.rows.push_back(std::move(item));
         last.emplace_back(row.object, row.value);
     }
-    Json record = {{"class", command.className}, {"class_ref", RefText(*type)}, {"target", target},
-        {"mode", field ? "field" : "call"}, {"count", result->rows.size()}, {"capped", result->capped},
-        {"rows", std::move(rows)}, {"truncated", truncated}};
+    record.className = command.className;
+    record.classRef = FullRef(*type);
+    record.target = target;
+    record.mode = field ? "field" : "call";
+    record.capped = result->capped;
     if (command.seconds) {
-        Json changes = Json::array();
+        std::vector<shape::EachChange> changes;
         std::optional<Error> pollError;
         size_t polls = 0;
         const auto start = Clock::now();
@@ -164,22 +166,23 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                 auto previous = std::ranges::find(last, row.object, &std::pair<Ref, std::vector<uint8_t>>::first);
                 if (previous == last.end()) { last.emplace_back(row.object, row.value); continue; }
                 if (previous->second == row.value) continue;
-                Json change = {{"ms", ms}, {"tick", tick}, {"ref", RefText(row.object)},
-                    {"before", EachValue(field, signature, previous->second, structs, Style(session), truncated)},
-                    {"after", EachValue(field, signature, row.value, structs, Style(session), truncated)}};
+                shape::EachChange change{ms, tick, FullRef(row.object),
+                    EachValue(field, signature, previous->second, structs, Style(session), truncated),
+                    EachValue(field, signature, row.value, structs, Style(session), truncated)};
                 std::fprintf(stderr, "  +%lld ms  %s  %s -> %s\n", static_cast<long long>(ms), RefText(row.object).c_str(),
-                    change["before"].dump().c_str(), change["after"].dump().c_str());
+                    change.before.dump().c_str(), change.after.dump().c_str());
                 std::fflush(stderr);
                 previous->second = row.value;
                 changes.push_back(std::move(change));
             }
         }
-        record["seconds"] = command.seconds;
-        record["polls"] = polls;
-        record["changes"] = std::move(changes);
-        if (pollError) record["poll_error"] = pollError->message;
+        record.seconds = command.seconds;
+        record.polls = polls;
+        record.changes = std::move(changes);
+        if (pollError) record.pollError = pollError->message;
     }
-    JsonResult(session, jsonCommand, std::move(record));
+    record.truncated = truncated;
+    Emit(session, jsonCommand, std::move(record));
 }
 
 namespace {
@@ -330,44 +333,45 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         return at == indices.end() || slot >= names.size() ? std::string_view{} : std::string_view(names[slot]);
     };
     const auto modules = LoadedModules(session);
-    Json rows = Json::array();
+    shape::Get result;
     bool failed = false;
     for (const auto& value : values) {
+        shape::GetRow row;
+        row.path = value.path;
         if (!value.error.empty()) {
             failed = true;
-            rows.push_back({{"path", value.path}, {"ok", false}, {"error", value.error}});
+            row.error = value.error;
+            result.rows.push_back(std::move(row));
             continue;
         }
+        row.ok = true;
+        row.address = Addr(value.address);
+        row.where = Locate(value.address, modules);
+        row.object = ReusableRef(value.object);
+        if (session.meta) row.hex = HexBytes(value.bytes);
         if (value.native) {
-            Json row = {{"path", value.path}, {"ok", true}, {"value", layout::Value(value.native->field, value.bytes)},
-                {"address", format_detail::Pointer(value.address)}, {"object", ReusableRef(value.object)},
-                {"truncated", false}, {"native", true}};
-            if (value.stale) row["stale"] = true;
-            if (session.meta) {
-                row["type"] = NativeType(value.native->field);
-                row["hex"] = format_detail::Hex(value.bytes, value.bytes.size());
-            }
-            AddLocation(row, value.address, modules);
-            rows.push_back(std::move(row));
+            row.value = layout::Value(value.native->field, value.bytes);
+            row.truncated = false;
+            row.native = true;
+            if (value.stale) row.stale = true;
+            if (session.meta) row.type = NativeType(value.native->field);
+            result.rows.push_back(std::move(row));
             continue;
         }
         bool partial = false;
-        Json row = {{"path", value.path}, {"ok", true},
-            {"value", JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session))},
-            {"address", format_detail::Pointer(value.address)}, {"object", ReusableRef(value.object)}, {"truncated", partial}};
-        if (session.meta) {
-            row["type"] = value.field.type;
-            row["hex"] = format_detail::Hex(value.bytes, value.bytes.size());
-        }
-        AddLocation(row, value.address, modules);
-        AddLocation(row, PointerRef(value.field.type, value.bytes).address, modules, "value_");
-        if (const auto target = PointerRef(value.field.type, value.bytes); target.address) RememberRef(refs, target);
-        rows.push_back(std::move(row));
+        row.value = JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session));
+        row.truncated = partial;
+        if (session.meta) row.type = value.field.type;
+        const auto target = PointerRef(value.field.type, value.bytes);
+        row.valueWhere = Locate(target.address, modules);
+        if (target.address) RememberRef(refs, target);
+        result.rows.push_back(std::move(row));
     }
     session.failed |= failed;
-    Json result = {{"ref", ReusableRef(root)}, {"values", std::move(rows)}, {"same_tick", sameTick}};
-    if (!TickAccurate(session)) result["tick_accurate"] = false;
-    JsonResult(session, jsonCommand, std::move(result));
+    result.ref = ReusableRef(root);
+    result.sameTick = sameTick;
+    if (!TickAccurate(session)) result.tickAccurate = false;
+    Emit(session, jsonCommand, std::move(result));
 }
 
 void RunEntries(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -444,28 +448,33 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
         const auto slot = static_cast<size_t>(at - targets.begin());
         return at == targets.end() || slot >= described.size() || !described[slot] ? nullptr : &*described[slot];
     };
-    Json rows = Json::array();
+    shape::Entries result;
     bool partial = false;
-    const auto add = [&](Json& row, const char* name, const ue::Field& part, std::span<const uint8_t> data) {
-        row[name] = JsonFieldValue(part, data, structs, lookupName, partial, Style(session), 1);
-        if (const auto* named = objectOf(PointerRef(part.type, data))) {
-            row[std::string(name) + "_object"] = ObjectJson(*named);
-            RememberRef(session.refs, named->ref);
+    // One part of a row: its value, and the object a pointer names.
+    const auto part = [&](const ue::Field& of, std::span<const uint8_t> data, std::optional<shape::Object>& named) {
+        if (const auto* found = objectOf(PointerRef(of.type, data))) {
+            named = MakeObject(*found);
+            RememberRef(session.refs, found->ref);
         }
+        return JsonFieldValue(of, data, structs, lookupName, partial, Style(session), 1);
     };
     for (size_t i = 0; i < count; ++i) {
-        Json row = Json::object();
+        shape::EntryRow row;
         if (map) {
-            add(row, "key", key, keyOf(i));
-            add(row, "value", value, valueOf(i));
+            row.key = part(key, keyOf(i), row.keyObject);
+            row.value = part(value, valueOf(i), row.valueObject);
         } else {
-            add(row, "value", key, keyOf(i));
+            row.value = part(key, keyOf(i), row.valueObject);
         }
-        rows.push_back(std::move(row));
+        result.rows.push_back(std::move(row));
     }
-    const char* kindName = kind == ue::ContainerKind::Array ? "array" : map ? "map" : "set";
-    JsonResult(session, jsonCommand, {{"ref", ReusableRef(object)}, {"field", field->name}, {"kind", kindName},
-        {"total", page->total}, {"from", command.limit}, {"entries", std::move(rows)},
-        {"next_cursor", Cursor(page->next)}, {"truncated", partial}});
+    result.ref = ReusableRef(object);
+    result.field = field->name;
+    result.kind = kind == ue::ContainerKind::Array ? "array" : map ? "map" : "set";
+    result.total = page->total;
+    result.from = command.limit;
+    if (page->next) result.nextCursor = page->next;
+    result.truncated = partial;
+    Emit(session, jsonCommand, std::move(result));
 }
 }

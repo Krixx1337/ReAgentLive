@@ -1,6 +1,5 @@
-// reagentlive CLI: sig results as JSON and the lines of a patterns file
-// (sig --check --file). No I/O, so tests pin the keys against the table in
-// docs/commands/results.md ("Result shapes").
+// reagentlive CLI: sig results as typed structs and the lines of a patterns
+// file (sig-file). No I/O; the conventions are in results/result_json.h.
 #pragma once
 #include <algorithm>
 #include <cstdint>
@@ -13,84 +12,232 @@
 #include "reagentlive/frontends/cli/code/signature.h"
 
 namespace reagentlive::cli {
-inline Json SigFieldJson(const sig::AddressField& field, std::span<const Module> modules) {
-    Json row = {{"offset", field.offset}, {"size", field.size}, {"kind", field.kind},
-        {"target", format_detail::Pointer(field.target)}};
-    AddLocation(row, field.target, modules, "target_");
-    return row;
+namespace shape {
+// A fixed field of a pattern that holds an address (a patch moves it).
+struct SigField {
+    uint64_t offset = 0, size = 0;
+    std::string kind;
+    Addr target;
+    Location targetWhere;
+    template<class V> static void Describe(V& v) {
+        v("offset", &SigField::offset);
+        v("size", &SigField::size);
+        v("kind", &SigField::kind, "call|jump|branch|rip|absolute");
+        v("target", &SigField::target);
+        v.flat("target_", &SigField::targetWhere);
+    }
+};
+struct SigHit {
+    Addr address;
+    Location where;
+    std::optional<bool> reference;
+    std::optional<uint64_t> divergesAt;
+    std::optional<Addr> resolved;
+    Location resolvedWhere;
+    template<class V> static void Describe(V& v) {
+        v("address", &SigHit::address);
+        v.flat("", &SigHit::where);
+        v("reference", &SigHit::reference);
+        v("diverges_at", &SigHit::divergesAt);
+        v("resolved", &SigHit::resolved);
+        v.flat("resolved_", &SigHit::resolvedWhere);
+    }
+};
+struct SigAnchor {
+    uint64_t offset = 0, length = 0, hits = 0;
+    template<class V> static void Describe(V& v) {
+        v("offset", &SigAnchor::offset);
+        v("length", &SigAnchor::length);
+        v("hits", &SigAnchor::hits);
+    }
+};
+struct SigResolve {
+    uint64_t next = 0, field = 0, size = 0;
+    template<class V> static void Describe(V& v) {
+        v("next", &SigResolve::next);
+        v("field", &SigResolve::field);
+        v("size", &SigResolve::size);
+    }
+};
+struct SigMismatch {
+    uint64_t offset = 0;
+    HexNum wanted, found;
+    template<class V> static void Describe(V& v) {
+        v("offset", &SigMismatch::offset);
+        v("wanted", &SigMismatch::wanted);
+        v("found", &SigMismatch::found);
+    }
+};
+// sig-check: the pattern in both forms, the module it was checked in, its
+// matches (`total`; `rows` shows the first MaxShownHits) and what to change.
+// Optional keys only where they apply: expect and resolves with --expect,
+// mismatches when the expected address holds no match (mismatch_error when
+// its bytes are unreadable), unique_at_length for several matches that all diverge.
+struct SigCheck {
+    std::string pattern, list, module;
+    bool unique = false;
+    uint64_t total = 0;
+    std::vector<SigHit> rows;
+    uint64_t length = 0, fixedBytes = 0;
+    SigAnchor anchor;
+    std::vector<SigField> warnings;
+    std::optional<uint64_t> decoded, uniqueAtLength;
+    std::optional<SigResolve> resolve;
+    std::optional<Addr> expect;
+    Location expectWhere;
+    std::optional<uint64_t> offset;
+    std::optional<bool> resolves;
+    std::optional<std::vector<SigMismatch>> mismatches;
+    std::optional<std::string> mismatchError;
+    template<class V> static void Describe(V& v) {
+        v("pattern", &SigCheck::pattern);
+        v("list", &SigCheck::list);
+        v("module", &SigCheck::module);
+        v("unique", &SigCheck::unique);
+        v("total", &SigCheck::total);
+        v("rows", &SigCheck::rows);
+        v("length", &SigCheck::length);
+        v("fixed_bytes", &SigCheck::fixedBytes);
+        v("anchor", &SigCheck::anchor);
+        v("warnings", &SigCheck::warnings);
+        v("decoded", &SigCheck::decoded);
+        v("unique_at_length", &SigCheck::uniqueAtLength);
+        v("resolve", &SigCheck::resolve);
+        v("expect", &SigCheck::expect);
+        v.flat("expect_", &SigCheck::expectWhere);
+        v("offset", &SigCheck::offset);
+        v("resolves", &SigCheck::resolves);
+        v("mismatches", &SigCheck::mismatches);
+        v("mismatch_error", &SigCheck::mismatchError);
+    }
+};
+struct SigFileRow {
+    uint64_t line = 0;
+    bool ok = false;
+    std::optional<SigCheck> result;
+    std::optional<std::string> error;
+    template<class V> static void Describe(V& v) {
+        v("line", &SigFileRow::line);
+        v("ok", &SigFileRow::ok);
+        v("result", &SigFileRow::result);
+        v("error", &SigFileRow::error);
+    }
+};
+// sig-file: one row per signature; `winner` is the line of the first that holds.
+struct SigFile {
+    std::string file;
+    std::optional<uint64_t> winner;
+    uint64_t searches = 0;
+    std::vector<SigFileRow> rows;
+    template<class V> static void Describe(V& v) {
+        v("file", &SigFile::file);
+        v("winner", &SigFile::winner);
+        v("searches", &SigFile::searches);
+        v("rows", &SigFile::rows);
+    }
+};
+struct SigSuggested {
+    std::string pattern, list;
+    uint64_t fixedBytes = 0;
+    std::vector<SigField> fields;
+    std::optional<uint64_t> decoded;
+    template<class V> static void Describe(V& v) {
+        v("pattern", &SigSuggested::pattern);
+        v("list", &SigSuggested::list);
+        v("fixed_bytes", &SigSuggested::fixedBytes);
+        v("fields", &SigSuggested::fields);
+        v("decoded", &SigSuggested::decoded);
+    }
+};
+// sig-bytes: the live bytes in both forms, and the same bytes with their
+// address fields wildcarded.
+struct SigBytes {
+    Addr address;
+    Location where;
+    uint64_t length = 0;
+    std::string pattern, list;
+    SigSuggested suggested;
+    template<class V> static void Describe(V& v) {
+        v("address", &SigBytes::address);
+        v.flat("", &SigBytes::where);
+        v("length", &SigBytes::length);
+        v("pattern", &SigBytes::pattern);
+        v("list", &SigBytes::list);
+        v("suggested", &SigBytes::suggested);
+    }
+};
 }
-inline Json SigFieldsJson(std::span<const sig::AddressField> fields, std::span<const Module> modules) {
-    Json rows = Json::array();
-    for (const auto& field : fields) rows.push_back(SigFieldJson(field, modules));
+
+inline std::vector<shape::SigField> MakeSigFields(std::span<const sig::AddressField> fields, std::span<const Module> modules) {
+    std::vector<shape::SigField> rows;
+    for (const auto& field : fields)
+        rows.push_back({field.offset, field.size, field.kind, field.target, Locate(field.target, modules)});
     return rows;
 }
 
-// sig --check: the pattern in both forms, the module it was checked in, its
-// matches (the first MaxShownHits) and what to change. Optional keys only
-// where they apply: expect/resolves with --expect, mismatches when the
-// expected address holds no match, unique_at_length for several matches.
-inline Json SigCheckJson(const sig::Check& check, const sig::CheckResult& result, const Module& module,
-                         std::span<const Module> modules) {
-    Json hits = Json::array();
+inline shape::SigCheck MakeSigCheck(const sig::Check& check, const sig::CheckResult& result, const Module& module,
+                                    std::span<const Module> modules) {
+    shape::SigCheck out;
     for (size_t i = 0; i < result.matches.size() && i < sig::MaxShownHits; ++i) {
         const auto& match = result.matches[i];
-        Json row = {{"address", format_detail::Pointer(match.address)}};
-        AddLocation(row, match.address, modules);
+        shape::SigHit row;
+        row.address = match.address;
+        row.where = Locate(match.address, modules);
         if (result.matches.size() > 1) {
-            if (result.reference == i) row["reference"] = true;
-            else row["diverges_at"] = match.divergesAt ? Json(*match.divergesAt) : Json(nullptr);
+            if (result.reference == i) row.reference = true;
+            else if (match.divergesAt) row.divergesAt = *match.divergesAt;
         }
-        if (check.resolve) {
-            row["resolved"] = match.resolved ? Json(format_detail::Pointer(*match.resolved)) : Json(nullptr);
-            if (match.resolved) AddLocation(row, *match.resolved, modules, "resolved_");
+        if (check.resolve && match.resolved) {
+            row.resolved = Addr(*match.resolved);
+            row.resolvedWhere = Locate(*match.resolved, modules);
         }
-        hits.push_back(std::move(row));
+        out.rows.push_back(std::move(row));
     }
-    Json json = {{"pattern", sig::Text(check.pattern)}, {"list", sig::List(check.pattern)}, {"module", module.name},
-        {"unique", result.matches.size() == 1}, {"count", result.matches.size()}, {"hits", std::move(hits)},
-        {"length", check.pattern.Size()}, {"fixed_bytes", check.pattern.Fixed()},
-        {"anchor", {{"offset", result.anchor.offset}, {"length", result.anchor.length}, {"hits", result.anchorHits}}},
-        {"warnings", SigFieldsJson(result.warnings, modules)}};
-    if (result.decoded) json["decoded"] = *result.decoded;
-    if (result.matches.size() > 1)
-        json["unique_at_length"] = result.uniqueAtLength ? Json(*result.uniqueAtLength) : Json(nullptr);
-    if (check.resolve)
-        json["resolve"] = {{"next", check.resolve->next}, {"field", check.resolve->field}, {"size", check.resolve->size}};
+    out.pattern = sig::Text(check.pattern);
+    out.list = sig::List(check.pattern);
+    out.module = module.name;
+    out.unique = result.matches.size() == 1;
+    out.total = result.matches.size();
+    out.length = check.pattern.Size();
+    out.fixedBytes = check.pattern.Fixed();
+    out.anchor = {result.anchor.offset, result.anchor.length, result.anchorHits};
+    out.warnings = MakeSigFields(result.warnings, modules);
+    if (result.decoded) out.decoded = *result.decoded;
+    if (result.matches.size() > 1 && result.uniqueAtLength) out.uniqueAtLength = *result.uniqueAtLength;
+    if (check.resolve) out.resolve = shape::SigResolve{check.resolve->next, check.resolve->field, check.resolve->size};
     if (check.expect) {
-        json["expect"] = format_detail::Pointer(*check.expect);
-        AddLocation(json, *check.expect, modules, "expect_");
-        if (!check.resolve) json["offset"] = check.offset;
-        json["resolves"] = *result.resolves;
+        out.expect = Addr(*check.expect);
+        out.expectWhere = Locate(*check.expect, modules);
+        if (!check.resolve) out.offset = check.offset;
+        out.resolves = *result.resolves;
     }
     if (result.compared) {
-        if (!result.mismatches) json["mismatches"] = nullptr;
+        if (!result.mismatches) out.mismatchError = "the bytes at the expected address are unreadable";
         else {
-            Json rows = Json::array();
-            for (const auto& m : *result.mismatches)
-                rows.push_back({{"offset", m.offset}, {"wanted", HexNumber(m.wanted)}, {"found", HexNumber(m.found)}});
-            json["mismatches"] = std::move(rows);
+            out.mismatches.emplace();
+            for (const auto& m : *result.mismatches) out.mismatches->push_back({m.offset, HexNum(m.wanted), HexNum(m.found)});
         }
     }
-    return json;
+    return out;
 }
 
-// sig --bytes: the live bytes in both forms, and the same bytes with the
-// fields the address heuristic recognises wildcarded.
 // `exact`: the fields the console's decoder found (and how many bytes it
 // read) in place of the byte heuristic.
 struct ExactFields { std::vector<sig::AddressField> fields; size_t decoded = 0; };
-inline Json SigBytesJson(uint64_t address, std::span<const uint8_t> bytes, std::span<const Module> modules,
-                         const std::optional<ExactFields>& exact = std::nullopt) {
+inline shape::SigBytes MakeSigBytes(uint64_t address, std::span<const uint8_t> bytes, std::span<const Module> modules,
+                                    const std::optional<ExactFields>& exact = std::nullopt) {
     const auto pattern = sig::FromBytes(bytes);
     const auto fields = exact ? exact->fields : sig::AddressFields(pattern, address, modules);
     const auto suggested = sig::Masked(pattern, fields);
-    Json json = {{"address", format_detail::Pointer(address)}, {"length", bytes.size()},
-        {"pattern", sig::Text(pattern)}, {"list", sig::List(pattern)},
-        {"suggested", {{"pattern", sig::Text(suggested)}, {"list", sig::List(suggested)},
-            {"fixed_bytes", suggested.Fixed()}, {"fields", SigFieldsJson(fields, modules)}}}};
-    if (exact) json["suggested"]["decoded"] = exact->decoded;
-    AddLocation(json, address, modules);
-    return json;
+    shape::SigBytes out;
+    out.address = address;
+    out.where = Locate(address, modules);
+    out.length = bytes.size();
+    out.pattern = sig::Text(pattern);
+    out.list = sig::List(pattern);
+    out.suggested = {sig::Text(suggested), sig::List(suggested), suggested.Fixed(), MakeSigFields(fields, modules), {}};
+    if (exact) out.suggested.decoded = exact->decoded;
+    return out;
 }
 
 // One line of a patterns file: {"pattern": "48 8b ?? 89" or [0x48, -1, ...],

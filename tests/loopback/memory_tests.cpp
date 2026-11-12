@@ -306,8 +306,11 @@ TEST_CASE("search text finds a string in both widths") {
     const char16_t wide[] = u"Zq7Aimed";
     memcpy(block.data() + 512, wide, sizeof(wide));
     const auto base = reinterpret_cast<uint64_t>(block.data());
+    // The search verb's row, as far as these lines need it (this suite builds without the JSON-carrying table).
+    const cli::Verb search{"search", "core", "", {{"type", cli::Arity::One}, {"value", cli::Arity::Some}},
+        {{"--wide", cli::Takes::Nothing, "", ""}}, nullptr, cli::parse::Search};
     for (const auto& [line, offset] : {std::pair{std::string("search text Zq7Weapon"), 64}, {"search text Zq7Aimed --wide", 512}}) {
-        auto parsed = cli::Parse(line, {});
+        auto parsed = cli::Parse(std::span(&search, 1), line, {});
         REQUIRE(parsed);
         SearchQuery query;
         query.pattern.assign(parsed->request.data, parsed->request.data + parsed->request.length);

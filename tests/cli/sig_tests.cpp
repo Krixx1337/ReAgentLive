@@ -5,6 +5,7 @@
 #include "reagentlive/frontends/cli/code/signature.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
 #include "doctest.h"
+#include "verbs.h"
 #include <cstring>
 #include <set>
 #include <string>
@@ -136,9 +137,9 @@ TEST_CASE("the anchor is the longest run of fixed bytes, at least 4") {
     CHECK(sig::ChooseAnchor(P(run))->length == MaxSearchPattern); // The search takes 64 bytes.
 }
 
-TEST_CASE("sig --check parses the pattern and its options") {
+TEST_CASE("sig-check parses the pattern and its options") {
     const std::vector<Module> modules{{"Game.exe", 0x140000000, 0x100000}, {"engine.dll", 0x7ffa00000000, 0x2000}};
-    auto parsed = Parse("sig --check 48 8b 05 11 ?? ?? 89 05 --module engine.dll --expect game.exe+0x1230 --offset 4",
+    auto parsed = Parse("sig-check 48 8b 05 11 ?? ?? 89 05 --module engine.dll --expect game.exe+0x1230 --offset 4",
                         NoRefs, modules);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Sig);
@@ -146,17 +147,17 @@ TEST_CASE("sig --check parses the pattern and its options") {
     CHECK(parsed->target == "engine.dll");
     CHECK(parsed->expect == 0x140001230);
     CHECK(parsed->offset == 4);
-    parsed = Parse("sig --check 0x48, 0x8B, 0x05, 0x11, -1, 0x89", NoRefs);
+    parsed = Parse("sig-check 0x48, 0x8B, 0x05, 0x11, -1, 0x89", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->target.empty()); // The exe.
     CHECK_FALSE(parsed->expect);
     CHECK_FALSE(Parse("sig 48 8b 89 05", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --check", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --check --module x", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --check 48 ?? 89 05", NoRefs).has_value());                // No anchor.
-    CHECK_FALSE(Parse("sig --check 48 8b 89 05 --offset 4", NoRefs).has_value());     // Offset without expect.
-    CHECK_FALSE(Parse("sig --check 48 8b 89 05 --expect", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --check 48 8b 89 05 --bogus 1", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check --module x", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check 48 ?? 89 05", NoRefs).has_value());                // No anchor.
+    CHECK_FALSE(Parse("sig-check 48 8b 89 05 --offset 4", NoRefs).has_value());     // Offset without expect.
+    CHECK_FALSE(Parse("sig-check 48 8b 89 05 --expect", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check 48 8b 89 05 --bogus 1", NoRefs).has_value());
 }
 
 TEST_CASE("matching: one hit, two hits, none") {
@@ -222,21 +223,17 @@ TEST_CASE("resolves: the only match at --expect, with and without an offset") {
     CHECK(image.Check({pattern, 0x140001010, 0})->resolves == false); // Not unique.
 }
 
-TEST_CASE("sig --check results have their documented keys") {
+TEST_CASE("sig-check results have their documented keys") {
     Image image(0x140000000, 0x4000);
     image.Put(0x140001010, {0x48, 0x8b, 0x05, 0x10, 0x20, 0x30, 0x40});
     const sig::Check check{P("48 8b 05 10 20 30 ??"), 0x140001000, 0x10, std::nullopt};
     const auto result = image.Check(check);
     REQUIRE(result.has_value());
-    const auto json = SigCheckJson(check, *result, image.module, std::span(&image.module, 1));
-    CHECK(Keys(json) == std::set<std::string>{"pattern", "list", "module", "unique", "count", "hits", "length",
-        "fixed_bytes", "anchor", "warnings", "expect", "expect_module", "expect_rva", "offset", "resolves"});
+    const auto json = Checked(MakeSigCheck(check, *result, image.module, std::span(&image.module, 1)));
     CHECK(json["unique"] == true);
     CHECK(json["resolves"] == true);
-    CHECK(Keys(json["hits"][0]) == std::set<std::string>{"address", "module", "rva"});
-    CHECK(json["hits"][0]["rva"] == "0x1010");
+    CHECK(json["rows"][0]["rva"] == "0x1010");
     CHECK(json["fixed_bytes"] == 6);
-    CHECK(Keys(json["anchor"]) == std::set<std::string>{"offset", "length", "hits"});
 }
 
 TEST_CASE("no match at --expect lists the fixed bytes that differ there") {
@@ -248,8 +245,7 @@ TEST_CASE("no match at --expect lists the fixed bytes that differ there") {
     CHECK(result->matches.empty());
     REQUIRE(result->mismatches.has_value());
     CHECK(*result->mismatches == std::vector<sig::Mismatch>{{2, 0x0d, 0x05}, {7, 0x41, 0x40}});
-    const auto json = SigCheckJson(check, *result, image.module, std::span(&image.module, 1));
-    CHECK(Keys(json["mismatches"][0]) == std::set<std::string>{"offset", "wanted", "found"});
+    const auto json = Checked(MakeSigCheck(check, *result, image.module, std::span(&image.module, 1)));
     CHECK(json["mismatches"][1]["found"] == "0x40");
     CHECK(json["resolves"] == false);
 
@@ -259,7 +255,9 @@ TEST_CASE("no match at --expect lists the fixed bytes that differ there") {
     result = image.Check(outside);
     CHECK(result->compared);
     CHECK_FALSE(result->mismatches); // Unreadable there.
-    CHECK(SigCheckJson(outside, *result, image.module, std::span(&image.module, 1))["mismatches"].is_null());
+    const auto unreadable = Checked(MakeSigCheck(outside, *result, image.module, std::span(&image.module, 1)));
+    CHECK_FALSE(unreadable.contains("mismatches"));
+    CHECK(unreadable["mismatch_error"] == "the bytes at the expected address are unreadable");
 }
 
 TEST_CASE("several matches: where each diverges from the reference past the pattern") {
@@ -283,9 +281,9 @@ TEST_CASE("several matches: where each diverges from the reference past the patt
     CHECK(result->matches[0].divergesAt == 7);
     CHECK(result->matches[2].divergesAt == 6);
     CHECK(result->uniqueAtLength == 8);
-    const auto json = SigCheckJson(check, *result, image.module, std::span(&image.module, 1));
-    CHECK(json["hits"][1]["reference"] == true);
-    CHECK(json["hits"][2]["diverges_at"] == 6);
+    const auto json = Checked(MakeSigCheck(check, *result, image.module, std::span(&image.module, 1)));
+    CHECK(json["rows"][1]["reference"] == true);
+    CHECK(json["rows"][2]["diverges_at"] == 6);
     CHECK(json["unique_at_length"] == 8);
 }
 
@@ -327,9 +325,7 @@ TEST_CASE("warnings are reported at the match") {
     REQUIRE(result->matches.size() == 1);
     REQUIRE(result->warnings.size() == 1);
     CHECK(result->warnings[0] == sig::AddressField{8, 4, "call", 0x140001000 + 12 + 0x20});
-    const auto json = SigCheckJson(check, *result, image.module, std::span(&image.module, 1));
-    CHECK(Keys(json["warnings"][0]) == std::set<std::string>{"offset", "size", "kind", "target", "target_module",
-        "target_rva"});
+    const auto json = Checked(MakeSigCheck(check, *result, image.module, std::span(&image.module, 1)));
     CHECK(json["warnings"][0]["target_rva"] == "0x102c");
 }
 
@@ -364,30 +360,29 @@ TEST_CASE("reference signatures resolve their target, each size") {
     CHECK(result->resolves == true); // The field lies past the pattern, in the bytes read after it.
     CHECK_FALSE(result->compared);   // A resolve's expect is the target, not the match.
     const sig::Check check{lea, std::nullopt, 0, sig::Resolve{7, 3, 4}};
-    const auto json = SigCheckJson(check, *image.Check(check), image.module, std::span(&image.module, 1));
-    CHECK(json["hits"][0]["resolved_rva"] == "0x223b");
-    CHECK(Keys(json["resolve"]) == std::set<std::string>{"next", "field", "size"});
+    const auto json = Checked(MakeSigCheck(check, *image.Check(check), image.module, std::span(&image.module, 1)));
+    CHECK(json["rows"][0]["resolved_rva"] == "0x223b");
 }
 
 TEST_CASE("sig parses --resolve, --file and --bytes") {
-    auto parsed = Parse("sig --check 48 8d 0d 11 ?? ?? ?? ?? e8 --expect 0x14000223b --resolve 7,3", NoRefs);
+    auto parsed = Parse("sig-check 48 8d 0d 11 ?? ?? ?? ?? e8 --expect 0x14000223b --resolve 7,3", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->resolve == sig::Resolve{7, 3, 4});
-    CHECK_FALSE(Parse("sig --check 48 8d 0d 11 --expect 0x10 --offset 2 --resolve 7,3", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --check 48 8d 0d 11 --resolve 7", NoRefs).has_value());
-    parsed = Parse("sig --check --file sigs.jsonl", NoRefs);
+    CHECK_FALSE(Parse("sig-check 48 8d 0d 11 --expect 0x10 --offset 2 --resolve 7,3", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check 48 8d 0d 11 --resolve 7", NoRefs).has_value());
+    parsed = Parse("sig-file sigs.jsonl", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->sigMode == Command::SigMode::File);
     CHECK(parsed->file == "sigs.jsonl");
-    CHECK_FALSE(Parse("sig --check --file", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --check --file a b", NoRefs).has_value());
-    parsed = Parse("sig --bytes 0x140001000", NoRefs);
+    CHECK_FALSE(Parse("sig-check --file", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-file a b", NoRefs).has_value());
+    parsed = Parse("sig-bytes 0x140001000", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->sigMode == Command::SigMode::Bytes);
     CHECK(parsed->request.length == 64);
-    CHECK(Parse("sig --bytes 0x140001000 96", NoRefs)->request.length == 96);
-    CHECK_FALSE(Parse("sig --bytes 0x140001000 97", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig --bytes", NoRefs).has_value());
+    CHECK(Parse("sig-bytes 0x140001000 96", NoRefs)->request.length == 96);
+    CHECK_FALSE(Parse("sig-bytes 0x140001000 97", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-bytes", NoRefs).has_value());
 }
 
 TEST_CASE("patterns file lines parse and the winner is the first unique one that resolves") {
@@ -426,12 +421,11 @@ TEST_CASE("patterns file lines parse and the winner is the first unique one that
     CHECK(sig::Winner(std::span(results).subspan(5)) == 0); // Without an expect, unique is enough.
 }
 
-TEST_CASE("sig --bytes suggests the same bytes with the warned fields masked") {
+TEST_CASE("sig-bytes suggests the same bytes with the warned fields masked") {
     const Module game{"Game.exe", 0x140000000, 0x100000};
     const uint64_t at = 0x140001000;
     const auto bytes = Cat({{0x48, 0x8b, 0x05}, Le32(0x2000), {0xe8}, Le32(0x10), {0x48, 0x85, 0xc0, 0x74, 0x05}});
-    const auto json = SigBytesJson(at, bytes, std::span(&game, 1));
-    CHECK(Keys(json) == std::set<std::string>{"address", "module", "rva", "length", "pattern", "list", "suggested"});
+    const auto json = Checked(MakeSigBytes(at, bytes, std::span(&game, 1)));
     CHECK(json["pattern"] == "48 8b 05 00 20 00 00 e8 10 00 00 00 48 85 c0 74 05");
     CHECK(json["suggested"]["pattern"] == "48 8b 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? 48 85 c0 74 05");
     CHECK(json["suggested"]["list"].get<std::string>().starts_with("0x48, 0x8B, 0x05, -1"));

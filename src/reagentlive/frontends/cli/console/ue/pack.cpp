@@ -36,7 +36,7 @@ bool HasUnreal(const Client& client) {
     return false;
 }
 
-// census, or with --changed only the classes whose count differs from the
+// census, or census-diff: only the classes whose count differs from the
 // last census under the same --class. Either way the new census becomes the
 // baseline; --match and --limit only shape what is printed.
 void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
@@ -63,21 +63,19 @@ void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs,
         Ue(session).census = MakeCensusBaseline(filter, census);
     }
     refs.clear();
-    Json result;
     if (command.changed) {
         auto changes = CensusChanges(*Ue(session).censusBefore, census);
         KeepMatching(changes, command.match, [](const CensusChange& c) -> const std::string& { return c.name; });
         const auto [first, shown] = CensusSlice(changes.size(), page);
         for (const auto& change : std::span(changes).subspan(first, shown)) refs.push_back(change.ref);
-        result = CensusChangedJson(*Ue(session).censusBefore, census, changes, page, ms);
+        Emit(session, jsonCommand, MakeCensusDiff(*Ue(session).censusBefore, census, changes, page, ms));
     } else {
         auto rows = census.rows;
         KeepMatching(rows, command.match, [](const ue::CensusRow& r) -> const std::string& { return r.type.name; });
         const auto [first, shown] = CensusSlice(rows.size(), page);
         for (const auto& row : std::span(rows).subspan(first, shown)) refs.push_back(row.type.ref);
-        result = CensusJson(filter, census, rows, page, ms);
+        Emit(session, jsonCommand, MakeCensus(filter, census, rows, page, ms));
     }
-    JsonResult(session, jsonCommand, std::move(result));
 }
 
 void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs, StructCache& structs,
@@ -95,13 +93,13 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     }
     if (command.kind == Kind::Dump) return PrintDump(session, ue::GetRef(request), refs, structs, command, baseline);
     if (command.kind == Kind::Script) {
-        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, "unsupported", "agent does not support --script");
+        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, "unsupported", "agent does not support script");
         const auto object = ue::GetRef(request);
         auto function = ue::Function(client, object, request.text);
         if (!function) return CommandError(session, jsonCommand, function.error());
         auto script = ue::Script(client, Ref{static_cast<uintptr_t>(function->address), -1, 0});
         if (!script) return CommandError(session, jsonCommand, script.error());
-        return JsonResult(session, jsonCommand, ScriptJson(object, function->owner + ":" + function->name, *script));
+        return Emit(session, jsonCommand, MakeScript(object, function->owner + ":" + function->name, *script));
     }
     if (command.kind == Kind::Refs) {
         auto index = static_cast<int32_t>(request.args[0]);
@@ -120,7 +118,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         }
         auto found = ue::Refs(client, index);
         if (!found) return CommandError(session, jsonCommand, found.error());
-        return JsonResult(session, jsonCommand, RefsJson(index, name, *found));
+        return Emit(session, jsonCommand, MakeRefs(index, name, *found));
     }
     // release without a block: zeroed inputs of the function's size. A call
     // without one: the same, when the call fills every parameter.
@@ -156,22 +154,22 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         if (!found) return CommandError(session, jsonCommand, found.error());
         refs.clear();
         for (const auto& object : found->objects) refs.push_back(object.ref);
-        return JsonResult(session, "find", FindJson(*found, from));
+        return Emit(session, jsonCommand, MakeFind(*found, from));
     }
     case ue::op::Call: {
         bool kept = false;
         auto block = ue::Call(client, ue::GetRef(request), request.text, std::span(request.data, request.length), 0,
             request.flags, &kept);
         if (!block) return CommandError(session, jsonCommand, block.error());
-        auto record = CallJson(request, *block, command.kind == Kind::Release ? "release" : "raw", kept);
+        auto record = MakeCall(request, *block, command.kind == Kind::Release ? "release" : "raw", kept);
         if (kept) {
             // Named from the parameters: fetched now unless the zeroed block already did.
             if (!callSignature)
                 if (auto function = ue::Function(client, ue::GetRef(request), request.text); function)
                     if (auto signature = ue::Parameters(client, function->address); signature) callSignature = std::move(*signature);
-            if (callSignature) record["kept_reason"] = calls::KeptReason(*callSignature, structs);
+            if (callSignature) record.keptReason = calls::KeptReason(*callSignature, structs);
         }
-        return JsonResult(session, jsonCommand, std::move(record));
+        return Emit(session, jsonCommand, std::move(record));
     }
     case ue::op::Fields: return PrintFields(session, ue::GetRef(request), command.className.empty(), jsonCommand);
     case ue::op::Names: {
@@ -179,26 +177,26 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         memcpy(indices.data(), request.data, request.length);
         auto names = ue::Names(client, indices);
         if (!names) return CommandError(session, jsonCommand, names.error());
-        return JsonResult(session, jsonCommand, NamesJson(indices, *names));
+        return Emit(session, jsonCommand, MakeNames(indices, *names));
     }
     case ue::op::Census: return RunCensus(session, command, refs, jsonCommand);
     case ue::op::NameFind: {
         const auto from = static_cast<uint32_t>(request.args[1]);
         auto found = ue::NameFind(client, request.text, from);
         if (!found) return CommandError(session, jsonCommand, found.error());
-        return JsonResult(session, jsonCommand, NameFindJson(*found, from));
+        return Emit(session, jsonCommand, MakeNameFind(*found, from));
     }
     case ue::op::Function: return PrintFunction(session, ue::GetRef(request), request.text, jsonCommand);
     case ue::op::Functions: {
         auto functions = ue::Functions(client, ue::GetRef(request), request.text, request.length);
         if (!functions) return CommandError(session, jsonCommand, functions.error());
-        return JsonResult(session, jsonCommand, FunctionsJson(ue::GetRef(request), *functions, request.length));
+        return Emit(session, jsonCommand, MakeFuncs(ue::GetRef(request), *functions, request.length));
     }
     case ue::op::Describe: {
         auto object = ue::Describe(client, ue::GetRef(request));
         if (!object) return CommandError(session, jsonCommand, object.error());
         RememberRef(refs, object->ref);
-        return JsonResult(session, jsonCommand, ObjectJson(*object));
+        return Emit(session, jsonCommand, MakeObject(*object));
     }
     }
     JsonError(session, jsonCommand, "unsupported", "unsupported operation");
@@ -248,64 +246,11 @@ std::vector<CachePack> SavePackCache(const Session& session) {
     return {{std::string(UnrealCachePack), SaveUnrealCache(data)}};
 }
 
-std::string PackHelp() {
-    return
-        "\n  Unreal pack (objects, fields and calls; refused when the host does not offer it):\n"
-        "  find [text] [--class C] [--from N]   names containing text and/or instances of class C or a subclass;\n"
-        "                                       24 per page (results become $1..$N), prints the next page's cursor;\n"
-        "                                       only the first page counts the total\n"
-        "  census [--class C] [--match text] [--changed] [--limit N] [--from N]\n"
-        "                                       live instances per class (most first, pages of 100 rows, 0 = all;\n"
-        "                                       --from next_cursor pages the stored census without a new scan);\n"
-        "                                       --match keeps class names containing text; --changed prints only\n"
-        "                                       classes whose count differs from the last census of that --class;\n"
-        "                                       class refs become $1..$N\n"
-        "  name-find <text> [--from N]          FName indices whose text contains text (gameplay tags, row names)\n"
-        "  each <Class> <Field|[Owner:]Function> [--seconds N]\n"
-        "                                       one value per live instance, read in one tick; functions must be\n"
-        "                                       const or pure with outputs only; --seconds repeats and prints changes\n"
-        "  call <object> <[Class:]Function> [hex params]\n"
-        "  call <object> <[Class:]Function> Name=value [...] | --typed\n"
-        "                                       params must match the function's size; prints the block after the call;\n"
-        "                                       kept: true when outputs own memory (handles, strings): the agent\n"
-        "                                       reuses the block so the next call releases the old values\n"
-        "  release <object> <[Class:]Function> [hex params]\n"
-        "                                       one more call (zeroed inputs by default) that drops the kept block\n"
-        "  fields <object|Class>                reflected properties by offset; a class or struct lists its own\n"
-        "  dump <object|Class> [--match text] [--nonzero] [--changed [file]]\n"
-        "                                       fields with their current values (use on instances, incl. Default__\n"
-        "                                       objects); filters keep matching names, non-zero values, or fields\n"
-        "                                       changed since snap (or a snapshot file)\n"
-        "  label <object|Class> <offset> <type>[n] <Name>\n"
-        "                                       name an unreflected member in <console>.native.txt; fields, dump\n"
-        "                                       and get then show it (native, stale after a patch)\n"
-        "  export-labels <file> [--module M] [--kinds exec,vtable,interface,global]\n"
-        "                                       names for a static-analysis tool (JSON lines, one build): native\n"
-        "                                       exec thunks, vtables, interface implementations, and the globals\n"
-        "                                       peek --label put in the file (always kept); import with\n"
-        "                                       import_labels.py. After another tool's mappings: interface,global\n"
-        "  entries <object> <[Owner:]Field> [--from N]\n"
-        "                                       one page of an array, set or map: elements, or key and value;\n"
-        "                                       names and object pointers resolved; prints the next page's cursor\n"
-        "  get <object> <Field[.Field...]>...   named fields, following object pointers and structs (up to 16 paths)\n"
-        "  describe <address|$N>                object name, class and reusable ref\n"
-        "  name <index>...                      FName comparison indices as text (FName #N in dumps)\n"
-        "  func <object|class> <[Owner:]Function>  reflected metadata and exec entry address\n"
-        "  func <object|class> <[Owner:]Function> --script\n"
-        "                                       a Blueprint function's bytecode: the names, functions and\n"
-        "                                       properties right after their opcodes, each confirmed live\n"
-        "  refs <name|#index>                   Blueprint functions whose bytecode names it (EX_NameConst)\n"
-        "  funcs <object|class> [text] [--from N]   list functions on the class chain\n"
-        "  params <object|class> <[Owner:]Function>  reflected parameter signature\n"
-        "  snap <ref> [file]                    save a baseline for dump --changed (file: across runs)\n"
-        "  record <ref> <seconds> <file> <field>...  sample 1..8 named fields for 1..10 seconds after countdown\n"
-        "  Refs: $N from the last find, or the printed literal 0x<address>#<index>:<serial> (works across runs).\n"
-        "  A bare class or struct name works where <object|Class> is shown; the first lookup scans the table.\n"
-        "  Struct values print as {Name: value}; --meta at the end of a line adds their member layout.\n";
-}
+std::span<const Verb> PackVerbs() { return UnrealVerbs(); }
+std::span<const std::string> PackNotes() { return UnrealNotes(); }
 
-void AddPackStatus(Session& session, Json& status) {
-    status["packs"] = HasUnreal(session.client) ? Json::array({UnrealCachePack}) : Json::array();
+std::vector<std::string> OfferedPacks(Session& session) {
+    return HasUnreal(session.client) ? std::vector<std::string>{std::string(UnrealCachePack)} : std::vector<std::string>{};
 }
 
 bool PackCommand(const Command& command) {
@@ -408,11 +353,11 @@ std::expected<uint32_t, std::string> TrialOwnerSize(Session& session, const Ref&
 
 bool PackCall(const Command& command) { return command.kind == Kind::Remote && command.request.op == ue::op::Call; }
 
-Json RunPackCall(Session& session, const Command& call) {
+shape::WatchThen RunPackCall(Session& session, const Command& call) {
     const Request& request = call.request;
     auto block = ue::Call(session.client, ue::GetRef(request), request.text, std::span(request.data, request.length));
-    return block ? Json{{"ok", true}, {"hex", format_detail::Hex(*block, block->size())}} :
-        Json{{"ok", false}, {"message", block.error().message}};
+    if (!block) return {false, std::nullopt, block.error().message};
+    return {true, HexBytes(*block), std::nullopt};
 }
 
 void DescribePeek(Session& session, std::span<PeekValue> values) {
@@ -421,7 +366,7 @@ void DescribePeek(Session& session, std::span<PeekValue> values) {
         for (auto& value : values) {
             if (!value.read || !PointerShaped(value.value) || value.value & 7) continue;
             auto object = ue::Describe(client, ue::AddressRef(value.value));
-            if (object) value.object = ObjectJson(*object);
+            if (object) value.object = ToJson(MakeObject(*object));
             else if (object.error().kind == Error::Kind::Timeout) break;
         }
     }

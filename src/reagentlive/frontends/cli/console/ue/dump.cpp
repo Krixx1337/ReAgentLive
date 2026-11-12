@@ -114,12 +114,12 @@ void PrintFields(Session& session, const Ref& object, bool instance, std::string
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, jsonCommand, fields.error());
     const auto sorted = SortedByOffset(std::move(*fields));
-    auto result = FieldsJson(object, sorted, [&](const ue::Field& field) { return session.names.Display(field); });
+    auto result = MakeFields(object, sorted, [&](const ue::Field& field) { return session.names.Display(field); });
     const auto native = NativeMembers(session, object, sorted, instance);
-    for (const auto& check : native.shown) result["fields"].push_back(NativeFieldJson(*check.member, check.stale));
-    SortRowsByOffset(result["fields"]);
-    if (!native.refused.empty()) result["native_refused"] = NativeRefusedJson(native.refused);
-    return JsonResult(session, jsonCommand, std::move(result));
+    for (const auto& check : native.shown) result.rows.push_back(MakeNativeFieldRow(*check.member, check.stale));
+    SortRowsByOffset(result.rows);
+    if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
+    return Emit(session, jsonCommand, std::move(result));
 }
 
 void RememberRef(std::vector<Ref>& refs, const Ref& object) {
@@ -331,24 +331,27 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     }
 
     const auto modules = LoadedModules(session);
-    Json rows = Json::array();
-    bool truncated = sorted.size() >= ue::MaxFieldStart;
+    shape::Dump result;
+    result.ref = ReusableRef(object);
+    result.capped = sorted.size() >= ue::MaxFieldStart;
+    bool truncated = false;
     auto preview = previews.begin();
     for (size_t i = 0; i < sorted.size(); ++i) {
         if (!keep[i]) continue;
         const auto& field = sorted[i];
         const auto data = FieldBytes(*bytes, field);
         bool partial = false;
-        Json row = FieldMetadata(field);
-        row["label"] = session.names.Display(field);
-        row["value"] = JsonFieldValue(field, data, structs, lookupName, partial, Style(session));
+        shape::DumpRow row;
+        row.field = MakeFieldInfo(field);
+        row.label = session.names.Display(field);
+        row.value = JsonFieldValue(field, data, structs, lookupName, partial, Style(session));
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);
-            row["before"] = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);
+            row.before = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);
         }
-        AddLocation(row, PointerRef(field.type, data).address, modules, "value_");
+        row.valueWhere = Locate(PointerRef(field.type, data).address, modules);
         if (const auto* named = describePointer(field.type, data, fieldLookups)) {
-            row["object"] = ObjectJson(*named);
+            row.object = MakeObject(*named);
             RememberRef(refs, named->ref);
         }
         if (preview != previews.end() && preview->fieldIndex == i) {
@@ -357,37 +360,41 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                 const auto& elements = *captured.elements;
                 const auto layout = ElementParts(field);
                 const bool map = layout.parts.size() == 2;
-                Json values = Json::array();
+                shape::Preview page;
+                page.total = elements.total;
                 const auto elementBytes = std::span(elements.bytes);
                 for (size_t offset = 0; offset < elementBytes.size(); offset += layout.stride) {
-                    Json item = Json::object();
+                    shape::PreviewElement item;
                     for (const auto& part : layout.parts) {
                         const auto element = elementBytes.subspan(offset + part.offset, part.field.size);
-                        item[part.name] = JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1);
+                        const bool key = std::string_view(part.name) == "key";
+                        auto value = JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1);
+                        if (key) item.key = std::move(value);
+                        else item.value = std::move(value);
                         if (const auto* named = describePointer(part.field.type, element, elementLookups)) {
-                            item[map ? std::string(part.name) + "_object" : std::string("object")] = ObjectJson(*named);
+                            (map ? (key ? item.keyObject : item.valueObject) : item.object) = MakeObject(*named);
                             RememberRef(refs, named->ref);
                         }
                     }
-                    values.push_back(std::move(item));
+                    page.elements.push_back(std::move(item));
                 }
-                partial |= values.size() < elements.total;
-                row["preview"] = {{"total", elements.total}, {"elements", std::move(values)}};
+                partial |= page.elements.size() < elements.total;
+                row.preview = std::move(page);
             } else {
                 partial = true;
-                row["preview_error"] = captured.elements.error().message;
+                row.previewError = captured.elements.error().message;
                 if (captured.elements.error().kind == Error::Kind::Timeout) describe = false;
             }
         } else if (field.type == "ArrayProperty") {
             ue::ArrayHeader header{};
             if (format_detail::Load(data, header) && header.count != 0) {
                 partial = true;
-                row["preview_error"] = i >= arrayLimitAt ? "array preview limit reached" : "array preview unavailable";
+                row.previewError = i >= arrayLimitAt ? "array preview limit reached" : "array preview unavailable";
             }
         }
-        row["truncated"] = partial;
+        row.truncated = partial;
         truncated |= partial;
-        rows.push_back(std::move(row));
+        result.rows.push_back(std::move(row));
     }
     // Native members, decoded by their type and filtered like the rest.
     for (const auto& check : native.shown) {
@@ -405,22 +412,26 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         }
         if (!keepRow) continue;
         ++shown;
-        Json row = NativeFieldJson(*check.member, check.stale);
-        row["value"] = data.empty() ? Json(nullptr) : layout::Value(field, data);
+        shape::DumpRow row;
+        row.field = MakeFieldInfo(*check.member);
+        row.label = field.name;
+        row.native = true;
+        if (check.stale) row.stale = true;
+        row.value = data.empty() ? Json(nullptr) : layout::Value(field, data);
         if (baseline) {
             const auto old = at(baseline->bytes);
-            row["before"] = old.empty() ? Json(nullptr) : layout::Value(field, old);
+            row.before = old.empty() ? Json(nullptr) : layout::Value(field, old);
         }
-        row["truncated"] = data.empty();
+        row.truncated = data.empty();
         truncated |= data.empty();
-        rows.push_back(std::move(row));
+        result.rows.push_back(std::move(row));
     }
-    SortRowsByOffset(rows);
+    SortRowsByOffset(result.rows);
     const size_t total = sorted.size() + native.shown.size();
-    const bool filtered = !command.match.empty() || command.nonzero || command.changed;
-    auto result = DumpJson(object, std::move(rows), truncated, limited,
-        filtered ? std::optional(std::pair<size_t, size_t>(shown, total)) : std::nullopt);
-    if (!native.refused.empty()) result["native_refused"] = NativeRefusedJson(native.refused);
-    return JsonResult(session, "dump", std::move(result));
+    result.truncated = truncated;
+    result.objectLookupLimited = limited;
+    if (!command.match.empty() || command.nonzero || command.changed) result.filtered = shape::Filtered{shown, total};
+    if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
+    return Emit(session, "dump", std::move(result));
 }
 }

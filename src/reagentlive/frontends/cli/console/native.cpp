@@ -35,7 +35,7 @@ void RunRegion(Session& session, const Command& command, std::string_view jsonCo
                     flags = std::pair(found->Exec(), static_cast<bool>(found->flags & image::Writable));
                     section = found->name;
                 }
-    JsonResult(session, jsonCommand, RegionJson(address, *info, native::region::Kind(*info, flags), section,
+    Emit(session, jsonCommand, MakeRegion(address, *info, native::region::Kind(*info, flags), section,
         LoadedModules(session)));
 }
 
@@ -76,6 +76,6 @@ void RunVtable(Session& session, const Command& command, std::string_view jsonCo
             if (auto resolved = native::ResolveBodies(AgentRead(session), slots.slots); !resolved)
                 return JsonError(session, jsonCommand, "read", resolved.error());
     }
-    JsonResult(session, jsonCommand, VtableJson(address, command.offset, table, found, slots, LoadedModules(session)));
+    Emit(session, jsonCommand, MakeVtable(address, command.offset, table, found, slots, LoadedModules(session)));
 }
 }

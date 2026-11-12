@@ -48,14 +48,6 @@ NativeShown NativeMembers(Session& session, const Ref& object, std::span<const u
     return out;
 }
 
-Json NativeRefusedJson(std::span<const NativeCheck> refused) {
-    Json rows = Json::array();
-    for (const auto& check : refused)
-        rows.push_back({{"line", check.member->line}, {"name", check.member->field.name}, {"owner", check.member->owner},
-            {"offset", check.member->field.offset}, {"reason", check.problem}});
-    return rows;
-}
-
 // label <object|Class> <offset> <type>[n] <Name>: appends one member to the
 // native file, checked against the reflected layout first.
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -96,8 +88,7 @@ void RunLabel(Session& session, const Command& command, std::string_view jsonCom
     for (const auto* found : reloaded.For(*fields))
         if (found->owner == member.owner && found->field.offset == member.field.offset) number = found->line;
     Ue(session).native = std::move(reloaded);
-    JsonResult(session, jsonCommand, {{"path", Ue(session).nativeFile.string()}, {"line", number}, {"owner", member.owner},
-        {"offset", member.field.offset}, {"type", NativeType(member.field)}, {"name", member.field.name},
-        {"size", member.field.Size()}, {"timestamp", member.timestamp}});
+    Emit(session, jsonCommand, shape::NativeLabel{Ue(session).nativeFile.string(), number, member.owner,
+        member.field.offset, NativeType(member.field), member.field.name, member.field.Size(), member.timestamp});
 }
 }

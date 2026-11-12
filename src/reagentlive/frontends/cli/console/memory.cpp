@@ -48,23 +48,30 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     const bool ticking = now.ticks != session.lastBeat.ticks;
     session.lastBeat = now;
     const HostThread thread = client.AgentHostThread();
-    Json result = {{"pid", client.AgentPid()}, {"build", client.AgentBuild()}, {"version", Version},
-        {"replaced_agents", client.AgentTakeovers()}, {"ticks", now.ticks},
-        {"ticks_per_second", static_cast<uint64_t>(rate + 0.5)}, {"interval_ms", static_cast<uint64_t>(seconds * 1000)},
-        {"ticking", ticking}, {"host_thread", HostThreadText(thread)}};
+    shape::Status result;
+    result.pid = client.AgentPid();
+    result.build = client.AgentBuild();
+    result.version = Version;
+    result.replacedAgents = client.AgentTakeovers();
+    result.ticks = now.ticks;
+    result.ticksPerSecond = static_cast<uint64_t>(rate + 0.5);
+    result.intervalMs = static_cast<uint64_t>(seconds * 1000);
+    result.ticking = ticking;
+    result.hostThread = HostThreadText(thread);
     if (thread != HostThread::Engine)
-        result["tick_note"] = "this host does not tick on the engine's thread: a tick is a host tick (a frame), "
+        result.tickNote = "this host does not tick on the engine's thread: a tick is a host tick (a frame), "
             "not a moment of the game, so values read in one tick need not line up";
-    // What watch --follow can follow.
+    // What watch-start --follow can follow.
     if (client.Supports(op::Watch))
-        if (auto roots = client.WatchRoots(); roots) result["roots"] = *roots;
-    AddPackStatus(session, result);
-    JsonResult(session, jsonCommand, std::move(result));
+        if (auto roots = client.WatchRoots(); roots) result.roots = std::move(*roots);
+    result.packs = OfferedPacks(session);
+    result.tableHash = session.tableHash;
+    Emit(session, jsonCommand, std::move(result));
 }
 
-// read --as: the bytes as an array of one element type.
-Json DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type) {
-    Json values = Json::array();
+// read --as: the bytes as a list of one element type.
+std::vector<Json> DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type) {
+    std::vector<Json> values;
     const size_t size = ElementSize(type);
     for (size_t at = 0; size && at + size <= bytes.size(); at += size)
         values.push_back(layout::Element(type, std::span(bytes.data() + at, size)));
@@ -85,11 +92,9 @@ const char* PinStopText(PinStop stop) {
     return "unknown";
 }
 
-Json PinJson(const PinState& pin) {
-    return {{"id", pin.id}, {"address", format_detail::Pointer(pin.spec.address)},
-        {"bytes", format_detail::Hex(std::span(pin.spec.bytes, pin.spec.length), MaxPinBytes)},
-        {"guarded", pin.spec.guard.address != 0}, {"state", PinStopText(pin.stop)}, {"writes", pin.writes},
-        {"remaining_ms", pin.remaining}};
+shape::Pin MakePin(const PinState& pin) {
+    return {pin.id, pin.spec.address, HexBytes(std::span(pin.spec.bytes, pin.spec.length)),
+        pin.spec.guard.address != 0, PinStopText(pin.stop), pin.writes, pin.remaining};
 }
 
 }
@@ -102,14 +107,14 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
     case PinAction::List: {
         auto pins = client.PinList();
         if (!pins) return CommandError(session, jsonCommand, pins.error());
-        Json rows = Json::array();
-        for (const auto& pin : *pins) rows.push_back(PinJson(pin));
-        return JsonResult(session, jsonCommand, {{"pins", std::move(rows)}});
+        shape::PinList result;
+        for (const auto& pin : *pins) result.rows.push_back(MakePin(pin));
+        return Emit(session, jsonCommand, std::move(result));
     }
     case PinAction::Clear: {
         auto cleared = client.PinClear(static_cast<uint32_t>(request.args[0]));
         if (!cleared) return CommandError(session, jsonCommand, cleared.error());
-        return JsonResult(session, jsonCommand, {{"cleared", *cleared}});
+        return Emit(session, jsonCommand, shape::PinClear{*cleared});
     }
     default: break;
     }
@@ -125,7 +130,7 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
     spec.guard = *guard;
     auto pin = client.PinAdd(spec);
     if (!pin) return CommandError(session, jsonCommand, pin.error());
-    JsonResult(session, jsonCommand, PinJson(*pin));
+    Emit(session, jsonCommand, MakePin(*pin));
 }
 
 namespace {
@@ -147,20 +152,24 @@ const char* TrialGuardText(TrialGuard guard) {
     }
     return "unknown";
 }
-Json TrialJson(const TrialState& trial) {
+shape::Trial MakeTrial(const TrialState& trial) {
     const auto& spec = trial.spec;
-    Json row = {{"id", trial.id}, {"address", format_detail::Pointer(spec.address)},
-        {"bytes", format_detail::Hex(std::span(spec.bytes, spec.length), MaxTrialBytes)},
-        {"original", format_detail::Hex(std::span(trial.original, spec.length), MaxTrialBytes)},
-        {"owner", format_detail::Pointer(spec.ownerAddress)},
-        {"object", spec.object ? Json(format_detail::Pointer(spec.object)) : Json(nullptr)},
-        {"state", TrialStopText(trial.stop)}, {"changed_tick", trial.changedTick}, {"remaining_ms", trial.remaining}};
-    if (const char* guard = TrialGuardText(trial.guard)) row["guard"] = guard;
+    shape::Trial row;
+    row.id = trial.id;
+    row.address = spec.address;
+    row.bytes = HexBytes(std::span(spec.bytes, spec.length));
+    row.original = HexBytes(std::span(trial.original, spec.length));
+    row.owner = spec.ownerAddress;
+    row.object = NonZero(spec.object);
+    row.state = TrialStopText(trial.stop);
+    row.changedTick = trial.changedTick;
+    row.remainingMs = trial.remaining;
+    if (const char* guard = TrialGuardText(trial.guard)) row.guard = guard;
     return row;
 }
-Json TrialRows(const std::vector<TrialState>& trials) {
-    Json rows = Json::array();
-    for (const auto& trial : trials) rows.push_back(TrialJson(trial));
+std::vector<shape::Trial> TrialRows(const std::vector<TrialState>& trials) {
+    std::vector<shape::Trial> rows;
+    for (const auto& trial : trials) rows.push_back(MakeTrial(trial));
     return rows;
 }
 }
@@ -173,12 +182,12 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
     case TrialAction::List: {
         auto trials = client.TrialList();
         if (!trials) return CommandError(session, jsonCommand, trials.error());
-        return JsonResult(session, jsonCommand, {{"trials", TrialRows(*trials)}});
+        return Emit(session, jsonCommand, shape::TrialList{TrialRows(*trials)});
     }
     case TrialAction::Clear: {
         auto trials = client.TrialClear(static_cast<uint32_t>(request.args[0]));
         if (!trials) return CommandError(session, jsonCommand, trials.error());
-        return JsonResult(session, jsonCommand, {{"cleared", trials->size()}, {"trials", TrialRows(*trials)}});
+        return Emit(session, jsonCommand, shape::TrialClear{trials->size(), TrialRows(*trials)});
     }
     default: break;
     }
@@ -202,11 +211,11 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
             "trial refused: the target is outside the owner; give --object for a native object it points to");
     auto trial = client.TrialAdd(spec);
     if (!trial) return CommandError(session, jsonCommand, trial.error());
-    JsonResult(session, jsonCommand, TrialJson(*trial));
+    Emit(session, jsonCommand, MakeTrial(*trial));
 }
 
 namespace {
-const char* WatchEndText(WatchEnd end) {
+std::optional<std::string> WatchEndText(WatchEnd end) {
     switch (end) {
     case WatchEnd::Running: break;
     case WatchEnd::Deadline: return "deadline";
@@ -214,42 +223,49 @@ const char* WatchEndText(WatchEnd end) {
     case WatchEnd::BufferFull: return "buffer full";
     case WatchEnd::ObjectReplaced: return "object replaced";
     }
-    return nullptr;
+    return std::nullopt;
 }
 
-Json WatchRangesJson(const WatchSpec& spec) {
-    Json ranges = Json::array();
+std::vector<shape::WatchRange> WatchRanges(const WatchSpec& spec) {
+    std::vector<shape::WatchRange> ranges;
     for (uint32_t i = 0; i < spec.count; ++i) {
-        Json range = {{"length", spec.ranges[i].length}, {"guarded", spec.ranges[i].guard.address != 0 || spec.root[0]}};
-        if (spec.root[0]) range["offset"] = HexNumber(spec.ranges[i].address); // 0x0, not null.
-        else range["address"] = format_detail::Pointer(spec.ranges[i].address);
+        shape::WatchRange range;
+        range.length = spec.ranges[i].length;
+        range.guarded = spec.ranges[i].guard.address != 0 || spec.root[0];
+        if (spec.root[0]) range.offset = HexNum(spec.ranges[i].address);
+        else range.address = Addr(spec.ranges[i].address);
         ranges.push_back(std::move(range));
     }
     return ranges;
 }
 
-// Rows as JSON; following a root, `lost` rows and `resumed` ones (with the
+std::optional<std::string> WatchRoot(const WatchSpec& spec) {
+    return spec.root[0] ? std::optional<std::string>(spec.root) : std::nullopt;
+}
+
+// Rows as samples; following a root, `lost` rows and `resumed` ones (with the
 // new object's address) bound each gap, listed in `gaps`.
-Json WatchSamplesJson(const WatchSpec& spec, const WatchRows& rows, Json& gaps) {
-    Json samples = Json::array();
-    gaps = Json::array();
+std::vector<shape::WatchSample> WatchSamples(const WatchSpec& spec, const WatchRows& rows, std::vector<shape::WatchGap>& gaps) {
+    std::vector<shape::WatchSample> samples;
+    gaps.clear();
     uint64_t lastRoot = 0;
     for (const auto& row : rows.rows) {
-        Json sample = {{"tick", row.header.tick}, {"us", row.header.microseconds}};
+        shape::WatchSample sample;
+        sample.tick = row.header.tick;
+        sample.us = row.header.microseconds;
         if (row.header.flags & WatchRowLost) {
-            sample["lost"] = true;
-            gaps.push_back({{"from_us", row.header.microseconds}, {"to_us", nullptr}});
+            sample.lost = true;
+            gaps.push_back({row.header.microseconds, std::nullopt});
             samples.push_back(std::move(sample));
             continue;
         }
-        Json values = Json::array();
+        sample.values.emplace();
         for (const auto& bytes : row.ranges)
-            values.push_back(bytes.empty() ? Json(nullptr) : Json(format_detail::Hex(bytes, bytes.size())));
-        sample["values"] = std::move(values);
-        if (spec.root[0] && row.header.root != lastRoot) sample["root"] = format_detail::Pointer(row.header.root);
+            sample.values->push_back(bytes.empty() ? std::nullopt : std::optional<HexBytes>(HexBytes(bytes)));
+        if (spec.root[0] && row.header.root != lastRoot) sample.root = Addr(row.header.root);
         if (row.header.flags & WatchRowResumed) {
-            sample["resumed"] = true;
-            if (!gaps.empty() && gaps.back()["to_us"].is_null()) gaps.back()["to_us"] = row.header.microseconds;
+            sample.resumed = true;
+            if (!gaps.empty() && !gaps.back().toUs) gaps.back().toUs = row.header.microseconds;
         }
         lastRoot = row.header.root;
         samples.push_back(std::move(sample));
@@ -257,22 +273,25 @@ Json WatchSamplesJson(const WatchSpec& spec, const WatchRows& rows, Json& gaps) 
     return samples;
 }
 
-// watch --read and --stop: the agent's record of the capture, so any console run can read it.
+// watch-read and watch-stop: the agent's record of the capture, so any console run can read it.
 void PrintCapture(Session& session, std::string_view jsonCommand) {
     Client& client = session.client;
     auto info = client.WatchStatus();
     if (!info) return CommandError(session, jsonCommand, info.error());
     auto rows = client.WatchRead(info->spec);
     if (!rows) return CommandError(session, jsonCommand, rows.error());
-    Json gaps;
-    auto samples = WatchSamplesJson(info->spec, *rows, gaps);
-    const char* stopped = WatchEndText(info->stop);
-    Json result = {{"running", info->stop == WatchEnd::Running}, {"stopped", stopped ? Json(stopped) : Json(nullptr)},
-        {"rows", rows->rows.size()}, {"capacity", info->maxRows}, {"ms", info->spec.milliseconds},
-        {"interval_ms", info->spec.interval}, {"root", info->spec.root[0] ? Json(info->spec.root) : Json(nullptr)},
-        {"ranges", WatchRangesJson(info->spec)}, {"samples", std::move(samples)}};
-    if (info->spec.root[0]) result["gaps"] = std::move(gaps);
-    JsonResult(session, jsonCommand, std::move(result));
+    std::vector<shape::WatchGap> gaps;
+    shape::WatchCapture result;
+    result.rows = WatchSamples(info->spec, *rows, gaps);
+    result.running = info->stop == WatchEnd::Running;
+    result.stopped = WatchEndText(info->stop);
+    result.capacity = info->maxRows;
+    result.ms = info->spec.milliseconds;
+    result.intervalMs = info->spec.interval;
+    result.root = WatchRoot(info->spec);
+    result.ranges = WatchRanges(info->spec);
+    if (info->spec.root[0]) result.gaps = std::move(gaps);
+    Emit(session, jsonCommand, std::move(result));
 }
 }
 
@@ -304,23 +323,20 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
     if (command.target == "start") {
         auto capacity = client.WatchStart(spec);
         if (!capacity) return CommandError(session, jsonCommand, capacity.error());
-        return JsonResult(session, jsonCommand, {{"started", true}, {"capacity", *capacity}, {"ms", spec.milliseconds},
-            {"interval_ms", spec.interval}, {"root", spec.root[0] ? Json(spec.root) : Json(nullptr)},
-            {"ranges", WatchRangesJson(spec)}});
+        return Emit(session, jsonCommand,
+            shape::WatchStart{*capacity, spec.milliseconds, spec.interval, WatchRoot(spec), WatchRanges(spec)});
     }
     std::optional<Parsed> then;
     if (!command.then.empty()) {
-        then = Parse(command.then, refs, modules);
+        then = Parse(session.verbs, command.then, refs, modules);
         if (!*then || !PackCall(**then))
             return JsonError(session, jsonCommand, "syntax", "--then needs a raw call: call <object> <[Class:]Function> [hex params]");
     }
     const auto started = std::chrono::steady_clock::now();
     auto capacity = client.WatchStart(spec);
     if (!capacity) return CommandError(session, jsonCommand, capacity.error());
-    Json thenJson = nullptr;
-    if (then) {
-        thenJson = RunPackCall(session, **then);
-    }
+    shape::Watch result;
+    if (then) result.then = RunPackCall(session, **then);
     // Wait out the duration, then for the agent to finish.
     std::this_thread::sleep_until(started + std::chrono::milliseconds(command.milliseconds));
     Result<WatchRows> rows = std::unexpected(Error{});
@@ -331,12 +347,13 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
     }
     if (!rows) return CommandError(session, jsonCommand, rows.error());
     const auto info = client.WatchStatus();
-    const char* stopped = info ? WatchEndText(info->stop) : nullptr;
-    Json gaps;
-    auto samples = WatchSamplesJson(spec, *rows, gaps);
-    JsonResult(session, jsonCommand, {{"rows", rows->rows.size()}, {"capacity", *capacity}, {"complete", !rows->running},
-        {"stopped", stopped ? Json(stopped) : Json(nullptr)}, {"ranges", WatchRangesJson(spec)},
-        {"then", std::move(thenJson)}, {"samples", std::move(samples)}});
+    std::vector<shape::WatchGap> gaps;
+    result.rows = WatchSamples(spec, *rows, gaps);
+    result.capacity = *capacity;
+    result.complete = !rows->running;
+    if (info) result.stopped = WatchEndText(info->stop);
+    result.ranges = WatchRanges(spec);
+    Emit(session, jsonCommand, std::move(result));
 }
 }
 
@@ -415,26 +432,26 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
     // Name hints for value rows, in one lookup.
     NamePeek(session, values, modules);
 
-    Json rows = Json::array();
-    for (const auto& value : values) rows.push_back(PeekRowJson(value, modules));
-    Json result = {{"address", format_detail::Pointer(start)}, {"count", count}, {"rows", std::move(rows)}};
-    AddLocation(result, start, modules);
+    shape::Peek result;
+    result.address = start;
+    result.where = Locate(start, modules);
+    for (const auto& value : values) result.rows.push_back(MakePeekRow(value, modules));
     if (!command.file.empty()) {
         const auto* module = ModuleAt(start, modules);
         if (!module) return JsonError(session, jsonCommand, "label", "only addresses inside a loaded module can be labelled");
         if (!values[0].read) return JsonError(session, jsonCommand, "label", "the qword is unreadable");
         std::string name = command.target;
-        if (name.empty() && !values[0].name.empty() && !values[0].object && result["rows"][0]["label"] == "value")
+        if (name.empty() && !values[0].name.empty() && !values[0].object && result.rows[0].label == "value")
             name = "FName_" + values[0].name;
-        if (name.empty()) return JsonError(session, jsonCommand, "label", "give a name: the value has no name hint");
+        if (name.empty()) return JsonError(session, jsonCommand, "label", "give a name with --name: the value has no name hint");
         const auto timestamp = ImageTimestamp(session, *module);
         if (!timestamp) return JsonError(session, jsonCommand, "label", "the module's PE header is unreadable");
-        auto label = LabelJson(*module, *timestamp, start, name, "global");
+        auto label = MakeLabel(*module, *timestamp, start, name, "global");
         std::ofstream file(command.file, std::ios::binary | std::ios::app);
-        file << label.dump() << '\n';
+        file << ToJson(label).dump() << '\n';
         if (!file) return JsonError(session, jsonCommand, "label", "cannot append to " + command.file);
-        result["labelled"] = std::move(label);
+        result.labelled = std::move(label);
     }
-    JsonResult(session, jsonCommand, std::move(result));
+    Emit(session, jsonCommand, std::move(result));
 }
 }

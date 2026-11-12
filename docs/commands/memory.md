@@ -1,22 +1,23 @@
 # Memory commands
 
 Core commands: they work in any host, with or without an engine pack.
-Wire details: [protocol](../protocol.md).
+Wire details: [protocol](../protocol.md). Each command's flags and result
+keys: `help <verb>` or [result shapes](results.md).
 
 | Command | Guard |
 |---|---|
-| `read <addr> [len] [--as T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--as i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `result.values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--as "<layout>"`: a block of mixed types (below). `--as cstr\|wstr` and pointer chains: [native objects](native-objects.md) |
+| `read <addr> [len] [--as T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--as i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--as "<layout>"`: a block of mixed types (below). `--as cstr\|wstr` and pointer chains: [native objects](native-objects.md) |
 | `read-batch <addr> <len> [<addr> <len> ...]` | 1–8 ranges in one host tick. The 4096-byte response budget includes 4 status bytes per range |
-| `peek <addr> [count] [--label <file> [name]]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword `read-batch` when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one `region` per readable pointer and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file; the name defaults to `FName_<hint>`. Size and PE timestamp tie it to one build |
+| `peek <addr> [count] [--label <file>] [--name <name>]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword `read-batch` when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one `region` per readable pointer and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file; `--name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
 | `write <addr> <hex> [--expect <hex>]` | 1..256 bytes; committed, writable pages; page protection is never changed. `--expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
 | `search <type> <value> [--from A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
 | `pin <addr> <hex> [--seconds N\|--ms N] [--expect <hex>]` | up to 8 pins of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests |
-| `pin list` / `pin clear [id]` | each pin's state (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`), writes and time left; clear one or all |
-| `write <addr> <hex> --trial --owner <ref> [--object <addr>] --expect <hex> [--seconds N\|--ms N]` | up to 8 trials of 1..64 bytes, 1 ms..60 s (default 10 s). One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear trials before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so a trial needs a host with the Unreal pack; the agent does not check classes |
-| `write --trial list` / `write --trial clear [id]` | each trial's state (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned), `original` bytes, `changed_tick` and time left; finished trials stay listed until cleared. Clear restores active ones and returns every cleared row |
+| `pin-list` / `pin-clear [id]` | each pin's state (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`), writes and time left; clear one or all |
+| `trial <addr> <hex> --owner <ref> --expect <hex> [--object <addr>] [--seconds N\|--ms N]` | up to 8 trials of 1..64 bytes, 1 ms..60 s (default 10 s). One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear trials before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so a trial needs a host with the Unreal pack; the agent does not check classes |
+| `trial-list` / `trial-clear [id]` | each trial's state (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned), `original` bytes, `changed_tick` and time left; finished trials stay listed until cleared. Clear restores active ones and returns every cleared row |
 | `watch <seconds\|Nms> <addr>:<len>... [--then call ...]` | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, up to 30 s; sampled at the start of every host tick into a 4 MB agent buffer |
-| `watch --start <duration> [--every <duration>] [--follow <root>] <addr\|offset>:<len>...` / `watch --read` / `watch --stop` | the same ranges, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
+| `watch-start <duration> <addr\|offset>:<len>... [--every <duration>] [--follow <root>]` / `watch-read` / `watch-stop` | the same ranges, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
 
 ## Faults
 
@@ -25,10 +26,10 @@ first-chance fault is still visible to any exception observer in the host.
 
 ## read-batch
 
-`read-batch base 16 base+0x40 8` returns `result.tick` (the agent heartbeat
-at execution) and ordered `result.items`. Each item has `address`, `size`,
+`read-batch base 16 base+0x40 8` returns `tick` (the agent heartbeat
+at execution) and ordered `rows`. Each row has `address`, `size`,
 `ok`, and either `hex` or an `error` with status and message. The command
-envelope's `ok` reports whether the batch ran. Check each item's `ok` for
+envelope's `ok` reports whether the batch ran. Check each row's `ok` for
 read success. Malformed or over-budget batches are rejected before copying.
 Addresses must be known when the request is sent. Like `read`, this checks
 memory accessibility. A reference used as an address does not check object
@@ -43,7 +44,7 @@ with an optional `[n]` count and an optional name (letters, digits, `_`, a
 trailing `?` for an unconfirmed one), or `pad n` for a gap. The read length
 is the layout's size; an explicit length that differs is refused, as are an
 unknown type, a bad count or name and a name used twice (the message names
-the field). `values` is `{name: value}` (keys print sorted), `[n]` fields as
+the field). `layout` is `{name: value}` (keys print sorted), `[n]` fields as
 lists, unnamed fields by offset (`"+0x8"`); `hex` stays. Nothing is saved:
 the same syntax names members for good in the
 [native names file](unreal.md#native-members), so a layout that decoded here pastes
@@ -59,10 +60,9 @@ matches; quoted text is taken exactly, see
 characters). Typed
 values align to their size unless `--align` says otherwise; hex aligns to 1.
 Aligned 4- and 8-byte values compare whole words; other patterns jump
-between first-byte candidates. It returns `result.hits` (`address`, with
-`module` and `rva` inside a module), `result.count` and
-`result.resume`: the address to pass as `--from` for the next page, or null
-once the range is done.
+between first-byte candidates. It returns `rows` (`address`, with
+`module` and `rva` inside a module), `from` and `next_cursor`: the address
+to pass as `--from` for the next page, absent once the range is done.
 
 `--background` runs the scan on the agent's worker thread instead of in host-tick slices, so the host pays only a poll per tick; the host must allow it (`Host::backgroundSearch`), otherwise the search is refused. A newer background search cancels an abandoned one first.
 
@@ -93,26 +93,26 @@ state (a timer, an eased value) stays pinned.
 
 ## watch
 
-`watch` samples ranges every host tick inside the agent and prints the rows:
-`result.samples[]` with `tick` (agent heartbeat), `us` (since start) and
-`values` (hex per range, null while unreadable). Object-relative ranges are
+`watch` samples ranges every host tick inside the agent and prints the
+`rows`: each with `tick` (agent heartbeat), `us` (since start) and
+`values` (bytes per range, null while unreadable). Object-relative ranges are
 guarded like pins: when the object is freed or replaced the capture stops,
 `stopped: "object replaced"`, and the rows so far stay. `--then call <object>
 <[Class:]Function> [hex]` runs that call right after sampling starts (a setter
-that starts the action, such as aiming); its result is `result.then`. Rows
+that starts the action, such as aiming); its result is `then`. Rows
 before it show the state before the action. `stopped` says why a capture
-ended: `deadline`, `stopped`, `buffer full`, `object replaced` (null while
+ended: `deadline`, `stopped`, `buffer full`, `object replaced` (absent while
 it runs).
 
 ### A capture that does not hold the console
 
-`watch --start` returns at
+`watch-start` returns at
 once; durations take `ms`, `s` (the default) or `m`, and `--every 10s`
 samples on that interval instead of every tick (a slow capture over
 minutes). The capture belongs to the agent instance: it survives the
-console exiting, `watch --read` from any later run returns the rows so far
+console exiting, `watch-read` from any later run returns the rows so far
 (with `running`, `stopped`, `capacity`, `ms`, `interval_ms`, `root`,
-`ranges`), `watch --stop` ends it and returns them. A new start replaces it;
+`ranges`), `watch-stop` ends it and returns them. A new start replaces it;
 a newer agent taking over ends it. Only raw ranges, as `watch` always
 sampled: resolve reflected paths to addresses (`get` prints them) first.
 No file is written inside the target.
@@ -127,5 +127,5 @@ sample first checks the root's identity; when it fails the agent asks the
 host for the current one and continues on it. Rows carry `lost` (one row,
 when the root went away and no new one existed; nothing is sampled until it
 returns) and `resumed` with the new object's `root` address; `gaps` lists
-each (`from_us`, `to_us`, null while still lost), never filled. A host
+each (`from_us`, `to_us`, absent while still lost), never filled. A host
 without roots refuses `--follow`, as does an unknown name.

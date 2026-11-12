@@ -3,6 +3,7 @@
 #include "reagentlive/ue/protocol_ue.h"
 #include "reagentlive/version.h"
 #include "doctest.h"
+#include "verbs.h"
 #include <cstring>
 #include <sstream>
 #include <string>
@@ -114,12 +115,13 @@ TEST_CASE("peek reads up to 64 qwords and labels exactly one") {
     CHECK(parsed->limit == 1);
     CHECK(parsed->file == "labels.jsonl");
     CHECK(parsed->target.empty());
-    parsed = Parse("peek base+0x100 1 --label labels.jsonl TagGlobal", NoRefs, modules);
+    parsed = Parse("peek base+0x100 1 --label labels.jsonl --name TagGlobal", NoRefs, modules);
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "TagGlobal");
     CHECK_FALSE(Parse("peek base+0x100 2 --label labels.jsonl", NoRefs, modules).has_value());
     CHECK_FALSE(Parse("peek base+0x100 --label", NoRefs, modules).has_value());
     CHECK_FALSE(Parse("peek base+0x100 --label a b c", NoRefs, modules).has_value());
+    CHECK_FALSE(Parse("peek base+0x100 --name TagGlobal", NoRefs, modules).has_value()); // A name labels nothing by itself.
 }
 
 TEST_CASE("read rejects zero, oversized and extra arguments") {
@@ -151,7 +153,7 @@ TEST_CASE("write is bounded by the agent's write limit") {
 }
 
 TEST_CASE("func --script and refs parse to their kinds") {
-    auto parsed = Parse("func $1 Owner:GetSpeed --script", TwoRefs);
+    auto parsed = Parse("script $1 Owner:GetSpeed", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Script);
     CHECK(std::string_view(parsed->request.text) == "Owner:GetSpeed");
@@ -169,7 +171,7 @@ TEST_CASE("func --script and refs parse to their kinds") {
 }
 
 TEST_CASE("write --trial needs an owner ref and expected bytes") {
-    auto parsed = Parse("write $1+0x10 2a 00 00 00 --trial --owner $1 --expect 07 00 00 00 --seconds 5", TwoRefs);
+    auto parsed = Parse("trial $1+0x10 2a 00 00 00 --owner $1 --expect 07 00 00 00 --seconds 5", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Trial);
     CHECK(parsed->request.op == op::Trial);
@@ -180,18 +182,18 @@ TEST_CASE("write --trial needs an owner ref and expected bytes") {
     CHECK(parsed->owner == Ref{0x1000, 5, 9});
     CHECK(parsed->object == 0);
     CHECK(parsed->milliseconds == 5000);
-    parsed = Parse("write 0x5008 01 --trial --owner $1 --object 0x5000 --expect 00", TwoRefs);
+    parsed = Parse("trial 0x5008 01 --owner $1 --object 0x5000 --expect 00", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->object == 0x5000);
-    CHECK_FALSE(Parse("write $1 01 --trial --expect 00", TwoRefs).has_value());          // No owner.
-    CHECK_FALSE(Parse("write $1 01 --trial --owner $1", TwoRefs).has_value());           // No --expect.
-    CHECK_FALSE(Parse("write $1 01 --trial --owner 0x1000 --expect 00", TwoRefs).has_value()); // Owner must be a ref.
-    CHECK_FALSE(Parse("write $1 01 --trial --owner $1 --expect 00 --seconds 61", TwoRefs).has_value());
-    parsed = Parse("write --trial clear 3", NoRefs);
+    CHECK_FALSE(Parse("trial $1 01 --expect 00", TwoRefs).has_value());          // No owner.
+    CHECK_FALSE(Parse("trial $1 01 --owner $1", TwoRefs).has_value());           // No --expect.
+    CHECK_FALSE(Parse("trial $1 01 --owner 0x1000 --expect 00", TwoRefs).has_value()); // Owner must be a ref.
+    CHECK_FALSE(Parse("trial $1 01 --owner $1 --expect 00 --seconds 61", TwoRefs).has_value());
+    parsed = Parse("trial-clear 3", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.flags == static_cast<uint32_t>(TrialAction::Clear));
     CHECK(parsed->request.args[0] == 3);
-    CHECK(Parse("write --trial list", NoRefs).has_value());
+    CHECK(Parse("trial-list", NoRefs).has_value());
 }
 
 TEST_CASE("release is a call with the release flag and an optional block") {
@@ -346,14 +348,14 @@ TEST_CASE("pin and watch parse targets, guards and durations") {
     REQUIRE(parsed.has_value());
     CHECK(parsed->guardObjects[0] == 0);
     CHECK(parsed->milliseconds == 10000);
-    parsed = Parse("pin clear 3", refs);
+    parsed = Parse("pin-clear 3", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.flags == static_cast<uint32_t>(PinAction::Clear));
     CHECK(parsed->request.args[0] == 3);
-    CHECK(Parse("pin list", refs).has_value());
+    CHECK(Parse("pin-list", refs).has_value());
     CHECK_FALSE(Parse("pin 0x5000 01 --seconds 61", refs).has_value());
     CHECK_FALSE(Parse("pin 0x5000 01 02 --expect 01", refs).has_value());
-    CHECK_FALSE(Parse("pin clear x", refs).has_value());
+    CHECK_FALSE(Parse("pin-clear x", refs).has_value());
 
     parsed = Parse("watch 2 $1+0x3e4:4 0x7000#12:3+0x258:8 0x9000:16 --then call $1 Owner:SetAiming 01", refs);
     REQUIRE(parsed.has_value());
@@ -588,17 +590,17 @@ TEST_CASE("find takes a class filter and a cursor") {
 
 TEST_CASE("read-batch parses ranges and bounds the total response") {
     const std::vector<Module> exe{{"game.exe", 0x1000, 0x100}};
-    const auto command = reagentlive::cli::Parse("read-batch base+16 8 0x2000 16", {}, exe);
+    const auto command = Parse("read-batch base+16 8 0x2000 16", {}, exe);
     REQUIRE(command.has_value());
     CHECK(command->request.op == reagentlive::op::ReadBatch);
     REQUIRE(command->reads.size() == 2);
     CHECK(command->reads[0].address == 0x1010);
     CHECK(command->reads[1].length == 16);
-    CHECK(reagentlive::cli::Parse("read-batch 1 4092", {}).has_value());
-    CHECK_FALSE(reagentlive::cli::Parse("read-batch 1 4093", {}).has_value());
-    CHECK_FALSE(reagentlive::cli::Parse("read-batch 1 2 3", {}).has_value());
-    CHECK_FALSE(reagentlive::cli::Parse("read-batch 0xffffffffffffffff 1", {}).has_value());
-    CHECK_FALSE(reagentlive::cli::Parse("read-batch 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1", {}).has_value());
+    CHECK(Parse("read-batch 1 4092", {}).has_value());
+    CHECK_FALSE(Parse("read-batch 1 4093", {}).has_value());
+    CHECK_FALSE(Parse("read-batch 1 2 3", {}).has_value());
+    CHECK_FALSE(Parse("read-batch 0xffffffffffffffff 1", {}).has_value());
+    CHECK_FALSE(Parse("read-batch 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1", {}).has_value());
 }
 
 TEST_CASE("object commands take a bare class name for the console to resolve") {
@@ -634,13 +636,13 @@ TEST_CASE("census takes an optional class and row limit") {
     CHECK_FALSE(Parse("census Actor", NoRefs).has_value());
     CHECK_FALSE(Parse("census --class", NoRefs).has_value());
     CHECK_FALSE(Parse("census --class A --class B", NoRefs).has_value());
-    parsed = Parse("census --class Actor --changed --match proj --limit 5", NoRefs);
+    parsed = Parse("census-diff --class Actor --match proj --limit 5", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->changed);
     CHECK(parsed->match == "proj");
     CHECK(parsed->limit == 5);
     CHECK_FALSE(Parse("census --match", NoRefs).has_value());
-    CHECK_FALSE(Parse("census --match --changed", NoRefs).has_value());
+    CHECK_FALSE(Parse("census-diff --match", NoRefs).has_value());
     CHECK_FALSE(Parse("census --match a --match b", NoRefs).has_value());
     parsed = Parse("census --class Actor --match zone --from 100 --limit 50", NoRefs);
     REQUIRE(parsed.has_value());
@@ -648,7 +650,7 @@ TEST_CASE("census takes an optional class and row limit") {
     CHECK(parsed->limit == 50);
     CHECK_FALSE(Parse("census --from", NoRefs).has_value());
     CHECK_FALSE(Parse("census --from 1 --from 2", NoRefs).has_value());
-    CHECK_FALSE(Parse("census --changed --changed", NoRefs).has_value());
+    CHECK_FALSE(Parse("census-diff --changed", NoRefs).has_value());
     Request request = parsed->request;
     CopyText(request.text, "x");
     CHECK(ue::Check(request) == Status::BadRequest); // Census takes no name text.
@@ -764,9 +766,9 @@ TEST_CASE("label names an unreflected member by object or class, offset, type an
     CHECK_FALSE(Parse("label TriggerVolume 0x53c u8 X extra", NoRefs).has_value());
 }
 
-TEST_CASE("watch --start takes an interval and a root; --read and --stop take nothing") {
+TEST_CASE("watch-start takes an interval and a root; --read and --stop take nothing") {
     const std::vector<Ref> refs{{0x1000, 5, 2}};
-    auto parsed = Parse("watch --start 10m --every 10s $1+0x538:72 0x9000:8", refs);
+    auto parsed = Parse("watch-start 10m --every 10s $1+0x538:72 0x9000:8", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Watch);
     CHECK(parsed->target == "start");
@@ -774,22 +776,22 @@ TEST_CASE("watch --start takes an interval and a root; --read and --stop take no
     CHECK(parsed->interval == 10000);
     REQUIRE(parsed->reads.size() == 2);
     CHECK(parsed->guardObjects[0] == 0x1000);
-    parsed = Parse("watch --start 120s --every 500ms --follow pawn +0x538:16 0x3e4:4", refs);
+    parsed = Parse("watch-start 120s --every 500ms --follow pawn +0x538:16 0x3e4:4", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->root == "pawn");
     CHECK(parsed->reads[0].address == 0x538);
     CHECK(parsed->reads[1].address == 0x3e4);
     CHECK(parsed->guardObjects[1] == 0);
-    parsed = Parse("watch --read", refs);
+    parsed = Parse("watch-read", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "read");
-    CHECK(Parse("watch --stop", refs)->target == "stop");
-    CHECK_FALSE(Parse("watch --read now", refs).has_value());
-    CHECK_FALSE(Parse("watch --start 61m --every 1s 0x9000:4", refs).has_value());   // Past the capture limit.
-    CHECK_FALSE(Parse("watch --start 31s 0x9000:4", refs).has_value());              // Every tick: 30 s at most.
-    CHECK_FALSE(Parse("watch --start 10s --every 20s 0x9000:4", refs).has_value());  // Interval past the duration.
-    CHECK_FALSE(Parse("watch --start 10s --follow pawn 0x10000:4", refs).has_value()); // Offset past an object.
-    CHECK_FALSE(Parse("watch --start 10s 0x9000:4 --then call $1 F", refs).has_value());
+    CHECK(Parse("watch-stop", refs)->target == "stop");
+    CHECK_FALSE(Parse("watch-read now", refs).has_value());
+    CHECK_FALSE(Parse("watch-start 61m --every 1s 0x9000:4", refs).has_value());   // Past the capture limit.
+    CHECK_FALSE(Parse("watch-start 31s 0x9000:4", refs).has_value());              // Every tick: 30 s at most.
+    CHECK_FALSE(Parse("watch-start 10s --every 20s 0x9000:4", refs).has_value());  // Interval past the duration.
+    CHECK_FALSE(Parse("watch-start 10s --follow pawn 0x10000:4", refs).has_value()); // Offset past an object.
+    CHECK_FALSE(Parse("watch-start 10s 0x9000:4 --then call $1 F", refs).has_value());
     CHECK_FALSE(Parse("watch 10s --every 1s 0x9000:4", refs).has_value());           // Options need --start.
 }
 

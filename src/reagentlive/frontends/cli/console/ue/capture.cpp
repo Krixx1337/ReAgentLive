@@ -100,8 +100,8 @@ void Snap(Session& session, const Ref& object, const std::string& path, std::opt
     baseline = Snapshot{object, std::move(sorted), std::move(bytes)};
     if (!path.empty() && !SaveSnapshot(path, *baseline))
         return JsonError(session, jsonCommand, "snapshot", "cannot write snapshot file " + path);
-    JsonResult(session, jsonCommand, {{"ref", ReusableRef(object)}, {"size", end},
-        {"path", path.empty() ? Json(nullptr) : Json(path)}});
+    Emit(session, jsonCommand, shape::Snap{ReusableRef(object), end,
+        path.empty() ? std::nullopt : std::optional<std::string>(path)});
 }
 
 void Record(Session& session, const Ref& object, const Command& command, StructCache& structs, std::string_view jsonCommand) {
@@ -183,7 +183,7 @@ void Record(Session& session, const Ref& object, const Command& command, StructC
     file.close();
     if (!file) return fail("capture file write failed");
     if (readError) return CommandError(session, jsonCommand, *readError);
-    JsonResult(session, jsonCommand, {{"ref", ReusableRef(object)}, {"path", command.file}, {"samples", samples}});
+    Emit(session, jsonCommand, shape::Record{ReusableRef(object), command.file, samples});
 }
 
 int Replay(const std::filesystem::path& path) {

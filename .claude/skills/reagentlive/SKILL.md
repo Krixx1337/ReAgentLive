@@ -35,12 +35,18 @@ rules. They win over this skill.
 
 ## Commands
 
-Full syntax: `<console> -c help`, or the command pages in `docs/`.
+**Ask the console what a command takes and returns; never guess a flag or
+a result key.** `<console> -c help` lists every verb with its usage (no
+game needed), and `<console> -c "help <verb>"` shows that verb's arguments,
+flags and the exact keys of its result. Keys follow one convention: a
+result's list is `rows`, a page carries `from` and `next_cursor`, a key
+that does not apply is absent (never null). A usage error ends with the
+verb's usage line. Behaviour and guards: the command pages in `docs/`.
 
 | Command | For |
 |---|---|
 | `find [text] [--class C]` | Objects by name and/or class; 24 per page |
-| `census [--class C] [--match T] [--changed] [--limit N] [--from N]` | Live instances per class, with sample refs; `--changed`: only what differs since the last census. Pages of 100: `--from <next_cursor>` for the next, no rescan; `--limit 0` for all |
+| `census [--class C] [--match T] [--limit N] [--from N]` / `census-diff` (same flags) | Live instances per class, with sample refs / only the classes whose count differs since the last census. Pages of 100: `--from <next_cursor>` for the next, no rescan; `--limit 0` for all |
 | `each <Class> <Field\|Owner:Fn>` | One field or pure getter for every instance, one tick |
 | `dump <obj> [--match T] [--nonzero] [--changed]` | Every reflected field with its value; filters cut output |
 | `get <obj> <Field.Path>...` | Typed values along pointer and struct paths |
@@ -56,12 +62,12 @@ Full syntax: `<console> -c help`, or the command pages in `docs/`.
 | `vtable <obj> [n] [--offset N] [--resolve]` | A native object's virtual table, slots until one is not code |
 | `region <addr>` | What memory is: `code`, `rodata`, `data` (with section), `mapped`, `private`, `free` |
 | `read <addr>->0x10->0x8 [n] [--as cstr\|wstr]` | Read through a pointer chain (each `->off` but the last reads a pointer); C or UTF-16 strings |
-| `sig --check` / `sig --bytes` | Is a byte signature unique and does it land there / live bytes with address fields masked |
-| `func` / `funcs <obj> [text]` / `params` | A UFunction's entry / functions matching text / its parameter block |
+| `sig-check <pattern>` / `sig-file <file>` / `sig-bytes <addr>` | Is a byte signature unique and does it land there / several at once / live bytes with address fields masked |
+| `func` / `funcs <obj> [text]` / `params` / `script` | A UFunction's entry / functions matching text / its parameter block / a Blueprint function's bytecode names |
 | `call <obj> Owner:Fn <hex\|Name=value>` | ProcessEvent; prints the block after the call |
-| `write` / `pin` | Change memory once / every tick (approval) |
+| `write` / `pin` / `trial` | Change memory once / every tick / once with an automatic undo (approval). `help` marks every verb that writes or calls into the game with `writes` |
 | `watch <s> <addr>:<len>... [--then call ...]` | Sample ranges every tick inside the agent |
-| `watch --start <dur> [--every <dur>] [--follow root]` / `--read` / `--stop` | A capture the agent keeps while the console is free |
+| `watch-start <dur> <ranges> [--every <dur>] [--follow root]` / `watch-read` / `watch-stop` | A capture the agent keeps while the console is free |
 | `read <addr> --as "<layout>"` / `label <obj> <off> <type> <Name>` | Decode a block of mixed types / name an unreflected member for good |
 | `snap` / `dump --changed` / `record` | Baseline, changed fields, named fields over time |
 | `status` / `base` / `modules` | Agent build and tick rate; exe and module ranges |

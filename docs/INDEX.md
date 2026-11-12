@@ -11,7 +11,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | I want to | Read |
 |---|---|
 | Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [Python client](client.md#python-session-client) |
-| Know what a command returns | [result shapes](commands/results.md) |
+| Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
 | Try it in any process, no mod or SDK | [own-thread example](hosting.md#own-thread-example) |
 | Put the agent into a process | [hosting](hosting.md) |
 | Write a client or change the wire format | [clients](client.md), [protocol](protocol.md) |
@@ -27,20 +27,21 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | Page | Home of |
 |---|---|
 | [../README.md](../README.md) | the pitch: what it is, why it is different, a demo, try it in five minutes |
-| [commands/console.md](commands/console.md) | command lines, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
+| [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
 | [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable`, pointer chains, `region`, strings |
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, `each`, `census`, `dump`, labels, readable names, native members |
 | [commands/capture.md](commands/capture.md) | which command for which question about change; `snap`, `record`, replay |
-| [commands/results.md](commands/results.md) | result keys per command, with the Python method |
+| [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
 | [hosting.md](hosting.md) | own-thread example, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
 | [client.md](client.md) | C++ client library, Python session client |
 | [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |
 | [protocol.md](protocol.md) | shared section, exchange and hold, handshake, ops, statuses, limits |
-| [design.md](design.md) | principles, decisions, rejected alternatives, not now |
+| [design.md](design.md) | principles, decisions (the self-describing console among them), rejected alternatives, not now |
 | [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
 | [ideas.md](ideas.md) | backlog with triggers; what is out |
+| [tool-interface.md](tool-interface.md) | plan: typed Python functions generated from the verb table, then MCP tools an agent picks |
 | [positioning.md](positioning.md) | the pitch, role among other tools, what it is not |
 
 ## Commands
@@ -53,17 +54,18 @@ and `status` lists the packs a host offers (`packs`).
 | Command | Needs | Page |
 |---|---|---|
 | `read`, `read-batch`, `peek`, `write`, `modules` | core | [memory](commands/memory.md) |
-| `pin`, `watch` | core | [memory](commands/memory.md) |
-| `write --trial` | core; its owner check needs the Unreal pack | [memory](commands/memory.md) |
+| `pin`, `pin-list`, `pin-clear` | core | [memory](commands/memory.md#pin) |
+| `watch`, `watch-start`, `watch-read`, `watch-stop` | core | [memory](commands/memory.md#watch) |
+| `trial`, `trial-list`, `trial-clear` | core; the owner check needs the Unreal pack | [memory](commands/memory.md) |
 | `search` | core | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
 | `read --as "<layout>"` | core | [memory](commands/memory.md#typed-layouts) |
 | `read --as cstr\|wstr`, `<addr>->off`, `vtable`, `region` | core | [native objects](commands/native-objects.md) |
 | `disasm`, `xrefs`, `touches` | core | [fast lane](commands/fast-lane.md) |
-| `sig --check`, `sig --bytes` | core | [fast lane](commands/fast-lane.md#signatures) |
+| `sig-check`, `sig-file`, `sig-bytes` | core | [fast lane](commands/fast-lane.md#signatures) |
 | `find`, `describe`, `name`, `name-find`, `fields`, `entries`, `refs` | Unreal pack | [Unreal pack](commands/unreal.md) |
-| `call`, `release`, `func`, `funcs`, `params`, `func --script` | Unreal pack | [Unreal pack](commands/unreal.md) |
+| `call`, `release`, `func`, `funcs`, `params`, `script` | Unreal pack | [Unreal pack](commands/unreal.md) |
 | `each` | Unreal pack | [Unreal pack](commands/unreal.md#each) |
-| `census` | Unreal pack | [Unreal pack](commands/unreal.md#census) |
+| `census`, `census-diff` | Unreal pack | [Unreal pack](commands/unreal.md#census) |
 | `dump` | Unreal pack | [Unreal pack](commands/unreal.md#dump), filters: [console](commands/console.md#fewer-round-trips) |
 | `export-labels` | Unreal pack | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `peek --label` | core | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
@@ -89,5 +91,6 @@ and `status` lists the packs a host offers (`packs`).
 | Fast lane | one-address code questions answered from live bytes, no database ([fast lane](commands/fast-lane.md)) |
 | Pin | bytes rewritten every tick until it expires ([memory](commands/memory.md#pin)) |
 | Trial | one guarded write that restores itself on expiry or clear ([memory](commands/memory.md)) |
-| Root | an object the host can always find again, for `watch --follow` |
+| Root | an object the host can always find again, for `watch-start --follow` |
+| Verb table | one row per console verb: its arguments and result type; `help`, parsing, the results page and strict Python results read it ([design](design.md#self-describing-console)) |
 | Cache file | `%TEMP%\reagentlive-<pid>.cache`: state kept between console runs ([console](commands/console.md#fewer-round-trips)) |

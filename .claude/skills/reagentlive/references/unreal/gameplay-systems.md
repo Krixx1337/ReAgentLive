@@ -5,7 +5,7 @@
 - "What exists in this world?": `census --class Actor` before guessing class
   names; zero live instances means a lead can't be tested now.
 - "What spawns when I do X?": `census --class <Base>`, the user acts,
-  `census --class <Base> --changed`. Pick a base class (`Actor`,
+  `census-diff --class <Base>`. Pick a base class (`Actor`,
   `ActorComponent`, a game base) to keep engine churn out; the changed rows'
   samples are only new for classes absent before (else `find --class`).
   Objects living a tick or two fall between censuses: use `watch` or

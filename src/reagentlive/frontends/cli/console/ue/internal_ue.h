@@ -13,6 +13,7 @@
 #include "reagentlive/frontends/cli/console/pack.h"
 #include "reagentlive/frontends/cli/results/ue/census.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
+#include "reagentlive/frontends/cli/results/ue/verbs_ue.h"
 #include "reagentlive/frontends/cli/state/ue/native_names.h"
 #include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/ue/client_ue.h"
@@ -102,7 +103,7 @@ std::optional<Snapshot> LoadSnapshot(const std::string& path);
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand);
 void Record(Session& session, const Ref& object, const Command& command, StructCache& structs, std::string_view jsonCommand);
-Json CallJson(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept);
+shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept);
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand);
 void PrintParameters(Session& session, const ue::FunctionInfo& function, const ue::Signature& signature, const Ref& object);
 void RunTypedCall(Session& session, const Command& command, uint64_t functionAddress,
@@ -120,6 +121,5 @@ uint32_t ExeTimestamp(Session& session);
 // them and (for an instance) the class size: shown ones and refused ones.
 struct NativeShown { std::vector<NativeCheck> shown, refused; };
 NativeShown NativeMembers(Session& session, const Ref& object, std::span<const ue::Field> reflected, bool instance);
-Json NativeRefusedJson(std::span<const NativeCheck> refused);
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand);
 }

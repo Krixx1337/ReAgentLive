@@ -1,12 +1,14 @@
-// reagentlive CLI result shapes: each lookup command's result keys, pinned against
-// the "Result shapes" table in docs/commands/results.md. Builders take canned client
-// results, so no agent or object table is needed.
+// reagentlive CLI results: the typed result structs (results/schema.h), the
+// values their builders give and the verb table that names them. Builders take
+// canned client results, so no agent or object table is needed. Every result
+// built here is also checked against its own described type.
 #include "reagentlive/frontends/cli/results/ue/call_text.h"
 #include "reagentlive/frontends/cli/results/ue/census.h"
 #include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
 #include "doctest.h"
+#include "verbs.h"
 #include <set>
 #include <string>
 #include <vector>
@@ -15,14 +17,7 @@ using namespace reagentlive;
 using namespace reagentlive::cli;
 
 namespace {
-std::set<std::string> Keys(const Json& object) {
-    std::set<std::string> keys;
-    for (const auto& item : object.items()) keys.insert(item.key());
-    return keys;
-}
-using KeySet = std::set<std::string>;
 const Ref Pawn{0x1000, 7, 3};
-const KeySet FieldKeys{"name", "owner", "type", "offset", "size"};
 
 ue::Field Field(std::string name, uint32_t offset, uint32_t size, std::string type) {
     ue::Field field{};
@@ -35,131 +30,262 @@ ue::Field Field(std::string name, uint32_t offset, uint32_t size, std::string ty
 }
 }
 
-TEST_CASE("find and describe results have their documented keys") {
+namespace {
+struct Row {
+    Addr address;
+    std::optional<std::string> name;
+    std::string kind;
+    std::vector<std::optional<HexBytes>> values;
+    shape::Location where;
+    template<class V> static void Describe(V& v) {
+        v("address", &Row::address);
+        v("name", &Row::name);
+        v("kind", &Row::kind, "code|data");
+        v("values", &Row::values);
+        v.flat("target_", &Row::where);
+    }
+};
+}
+
+TEST_CASE("a result struct writes exactly the keys it describes, and omits what does not apply") {
+    const uint8_t bytes[] = {1, 0xff};
+    Row row{0x1000, {}, "code", {HexBytes(bytes), std::nullopt}, {}};
+    CHECK(ToJson(row) == Json{{"address", "0x1000"}, {"kind", "code"}, {"values", {"01 ff", nullptr}}});
+    row.name = "Start";
+    row.where = Locate(0x7ff600001234, std::vector<Module>{{"game.exe", 0x7ff600000000, 0x100000}});
+    const auto json = ToJson(row);
+    CHECK(json["name"] == "Start");
+    CHECK(json["target_module"] == "game.exe");
+    CHECK(json["target_rva"] == "0x1234");
+    const auto type = schema::Of<Row>();
+    CHECK(schema::Notation(type) ==
+        "{address: addr, name?: str, kind: code|data, values: [bytes|null], target_module?: str, target_rva?: hex}");
+    CHECK(schema::Problem(type, json) == "");
+    // What a strict caller refuses: a key the type lacks, a missing one, a word outside the enum.
+    auto extra = json;
+    extra["nope"] = 1;
+    CHECK(schema::Problem(type, extra) == "result: unknown key 'nope'");
+    auto missing = json;
+    missing.erase("kind");
+    CHECK(schema::Problem(type, missing) == "result: missing key 'kind'");
+    auto wrong = json;
+    wrong["kind"] = "heap";
+    CHECK(schema::Problem(type, wrong) == "result.kind: 'heap' is not one of code|data");
+    wrong = json;
+    wrong["address"] = 4096;
+    CHECK(schema::Problem(type, wrong) == "result.address: not 0x text");
+    CHECK(schema::TypeJson(type)["struct"]["name"] == Json{{"type", "str"}, {"optional", true}});
+    CHECK(schema::TypeJson(type)["struct"]["kind"]["type"] == Json{{"enum", {"code", "data"}}});
+    CHECK(schema::TypeJson(type)["struct"]["values"]["type"] == Json{{"list", "bytes"}, {"nullable", true}});
+}
+
+TEST_CASE("every verb has a row with a parser and a result type, and no name twice") {
+    std::set<std::string> names;
+    for (const auto& verb : AllVerbs()) {
+        CAPTURE(verb.name);
+        CHECK(names.insert(std::string(verb.name)).second);
+        for (const auto alias : verb.aliases) CHECK(names.insert(std::string(alias)).second);
+        CHECK(verb.parse != nullptr);
+        REQUIRE(verb.result != nullptr);
+        CHECK(verb.result().kind == schema::Type::Kind::Struct);
+        CHECK_FALSE(verb.summary.empty());
+        CHECK((verb.origin == "core" || verb.origin == "ue"));
+        for (const auto& positional : verb.positionals) CHECK_FALSE(positional.help.empty());
+        // The list of a result is `rows`; no result names it otherwise.
+        for (const auto& field : verb.result().fields)
+            for (const auto old : {"hits", "items", "objects", "entries", "results", "instructions", "slots", "pins", "trials"})
+                CHECK(field.key != old);
+    }
+    CHECK(names.contains("sig-check"));
+    CHECK(names.contains("census-diff"));
+    CHECK(names.contains("?"));
+}
+
+TEST_CASE("help rows come from the table: usage, flags, the result in notation and its type") {
+    const Verb* region = FindVerb(AllVerbs(), "region");
+    REQUIRE(region);
+    const auto brief = Checked(MakeHelpRow(*region, false, false));
+    CHECK(brief == Json{{"verb", "region"}, {"origin", "core"}, {"usage", "region <addr>"},
+        {"summary", "what the memory at an address is: kind, base, size, protection"}});
+    const auto detail = Checked(MakeHelpRow(*region, true, false));
+    CHECK(detail["result"].get<std::string>().starts_with("{address: addr, module?: str, rva?: hex, section?: str, "
+        "kind: code|rodata|data|mapped|private|reserved|free, base: addr, size: hex"));
+    CHECK_FALSE(detail.contains("type"));
+    const Verb* search = FindVerb(AllVerbs(), "search");
+    REQUIRE(search);
+    CHECK(Usage(*search).starts_with("search <hex|u32|i32|u64|ptr|f32|f64|text> <value>... [--wide] [--from <addr>]"));
+    const auto full = Checked(MakeHelpRow(*search, true, true));
+    CHECK(full["positionals"][1] == Json{{"name", "value"}, {"arity", "some"}, {"help", "the value to find"}});
+    CHECK(detail["positionals"][0]["name"] == "addr");
+    // Only verbs that write the target's memory or call into it carry the mark.
+    CHECK_FALSE(full.contains("writes"));
+    std::set<std::string> writers;
+    for (const auto& verb : AllVerbs())
+        if (verb.writes) writers.insert(std::string(verb.name));
+    CHECK(writers == std::set<std::string>{"write", "trial", "trial-clear", "pin", "watch", "each", "call", "release"});
+    CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
+    CHECK(full["flags"][1] == Json{{"flag", "--from"}, {"takes", "one"}, {"value", "addr"},
+        {"help", "start, or a page's next_cursor"}});
+    CHECK(full["type"]["struct"]["next_cursor"] == Json{{"type", "addr"}, {"optional", true}});
+    CHECK(FindVerb(AllVerbs(), "exit") == FindVerb(AllVerbs(), "quit"));
+    // The whole table, and a hash of it that moves with any row.
+    const auto table = Checked(MakeHelpTable(AllVerbs()));
+    CHECK(table["rows"].size() == AllVerbs().size());
+    const auto hash = TableHash(AllVerbs());
+    CHECK(hash.size() == 16);
+    auto changed = AllVerbs();
+    changed[0].summary = "something else";
+    CHECK(TableHash(changed) != hash);
+}
+
+TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors end with the usage line") {
+    const Verb verb{"probe", "core", "", {{"addr", Arity::One}, {"bytes", Arity::Some}},
+        {{"--expect", Takes::Some, "bytes", ""}, {"--changed", Takes::Maybe, "file", ""}, {"--all", Takes::Nothing, "", ""},
+         {"--then", Takes::Rest, "line", ""}}};
+    auto args = Tokenise(verb, "0x10 01 02 --expect 03 04 --all --changed --then call $1 Fn --all");
+    REQUIRE(args.has_value());
+    CHECK(args->positionals == std::vector<std::string>{"0x10", "01", "02"});
+    CHECK(args->From(1) == "01 02");
+    CHECK(Args::Joined(*args->Find("--expect")) == "03 04");
+    CHECK(args->Has("--all"));
+    CHECK(args->Has("--changed"));
+    CHECK(args->Value("--changed").empty());       // The optional value was not given.
+    CHECK(args->Value("--then") == "call $1 Fn --all"); // The rest of the line, verbatim.
+    args = Tokenise(verb, "0x10 \"a b; --all\" --changed f.snap");
+    REQUIRE(args.has_value());
+    CHECK(args->At(1) == "a b; --all");            // Quoted: exact, and never a flag.
+    CHECK_FALSE(args->Has("--all"));
+    CHECK(args->Value("--changed") == "f.snap");
+    const std::string usage = "; usage: probe <addr> <bytes>... [--expect <bytes>...] [--changed [file]] [--all] [--then line]";
+    const Verb strict{"strict", "core", "", {}, {{"--owner", Takes::One, "ref", "", true}}};
+    CHECK(Tokenise(strict, "").error() == "missing --owner; usage: strict --owner <ref>");
+    CHECK(Tokenise(verb, "0x10").error() == "too few arguments" + usage);
+    CHECK(Tokenise(verb, "0x10 01 --bogus").error() == "unknown flag --bogus" + usage);
+    CHECK(Tokenise(verb, "0x10 01 --all --all").error() == "--all given twice" + usage);
+    CHECK(Tokenise(verb, "0x10 01 --expect").error() == "--expect needs a value" + usage);
+    CHECK(Tokenise(verb, "0x10 01 --then").error() == "--then needs a value" + usage);
+    CHECK(Tokenise(verb, "0x10 \"open").error() == "the quote is not closed" + usage);
+    const Verb one{"single", "core", "", {{"addr", Arity::One}, {"len", Arity::Optional}}, {}};
+    CHECK(Tokenise(one, "1 2 3").error() == "too many arguments; usage: single <addr> [len]");
+    // A parser's own complaint also ends with the usage line; a bare failure is the usage line.
+    CHECK(Parse("read 0x10 zz", {}).error() == "length must be a number; usage: read <addr> [len] [--as type]");
+    CHECK(Parse("read zz", {}).error() == "usage: read <addr> [len] [--as type]");
+    CHECK(Parse("frobnicate", {}).error() == "unknown command 'frobnicate' (try help)");
+}
+
+TEST_CASE("find and describe results") {
     const ue::FindResult found{{{Pawn, "Pawn_0", "Pawn"}}, 1, 25};
-    const auto first = FindJson(found, 0);
-    CHECK(Keys(first) == KeySet{"objects", "total", "from", "next_cursor", "truncated"});
-    CHECK(Keys(first["objects"][0]) == KeySet{"ref", "name", "class"});
-    CHECK(first["objects"][0]["ref"] == "0x1000#7:3");
+    const auto first = Checked(MakeFind(found, 0));
+    CHECK(first["rows"][0] == Json{{"ref", "0x1000#7:3"}, {"name", "Pawn_0"}, {"class", "Pawn"}});
+    CHECK(first["total"] == 1);
     CHECK(first["next_cursor"] == 25);
-    CHECK(FindJson(found, 25)["total"].is_null()); // Only the first page counts.
-    CHECK(Keys(ObjectJson(found.objects[0])) == KeySet{"ref", "name", "class"});
+    const auto later = Checked(MakeFind(found, 25));
+    CHECK_FALSE(later.contains("total")); // Only the first page counts.
+    CHECK(later["from"] == 25);
+    const ue::FindResult last{{{Pawn, "Pawn_0", "Pawn"}}, 1, 0};
+    CHECK_FALSE(Checked(MakeFind(last, 0)).contains("next_cursor")); // Done: no cursor.
     const ue::Object described{Pawn, "Pawn_0", "Pawn", 0x4f0}; // A single describe knows the class size.
-    CHECK(Keys(ObjectJson(described)) == KeySet{"ref", "name", "class", "class_size"});
-    CHECK(ObjectJson(described)["class_size"] == 0x4f0);
+    CHECK(Checked(MakeObject(described))["class_size"] == 0x4f0);
+    CHECK_FALSE(Checked(MakeObject(found.objects[0])).contains("class_size"));
 }
 
-TEST_CASE("funcs lists objects with owner and name") {
-    const ue::FunctionList list{{"Pawn:GetSpeed", "Actor:K2_GetActorLocation"}, 0};
-    const auto result = FunctionsJson(Pawn, list, 0);
-    CHECK(Keys(result) == KeySet{"ref", "functions", "from", "next_cursor", "truncated"});
-    REQUIRE(result["functions"].size() == 2);
-    CHECK(Keys(result["functions"][0]) == KeySet{"owner", "name"});
-    CHECK(result["functions"][1]["owner"] == "Actor");
-    CHECK(result["functions"][1]["name"] == "K2_GetActorLocation");
-    CHECK(result["next_cursor"].is_null());
-    CHECK_FALSE(result["truncated"].get<bool>());
+TEST_CASE("funcs lists functions with owner and name") {
+    const ue::FunctionList list{{"Pawn:GetSpeed", "Actor:K2_GetActorLocation", "Bare"}, 0};
+    const auto result = Checked(MakeFuncs(Pawn, list, 0));
+    REQUIRE(result["rows"].size() == 3);
+    CHECK(result["rows"][1] == Json{{"owner", "Actor"}, {"name", "K2_GetActorLocation"}});
+    CHECK(result["rows"][2] == Json{{"name", "Bare"}});
+    CHECK_FALSE(result.contains("next_cursor"));
 }
 
-TEST_CASE("fields, func and params results have their documented keys") {
+TEST_CASE("fields, func and params results") {
     const std::vector<ue::Field> fields{Field("Health", 0x100, 4, "FloatProperty")};
-    const auto table = FieldsJson(Pawn, fields, [](const ue::Field&) { return std::string("Health"); });
-    CHECK(Keys(table) == KeySet{"ref", "fields", "truncated"});
-    auto rowKeys = FieldKeys;
-    rowKeys.insert("label");
-    CHECK(Keys(table["fields"][0]) == rowKeys);
+    const auto table = Checked(MakeFields(Pawn, fields, [](const ue::Field&) { return std::string("Health"); }));
+    CHECK(table["rows"][0] == Json{{"name", "Health"}, {"owner", "Pawn"}, {"type", "FloatProperty"}, {"offset", 0x100},
+        {"size", 4}, {"label", "Health"}});
+    CHECK(table["capped"] == false);
 
     const ue::FunctionInfo function{0x2000, 0x7ff600001000, 0x400, true, "Pawn", "GetSpeed"};
     const std::vector<Module> modules{{"game.exe", 0x7ff600000000, 0x100000}};
-    const auto located = FunctionJson(Pawn, function, modules);
-    CHECK(Keys(located) == KeySet{"ref", "function", "address", "flags", "exec", "executable", "module", "rva"});
+    const auto located = Checked(MakeFunc(Pawn, function, modules));
+    CHECK(located["exec"] == "0x7ff600001000");
     CHECK(located["rva"] == "0x1000");
-    CHECK(Keys(FunctionJson(Pawn, function, {}, "modules unavailable")) ==
-        KeySet{"ref", "function", "address", "flags", "exec", "executable", "module_error"});
+    CHECK(Checked(MakeFunc(Pawn, function, {}, "modules unavailable"))["module_error"] == "modules unavailable");
     auto declared = function;
     declared.interface = true;
     declared.interfaceOffset = 0xF0;
     declared.slot = 0xA8;
     declared.implementation = 0x7ff600004000;
-    const auto viaInterface = FunctionJson(Pawn, declared, modules);
-    CHECK(Keys(viaInterface["interface"]) ==
-        KeySet{"offset", "slot", "implementation", "implementation_module", "implementation_rva"});
-    CHECK(viaInterface["interface"]["slot"] == 21);
-    CHECK(viaInterface["interface"]["implementation_module"] == "game.exe");
-    CHECK(viaInterface["interface"]["implementation_rva"] == "0x4000");
+    const auto viaInterface = Checked(MakeFunc(Pawn, declared, modules));
+    CHECK(viaInterface["interface"] == Json{{"offset", "0xf0"}, {"slot", 21}, {"implementation", "0x7ff600004000"},
+        {"implementation_module", "game.exe"}, {"implementation_rva", "0x4000"}});
     declared.implementation = 0;
-    CHECK(Keys(FunctionJson(Pawn, declared, modules)["interface"]) == KeySet{"offset", "slot", "implementation"});
+    CHECK(Checked(MakeFunc(Pawn, declared, modules))["interface"] == Json{{"offset", "0xf0"}, {"slot", 21}});
     auto native = function;
     native.exec = 0;
-    CHECK(Keys(FunctionJson(Pawn, native, modules)) == KeySet{"ref", "function", "address", "flags", "exec", "executable"});
+    const auto unlocated = Checked(MakeFunc(Pawn, native, modules));
+    CHECK_FALSE(unlocated.contains("exec")); // No exec entry: absent, with nothing to locate.
+    CHECK_FALSE(unlocated.contains("module"));
 
     ue::Signature signature{8, {Field("ReturnValue", 0, 4, "FloatProperty")}};
     signature.parameters[0].parameterFlags = ue::Return;
-    const auto params = ParamsJson(Pawn, function, signature);
-    CHECK(Keys(params) == KeySet{"ref", "function", "address", "block_size", "parameters"});
-    auto parameterKeys = FieldKeys;
-    parameterKeys.insert({"direction", "flags"});
-    CHECK(Keys(params["parameters"][0]) == parameterKeys);
-    CHECK(params["parameters"][0]["direction"] == "return");
+    const auto params = Checked(MakeParams(Pawn, function, signature));
+    CHECK(params["block_size"] == 8);
+    CHECK(params["rows"][0]["direction"] == "return");
+    CHECK(params["rows"][0]["name"] == "ReturnValue");
 }
 
 TEST_CASE("addresses inside a module carry module and rva, others nothing") {
     const std::vector<Module> modules{{"game.exe", 0x7ff600000000, 0x100000}, {"engine.dll", 0x7ffa00000000, 0x2000}};
-    Json row = Json::object();
-    AddLocation(row, 0x7ffa00001ff8, modules);
-    CHECK(row == Json{{"module", "engine.dll"}, {"rva", "0x1ff8"}});
-    Json view = Json::object();
-    AddLocation(view, 0x7ff600000000, modules, "ptr_");
-    CHECK(view == Json{{"ptr_module", "game.exe"}, {"ptr_rva", "0x0"}});
-    Json outside = Json::object();
-    AddLocation(outside, 0x7ffa00002000, modules); // One past the image.
-    AddLocation(outside, 0x1aac568d980, modules);  // Heap.
-    AddLocation(outside, 0, modules);
-    AddLocation(outside, 0x7ff600000010, {});      // List unknown.
-    CHECK(outside.empty());
+    CHECK(ToJson(Locate(0x7ffa00001ff8, modules)) == Json{{"module", "engine.dll"}, {"rva", "0x1ff8"}});
+    CHECK(ToJson(Locate(0x7ff600000000, modules)) == Json{{"module", "game.exe"}, {"rva", "0x0"}});
+    CHECK(ToJson(Locate(0x7ffa00002000, modules)).empty()); // One past the image.
+    CHECK(ToJson(Locate(0x1aac568d980, modules)).empty());  // Heap.
+    CHECK(ToJson(Locate(0, modules)).empty());
+    CHECK(ToJson(Locate(0x7ff600000010, {})).empty());      // List unknown.
 }
 
 TEST_CASE("peek labels each qword by the first that holds: object, module, heap, value") {
     const std::vector<Module> modules{{"game.exe", 0x7ff600000000, 0x100000}};
     PeekValue object{0x7ff600000010, 0x1aac568d980, true};
-    object.object = ObjectJson(ue::Object{Pawn, "Pawn_0", "Pawn"});
+    object.object = Checked(MakeObject(ue::Object{Pawn, "Pawn_0", "Pawn"}));
     object.readable = true;
     object.name = "Ignored";
-    auto row = PeekRowJson(object, modules);
-    CHECK(Keys(row) == KeySet{"address", "module", "rva", "value", "label", "object"});
+    auto row = Checked(MakePeekRow(object, modules));
     CHECK(row["label"] == "object");
+    CHECK(row["object"]["name"] == "Pawn_0");
     CHECK(row["rva"] == "0x10");
+    CHECK_FALSE(row.contains("name_hint"));
 
     PeekValue vtable{0x1aac568d980, 0x7ff600004000, true};
-    row = PeekRowJson(vtable, modules);
-    CHECK(Keys(row) == KeySet{"address", "value", "label", "value_module", "value_rva"});
-    CHECK(row["label"] == "module");
-    CHECK(row["value_rva"] == "0x4000");
+    row = Checked(MakePeekRow(vtable, modules));
+    CHECK(row == Json{{"address", "0x1aac568d980"}, {"value", "0x7ff600004000"}, {"label", "module"},
+        {"value_module", "game.exe"}, {"value_rva", "0x4000"}});
 
     // A value that decodes as a name and is also a readable pointer is a pointer, with no hint.
     PeekValue heap{0x1000, 0x1aac568d980, true};
     heap.readable = true;
     heap.name = "SomeName";
-    row = PeekRowJson(heap, modules);
-    CHECK(Keys(row) == KeySet{"address", "value", "label"});
-    CHECK(row["label"] == "heap");
+    row = Checked(MakePeekRow(heap, modules));
+    CHECK(row == Json{{"address", "0x1000"}, {"value", "0x1aac568d980"}, {"label", "heap"}});
 
     PeekValue tag{0x1008, 0x23a0f, true};
     tag.name = "Attribute.Gameplay.Weapon.SpreadMultiplier";
-    row = PeekRowJson(tag, modules);
-    CHECK(Keys(row) == KeySet{"address", "value", "label", "f32", "f64", "name_hint"});
+    row = Checked(MakePeekRow(tag, modules));
     CHECK(row["label"] == "value");
     CHECK(row["f32"].size() == 2);
+    CHECK(row.contains("f64"));
+    CHECK(row["name_hint"] == "Attribute.Gameplay.Weapon.SpreadMultiplier");
 
     PeekValue unreadablePointer{0x1010, 0x1aac568d980, true}; // Pointer-shaped but not readable: a value.
-    CHECK(PeekRowJson(unreadablePointer, modules)["label"] == "value");
-    CHECK(PeekRowJson(PeekValue{0x1018}, modules) == Json{{"address", "0x1018"}, {"label", "unreadable"}});
+    CHECK(Checked(MakePeekRow(unreadablePointer, modules))["label"] == "value");
+    CHECK(Checked(MakePeekRow(PeekValue{0x1018}, modules)) == Json{{"address", "0x1018"}, {"label", "unreadable"}});
     PeekValue zero{0x1020, 0, true};
-    CHECK(PeekRowJson(zero, modules)["value"] == "0x0");
+    CHECK(Checked(MakePeekRow(zero, modules))["value"] == "0x0");
 
-    const auto label = LabelJson(modules[0], 0x6543210f, 0x7ff600001234, "FName_Tag", "global");
-    CHECK(Keys(label) == KeySet{"module", "module_size", "timestamp", "rva", "name", "kind"});
-    CHECK(label["rva"] == "0x1234");
+    const auto label = Checked(MakeLabel(modules[0], 0x6543210f, 0x7ff600001234, "FName_Tag", "global"));
+    CHECK(label == Json{{"module", "game.exe"}, {"module_size", 0x100000}, {"timestamp", 0x6543210f}, {"rva", "0x1234"},
+        {"name", "FName_Tag"}, {"kind", "global"}});
 }
 
 TEST_CASE("labels keep one row per RVA, confirmed names first, and one name per vtable") {
@@ -173,7 +299,7 @@ TEST_CASE("labels keep one row per RVA, confirmed names first, and one name per 
 
 TEST_CASE("a labels line is read back only for the same build") {
     const Module module{"Game.exe", 0x7ff600000000, 0x100000};
-    const auto line = LabelJson(module, 7, 0x7ff600001234, "FName_Tag", "global").dump();
+    const auto line = Checked(MakeLabel(module, 7, 0x7ff600001234, "FName_Tag", "global")).dump();
     const auto row = ParseLabel(line, module, 7);
     REQUIRE(row.has_value());
     CHECK(*row == LabelRow{0x1234, "FName_Tag", "global"});
@@ -183,22 +309,17 @@ TEST_CASE("a labels line is read back only for the same build") {
     CHECK_FALSE(ParseLabel("not json", module, 7).has_value());
 }
 
-TEST_CASE("name, name-find and dump results have their documented keys") {
+TEST_CASE("name and name-find results") {
     const std::vector<int32_t> indices{5, 6};
     const std::vector<std::string> names{"Health", ""};
-    const auto decoded = NamesJson(indices, names);
-    CHECK(Keys(decoded) == KeySet{"names"});
-    CHECK(Keys(decoded["names"][0]) == KeySet{"index", "name"});
-    CHECK(decoded["names"][1]["name"].is_null());
+    const auto decoded = Checked(MakeNames(indices, names));
+    CHECK(decoded["rows"][0] == Json{{"index", 5}, {"name", "Health"}});
+    CHECK(decoded["rows"][1] == Json{{"index", 6}}); // No pooled name at that index.
 
-    const ue::NameFindResult found{{{5, "Health"}}, 0};
-    const auto page = NameFindJson(found, 0);
-    CHECK(Keys(page) == KeySet{"names", "from", "next_cursor"});
-
-    CHECK(Keys(DumpJson(Pawn, Json::array(), false, false, std::nullopt)) ==
-        KeySet{"ref", "fields", "truncated", "object_lookup_limited"});
-    const auto filtered = DumpJson(Pawn, Json::array(), false, false, std::pair<size_t, size_t>(1, 9));
-    CHECK(Keys(filtered["filtered"]) == KeySet{"shown", "total"});
+    const ue::NameFindResult found{{{5, "Health"}}, 64};
+    const auto page = Checked(MakeNameFind(found, 0));
+    CHECK(page["rows"][0]["name"] == "Health");
+    CHECK(page["next_cursor"] == 64);
 }
 
 namespace {
@@ -213,21 +334,20 @@ TEST_CASE("census rows filter by class name and keep the whole census's totals")
     auto rows = census.rows;
     KeepMatching(rows, "PROJECTILE", [](const ue::CensusRow& r) -> const std::string& { return r.type.name; });
     REQUIRE(rows.size() == 2);
-    const auto result = CensusJson("Actor", census, rows, {0, 1}, 5);
-    CHECK(Keys(result) == KeySet{"filter", "classes", "instances", "ms", "rows", "from", "shown", "total", "next_cursor",
-        "truncated", "hint"});
-    CHECK(Keys(result["rows"][0]) == KeySet{"class", "ref", "count", "samples"});
+    const auto result = Checked(MakeCensus("Actor", census, rows, {0, 1}, 5));
     CHECK(result["classes"] == 3);
     CHECK(result["instances"] == 14);
     CHECK(result["rows"].size() == 1); // --limit after the filter.
-    CHECK(result["truncated"].get<bool>());
-    CHECK(result["shown"] == 1);
+    CHECK(result["rows"][0] == Json{{"class", "BP_Projectile_C"}, {"ref", "0x100#1:1"}, {"count", 9},
+        {"samples", {"0x50100#900:1"}}});
+    CHECK(result["next_cursor"] == 1);
     CHECK(result["total"] == 2);
+    CHECK(result["filter"] == "Actor");
     CHECK(result["hint"] == "--from 1 for more, --limit 0 for all");
-    const auto plain = CensusJson("", census, census.rows, {}, 5);
+    const auto plain = Checked(MakeCensus("", census, census.rows, {}, 5));
     CHECK_FALSE(plain.contains("hint"));
-    CHECK(plain["next_cursor"].is_null());
-    CHECK(plain["filter"].is_null());
+    CHECK_FALSE(plain.contains("next_cursor"));
+    CHECK_FALSE(plain.contains("filter"));
     CHECK(plain["rows"].size() == 3);
 }
 
@@ -245,27 +365,27 @@ TEST_CASE("census pages join to every row of a filter, and the last page has no 
     KeepMatching(rows, "zone", [](const ue::CensusRow& r) -> const std::string& { return r.type.name; });
     REQUIRE(rows.size() == 3);
     std::vector<std::string> seen;
-    Json cursor = 0;
-    for (int page = 0; page < 5 && !cursor.is_null(); ++page) {
-        const auto result = CensusJson("Actor", stored, rows, {cursor.get<uint32_t>(), 2}, 0);
+    std::optional<uint32_t> cursor = 0;
+    for (int page = 0; page < 5 && cursor; ++page) {
+        const auto result = Checked(MakeCensus("Actor", stored, rows, {*cursor, 2}, 0));
         for (const auto& row : result["rows"]) seen.push_back(row["class"]);
         CHECK(result["total"] == 3);
-        cursor = result["next_cursor"];
-        CHECK(result.contains("hint") == !cursor.is_null());
+        cursor = result.contains("next_cursor") ? std::optional(result["next_cursor"].get<uint32_t>()) : std::nullopt;
+        CHECK(result.contains("hint") == cursor.has_value());
     }
     CHECK(seen == std::vector<std::string>{"Zone1", "Zone3", "Zone5"});
     // Past the end: an empty page, no cursor.
-    const auto past = CensusJson("Actor", stored, rows, {9, 2}, 0);
+    const auto past = Checked(MakeCensus("Actor", stored, rows, {9, 2}, 0));
     CHECK(past["rows"].empty());
-    CHECK(past["next_cursor"].is_null());
+    CHECK_FALSE(past.contains("next_cursor"));
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", false).empty());
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", true) ==
-        "no stored census to page: run census --class Actor --changed without --from first");
+        "no stored census to page: run census-diff --class Actor without --from first");
     CHECK_FALSE(CensusPageProblem(MakeCensusBaseline("Pawn", census), std::nullopt, "Actor", false).empty());
     CHECK_FALSE(CensusPageProblem(std::nullopt, std::nullopt, "", false).empty());
 }
 
-TEST_CASE("census --changed keeps grown, shrunk, new and vanished classes, largest change first") {
+TEST_CASE("census-diff keeps grown, shrunk, new and vanished classes, largest change first") {
     const CensusBaseline before{"Actor", {{"Grown", {0x100, 1, 1}, 2}, {"Shrunk", {0x200, 2, 1}, 5},
         {"Same", {0x300, 3, 1}, 4}, {"Vanished", {0x400, 4, 1}, 3}, {"Reused", {0x500, 5, 1}, 1},
         {"Serial", {0x600, 6, 0}, 2}}};
@@ -283,14 +403,13 @@ TEST_CASE("census --changed keeps grown, shrunk, new and vanished classes, large
     CHECK(changes[1].after == 0);
     CHECK(changes[1].samples.empty()); // Gone: no instances to sample.
     CHECK(changes[2].before == 0);
-    const auto result = CensusChangedJson(before, after, changes, {}, 5);
-    CHECK(Keys(result) == KeySet{"filter", "classes", "instances", "ms", "rows", "from", "shown", "total", "next_cursor",
-        "truncated"});
-    const auto paged = CensusChangedJson(before, after, changes, {2, 2}, 5);
+    const auto result = Checked(MakeCensusDiff(before, after, changes, {}, 5));
+    const auto paged = Checked(MakeCensusDiff(before, after, changes, {2, 2}, 5));
     CHECK(paged["rows"][0]["class"] == "New");
+    CHECK(paged["rows"][0]["before"] == 0);
+    CHECK(paged["rows"][0]["after"] == 2);
     CHECK(paged["next_cursor"] == 4);
-    CHECK(Keys(result["rows"][0]) == KeySet{"class", "ref", "before", "after", "samples"});
-    CHECK(Keys(result["classes"]) == KeySet{"before", "after"});
+    CHECK(paged["total"] == 6);
     CHECK(result["classes"]["before"] == 6);
     CHECK(result["instances"]["before"] == 17);
     CHECK(result["instances"]["after"] == 23);
@@ -299,7 +418,7 @@ TEST_CASE("census --changed keeps grown, shrunk, new and vanished classes, large
     CHECK(CensusChanges(MakeCensusBaseline("Actor", after), after).empty());
 }
 
-TEST_CASE("census --changed needs a baseline under the same filter") {
+TEST_CASE("census-diff needs a baseline under the same filter") {
     CHECK(CensusBaselineProblem(std::nullopt, "Actor").starts_with("no census baseline"));
     const CensusBaseline all{"", {}};
     CHECK(CensusBaselineProblem(all, "Actor") == "the baseline is from census: run census --class Actor first");
@@ -324,12 +443,11 @@ TEST_CASE("script and refs results group entries by kind") {
     local.pointer = 0x1aac568d980;
     strcpy_s(local.text, "DoubleProperty PlayRate");
     script.entries = {name, call, local};
-    const auto result = ScriptJson(Pawn, "BP_Action_Reload_C:GetReloadSpeedMultiplier", script);
-    CHECK(Keys(result) == KeySet{"ref", "function", "size", "names", "functions", "properties"});
-    CHECK(Keys(result["names"][0]) == KeySet{"offset", "count", "index", "name"});
-    CHECK(Keys(result["functions"][0]) == KeySet{"offset", "count", "ref", "function"});
-    CHECK(Keys(result["properties"][0]) == KeySet{"offset", "count", "address", "property"});
-    CHECK(result["names"][0]["offset"] == 350);
+    const auto result = Checked(MakeScript(Pawn, "BP_Action_Reload_C:GetReloadSpeedMultiplier", script));
+    CHECK(result["names"][0] == Json{{"offset", 350}, {"count", 1}, {"index", 145935},
+        {"name", "Attribute.Gameplay.Character.ReloadSpeedMultiplier"}});
+    CHECK(result["functions"][0]["ref"] == "0x7ff4d87a0378#9:0");
+    CHECK(result["properties"][0]["address"] == "0x1aac568d980");
 
     ue::RefsResult refs{{}, false};
     ue::RefsEntry row{};
@@ -337,45 +455,50 @@ TEST_CASE("script and refs results group entries by kind") {
     strcpy_s(row.owner, "BP_Action_Reload_C");
     strcpy_s(row.name, "GetReloadSpeedMultiplier");
     refs.rows = {row};
-    const auto found = RefsJson(145935, "Attribute.Gameplay.Character.ReloadSpeedMultiplier", refs);
-    CHECK(Keys(found) == KeySet{"index", "name", "functions", "capped"});
-    CHECK(Keys(found["functions"][0]) == KeySet{"ref", "owner", "name", "offset", "count"});
+    const auto found = Checked(MakeRefs(145935, "Attribute.Gameplay.Character.ReloadSpeedMultiplier", refs));
+    CHECK(found["rows"][0] == Json{{"ref", "0x2000#3:1"}, {"owner", "BP_Action_Reload_C"},
+        {"name", "GetReloadSpeedMultiplier"}, {"offset", 0}, {"count", 0}});
+    CHECK(found["capped"] == false);
+    CHECK_FALSE(Checked(MakeRefs(7, "", refs)).contains("name"));
 }
 
 TEST_CASE("every line is a result or an error envelope") {
-    CHECK(Keys(ResultEnvelope("find", Json::object())) == KeySet{"command", "ok", "result"});
+    CHECK(ResultEnvelope("find", Json::object()) == Json{{"command", "find"}, {"ok", true}, {"result", Json::object()}});
     const auto validation = ErrorEnvelope("find", "validation", "bad");
-    CHECK(Keys(validation) == KeySet{"command", "ok", "error"});
-    CHECK(Keys(validation["error"]) == KeySet{"kind", "message"});
+    CHECK(validation == Json{{"command", "find"}, {"ok", false}, {"error", {{"kind", "validation"}, {"message", "bad"}}}});
     const Error refused{Error::Kind::Agent, Status::NotFound, 0, "gone", "not found: gone"};
     const auto agent = ErrorEnvelope("describe", refused);
-    CHECK(Keys(agent["error"]) == KeySet{"kind", "message", "status", "detail", "reason"});
     CHECK(agent["error"]["kind"] == "agent");
+    CHECK(agent["error"]["reason"] == "gone");
+    CHECK(agent["error"].contains("status"));
+    CHECK(agent["error"].contains("detail"));
 }
 
 TEST_CASE("batch results give each command its tick and name the ones that moved it") {
     const auto envelope = [](const char* command) { return Json{{"command", command}, {"ok", true}, {"result", Json::object()}}; };
     // Three single-tick reads.
     std::vector<BatchItemTicks> same{{0, 40, 40}, {40, 40, 40}, {40, 40, 40}};
-    auto result = BatchJson({envelope("read"), envelope("read"), envelope("get")}, same, 40, 40);
-    CHECK(Keys(result) == KeySet{"count", "all_ok", "same_tick", "first_tick", "last_tick", "spans_ticks", "results"});
+    auto result = Checked(MakeBatch({envelope("read"), envelope("read"), envelope("get")}, same, 40, 40));
     CHECK(result["same_tick"] == true);
+    CHECK(result["all_ok"] == true);
     CHECK(result["spans_ticks"].empty());
-    CHECK(result["results"][1]["tick"] == 40);
-    CHECK_FALSE(result["results"][1].contains("last_tick"));
+    CHECK(result["rows"][1]["tick"] == 40);
+    CHECK_FALSE(result["rows"][1].contains("last_tick"));
     // A read, a scan over many ticks, then a read in the tick the scan ended.
     std::vector<BatchItemTicks> skewed{{0, 40, 40}, {40, 41, 355}, {355, 355, 355}};
-    result = BatchJson({envelope("read"), envelope("each"), envelope("read")}, skewed, 40, 355);
+    result = Checked(MakeBatch({envelope("read"), envelope("each"), envelope("read")}, skewed, 40, 355));
     CHECK(result["same_tick"] == false);
+    CHECK(result["first_tick"] == 40);
+    CHECK(result["last_tick"] == 355);
     REQUIRE(result["spans_ticks"].size() == 1);
     CHECK(result["spans_ticks"][0] == Json{{"index", 1}, {"command", "each"}});
-    CHECK(result["results"][1]["tick"] == 41);
-    CHECK(result["results"][1]["last_tick"] == 355);
-    CHECK_FALSE(result["results"][2].contains("last_tick"));
+    CHECK(result["rows"][1]["tick"] == 41);
+    CHECK(result["rows"][1]["last_tick"] == 355);
+    CHECK_FALSE(result["rows"][2].contains("last_tick"));
     // A command that sent nothing (a syntax error) has no tick.
     std::vector<BatchItemTicks> none{{40, 0, 0}};
-    result = BatchJson({envelope("bad")}, none, 40, 40);
-    CHECK_FALSE(result["results"][0].contains("tick"));
+    result = Checked(MakeBatch({envelope("bad")}, none, 40, 40));
+    CHECK_FALSE(result["rows"][0].contains("tick"));
 }
 
 namespace {

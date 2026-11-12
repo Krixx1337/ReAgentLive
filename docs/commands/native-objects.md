@@ -14,7 +14,7 @@ read <addr> [max] --as cstr|wstr  a C string (UTF-16 with wstr)
 
 `vtable` reads the table pointer at `addr` (an object's first 8 bytes;
 `--offset N`: at `addr + N`, a secondary base or an interface part), or
-takes `addr` as the table with `--table`, and lists its slots: `slot`,
+takes `addr` as the table with `--table`, and lists its slots (`rows`): `slot`,
 `offset` (slot × 8), `target`, `module`, `rva`. It stops at the first entry
 that does not point into an executable section of a loaded module (`stop`
 `not code`, with `stop_value`), at `count`, or where the read ended; one
@@ -23,7 +23,7 @@ table, read once with its exception directory and kept in the cache file.
 `--resolve` adds `body` (with `body_module`, `body_rva`) where a slot's
 target is a stub of unconditional direct jumps: the address `disasm
 --follow` would end at, one read per hop. A qword that points into no
-module is a result: `table: null` and `found` holding it.
+module is a result: no `table`, and `found` holding the qword.
 
 ## Pointer chains
 

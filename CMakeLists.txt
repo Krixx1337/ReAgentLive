@@ -194,10 +194,18 @@ if(REAGENTLIVE_BUILD_TESTS)
     target_include_directories(reagentlive-doctest SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest")
     include("${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest/cmake/doctest.cmake")
 
-    # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python.
+    # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python (tests/table is a tool they use).
     add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/parse_tests.cpp tests/cli/format_tests.cpp
         tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp)
     target_link_libraries(reagentlive-cli-tests PRIVATE reagentlive-cli reagentlive-doctest nlohmann_json::nlohmann_json Zydis)
+    # The verb table without a console: what `help --json` prints, and the docs page generated from it.
+    add_executable(reagentlive-table tests/table/main.cpp)
+    target_link_libraries(reagentlive-table PRIVATE reagentlive-cli nlohmann_json::nlohmann_json Zydis)
+    set_target_properties(reagentlive-table PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
+    target_compile_options(reagentlive-table PRIVATE /W4 /WX /EHsc)
+    add_test(NAME reagentlive.results-doc
+        COMMAND reagentlive-table --check "${CMAKE_CURRENT_SOURCE_DIR}/docs/commands/results.md")
+    set_tests_properties(reagentlive.results-doc PROPERTIES LABELS "reagentlive" TIMEOUT 30)
     add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
@@ -226,7 +234,8 @@ if(REAGENTLIVE_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME reagentlive.python-session
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_session.py")
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_session.py"
+                --table "$<TARGET_FILE:reagentlive-table>")
         set_tests_properties(reagentlive.python-session PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         add_test(NAME reagentlive.ida-labels
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_ida_labels.py")

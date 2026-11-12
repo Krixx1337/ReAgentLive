@@ -10,7 +10,7 @@ Answer one-address questions live, at once, with no database
 - What points here: `xrefs <addr>` (kinds `call`, `jmp`, `jcc`, `lea`,
   `load`, `store`, `rip`, `pointer`; `--module` for a DLL calling into the
   exe).
-- Does this signature hold: `sig --check`.
+- Does this signature hold: `sig-check`.
 - What code uses these member offsets: `touches <addr> <offset>...` from a
   native function of the same class (a `func` exec); functions using most
   of the offsets, and writing them, rank first.
@@ -69,7 +69,7 @@ command; check each answer before the next.
    `disasm --function`), or the hit is inside a longer string (`xrefs` on
    the string's start, which `read` shows).
 2. **The function → the table slot holding it.** `xrefs <function start>`,
-   kind `pointer`, `function: null` (data). Goes wrong: a stub sits between
+   kind `pointer`, no `function` (data). Goes wrong: a stub sits between
    the table and the body (`xrefs` the stub instead; `disasm --follow` shows
    the hop).
 3. **The table → the constructor or destructor installing it.**
@@ -80,7 +80,7 @@ command; check each answer before the next.
 5. **The global → the functions returning it.** `xrefs <global>`: `load`
    (and `lea`) rows, each with its `function`; `peek` it for the live value.
 
-Rows with `function: null` other than `pointer` may be chance bytes, as are
+Rows without `function` other than `pointer` may be chance bytes, as are
 the `unknown` ones `--all` adds. Doing this for every table is a script
 over the Python client (`s.xrefs`, `s.disasm`), not a command.
 
@@ -106,20 +106,20 @@ You make the signature; ReAgentLive checks it against the live image
    record the resolve formula: `--resolve next,field[,size]` with
    `--expect` set to the target. A `call rel32` at match offset C is
    `C+5,C+1`; `lea rcx, [rip+d]` at C is `C+7,C+3`.
-6. `sig --check <pattern> --expect <module>+<rva>` after every attempt, and
+6. `sig-check <pattern> --expect <module>+<rva>` after every attempt, and
    act on what it says:
    - `mismatches`: a typo or a slipped byte count at those offsets;
    - `diverges_at` / `unique_at_length`: how much longer to make it (the
      extra bytes must be ones you would keep fixed);
    - `warnings`: a fixed field that holds an address; wildcard it.
 7. Prefer the shortest unique pattern, then the one with the most fixed
-   bytes. Try several candidates in one call with `sig --check --file`
+   bytes. Try several candidates in one call with `sig-file`
    (one JSON line each; `winner` names the first that holds). Then hand it
    to the host's own checks.
 
 Without a static database (a DLL with none, or analysis not finished):
 `disasm <entry> --function` for the instructions and their boundaries,
-`sig --bytes <boundary> 96` for `suggested` masks (decoded exactly from that
+`sig-bytes <boundary> 96` for `suggested` masks (decoded exactly from that
 boundary), and `xrefs <entry>` for callers to build a reference signature
 from (`call` rows give `instruction`, so `--resolve` is `C+5,C+1` from
 there). With `--expect`, `warnings` come from the decoder; check `decoded`
@@ -141,21 +141,21 @@ covers the pattern.
 - Open `implementation_rva` in the static tool. A trivial getter is a field read:
   `movss xmm0, [rcx + X]; ret` means the value lives at
   `object + offset + X`; read or `watch` it directly.
-- If `slot` is null, the stub had no plain `mov rax, [reg]; call [rax + disp]`.
+- If `slot` is absent, the stub had no plain `mov rax, [reg]; call [rax + disp]`.
   Open the stub (`rva`) in the static tool and read the vtable at
   `object + offset` yourself.
 
 ## Reading Blueprint logic
 
 - **To find what a Blueprint function really reads:**
-  `func <obj|class> <Fn> --script`. It lists the function's bytecode names
+  `script <obj|class> <Fn>`. It lists the function's bytecode names
   (gameplay tags, rows), the functions it calls and the properties it uses,
   each confirmed live, with offset and count. A native function has no
   bytecode and returns `not found`.
 - **To find which Blueprints read a value:** `refs <tag text>` or
   `refs #<index>` lists every Blueprint function whose bytecode names it. Then
-  run `--script` on each hit.
-- `--script` is an anchored scan, not a disassembler. To prove a returned
+  run `script` on each hit.
+- `script` is an anchored scan, not a disassembler. To prove a returned
   value is used unchanged, still read the bytes near the end by hand
   (`read <function address>+0x60 16` gives the script array; look for
   `EX_Let` 0x0F, `EX_LocalOutVariable` 0x48, `EX_Cast` 0x38).

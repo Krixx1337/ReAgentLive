@@ -46,7 +46,7 @@ console prints:
 
 ```text
 > reagentlive -c "search text PYTHONPATH --module python313.dll --paged --timing"
-  hits: python313.dll+0x2c1ca8                               4.9 ms
+  rows: python313.dll+0x2c1ca8                               4.9 ms
 
 > reagentlive -c "xrefs python313.dll+0x2c1ca8 --timing"
   lea  python313.dll+0x12ff02  in function +0x12fd64..+0x1301ce

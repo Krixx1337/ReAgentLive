@@ -8,7 +8,7 @@ Which command for which question about change:
 | How do these named fields move over time? | `record` |
 | What do these raw bytes do every tick? | [`watch`](memory.md#watch) |
 | How does one field differ across all instances, or change in any of them? | [`each`](unreal.md#each), `each --seconds` |
-| Which classes gained or lost instances? | [`census --changed`](unreal.md#census-changes) |
+| Which classes gained or lost instances? | [`census-diff`](unreal.md#census-changes) |
 
 Use `snap $N` on a live instance, perform an action, then run `dump $N
 --changed`. It compares reflected fields and prints the changed ones with
@@ -18,7 +18,7 @@ field layout match the baseline. Reads can span ticks, and fields outside the
 
 Use `fields $N` to choose exact field names for a recording. Qualify duplicate
 names with `Owner:Field`. Select up to eight fields of up to 64 bytes each
-within a single 4 KB span. Use a new file path without spaces in the console.
+within a single 4 KB span. Use a new file path (quote one with spaces).
 The recorder samples a baseline, gives a three-second countdown, then writes
 a start marker and polls for 1–10 seconds. Return focus to the game during the
 countdown and perform the action after the marker.

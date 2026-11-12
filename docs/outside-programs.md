@@ -69,7 +69,7 @@ Each waits for a real program that needs it:
   client's heartbeat stops;
 - a second channel, so the console and a program run together: the core's
   state moves into a per-channel context. The one case so far (a long
-  capture holding the console) was solved by `watch --start`;
+  capture holding the console) was solved by `watch-start`;
 - one Unreal pack binary for every Unreal game, decoupled from SDK headers;
 - a "bring your own SDK" guide for using the Unreal pack in another game
   (the same backlog entry).

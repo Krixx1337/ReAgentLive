@@ -5,7 +5,7 @@ boundary (each layer's Unreal part lives in its ue/ folder; nothing outside a
 ue/ folder includes the Unreal pack or names ue::).
 
 Usage: test_cli_layout.py [--host FILE ...]. Host files may include only the
-console's public header and the parser.
+console's public header, the parser, the verb table's row and the result schema.
 """
 import os
 import re
@@ -20,7 +20,8 @@ MIDDLE = ('values', 'state', 'results', 'code')
 CONSOLE = 'console'
 FOLDERS = (SYNTAX, *MIDDLE, CONSOLE)
 PACK = 'ue'
-HOST_HEADERS = (PREFIX + 'console/console.h', PREFIX + 'syntax/parse.h')
+HOST_HEADERS = (PREFIX + 'console/console.h', PREFIX + 'syntax/parse.h', PREFIX + 'syntax/verb.h',
+                PREFIX + 'results/schema.h')
 IO_HEADERS = ('fstream', 'iostream', 'filesystem')
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.M)
 # ue:: as a name, outside comments.
@@ -107,7 +108,7 @@ def check(cli, hosts=()):
     for host in hosts:
         for quoted, target in includes(read(host)):
             if quoted and target.startswith(PREFIX) and target not in HOST_HEADERS:
-                problems.append(f'{os.path.basename(host)}: "{target}": hosts include only {" and ".join(HOST_HEADERS)}')
+                problems.append(f'{os.path.basename(host)}: "{target}": hosts include only {", ".join(HOST_HEADERS)}')
     return problems
 
 

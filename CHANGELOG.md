@@ -7,6 +7,31 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **The console describes itself; every caller breaks once.** One verb
+  table says what each command takes and returns
+  ([design](docs/design.md#self-describing-console)):
+  - `help` lists the verbs, `help <verb>` shows flags, arguments and the
+    result's keys, `help --json` prints the table (no target needed);
+    `status` carries `table_hash`. A usage error ends with the verb's
+    usage line; unknown flags are refused.
+  - Modes are verbs: `sig-check`, `sig-file`, `sig-bytes`, `watch-start`,
+    `watch-read`, `watch-stop`, `pin-list`, `pin-clear`, `trial`,
+    `trial-list`, `trial-clear`, `census-diff`, `script`. `peek --label`
+    names with `--name`.
+  - Result keys: a result's list is `rows`; pages carry `from` and
+    `next_cursor`; `capped` (rows cut) and `truncated` (a value
+    incomplete) each mean one thing; keys that do not apply are omitted
+    (no nulls); counts that repeated `rows` are gone, `total` counts all
+    matches. `read --as "<layout>"` fills `layout`.
+  - Results are typed structs written from one field list, checked
+    against their row before printing; `docs/commands/results.md` is
+    generated from the table.
+  - The Python client's results are strict (`ResultKeyError` on a key the
+    type lacks) with one method per verb; reshaping helpers are named for
+    what they return.
+  - `ConsoleConfig::hostHelp` is gone: a host gives rows
+    (`ConsoleConfig::verbs`) for its own verbs.
+
 - The console keeps the core and the Unreal pack apart: each `frontends/cli`
   layer has a `ue/` folder for the pack's part, the core reaches the pack
   only through `console/pack.h`, and the layout test enforces both.

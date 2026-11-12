@@ -21,7 +21,8 @@ across instances (every reflected field) remain open.
 Declined for now: a tool per operation costs an agent context before it does
 anything ([design](design.md#place-among-other-tools)). If one is ever
 built, it sits on the console's JSON mode, not on the raw client, so it
-reuses `dump`, `get`, `batch` and the cache.
+reuses `dump`, `get`, `batch` and the cache. The plan that would reverse
+this, generated from the verb table: [tool interface](tool-interface.md).
 
 ### 15 · Call probe (caution)
 
@@ -192,7 +193,7 @@ Also "what is the camera looking at": it only means something while a
 person points the camera, so it cannot be checked without one; `census`,
 `find --class` and the host's roots are the way in.
 Also a census that marks which instances are new: it needs per-instance state
-in the agent for a question `census --changed` plus `find --class` answers.
+in the agent for a question `census-diff` plus `find --class` answers.
 Also showing a function's first instructions inside `touches`: `disasm` on
 the row is one more command, and the result stays small.
 Also saved, named layouts or a type system: `label` names members one by

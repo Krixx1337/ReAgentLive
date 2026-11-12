@@ -1,6 +1,8 @@
 # Unreal pack
 
 Requires a Dumper-7 SDK and a host that calls `Tick` on the game thread.
+Each command's flags and result keys: `help <verb>` or
+[result shapes](results.md).
 
 | Command | Guard |
 |---|---|
@@ -18,7 +20,7 @@ Requires a Dumper-7 SDK and a host that calls `Tick` on the game thread.
 | `census [--class C]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
 | `name-find <text> [--from N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor; checks the game thread. The pool's entry layout is chosen once by decoding the first block's entries and comparing them with the engine's own name lookup; an unknown layout is `unsupported` |
 | `each <Class> <Field\|[Owner:]Function>` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one field (up to 64 bytes) or calls one function for every instance in a single tick on the game thread. A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
-| `func <object\|class> <[Owner:]Function> --script` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
+| `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
 | `entries <object> <[Owner:]Field> [--from N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--from` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
 | `refs <name\|#index>` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). Text must match a pooled name exactly (the console resolves it through `name-find`) |
 
@@ -68,20 +70,20 @@ list and prints each changed row to stderr as it happens.
 --match` does for fields; the scan, `classes` and `instances` stay the
 whole census, and `--limit` applies after the filter.
 
-<a id="census-changes"></a>**Pages and changes.** A result shows `from`, `shown` (rows on this page), `total`
-(rows after `--match`) and `next_cursor` (null on the last page); a cut
-one adds `truncated` and `hint` (`--from <cursor> for more, --limit 0 for
-all`). `--from N` is a later page of the last census with the same
-`--class` (and `--changed`): the stored rows, sliced, with no new scan and
+<a id="census-changes"></a>**Pages and changes.** A result shows `from`, `total`
+(rows after `--match`) and, while more rows remain, `next_cursor` with a
+`hint` (`--from <cursor> for more, --limit 0 for all`). `--from N` is a
+later page of the last census with the same `--class` (of the same verb):
+the stored rows, sliced, with no new scan and
 `ms` 0, so the pages of one filter join without gaps; refused when there
 is none. A census without `--from` scans again. Every census becomes the
 baseline for its `--class` filter, in the session and the cache file
-(which keeps the census before it too, for later pages of `--changed`).
+(which keeps the census before it too, for later pages of `census-diff`).
 
-`census [--class C] --changed` runs a new census and prints only the classes whose count
+`census-diff [--class C]` runs a new census and prints only the classes whose count
 differs from that baseline, largest change first, with `before` and
 `after`; then the new census is the baseline. So: `census --class C`, the
-action, `census --class C --changed`. It is refused when there is no
+action, `census-diff --class C`. It is refused when there is no
 baseline for that filter (none taken, another agent instance, or another
 `--class`). `--match` and `--limit` apply to the changed rows. Classes
 match by ref. Samples are any live instances, not the new ones: for a
@@ -160,9 +162,9 @@ needs the running process.
 `frontends/ida/import_labels.py`, run inside IDA, refuses another build,
 names each address, keeps a name the user set (the label becomes a
 comment), makes exec thunks functions, and prints how many rows it named,
-commented and skipped (already named so). Result: `path`, `module`,
-`timestamp`, `rows`, `globals`, `exec`, `vtables`, `interfaces`,
-`interface_lookups`, `capped`.
+commented and skipped (already named so). The result counts what was
+written: `total` rows, of which `globals`, `exec`, `vtables` and
+`interfaces`.
 
 ## Readable names
 
@@ -190,8 +192,8 @@ lines on its next regeneration, so nothing writes into it.
   offset, or under `Class` when that class declares one of the fields.
   Refused when it overlaps a reflected field or ends past the class size
   the agent reports. A later line for the same owner and offset replaces
-  an earlier one; a trailing `?` marks an unconfirmed name. Result: `path`,
-  `line`, `owner`, `offset`, `type`, `name`, `size`, `timestamp`.
+  an earlier one; a trailing `?` marks an unconfirmed name. The result is
+  the member as the file now holds it.
 - **`fields`, `dump`, `get`** show the members of every class whose fields
   they list as field rows marked `native: true`, `type` as written
   (`f64[3]`), decoded by that type; `dump` filters and `--changed` apply,

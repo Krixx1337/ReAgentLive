@@ -1,4 +1,4 @@
-// reagentlive CLI console: sig, byte signatures against the live image.
+// reagentlive CLI console: sig-check, sig-file and sig-bytes, byte signatures against the live image.
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -103,16 +103,17 @@ void RunSigFile(Session& session, const Command& command, std::string_view jsonC
     if (!file) return JsonError(session, jsonCommand, "file", "cannot open " + command.file);
     sig::Checker checker(AgentSearch(session), AgentRead(session), LoadedModules(session));
     std::vector<std::optional<sig::CheckResult>> outcomes;
-    Json results = Json::array();
+    shape::SigFile results;
+    results.file = command.file;
     std::string line;
     for (size_t number = 1; std::getline(file, line); ++number) {
         const auto trimmed = text::Trim(line);
         if (trimmed.empty() || trimmed.starts_with('#')) continue;
-        Json row = {{"line", number}};
+        shape::SigFileRow row;
+        row.line = number;
         const auto failed = [&](std::string message) {
-            row["ok"] = false;
-            row["error"] = std::move(message);
-            results.push_back(std::move(row));
+            row.error = std::move(message);
+            results.rows.push_back(std::move(row));
             outcomes.emplace_back();
         };
         auto entry = ParseSigLine(trimmed);
@@ -126,16 +127,15 @@ void RunSigFile(Session& session, const Command& command, std::string_view jsonC
         auto result = checker.Run(check, chosen);
         if (!result) { failed(result.error()); continue; }
         if (auto decoded = DecodeWarnings(session, check, *result); !decoded) { failed(decoded.error()); continue; }
-        row["ok"] = true;
-        row["result"] = SigCheckJson(check, *result, chosen, LoadedModules(session));
-        results.push_back(std::move(row));
+        row.ok = true;
+        row.result = MakeSigCheck(check, *result, chosen, LoadedModules(session));
+        results.rows.push_back(std::move(row));
         outcomes.push_back(std::move(*result));
     }
-    if (results.empty()) return JsonError(session, jsonCommand, "file", "no patterns in " + command.file);
-    const auto winner = sig::Winner(outcomes);
-    JsonResult(session, jsonCommand, {{"file", command.file}, {"count", results.size()},
-        {"winner", winner ? Json(results[*winner]["line"]) : Json(nullptr)}, {"searches", checker.Searches()},
-        {"results", std::move(results)}});
+    if (results.rows.empty()) return JsonError(session, jsonCommand, "file", "no patterns in " + command.file);
+    if (const auto winner = sig::Winner(outcomes)) results.winner = results.rows[*winner].line;
+    results.searches = checker.Searches();
+    Emit(session, jsonCommand, std::move(results));
 }
 
 void RunSigBytes(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -145,7 +145,7 @@ void RunSigBytes(Session& session, const Command& command, std::string_view json
     // The address is the reader's instruction boundary: decode from it.
     ExactFields exact;
     exact.fields = dis::ExactFields(sig::FromBytes(*bytes), *bytes, request.address, LoadedModules(session), &exact.decoded);
-    JsonResult(session, jsonCommand, SigBytesJson(request.address, *bytes, LoadedModules(session), exact));
+    Emit(session, jsonCommand, MakeSigBytes(request.address, *bytes, LoadedModules(session), exact));
 }
 }
 
@@ -166,6 +166,6 @@ void RunSig(Session& session, const Command& command, std::string_view jsonComma
     if (!result) return JsonError(session, jsonCommand, "validation", result.error());
     if (auto decoded = DecodeWarnings(session, check, *result); !decoded)
         return JsonError(session, jsonCommand, "read", decoded.error());
-    JsonResult(session, jsonCommand, SigCheckJson(check, *result, chosen, LoadedModules(session)));
+    Emit(session, jsonCommand, MakeSigCheck(check, *result, chosen, LoadedModules(session)));
 }
 }

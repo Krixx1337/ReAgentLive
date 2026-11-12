@@ -2,69 +2,43 @@
 
 How to drive any ReAgentLive console: the command line, addresses and
 refs, keeping round trips down, one-shot runs and the JSON Lines output.
-What each command does lives in its area page ([index](../INDEX.md#commands)).
+What each command does lives in its area page ([index](../INDEX.md#commands));
+what each takes and returns, in [result shapes](results.md) and in `help`.
 
 ## Command lines
 
-`Parse` (`frontends/cli/syntax/parse.h`, with the verbs in `parse_*.cpp`)
-turns a line into a request.
+A line is a verb, its positionals and its flags:
+`dump $1 --match Health --nonzero`. One table says what every verb takes
+and returns (a row per verb: positionals, flags, result type); the parser,
+`help`, the [result shapes](results.md) page and the Python client's strict
+results all read it, so none of them can disagree with the console.
 
-```text
-find [text] [--class C] [--from N]   e.g. find --class PlayerController
-read <addr> [len]                 len defaults to 64
-read <addr> --as "<layout>"       a block of mixed types: "u8 phase, pad 3, f64[3] start"
-peek <addr> [count]               what qwords hold: object, module+rva, heap or value
-write <addr> <hex bytes>          "01 02 ff" or "0102ff"
-call <object> <[Class:]Function> [hex params]
-call <object> <[Class:]Function> Name=value [...] | --typed
-func <object|class> <[Owner:]Function>
-funcs <object|class> [text] [--from N]
-params <object|class> <[Owner:]Function>
-base                              exe base and size (module list read on first use, then cached)
-modules
-fields <object|class>
-dump <object|class> [--match T] [--nonzero] [--changed [file]]
-                                  fields with current values (console reads the object)
-census [--class C] [--match T] [--changed] [--limit N] [--from N]
-                                  instances per class; pages of 100 rows (--limit, 0 = all)
-name-find <text> [--from N]       FName indices whose text contains text
-each <Class> <Field|[Owner:]Function> [--seconds N]   one value per instance; repeat 1..60 s
-describe <address|$N|#index:serial>  object name, class and reusable ref
-name <index> [index ...]          FName indices as text (up to 32 per line)
-sig --check <pattern> [--module M] [--expect <addr>] [--offset N | --resolve next,field[,size]]
-                                  is a byte signature unique, and does it land there
-sig --check --file <patterns>     one JSON line per signature; names the first that holds
-sig --bytes <addr> [len]          live bytes in both forms, address fields wildcarded
-disasm <addr> [count] [--function] [--follow]
-                                  instructions from live bytes (fast lane)
-xrefs <addr> [--module M] [--all] what points here: rel32 fields and pointers
-touches <addr> <offset>... [--range N]
-                                  functions near addr using [reg + offset], most offsets first
-search text <text|"text"> [--wide]  a string's bytes, ASCII or UTF-16; quotes keep it exact
-vtable <addr> [count] [--offset N] [--table] [--resolve]
-                                  an object's virtual table, slots until one is not code
-label <object|Class> <offset> <type>[n] <Name>
-                                  name an unreflected member in <console>.native.txt
-snap <ref> [file]                 replace the dump --changed baseline; with a file, also save it
-record <ref> <seconds> <file> <field> [field ...]
-get <object> <Field.Path> [...]   named fields, following pointers (see Fewer round trips)
-batch { <command>; ... }          up to 64 commands, held
-status | help | quit              handled by the console itself; status reports pid, ticks per
-                                  second since attach or the last status (at least 100 ms),
-                                  the answering agent's build time, replaced agents,
-                                  host_thread (see Host thread) and packs (the engine
-                                  packs the host offers; a pack's verbs are refused
-                                  without it)
-watch <seconds|Nms> <addr>:<len>... [--then call ...]
-watch --start <duration> [--every <duration>] [--follow <root>] <addr|offset>:<len>...
-watch --read | watch --stop       the agent's capture: rows so far / end it
-<any command> --timing            adds trips, wait_ms and total_ms
-<any command> --meta              struct values with their member layout
-```
-
-- Numbers: `0x` hex or decimal.
+- **Ask the console, not a page.** `help` lists the verbs, one line each
+  with usage. `help <verb>` shows one verb's flags, its result's keys in
+  [notation](results.md#notation) and its notes. `help --json` prints the
+  whole table for programs. A `-c` run of only `help` lines needs no target
+  running.
+- **`status`** reports the agent's pid, ticks per second since attach or the
+  last status (at least 100 ms), the answering agent's build time, replaced
+  agents, `host_thread` ([host thread](../hosting.md#host-thread)), `roots`,
+  `packs` (the engine packs the host offers; a pack's verbs are refused
+  without it) and `table_hash`. The hash changes when any verb's arguments
+  or result change, so a cached script or skill can tell it is stale. It
+  describes the console build; agent compatibility is the layout hash's job
+  ([protocol](../protocol.md#handshake)).
+- **One verb, one result type.** A mode is a verb of its own (`sig-check`,
+  `sig-bytes`, `watch-start`, `census-diff`, `pin-list`, `trial`). A flag may
+  add optional keys and never changes a key's type.
+- **A usage error names what is wrong and ends with the verb's usage
+  line**: an unknown flag, a flag given twice, a missing value, too few or
+  too many arguments.
+- **Tokens.** Numbers are `0x` hex or decimal. A token in double quotes is
+  taken exactly (spaces, `;` and `--` included; `\"` and `\\` escape) and is
+  never a flag: quote a path or search text that needs it. Hex bytes may be
+  spaced or packed (`01 02 ff`, `0102ff`).
+- **`--timing`** and **`--meta`** go at the end of any line
+  ([fewer round trips](#fewer-round-trips)).
 - `<addr>` and `<object>` accept `$N`, result N of the last `find`.
-- `host_thread` in `status`: [host thread](../hosting.md#host-thread).
 
 ## Addresses and refs
 
@@ -109,12 +83,13 @@ request costs up to a host tick. The console cuts both:
   ticks. A multi-tick op (search, find's scan) ends the hold for the ticks
   it runs. Every response carries the agent tick it finished in.
 - **`batch { <command>; ... }`** runs up to 64 command lines held and prints
-  one envelope with `results` (each command's own envelope), `all_ok`,
+  one envelope with `rows` (each command's own envelope), `all_ok`,
   `same_tick`, `first_tick` and `last_tick`. Each line is parsed just before
   it runs, so a `$N` from an earlier `find` in the same batch works; a value
   read in the batch cannot feed a later line (console syntax has no
-  variables). Not allowed inside: `batch`, `watch`, `record`, `status`,
-  `help`, `quit`, `each --seconds`. Same tick is best effort: check
+  variables). Not allowed inside: `batch`, `watch` (the blocking one; the
+  capture verbs are fine), `record`, `status`, `help`, `quit`,
+  `each --seconds`. Same tick is best effort: check
   `same_tick`. Each envelope carries its own `tick` (its first response's)
   and `last_tick` when its responses spanned ticks; `spans_ticks` lists
   (`index`, `command`) the commands during which the batch's tick moved,
@@ -125,7 +100,7 @@ request costs up to a host tick. The console cuts both:
 - **`get <object> <Field.Path>...`** resolves reflected names (or readable
   names; `Owner:Field` where ambiguous) through the field tables, descends
   into structs, follows object, class and weak object pointers, and returns
-  typed values: `values[]` with `path`, `ok`, `value`, `address`,
+  typed values: `rows` with `path`, `ok`, `value`, `address`,
   `object` (the ref the field was read from), or `error`; plus
   `same_tick`. Every path is resolved first (field tables and pointer hops,
   which may span ticks), then the values are read back to back, each
@@ -151,8 +126,8 @@ request costs up to a host tick. The console cuts both:
   **`--meta`** at the end of a line (with or without `--timing`; inside a
   `batch` per item, or on the batch for all) restores the layout: a struct
   as `members` (`name`, `owner`, `type`, `offset`, `size`, `value`) with
-  `truncated`, plus `type` and `hex` on `get` values, `hex` on `each` rows
-  and the field metadata on typed outputs. `fields` is the layout command
+  `truncated`, plus `type` and `hex` on `get` rows, `hex` on `each` rows
+  and `meta` (the parameter's layout) on typed outputs. `fields` is the layout command
   and has no compact form. JSON keys print sorted.
 - **Cache file.** `%TEMP%\reagentlive-<pid>.cache` keeps class refs, field
   tables, the loaded modules with their headers (exception directory and
@@ -184,7 +159,9 @@ baseline until EOF or `quit`.
 ## JSON Lines
 
 Each command from `-c` or stdin emits one object with `command`, `ok` and
-either `result` or `error`. Records are flushed immediately. Startup failures
+either `result` or `error` ([envelopes](results.md#envelopes)). A result is
+checked against its verb's row before it is printed: one that does not match
+is an `internal` error, so what `help <verb>` shows is what arrives. Records are flushed immediately. Startup failures
 emit a `startup` error. Exit status is 1 if any command failed. Capture
 countdowns and start markers go to stderr.
 

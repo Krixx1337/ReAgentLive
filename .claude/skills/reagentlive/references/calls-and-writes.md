@@ -58,9 +58,9 @@ first (see the skill's rules).
 
 - **Use a trial to settle which way a lead goes**, for example whether a
   multiplier shortens an action:
-  `write <addr> <hex> --trial --owner <ref> [--object <native base>] --expect <hex now> --seconds N`.
+  `trial <addr> <hex> --owner <ref> --expect <hex now> [--object <native base>] --seconds N`.
   - It writes once and the agent restores the original by itself.
-  - Python: `s.trial(...)`, `s.trials()`, `s.end_trial()`.
+  - Python: `s.trial(...)`, `s.trial_list()`, `s.trial_clear()`.
   - Whether a trial needs approval follows the host's rules. A trial result
     is evidence for a lead's direction, not validation of a shipped feature.
 - For an attribute behind a lookup handle, the owner is the effect component.
@@ -85,12 +85,12 @@ first (see the skill's rules).
   4. Compare durations on that one character. AI characters act when they
      choose, so compare a character with itself, adding an untouched one to
      the same `watch` as a control when one is in view.
-- Read the end state with `write --trial list`:
+- Read the end state with `trial-list`:
   - `restored`: put back;
   - `conflict`: the game changed the value, so it was left alone;
   - `abandoned`: the owner or vtable changed, so nothing was written.
 
-  Clear trials (`write --trial clear`) before the host stops its overlay or
+  Clear trials (`trial-clear`) before the host stops its overlay or
   you reinject: a stopped agent no longer ticks, so its trials never restore.
 
 ## Pins

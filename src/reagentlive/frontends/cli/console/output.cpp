@@ -34,10 +34,6 @@
 namespace reagentlive::cli::detail {
 
 
-Json ModuleJson(const Module& module) {
-    return {{"name", module.name}, {"base", format_detail::Pointer(module.base)}, {"size", module.size}};
-}
-
 void PrintJson(Session& session, Json record) {
     if (session.capture) {
         session.capture->push_back(std::move(record));
@@ -55,9 +51,12 @@ void PrintJson(Session& session, Json record) {
 }
 
 void JsonResult(Session& session, std::string_view command, Json result) {
-    if (session.chain && result.is_object()) {
-        result["chain"] = std::move(*session.chain);
-        session.chain.reset();
+    session.chain.reset();
+    if (session.current) {
+        const auto type = session.current->result ? session.current->result() : schema::Of<schema::Nothing>();
+        if (auto problem = schema::Problem(type, result); !problem.empty())
+            return JsonError(session, command, "internal", "the result does not match help " +
+                std::string(session.current->name) + ": " + problem);
     }
     PrintJson(session, ResultEnvelope(command, std::move(result)));
 }

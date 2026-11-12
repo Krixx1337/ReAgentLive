@@ -213,7 +213,7 @@ TEST_CASE("label files a member under its class and appends a line the names fil
     CHECK(names.Size() == 1);
     // As dump shows it: a field row marked native, decoded by its type.
     const auto& member = *native.For(Zone)[0];
-    auto row = NativeFieldJson(member, true);
+    auto row = ToJson(MakeNativeFieldRow(member, true));
     CHECK(row["type"] == "f64[3]");
     CHECK(row["size"] == 24);
     CHECK(row["native"] == true);

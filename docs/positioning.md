@@ -161,7 +161,7 @@ answered from live bytes with no database. Keep it for that.
 
 Shipped: the in-process agent, tick-accurate reads, guarded writes and
 trials, reflection commands for Unreal, the address bridge and label
-export, the fast lane (`disasm`, `xrefs`, `sig --check`;
+export, the fast lane (`disasm`, `xrefs`, `sig-check`;
 [design](design.md#fast-lane)), the AI-facing console and Python client.
 
 Native objects without an engine pack (`vtable`, pointer chains, strings,

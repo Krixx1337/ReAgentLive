@@ -5,10 +5,10 @@
 - **Memory values, every tick:** `watch <s> <addr>:<len>...` samples up to 8
   ranges inside the agent, one row per tick, no round trips. Use it whenever
   the values are plain memory.
-- **Over minutes, or while you keep working:** `watch --start 10m --every
-  10s <ranges>` returns at once and the agent keeps sampling; the console
-  stays free and may even exit. `watch --read` (any later run) gives the
-  rows so far, `watch --stop` ends it (Python: `watch_start`, `watch_read`,
+- **Over minutes, or while you keep working:** `watch-start 10m <ranges>
+  --every 10s` returns at once and the agent keeps sampling; the console
+  stays free and may even exit. `watch-read` (any later run) gives the
+  rows so far, `watch-stop` ends it (Python: `watch_start`, `watch_read`,
   `watch_stop`). `--follow pawn` (roots in `status`) takes offsets from the
   host's root and continues on its replacement after a respawn: rows mark
   `lost` and `resumed`, `gaps` lists the holes. A refused start names the
@@ -18,11 +18,11 @@
   call afterwards.
 - **Getters or mixed sources:** one `batch { call ...; read ... }` per sample
   keeps a getter and raw reads in the same tick; loop it from the Python
-  session client (`items, same_tick = s.batch([...])`). Console polling gets
+  session client (`items, same_tick = s.batch_results([...])`). Console polling gets
   at most one sample per host tick and misses ticks.
 - **Named fields:** `record` for 1-10 s of up to 8 fields; `snap`, then
   `dump --changed` for before and after (`s.snap(ref)`, `s.dump(ref,
-  changed=True)`; a snapshot file carries the baseline across runs).
+  changed=True)['rows']`; a snapshot file carries the baseline across runs).
 - **Commands that always span ticks** (`each`, `census`, `search`, `refs`,
   `xrefs`, `touches`) break a `batch`'s tick: an `each` ran about 300 ticks
   after a `read` in the same batch. The batch names the culprit in

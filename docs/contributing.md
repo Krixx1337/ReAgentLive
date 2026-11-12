@@ -28,17 +28,31 @@ never the section directly. ReAgentLive never includes host code.
    the handler in `core/` or the pack, its op number in the right range
    ([protocol](protocol.md#ops)), a loopback or pack test, and the op's row
    in [protocol](protocol.md).
-2. **Verbs:** `frontends/cli/syntax/parse_<area>.cpp`, with parse tests.
-3. **Pure logic and JSON:** the matching middle folder ([source
-   layout](#source-layout)), unit-tested in `tests/cli/`.
-4. **Running it:** `frontends/cli/console/<area>.cpp`.
-   A pack command puts steps 2 to 4 in the layers' `ue/` folders, and
-   `PackCommand` (`console/ue/pack.cpp`) claims it.
-5. **Python:** a wrapper in `frontends/python/reagentlive_session.py`, or
-   its row in [result shapes](commands/results.md) says why it has none.
-6. **Docs:** the command's page under `docs/commands/`, its row in
-   [result shapes](commands/results.md), and its line in the
-   [INDEX](INDEX.md#commands) lookup table.
+2. **Its result:** a struct with `Describe` (`results/schema.h`) and its
+   builder in the matching middle folder ([source layout](#source-layout)),
+   unit-tested in `tests/cli/`. A list is `rows`; follow the conventions
+   at the top of `results/result_json.h`. One verb has one result type: a
+   mode with another shape is another verb.
+3. **Its row** in the verb table (`results/verbs.h`): name, summary,
+   positionals and flags with a line of description each, the result
+   type, the parser, `writes` when it writes the target or calls into it.
+4. **Its parser:** `frontends/cli/syntax/parse_<area>.cpp`, declared in
+   `parse_internal.h`. It gets the line's tokens already sorted by the row
+   (`Args`); unknown flags, missing values and arity are refused before it
+   runs. Parse tests.
+5. **Running it:** `frontends/cli/console/<area>.cpp`, ending in `Emit`
+   with the result struct.
+   A pack command puts steps 2 to 5 in the layers' `ue/` folders (its row
+   in `results/ue/verbs_ue.h`), and `PackCommand` (`console/ue/pack.cpp`)
+   claims it.
+6. **Python:** a method of the verb's name in
+   `frontends/python/reagentlive_session.py` that sends the line and
+   returns the result as it is (`test_every_verb_has_a_method`).
+7. **Docs:** the command's page under `docs/commands/` and its line in the
+   [INDEX](INDEX.md#commands) lookup table. Regenerate
+   [result shapes](commands/results.md):
+   `reagentlive-table --write docs/commands/results.md` (the
+   `reagentlive.results-doc` test fails while it is stale).
 
 ## Source layout
 
@@ -62,7 +76,7 @@ rule.
 includes `reagentlive/ue/` or a `ue/` header, or names `ue::`. The core
 console reaches the pack only through `console/pack.h`, which
 `console/ue/pack.cpp` implements: the pack's state for a run, its cache
-block, its help and `status` line, which commands are its own, and what core
+block, its rows of the verb table and `status` line, which commands are its own, and what core
 commands borrow (object guards, the trial owner check, `watch --then`,
 `peek`'s objects and names). `console/ue/internal_ue.h` is for
 `console/ue/` only. Why seams and not a pack interface:
@@ -70,8 +84,10 @@ commands borrow (object guards, the trial owner check, `watch --then`,
 
 - The middle folders (`values/` to `code/`) may include each other and
   `syntax/`. Their headers are unit-tested in `tests/cli/`.
-- Hosts include only `console/console.h` and `syntax/parse.h`; a host lists
-  its sources in `REAGENTLIVE_HOST_SOURCES` so the layout test checks them.
+- Hosts include only `console/console.h`, `syntax/parse.h`,
+  `syntax/verb.h` (a row for each verb of their own) and
+  `results/schema.h` (typed results); a host lists its sources in
+  `REAGENTLIVE_HOST_SOURCES` so the layout test checks them.
 - `code/` is the one feature-shaped folder: the decoders form a closed group
   with their own dependency (Zydis). Why layers and not feature folders:
   [design](design.md#source-layout).
@@ -87,11 +103,13 @@ one file:
 
 | Files | Holds |
 |---|---|
-| `console/console.cpp` | help, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole` |
-| `console/output.cpp` | JSON records, errors, `--timing`, batch capture |
+| `syntax/verb.h`, `results/verbs.h`, `results/ue/verbs_ue.h` | the verb table: the row type with the tokeniser and usage, the core's rows, the pack's rows |
+| `results/schema.h`, `results/docs.h` | typed result structs (one field list writes and describes the JSON), and the results page generated from the table |
+| `console/console.cpp` | `help`, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole` |
+| `console/output.cpp` | JSON records, the check of a result against its row, errors, `--timing`, batch capture |
 | `console/memory.cpp` | `status`, read decoding, `pin`, trials, `watch` (blocking and detached), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
-| `console/sig.cpp` | `sig`: byte signatures against the live image |
+| `console/sig.cpp` | `sig-check`, `sig-file`, `sig-bytes`: byte signatures against the live image |
 | `console/native.cpp` | `vtable` and `region` (native objects) |
 | `console/pack.h`, `console/ue/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `console/ue/members.cpp`, `state/ue/native_names.h` | native members: `label`, the native file and its checks |
@@ -142,9 +160,10 @@ A host that adds reagentlive with `add_subdirectory` sets
 | Suite | Covers |
 |---|---|
 | `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters and the background worker, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
-| `reagentlive-cli-tests` (`tests/cli/`) | the parser, value formatting, the state files (cache, names), result shapes, signatures and the fast lane |
+| `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, the tokeniser, usage errors, help), the parsers, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
+| `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |
-| `reagentlive.python-session`, `reagentlive.ida-labels` (`tests/python/`) | the Python session client against a scripted fake console, and the IDA label importer |
+| `reagentlive.python-session`, `reagentlive.ida-labels` (`tests/python/`) | the Python session client against a scripted fake console that serves the real table (strict results, a method per verb, canned replies checked against their types), and the IDA label importer |
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack |
 | `reagentlive.consumer` (`tests/consumer/`) | an agent-only host project built in its own tree: no downloads with the console off, and nothing past `src/` reachable through the include path |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines and `ue::` names |
@@ -172,7 +191,7 @@ to it.
 | Fact | Home |
 |---|---|
 | What a command does, its guards and syntax | its page under `commands/` |
-| Result keys | [commands/results.md](commands/results.md) (pinned by `tests/cli/result_tests.cpp`) |
+| What a command takes and its result keys | the verb table in code; [commands/results.md](commands/results.md) is generated from it, never edited |
 | Wire format, op numbers, statuses, limits | [protocol.md](protocol.md) |
 | What a host provides and how it ticks | [hosting.md](hosting.md) |
 | Client library and Python client | [client.md](client.md) |

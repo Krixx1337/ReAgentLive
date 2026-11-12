@@ -1,61 +1,114 @@
 # Result shapes
 
-Keys of `result` per command. Lists are arrays of objects with the keys in
-parentheses. Optional keys are in brackets. `tests/cli/result_tests.cpp`
-pins the rows marked ✓; change both together. The Python column names the
-[session client](../client.md#python-session-client) method that returns it; an empty
-cell means a script uses `send` on purpose. A `ref` can be passed verbatim to
-another command, including a separate run.
+<!-- Generated from `help --json` (tests/table: `reagentlive-table --write docs/commands/results.md`). Do not edit: change the verb's row or its result struct. -->
 
-| Command | `result` keys | Pinned | Python |
-|---|---|---|---|
-| `find` | `objects` (`ref`, `name`, `class`), `total` (null after the first page), `from`, `next_cursor` (null when done; pass as `--from`), `truncated` | ✓ | `find` |
-| `describe` | `ref`, `name`, `class`, [`class_size`: bytes, past the last reflected field] | ✓ | `describe` |
-| `fields` | `ref`, `fields` (`name`, `owner`, `type`, `offset`, `size`, `label`, [`struct`, `bool_mask`, `element_type`, `element_size`, `value_type`, `value_size`, `value_offset`, `value_struct`, `stride`], [`native`, `stale`]), `truncated`, [`native_refused` (`line`, `name`, `owner`, `offset`, `reason`)] | ✓ | `fields` |
-| `dump` | `ref`, `fields` (as `fields` plus `value`, `truncated`, [`value_module`, `value_rva`], [`object` {`ref`, `name`, `class`}, `preview` {`total`, `elements` (`value`, [`object`]; maps: `key`, `value`, [`key_object`, `value_object`])}, `preview_error`, `before`], [`native`, `stale`]), `truncated`, `object_lookup_limited`, [`filtered` {`shown`, `total`}], [`native_refused`] | ✓ | `dump` |
-| `funcs` | `ref`, `functions` (`owner`, `name`), `from`, `next_cursor`, `truncated` | ✓ | `funcs` |
-| `func` | `ref`, `function` (`Owner:Name`), `address`, `flags`, `exec` (null for none), `executable`, [`module`, `rva` or `module_error`], [`interface` {`offset`, `slot`, `implementation`, [`implementation_module`, `implementation_rva`]}] | ✓ | `func` |
-| `params` | `ref`, `function`, `address`, `block_size`, `parameters` (`name`, `owner`, `type`, `offset`, `size`, `direction`, `flags`, [field extras]) | ✓ | `params` |
-| `name` | `names` (`index`, `name` or null) | ✓ | `names` |
-| `name-find` | `names` (`index`, `name`), `from`, `next_cursor` | ✓ | `name_find` |
-| `entries` | `ref`, `field`, `kind` (`array`, `set`, `map`), `total`, `from`, `entries` (`value` or `key` and `value`, [`value_object`, `key_object`]), `next_cursor`, `truncated` | | `entries` |
-| `func --script` | `ref`, `function`, `size`, `names` (`offset`, `count`, `index`, `name`), `functions` (`offset`, `count`, `ref`, `function`), `properties` (`offset`, `count`, `address`, `property`) | ✓ | `script` |
-| `refs` | `index`, `name`, `functions` (`ref`, `owner`, `name`, `offset`, `count`), `capped` | ✓ | `refs` |
-| `census` | `filter`, `classes`, `instances`, `ms`, `rows` (`class`, `ref`, `count`, `samples`), `from`, `shown`, `total`, `next_cursor`, `truncated`, [`hint`]; class refs become `$1..$N` | ✓ | `census` (pages to the end) |
-| `census --changed` | `filter`, `classes` {`before`, `after`}, `instances` {`before`, `after`}, `ms`, `rows` (`class`, `ref`, `before`, `after`, `samples`), `from`, `shown`, `total`, `next_cursor`, `truncated`, [`hint`]; class refs become `$1..$N` | ✓ | `census(changed=True)` |
-| `each` | `class`, `class_ref`, `target`, `mode` (`field` or `call`), `count`, `capped`, `rows` (`ref`, `value`, [`hex` with `--meta`]); with `--seconds` also `polls`, `changes` (`ms`, `tick`, `ref`, `before`, `after`). A call's value is its return value, or `return` plus `outputs` | | `each` |
-| `call` / `release` | `ref`, `function`, `mode` (`raw`, `typed` or `release`), `block_size`, `hex` (the whole block after the call), `kept`, [`kept_reason`]; typed: `outputs` (`name`, `direction`, `value`, `truncated`; `--meta`: the field metadata too), `truncated` | | `call` (bytes; with `args` the result), `release` |
-| `read` | `address`, `size`, `hex` (space-separated bytes in memory order), [`module`, `rva`], [`views`], [`values`: a list, or `{name: value}` for a layout], [`text`, `length`, `terminated` with `--as cstr\|wstr`], [`chain` {`base`, `hops` (`hop`, `address`, `value`, [`module`, `rva`]), `address`, [`module`, `rva`]} after a chain, also on `peek`, `vtable`, `disasm`] | ✓ chain | `read`, `read_chain` (bytes, chain), `read_str` |
-| `write` | `address`, `size`, [`module`, `rva`] | | `write` |
-| `search` | `hits` (`address`, [`module`, `rva`]), `count`, `resume` | | `search` (addresses) |
-| `peek` | `address`, [`module`, `rva`], `count`, `rows` (`address`, [`module`, `rva`], `label` (`object`, `module`, `heap`, a region kind such as `mapped`, `value`, `unreadable`), `value`, [`object`, `value_module`, `value_rva`, `f32`, `f64`, `name_hint`]), [`labelled`] | ✓ rows | `peek` |
-| `write --trial` | `id`, `address`, `bytes`, `original`, `owner`, `object`, `state`, `changed_tick`, `remaining_ms`, [`guard`]; `list`: `trials`; `clear`: `cleared`, `trials` | | `trial`, `trials`, `end_trial` |
-| `label` | `path`, `line`, `owner`, `offset`, `type`, `name`, `size`, `timestamp` | | `label` |
-| `get` | `ref`, `values` (`path`, `ok`, `value`, `address`, `object`, `truncated`, [`native`, `stale`], [`module`, `rva`, `value_module`, `value_rva`], [`type`, `hex` with `--meta`] or `error`), `same_tick` (the value reads, not the lookups before them), [`tick_accurate: false` off the engine's thread] | | `get` (values) |
-| `batch` | `count`, `all_ok`, `same_tick`, `first_tick`, `last_tick`, `spans_ticks` (`index`, `command`), `results` (one envelope each, with [`tick`, `last_tick`]), [`tick_accurate: false` off the engine's thread] | ✓ | `batch` |
-| `snap` / `record` | `ref` with `size`, `path` (null without a file) / `path`, `samples` | | `snap`, `record` |
-| `modules` | `modules` (`name`, `base`, `size`), the exe first | | `modules` |
-| `export-labels` | `path`, `module`, `timestamp`, `rows`, `globals`, `exec`, `vtables`, `interfaces`, `interface_lookups`, `capped` | | `export_labels` |
-| `sig --check` | `pattern`, `list`, `module`, `unique`, `count`, `hits` (`address`, `module`, `rva`, [`reference` or `diverges_at`, `resolved`, `resolved_module`, `resolved_rva`]), `length`, `fixed_bytes`, `anchor` {`offset`, `length`, `hits`}, `warnings` (`offset`, `size`, `kind`, `target`, `target_module`, `target_rva`), [`decoded`, `unique_at_length`, `resolve` {`next`, `field`, `size`}, `expect`, `expect_module`, `expect_rva`, `offset`, `resolves`, `mismatches` (`offset`, `wanted`, `found`) or null] | ✓ | `sig_check` |
-| `sig --check --file` | `file`, `count`, `winner` (line number or null), `searches`, `results` (`line`, `ok`, `result` or `error`) | | `sig_check_file` |
-| `sig --bytes` | `address`, [`module`, `rva`], `length`, `pattern`, `list`, `suggested` {`pattern`, `list`, `fixed_bytes`, `fields` (as `warnings`), [`decoded`]} | ✓ | `sig_bytes` |
-| `disasm` | `address`, [`module`, `rva`], `count`, `bytes`, `stop`, `instructions` (`address`, [`module`, `rva`], `bytes`, `text`, [`target`, `target_module`, `target_rva`, `string`, `wide`, `fields` (`offset`, `size`, `kind`), `ends`]), `function` ({`start`, `end`, `module`, `rva`, [`chunk` {`start`, `end`}]} or null), [`end` {`address`, `offset`, `reason`}, `followed` (`from`, `to`, [`to_module`, `to_rva`])] | ✓ | `disasm` (instructions) |
-| `region` | `address`, [`module`, `rva`, `section`], `kind` (`code`, `rodata`, `data`, `mapped`, `private`, `reserved`, `free`), `base`, `size`, `allocation_base`, `state`, `type`, `protect`, `allocation_protect` | ✓ | `region` |
-| `vtable` | `address`, [`module`, `rva`], `offset`, `table` (null when the qword points into no module), [`table_module`, `table_rva`, `stop` (`count`, `not code`, `end of read`), `stop_value`, `found`], `count`, `slots` (`slot`, `offset`, `target`, [`module`, `rva`, `body`, `body_module`, `body_rva`]) | ✓ | `vtable` |
-| `xrefs` | `address`, [`module`, `rva`], `scanned`, `count` {per kind: `call`, `jmp`, `jcc`, `lea`, `load`, `store`, `rip`, `pointer`, `unknown`}, `shown`, `rows` (`kind`, `field`, [`instruction`], `function` (as `disasm`'s), [`module`, `rva`]), `truncated`, `scan_ms` | ✓ | `xrefs` |
-| `touches` | `address`, [`module`, `rva`], `offsets`, `range`, `scanned` {`from`, `to`, `functions`, `bytes`}, `count`, `rows` (`function` {`start`, `end`, [`module`, `rva`]}, `distinct`, `writes`, `count`, `uses` (`offset`, `instruction`, [`module`, `rva`], `write`, `text`)), `truncated`, `scan_ms` | ✓ | `touches` |
-| `status` | `pid`, `build` (the agent's compile time), `version` (the console's ReAgentLive version), `replaced_agents`, `ticks`, `ticks_per_second`, `interval_ms`, `ticking`, `host_thread` (`engine`, `borrowed`, `own`), `roots` (what `watch --follow` can follow), `packs` (the engine packs the host offers: `["ue"]` or `[]`), [`tick_note` off the engine's thread] | | `status` |
-| `watch` | `rows`, `capacity`, `complete`, `stopped`, `ranges` (`address` or `offset`, `length`, `guarded`), `then`, `samples` (`tick`, `us`, `values`) | | `watch` (samples, result) |
-| `watch --start` | `started`, `capacity`, `ms`, `interval_ms`, `root`, `ranges` | | `watch_start` |
-| `watch --read` / `--stop` | `running`, `stopped`, `rows`, `capacity`, `ms`, `interval_ms`, `root`, `ranges`, `samples` (`tick`, `us`, `values`, [`lost`, `resumed`, `root`]), [`gaps` (`from_us`, `to_us`) when following] | | `watch_read`, `watch_stop` |
+What each command takes and the keys of its `result`, as the console itself reports them:
+`help` lists the verbs, `help <verb>` shows one (flags, result, notes) and `help --json` prints
+this whole table for programs. `status` carries `table_hash`, which changes whenever a row does.
 
-Every line is an envelope: `command`, `ok`, and `result` or `error`. Errors
-carry `kind` and `message`; client errors (`agent`, `timeout`, `attach`,
-`busy`) also carry `status`, `detail` and `reason` (pinned ✓). Any envelope
-can carry `timing` when the line ended in `--timing`.
+## Notation
 
-Dump values: addresses are hex strings. FNames carry `index`, `number` and
-`name`. Structs expand to `{Name: value}` (`members` with `--meta`). Arrays and strings show their header,
-and the top-level arrays add a `preview`. Unsupported layouts give a bounded
-`hex` prefix. Check `truncated` on the result and its rows before treating
-values as complete. A dump can span several ticks.
+| Type | Meaning |
+|---|---|
+| `addr` | an address as `"0x..."` text |
+| `hex` | a number as `"0x..."` text: an rva, an offset, a size |
+| `bytes` | `"01 02 ff"`, in memory order |
+| `ref` | an object ref; pass it verbatim to another command, a separate run included |
+| `bool`, `u32`, `u64`, `i32`, `i64`, `f64`, `str` | plain JSON values |
+| `a\|b` | a string that is one of the listed words (`...`: others occur) |
+| `[T]` | a list; `[T\|null]`: elements may be null |
+| `{<key>: T}` | a map |
+| `{k: T, k?: T}` | an object; `?` marks a key that is omitted when it does not apply |
+| `value` | game data: dynamic, shaped by what was read |
+
+## Conventions
+
+- `rows` is a result's list; `total` is how many there are in all when `rows` may show fewer.
+- A page carries `from` (where it began) and `next_cursor` (pass it as `--from`; absent when done).
+- `capped`: the rows were cut at a hard limit and there is no cursor. `truncated`: a value in the
+  result is incomplete.
+- `module` and `rva` stand beside an address inside a loaded module, so it opens at the same RVA
+  in a static-analysis tool; other prefixes (`value_`, `target_`) locate the address in that key.
+- A key that does not apply is omitted; results hold no nulls outside game values.
+- A flag may add optional keys and never changes a key's type.
+- **Writes or calls.** marks a verb that writes the target's memory or calls into it; every other verb
+  only reads (`help --json` carries it as `writes`).
+
+## Core
+
+| Command | What it does | `result` |
+|---|---|---|
+| `help [verb] [--json]` | the verbs, one line each; help <verb>: its flags, result and notes | `{rows: [{verb: str, origin: core\|ue\|host\|..., usage: str, summary: str, writes?: bool, aliases?: [str], flags?: [{flag: str, takes: nothing\|one\|maybe\|some\|rest, required?: bool, value?: str, help?: str}], result?: str, notes?: str, positionals?: [{name: str, arity: one\|optional\|some\|any\|rest, help?: str}], type?: value}], notes?: [str], table_hash?: str}` |
+| `status` | agent pid, tick rate, the packs the host offers and the verb table's hash | `{pid: u32, build: str, version: str, replaced_agents: u32, ticks: u64, ticks_per_second: u64, interval_ms: u64, ticking: bool, host_thread: engine\|borrowed\|own\|unset, tick_note?: str, roots?: [str], packs: [str], table_hash: str}` |
+| `quit` | end the console | `{quit: bool}` |
+| `batch { <command>; <command>; ... }` | up to 64 commands in as few host ticks as possible; one envelope each | `{all_ok: bool, same_tick: bool, first_tick: u64, last_tick: u64, spans_ticks: [{index: u64, command: str}], rows: [value], tick_accurate?: bool}` |
+| `read <addr> [len] [--as type]` | hex dump of 1..4096 bytes (default 64); --as decodes values | `{address: addr, module?: str, rva?: hex, size: u64, hex: bytes, views?: {i32?: i32, u32?: u32, f32?: value, i64?: i64, u64?: u64, ptr?: addr, ptr_module?: str, ptr_rva?: hex, f64?: value}, values?: [value], layout?: value, text?: str, length?: u64, terminated?: bool, chain?: {base: addr, hops: [{hop: u64, address: addr, value: addr, module?: str, rva?: hex}], address?: addr, module?: str, rva?: hex, broken?: u64, reason?: str}}` |
+| `read-batch <addr len>...` | read up to 8 ranges in one host tick | `{tick: u64, rows: [{address: addr, module?: str, rva?: hex, size: u64, ok: bool, hex?: bytes, error?: {status: u32, message: str}}]}` |
+| `peek <addr> [count] [--label <file>] [--name <name>]` | what 1..64 qwords hold (default 8): object, module, heap or value | `{address: addr, module?: str, rva?: hex, rows: [{address: addr, module?: str, rva?: hex, label: object\|module\|heap\|value\|unreadable\|..., value?: hex, object?: value, value_module?: str, value_rva?: hex, f32?: [value], f64?: value, name_hint?: str}], labelled?: {module: str, module_size: u64, timestamp: u32, rva: hex, name: str, kind: global\|exec\|vtable\|interface}, chain?: {base: addr, hops: [{hop: u64, address: addr, value: addr, module?: str, rva?: hex}], address?: addr, module?: str, rva?: hex, broken?: u64, reason?: str}}` |
+| `write <addr> <hex bytes>... [--expect <hex bytes>...]` | write up to 4096 bytes **Writes or calls.** | `{address: addr, module?: str, rva?: hex, size: u64}` |
+| `trial <addr> <hex bytes>... --owner <ref> --expect <hex bytes>... [--object <addr>] [--seconds <N>] [--ms <N>]` | one write the agent undoes (default 10 s, up to 60 s) **Writes or calls.** | `{id: u32, address: addr, bytes: bytes, original: bytes, owner: addr, object?: addr, state: active\|restored\|conflict\|abandoned\|unknown, changed_tick: u64, remaining_ms: u32, guard?: owner replaced or freed\|object vtable changed\|target unreadable\|unknown}` |
+| `trial-list` | trials with their state | `{rows: [{id: u32, address: addr, bytes: bytes, original: bytes, owner: addr, object?: addr, state: active\|restored\|conflict\|abandoned\|unknown, changed_tick: u64, remaining_ms: u32, guard?: owner replaced or freed\|object vtable changed\|target unreadable\|unknown}]}` |
+| `trial-clear [id]` | end one trial or all, restoring active ones **Writes or calls.** | `{cleared: u64, rows: [{id: u32, address: addr, bytes: bytes, original: bytes, owner: addr, object?: addr, state: active\|restored\|conflict\|abandoned\|unknown, changed_tick: u64, remaining_ms: u32, guard?: owner replaced or freed\|object vtable changed\|target unreadable\|unknown}]}` |
+| `base` | exe base and size | `{name: str, base: addr, size: u64}` |
+| `modules` | loaded modules, exe first (also refreshes the cached list) | `{rows: [{name: str, base: addr, size: u64}]}` |
+| `search <hex\|u32\|i32\|u64\|ptr\|f32\|f64\|text> <value>... [--wide] [--from <addr>] [--to <addr>] [--module <name>] [--align <N>] [--writable] [--heap] [--paged] [--background] [--max <N>]` | addresses holding a value in resident, cacheable memory | `{rows: [{address: addr, module?: str, rva?: hex}], from: addr, next_cursor?: addr}` |
+| `pin <addr> <hex bytes>... [--seconds <N>] [--ms <N>] [--expect <hex bytes>...]` | write the bytes every tick (default 10 s, up to 60 s) **Writes or calls.** | `{id: u32, address: addr, bytes: bytes, guarded: bool, state: active\|expired\|object changed\|not writable\|memory differed from --expect\|cleared\|access faulted\|unknown, writes: u32, remaining_ms: u32}` |
+| `pin-list` | pins with state and write counts | `{rows: [{id: u32, address: addr, bytes: bytes, guarded: bool, state: active\|expired\|object changed\|not writable\|memory differed from --expect\|cleared\|access faulted\|unknown, writes: u32, remaining_ms: u32}]}` |
+| `pin-clear [id]` | clear one pin or all | `{cleared: u32}` |
+| `watch <seconds\|Nms> <addr:len>... [--then call line]` | sample up to 8 ranges every tick (up to 30 s) and return the rows **Writes or calls.** | `{capacity: u32, complete: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, ranges: [{address?: addr, offset?: hex, length: u32, guarded: bool}], then?: {ok: bool, hex?: bytes, message?: str}, rows: [{tick: u64, us: u64, values?: [bytes\|null], lost?: bool, resumed?: bool, root?: addr}]}` |
+| `watch-start <duration> <addr\|offset:len>... [--every <duration>] [--follow <root>]` | a capture the agent keeps (up to 60 min with --every); returns at once | `{capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [{address?: addr, offset?: hex, length: u32, guarded: bool}]}` |
+| `watch-read` | the capture's rows so far | `{running: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [{address?: addr, offset?: hex, length: u32, guarded: bool}], rows: [{tick: u64, us: u64, values?: [bytes\|null], lost?: bool, resumed?: bool, root?: addr}], gaps?: [{from_us: u64, to_us?: u64}]}` |
+| `watch-stop` | end the capture and return its rows | `{running: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [{address?: addr, offset?: hex, length: u32, guarded: bool}], rows: [{tick: u64, us: u64, values?: [bytes\|null], lost?: bool, resumed?: bool, root?: addr}], gaps?: [{from_us: u64, to_us?: u64}]}` |
+| `sig-check <pattern>... [--module <name>] [--expect <addr>] [--offset <N>] [--resolve <next,field[,size]>]` | is a byte signature unique in a module, and does it land where expected | `{pattern: str, list: str, module: str, unique: bool, total: u64, rows: [{address: addr, module?: str, rva?: hex, reference?: bool, diverges_at?: u64, resolved?: addr, resolved_module?: str, resolved_rva?: hex}], length: u64, fixed_bytes: u64, anchor: {offset: u64, length: u64, hits: u64}, warnings: [{offset: u64, size: u64, kind: call\|jump\|branch\|rip\|absolute, target: addr, target_module?: str, target_rva?: hex}], decoded?: u64, unique_at_length?: u64, resolve?: {next: u64, field: u64, size: u64}, expect?: addr, expect_module?: str, expect_rva?: hex, offset?: u64, resolves?: bool, mismatches?: [{offset: u64, wanted: hex, found: hex}], mismatch_error?: str}` |
+| `sig-file <patterns file>` | check a file of signatures (one JSON line each); names the first that holds | `{file: str, winner?: u64, searches: u64, rows: [{line: u64, ok: bool, result?: {pattern: str, list: str, module: str, unique: bool, total: u64, rows: [{address: addr, module?: str, rva?: hex, reference?: bool, diverges_at?: u64, resolved?: addr, resolved_module?: str, resolved_rva?: hex}], length: u64, fixed_bytes: u64, anchor: {offset: u64, length: u64, hits: u64}, warnings: [{offset: u64, size: u64, kind: call\|jump\|branch\|rip\|absolute, target: addr, target_module?: str, target_rva?: hex}], decoded?: u64, unique_at_length?: u64, resolve?: {next: u64, field: u64, size: u64}, expect?: addr, expect_module?: str, expect_rva?: hex, offset?: u64, resolves?: bool, mismatches?: [{offset: u64, wanted: hex, found: hex}], mismatch_error?: str}, error?: str}]}` |
+| `sig-bytes <addr> [len]` | live bytes (default 64, up to 96) in both pattern forms, address fields wildcarded | `{address: addr, module?: str, rva?: hex, length: u64, pattern: str, list: str, suggested: {pattern: str, list: str, fixed_bytes: u64, fields: [{offset: u64, size: u64, kind: call\|jump\|branch\|rip\|absolute, target: addr, target_module?: str, target_rva?: hex}], decoded?: u64}}` |
+| `disasm <addr> [count] [--function] [--follow]` | 1..64 instructions (default 24, up to 512 bytes) decoded from live bytes | `{address: addr, module?: str, rva?: hex, size: u64, stop: str, rows: [{address: addr, module?: str, rva?: hex, bytes: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool}], function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{from: addr, to: addr, to_module?: str, to_rva?: hex}], chain?: {base: addr, hops: [{hop: u64, address: addr, value: addr, module?: str, rva?: hex}], address?: addr, module?: str, rva?: hex, broken?: u64, reason?: str}}` |
+| `xrefs <addr> [--module <name>] [--all]` | what points at an address: rel32 fields and stored pointers, each with its function | `{address: addr, module?: str, rva?: hex, scanned: str, kinds: {<key>: u64}, rows: [{kind: call\|jmp\|jcc\|lea\|load\|store\|rip\|pointer\|unknown, field: addr, instruction?: addr, module?: str, rva?: hex, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}}], capped: bool, scan_ms: i64}` |
+| `touches <addr> <offset>... [--range <N>]` | functions near an address whose [reg + disp] operands use the offsets (up to 8) | `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64}` |
+| `vtable <addr> [count] [--offset <N>] [--table] [--resolve]` | an object's virtual table: slots until the first entry that is not code | `{address: addr, module?: str, rva?: hex, offset: hex, table?: addr, table_module?: str, table_rva?: hex, stop?: count\|not code\|end of read, stop_value?: hex, found?: hex, rows: [{slot: u64, offset: hex, target: addr, module?: str, rva?: hex, body?: addr, body_module?: str, body_rva?: hex}], chain?: {base: addr, hops: [{hop: u64, address: addr, value: addr, module?: str, rva?: hex}], address?: addr, module?: str, rva?: hex, broken?: u64, reason?: str}}` |
+| `region <addr>` | what the memory at an address is: kind, base, size, protection | `{address: addr, module?: str, rva?: hex, section?: str, kind: code\|rodata\|data\|mapped\|private\|reserved\|free, base: addr, size: hex, allocation_base: addr, state: str, type: str, protect: str, allocation_protect: str, chain?: {base: addr, hops: [{hop: u64, address: addr, value: addr, module?: str, rva?: hex}], address?: addr, module?: str, rva?: hex, broken?: u64, reason?: str}}` |
+
+## Unreal pack
+
+| Command | What it does | `result` |
+|---|---|---|
+| `find [text]... [--class <Class>] [--from <N>]` | objects whose name contains text and/or instances of a class; 24 per page | `{rows: [{ref: ref, name: str, class: str, class_size?: u32}], total?: u64, from: u32, next_cursor?: u32}` |
+| `census [--class <Class>] [--match <text>] [--limit <N>] [--from <N>]` | live instances per class, most first; pages of 100 rows | `{filter?: str, classes: u64, instances: u64, ms: i64, rows: [{class: str, ref: ref, count: u32, samples: [ref]}], total: u64, from: u64, next_cursor?: u64, hint?: str}` |
+| `census-diff [--class <Class>] [--match <text>] [--limit <N>] [--from <N>]` | the classes whose count differs from the last census of that --class | `{filter?: str, classes: {before: u64, after: u64}, instances: {before: u64, after: u64}, ms: i64, rows: [{class: str, ref: ref, before: u32, after: u32, samples: [ref]}], total: u64, from: u64, next_cursor?: u64, hint?: str}` |
+| `name-find <text> [--from <N>]` | FName indices whose text contains text (gameplay tags, row names) | `{rows: [{index: i32, name?: str}], from: u32, next_cursor?: u32}` |
+| `name <index>...` | FName comparison indices as text (FName #N in dumps) | `{rows: [{index: i32, name?: str}]}` |
+| `each <Class> <Field\|[Owner:]Function> [--seconds <N>]` | one value per live instance of a class, read in one tick **Writes or calls.** | `{class: str, class_ref: ref, target: str, mode: field\|call, rows: [{ref: ref, value: value, hex?: bytes}], capped: bool, truncated: bool, seconds?: u32, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str}` |
+| `call <object> <[Class:]Function> [hex params \| Name=value]... [--typed]` | call a reflected function with a raw block or Name=value inputs **Writes or calls.** | `{ref: ref, function: str, mode: raw\|typed\|release, block_size: u64, hex: bytes, kept: bool, kept_reason?: str, outputs?: [{name: str, direction: out\|return, value: value, truncated: bool, meta?: {name: str, owner: str, type: str, offset: u32, size: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: u32, value_struct?: str, stride?: u32}}], truncated?: bool}` |
+| `release <object> <[Class:]Function> [hex params]...` | one more call (zeroed inputs by default) that drops the kept block **Writes or calls.** | `{ref: ref, function: str, mode: raw\|typed\|release, block_size: u64, hex: bytes, kept: bool, kept_reason?: str, outputs?: [{name: str, direction: out\|return, value: value, truncated: bool, meta?: {name: str, owner: str, type: str, offset: u32, size: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: u32, value_struct?: str, stride?: u32}}], truncated?: bool}` |
+| `fields <object\|Class>` | reflected properties by offset; a class or struct lists its own | `{ref: ref, rows: [{name: str, owner: str, type: str, offset: u32, size: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: u32, value_struct?: str, stride?: u32, label: str, native?: bool, stale?: bool}], capped: bool, native_refused?: [{line: u64, name: str, owner: str, offset: u32, reason: str}]}` |
+| `dump <object\|Class> [--match <text>] [--nonzero] [--changed [file]]` | fields with their current values | `{ref: ref, rows: [{name: str, owner: str, type: str, offset: u32, size: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: u32, value_struct?: str, stride?: u32, label: str, native?: bool, stale?: bool, value: value, before?: value, truncated: bool, value_module?: str, value_rva?: hex, object?: {ref: ref, name: str, class: str, class_size?: u32}, preview?: {total: u64, elements: [{key?: value, value: value, object?: {ref: ref, name: str, class: str, class_size?: u32}, key_object?: {ref: ref, name: str, class: str, class_size?: u32}, value_object?: {ref: ref, name: str, class: str, class_size?: u32}}]}, preview_error?: str}], truncated: bool, capped: bool, object_lookup_limited: bool, filtered?: {shown: u64, total: u64}, native_refused?: [{line: u64, name: str, owner: str, offset: u32, reason: str}]}` |
+| `label <object\|Class> <offset> <type[n]> <Name>` | name an unreflected member in <console>.native.txt | `{path: str, line: u64, owner: str, offset: u32, type: str, name: str, size: u32, timestamp: u32}` |
+| `export-labels <file> [--module <name>] [--kinds <exec,vtable,interface,global>]` | names for a static-analysis tool (JSON lines, one build) | `{path: str, module: str, timestamp: u32, total: u64, globals: u64, exec: u64, vtables: u64, interfaces: u64, interface_lookups: u64, capped: bool}` |
+| `entries <object> <[Owner:]Field> [--from <N>]` | one page of an array, set or map: elements, or key and value | `{ref: ref, field: str, kind: array\|set\|map, total: u64, rows: [{key?: value, value: value, key_object?: {ref: ref, name: str, class: str, class_size?: u32}, value_object?: {ref: ref, name: str, class: str, class_size?: u32}}], from: u32, next_cursor?: u32, truncated: bool}` |
+| `get <object> <Field[.Field...]>...` | named fields, following object pointers and structs (up to 16 paths) | `{ref: ref, rows: [{path: str, ok: bool, value?: value, address?: addr, module?: str, rva?: hex, object?: ref, truncated?: bool, native?: bool, stale?: bool, value_module?: str, value_rva?: hex, type?: str, hex?: bytes, error?: str}], same_tick: bool, tick_accurate?: bool}` |
+| `describe <address\|$N\|#index:serial>` | an object's name, class and reusable ref | `{ref: ref, name: str, class: str, class_size?: u32}` |
+| `func <object\|Class> <[Owner:]Function>` | a function's reflected metadata and exec entry address | `{ref: ref, function: str, address: addr, flags: u32, exec?: addr, executable: bool, module?: str, rva?: hex, module_error?: str, interface?: {offset: hex, slot?: i64, implementation?: addr, implementation_module?: str, implementation_rva?: hex}}` |
+| `script <object\|Class> <[Owner:]Function>` | a Blueprint function's bytecode: the names, functions and properties it uses | `{ref: ref, function: str, size: u32, names: [{offset: u32, count: u32, index: i32, name: str}], functions: [{offset: u32, count: u32, ref: ref, function: str}], properties: [{offset: u32, count: u32, address: addr, property: str}]}` |
+| `refs <name\|#index>` | Blueprint functions whose bytecode names a pooled name (EX_NameConst) | `{index: i32, name?: str, rows: [{ref: ref, owner: str, name: str, offset: u32, count: u32}], capped: bool}` |
+| `funcs <object\|Class> [text] [--from <N>]` | functions on the class chain | `{ref: ref, rows: [{owner?: str, name: str}], from: u32, next_cursor?: u32}` |
+| `params <object\|Class> <[Owner:]Function>` | a function's reflected parameter signature | `{ref: ref, function: str, address: addr, block_size: u32, rows: [{name: str, owner: str, type: str, offset: u32, size: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: u32, value_struct?: str, stride?: u32, direction: in\|out\|in ref\|in/out ref\|return, flags: u32}]}` |
+| `snap <ref> [file]` | save a baseline for dump --changed (file: across runs) | `{ref: ref, size: u64, path?: str}` |
+| `record <ref> <seconds> <file> <field>...` | sample 1..8 named fields for 1..10 seconds into a new file, after a countdown | `{ref: ref, path: str, total: u64}` |
+
+## Envelopes
+
+Every line is an envelope: `command`, `ok`, and `result` or `error`. Errors carry `kind` and
+`message`; client errors (`agent`, `timeout`, `attach`, `busy`) also carry `status`, `detail` and
+`reason`. A refused `write --expect` adds `found`; a broken pointer chain adds `chain` with
+`broken` and `reason`. Any envelope can carry `timing` when the line ended in `--timing`. A
+usage error ends with the verb's usage line. A result that does not match its row's type is an
+`internal` error, never printed as a result.
+
+## Game values
+
+A `value` holds what the game's data is. Addresses are hex strings, null for a null pointer.
+FNames carry `index`, `number` and `name`. Structs expand to `{Name: value}` (`members` with
+`--meta`). Arrays and strings show their header, and `dump` adds a `preview` for top-level
+containers. Unsupported layouts give a bounded `hex` prefix. A non-finite float is
+`{"non_finite": "nan"}`. Check `truncated` on the result and its rows before treating values as
+complete.

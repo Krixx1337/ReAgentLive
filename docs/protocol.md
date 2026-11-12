@@ -99,7 +99,7 @@ agent has, so frontends can refuse the rest locally.
 | `census` | 266 | Unreal pack |
 | `name-find` | 267 | Unreal pack |
 | `each` | 268 | Unreal pack |
-| `func --script` (script) | 269 | Unreal pack |
+| `script` | 269 | Unreal pack |
 | `refs` | 270 | Unreal pack |
 | Describe many | 271 | Unreal pack |
 | Exec entries | 272 | Unreal pack |

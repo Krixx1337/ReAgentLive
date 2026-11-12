@@ -195,14 +195,13 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         for (const auto& row : rows)
-            out << LabelJson(*module, *timestamp, module->base + row.rva, row.name, row.kind).dump() << '\n';
+            out << ToJson(MakeLabel(*module, *timestamp, module->base + row.rva, row.name, row.kind)).dump() << '\n';
         if (!out) return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
     }
     std::error_code error;
     std::filesystem::rename(temporary, command.file, error);
     if (error) return JsonError(session, jsonCommand, "file", "cannot replace " + command.file + ": " + error.message());
-    JsonResult(session, jsonCommand, {{"path", command.file}, {"module", module->name}, {"timestamp", *timestamp},
-        {"rows", rows.size()}, {"globals", globals}, {"exec", execCount}, {"vtables", vtableCount},
-        {"interfaces", interfaceCount}, {"interface_lookups", lookups}, {"capped", capped}});
+    Emit(session, jsonCommand, shape::ExportLabels{command.file, module->name, *timestamp, rows.size(), globals,
+        execCount, vtableCount, interfaceCount, lookups, capped});
 }
 }

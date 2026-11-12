@@ -202,6 +202,20 @@ the log writes synchronously: logging runs inside the tick and counts against
 the hold budget, so a slow log line splits held commands over ticks (one
 request per tick in practice). Refusals log at warning level.
 
+## Host verbs
+
+A host's console (`RunConsole`) can add verbs of its own. Each is a row
+of the console's verb table (`ConsoleConfig::verbs`, the row type in
+`syntax/verb.h`): name, origin `host`, a summary, positionals and flags
+with a line of description each, and a result type from a struct with
+`Describe` (`results/schema.h`). `parse` stays null: a line whose verb has
+a row goes to `ConsoleConfig::hostCommand` whole, which answers an
+envelope with `ok` and `result` or `error`. The row gives the verb what
+the library's have: `help`, usage errors before the host sees the line,
+strict results in the Python client, and a check that the result matches
+its declared type (a mismatch is an `internal` error). Why rows:
+[design](design.md#self-describing-console).
+
 ## AI agents
 
 The `reagentlive` skill (`.claude/skills/reagentlive/` in this project)

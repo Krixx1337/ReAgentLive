@@ -36,23 +36,22 @@
 
 namespace reagentlive::cli::detail {
 
-Json CallJson(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept) {
-    return {{"ref", ReusableRef(ue::GetRef(request))}, {"function", request.text}, {"mode", mode},
-        {"block_size", block.size()}, {"hex", format_detail::Hex(block, block.size())}, {"kept", kept}};
+shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept) {
+    return {ReusableRef(ue::GetRef(request)), request.text, mode, block.size(), HexBytes(block), kept, {}, {}, {}};
 }
 
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand) {
     Client& client = session.client;
     const auto function = ue::Function(client, ref, name);
     if (!function) return CommandError(session, jsonCommand, function.error());
-    if (!function->exec) return JsonResult(session, jsonCommand, FunctionJson(ref, *function, {}));
+    if (!function->exec) return Emit(session, jsonCommand, MakeFunc(ref, *function, {}));
     const auto modules = client.Modules();
-    return JsonResult(session, jsonCommand, modules ? FunctionJson(ref, *function, *modules) :
-        FunctionJson(ref, *function, {}, modules.error().message));
+    return Emit(session, jsonCommand, modules ? MakeFunc(ref, *function, *modules) :
+        MakeFunc(ref, *function, {}, modules.error().message));
 }
 
 void PrintParameters(Session& session, const ue::FunctionInfo& function, const ue::Signature& signature, const Ref& object) {
-    JsonResult(session, "params", ParamsJson(object, function, signature));
+    Emit(session, "params", MakeParams(object, function, signature));
 }
 
 namespace {
@@ -118,23 +117,25 @@ void RunTypedCall(Session& session, const Command& command, uint64_t functionAdd
     if (!result) return CommandError(session, jsonCommand, result.error());
     if (result->size() != bytes.size())
         return CommandError(session, jsonCommand, Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "incomplete typed call result"});
-    Json outputs = Json::array();
+    std::vector<shape::CallOutput> outputs;
     bool truncated = false;
     for (const auto& parameter : signature.parameters) {
         if (!(parameter.parameterFlags & (ue::Output | ue::Return))) continue;
-        Json row = session.meta ? FieldMetadata(parameter) : Json{{"name", parameter.name}};
-        row["direction"] = parameter.parameterFlags & ue::Return ? "return" : "out";
+        shape::CallOutput row;
+        row.name = parameter.name;
+        row.direction = parameter.parameterFlags & ue::Return ? "return" : "out";
+        if (session.meta) row.meta = MakeFieldInfo(parameter);
         bool partial = false;
-        row["value"] = JsonFieldValue(parameter, FieldBytes(*result, parameter), structs,
+        row.value = JsonFieldValue(parameter, FieldBytes(*result, parameter), structs,
             format_detail::UnresolvedName{}, partial, Style(session));
-        row["truncated"] = partial;
+        row.truncated = partial;
         truncated |= partial;
         outputs.push_back(std::move(row));
     }
-    auto record = CallJson(command.request, *result, "typed", kept);
-    if (kept) record["kept_reason"] = calls::KeptReason(signature, structs);
-    record["outputs"] = std::move(outputs);
-    record["truncated"] = truncated;
-    return JsonResult(session, jsonCommand, std::move(record));
+    auto record = MakeCall(command.request, *result, "typed", kept);
+    if (kept) record.keptReason = calls::KeptReason(signature, structs);
+    record.outputs = std::move(outputs);
+    record.truncated = truncated;
+    return Emit(session, jsonCommand, std::move(record));
 }
 }

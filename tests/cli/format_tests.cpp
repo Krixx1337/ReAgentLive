@@ -3,6 +3,7 @@
 #include "reagentlive/frontends/cli/values/ue/json_output.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "doctest.h"
+#include "verbs.h"
 #include <cstring>
 #include <sstream>
 #include <string>
