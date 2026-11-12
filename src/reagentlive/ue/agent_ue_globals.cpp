@@ -180,8 +180,9 @@ void Locate(const Context& pack, const Host& host) {
 
 const SDK::TUObjectArray* Table() { return g_located.table; }
 
-bool PackReady(const Context& pack, const Host& host, Response& response) {
-    if (const char* problem = EngineThreadProblem(pack)) {
+bool PackReady(const Context& pack, const Host& host, Response& response, Access access) {
+    const bool offThread = access == Access::Read && pack.offThreadReads && pack.gameThread && !pack.gameThread();
+    if (const char* problem = offThread ? nullptr : EngineThreadProblem(pack)) {
         Refuse(response, Status::Refused, problem);
         return false;
     }
@@ -192,6 +193,41 @@ bool PackReady(const Context& pack, const Host& host, Response& response) {
     if (g_located.ready) return true;
     Refuse(response, Status::Refused, g_located.problem);
     return false;
+}
+
+bool StillSame(const Ref& before, const Context& pack, Response& response) {
+    if (pack.gameThread() || Resolve(before, pack)) return true;
+    response.length = 0;
+    Refuse(response, Status::NotFound, "object changed during the read");
+    return false;
+}
+
+namespace {
+// No objects with destructors here: SEH needs a frame without unwinding.
+// Under /EHsc a fault skips the destructors of the frames it leaves; a
+// handler's strings leak, nothing else is held.
+Progress FaultGuarded(Handler body, const Request& request, Response& response, bool first, const Host& host, bool& faulted) {
+    __try {
+        return body(request, response, first, host);
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
+                EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        faulted = true;
+        return Progress::Done;
+    }
+}
+}
+
+Progress GuardedRead(Handler body, const Request& request, Response& response, bool first, const Host& host) {
+    const Context& pack = Pack(host);
+    if (!pack.offThreadReads || !pack.gameThread || pack.gameThread()) return body(request, response, first, host);
+    bool faulted = false;
+    const Progress progress = FaultGuarded(body, request, response, first, host, faulted);
+    if (!faulted) return progress;
+    g_region = {};
+    response.length = 0;
+    Refuse(response, Status::NotReadable, "fault during an off-thread read");
+    if (host.log) host.log(LogLevel::Warning, static_cast<unsigned>(Status::NotReadable), "Unreal pack: fault during an off-thread read");
+    return Progress::Done;
 }
 
 bool PoolName(int32_t index, char* out, size_t capacity, size_t& length) {

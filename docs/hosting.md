@@ -63,6 +63,9 @@ A host is whatever code inside the target calls `Tick`. It provides:
   the image to scan (`Context::image`, default the process's exe); the pack
   finds and checks both globals itself
   ([before the first command](commands/unreal.md#before-the-first-command)).
+  `Context::offThreadReads` (off by default, being measured) lets lookups
+  and reads run off the engine's thread
+  ([off the engine's thread](commands/unreal.md#off-the-engines-thread)).
 - **Optional:** a log callback ([logging](#logging)), hold budgets
   ([protocol](protocol.md#exchange)), `Host::backgroundSearch`, and named
   roots for `watch --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).

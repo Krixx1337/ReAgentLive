@@ -570,8 +570,10 @@ marks and the client's own prompt are not enough.
   work); running engine calls off the engine's thread behind a flag
   (unsafe in a way no guard fixes); queuing requests from a borrowed thread
   to the engine's (that needs the second tick source such a host lacks).
-  Best-effort pack reads off the engine's thread are in the
-  [backlog](ideas.md#18--best-effort-pack-reads-off-the-engines-thread).
+  Best-effort pack reads off the engine's thread are built behind a host
+  opt-in for measuring, still a
+  [backlog](ideas.md#18--best-effort-pack-reads-off-the-engines-thread) item
+  until that is clean.
 - **The engine-thread check is required.** Every pack handler reads engine
   state, so each asks `Context::gameThread` first. A host that leaves it
   out is refused, not trusted: a host ticking off the engine's thread with

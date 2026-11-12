@@ -453,6 +453,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     result.objectLookupLimited = limited;
     if (!command.match.empty() || command.nonzero || command.changed || command.own) result.filtered = shape::Filtered{shown, total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
+    if (!TickAccurate(session)) result.tickAccurate = false;
     return Emit(session, "dump", std::move(result));
 }
 }

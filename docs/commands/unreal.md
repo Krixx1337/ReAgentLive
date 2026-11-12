@@ -76,6 +76,28 @@ calls into the engine at an address the patch may have moved): base name,
 the path before the last `/` dropped, `_<number - 1>` added for a numbered
 name; wide characters above 0x7f read `?`.
 
+## Off the engine's thread
+
+A host that ticks elsewhere (a borrowed frame thread) may set
+`Context::offThreadReads`. Being measured
+([backlog 18](../ideas.md#18--best-effort-pack-reads-off-the-engines-thread)):
+it stays only if a live run under load is clean.
+
+- **Answered:** `find`, `describe` (and its batch form), `fields`, object
+  range reads (`read` of an object ref, `dump`, `get`), array previews,
+  `entries` and `names`. Locating the globals also runs there.
+- **Still refused** (`not on the game thread`): `call`, `each`, `script`,
+  `refs`, `census`, `name-find`, `exec-entries`, `funcs`, `func`,
+  `params`: they run engine code or walk tables this has not measured.
+- **Guards:** each answered handler runs under a fault guard, so memory
+  freed mid-read is the refusal `fault during an off-thread read` (also a
+  log warning), never a crash. The object's identity (slot and serial) is
+  checked before and after the read; a change is `object changed during
+  the read` and the data is dropped.
+- **Not guarded against:** values torn between two fields of one read;
+  the console marks `dump`, `get`, `entries` and batches
+  `tick_accurate: false`, and `status` explains the host tick.
+
 ## Named calls
 
 Named calls take the exact reflected parameter names printed by `params`.

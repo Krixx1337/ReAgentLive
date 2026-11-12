@@ -232,9 +232,9 @@ bool GuardedName(int32_t index, char* out, size_t capacity, size_t& length) {
     }
 }
 
-Progress Find(const Request& request, Response& response, bool first, const Host& host) {
+Progress FindBody(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const auto from = static_cast<int32_t>(request.args[1]);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -310,33 +310,34 @@ bool DescribeRef(Ref ref, const Context& pack, FindEntry& entry, uint32_t* class
 }
 }
 
-Progress Describe(const Request& request, Response& response, bool, const Host& host) {
+Progress DescribeBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     FindEntry entry{};
     uint32_t classSize = 0;
     if (!DescribeRef(GetRef(request), pack, entry, &classSize)) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
         return Progress::Done;
     }
+    if (!StillSame(entry.object, pack, response)) return Progress::Done;
     memcpy(response.data, &entry, sizeof(entry));
     response.length = sizeof(entry);
     response.detail = classSize;
     return Progress::Done;
 }
 
-Progress DescribeMany(const Request& request, Response& response, bool, const Host& host) {
+Progress DescribeManyBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const size_t count = request.length / sizeof(Ref);
     uint64_t found = 0;
     for (size_t i = 0; i < count; ++i) {
         Ref ref{};
         memcpy(&ref, request.data + i * sizeof(Ref), sizeof(ref));
         FindEntry entry{};
-        if (DescribeRef(ref, pack, entry)) ++found;
+        if (DescribeRef(ref, pack, entry) && (pack.gameThread() || Resolve(entry.object, pack))) ++found;
         else entry = {};
         memcpy(response.data + i * sizeof(entry), &entry, sizeof(entry));
     }
@@ -345,30 +346,35 @@ Progress DescribeMany(const Request& request, Response& response, bool, const Ho
     return Progress::Done;
 }
 
-Progress ReadObject(const Request& request, Response& response, bool first, const Host& host) {
+Progress ReadObjectBody(const Request& request, Response& response, bool first, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
-    if (!Resolve(GetRef(request), pack)) {
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
+    const auto* object = Resolve(GetRef(request), pack);
+    if (!object) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
         return Progress::Done;
     }
+    const Ref before = Identify(object, pack);
     Request read{};
     read.op = reagentlive::op::Read;
     read.address = request.address + request.args[1];
     read.length = request.length;
-    return reagentlive::Read(read, response, first, host);
+    const Progress progress = reagentlive::Read(read, response, first, host);
+    if (response.status == Status::Ok) StillSame(before, pack, response);
+    return progress;
 }
 
-Progress PreviewArray(const Request& request, Response& response, bool first, const Host& host) {
+Progress PreviewArrayBody(const Request& request, Response& response, bool first, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
         Refuse(response, Status::NotFound, "array preview requires a live instance");
         return Progress::Done;
     }
+    const Ref before = Identify(object, pack);
     Request read{};
     read.op = reagentlive::op::Read;
     read.address = request.address + request.args[1];
@@ -386,19 +392,20 @@ Progress PreviewArray(const Request& request, Response& response, bool first, co
         return Progress::Done;
     }
     reagentlive::Read(read, response, first, host);
-    if (response.status == Status::Ok) response.detail = static_cast<uint32_t>(header.count);
+    if (response.status == Status::Ok && StillSame(before, pack, response)) response.detail = static_cast<uint32_t>(header.count);
     return Progress::Done;
 }
 
-Progress Entries(const Request& request, Response& response, bool, const Host& host) {
+Progress EntriesBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
         Refuse(response, Status::NotFound, "entries require a live instance");
         return Progress::Done;
     }
+    const Ref before = Identify(object, pack);
     const uint32_t stride = request.length, first = EntriesFirst(request.args[1]);
     const uint32_t fit = static_cast<uint32_t>(MaxRead / stride);
     const auto* at = reinterpret_cast<const uint8_t*>(request.address) + EntriesOffset(request.args[1]);
@@ -427,6 +434,7 @@ Progress Entries(const Request& request, Response& response, bool, const Host& h
         }
         response.length = shown * stride;
         response.detail = FindDetail(count, first + shown < count ? first + shown : 0);
+        StillSame(before, pack, response);
         return Progress::Done;
     }
     SparseHeader header{};
@@ -471,13 +479,14 @@ Progress Entries(const Request& request, Response& response, bool, const Host& h
         return Progress::Done;
     }
     response.detail = FindDetail(occupied, next);
+    StillSame(before, pack, response);
     return Progress::Done;
 }
 
-Progress Names(const Request& request, Response& response, bool, const Host& host) {
+Progress NamesBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const uint32_t count = request.length / 4;
     size_t used = 0;
     uint32_t done = 0;
@@ -495,5 +504,28 @@ Progress Names(const Request& request, Response& response, bool, const Host& hos
     response.length = static_cast<uint32_t>(used);
     response.detail = done;
     return Progress::Done;
+}
+
+// Off the engine's thread (Context::offThreadReads) these run under a fault guard.
+Progress Find(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&FindBody, request, response, first, host);
+}
+Progress Describe(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&DescribeBody, request, response, first, host);
+}
+Progress DescribeMany(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&DescribeManyBody, request, response, first, host);
+}
+Progress ReadObject(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&ReadObjectBody, request, response, first, host);
+}
+Progress PreviewArray(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&PreviewArrayBody, request, response, first, host);
+}
+Progress Entries(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&EntriesBody, request, response, first, host);
+}
+Progress Names(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&NamesBody, request, response, first, host);
 }
 }

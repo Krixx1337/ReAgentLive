@@ -188,6 +188,7 @@ struct Dump {
     bool truncated = false, capped = false, objectLookupLimited = false;
     std::optional<Filtered> filtered;
     std::optional<std::vector<NativeRefused>> nativeRefused;
+    std::optional<bool> tickAccurate;
     template<class V> static void Describe(V& v) {
         v("ref", &Dump::ref);
         v("rows", &Dump::rows);
@@ -196,6 +197,7 @@ struct Dump {
         v("object_lookup_limited", &Dump::objectLookupLimited);
         v("filtered", &Dump::filtered);
         v("native_refused", &Dump::nativeRefused);
+        v("tick_accurate", &Dump::tickAccurate);
     }
 };
 
@@ -305,6 +307,7 @@ struct Entries {
     uint32_t from = 0;
     std::optional<uint32_t> nextCursor;
     bool truncated = false;
+    std::optional<bool> tickAccurate;
     template<class V> static void Describe(V& v) {
         v("ref", &Entries::ref);
         v("field", &Entries::field);
@@ -314,6 +317,7 @@ struct Entries {
         v("from", &Entries::from);
         v("next_cursor", &Entries::nextCursor);
         v("truncated", &Entries::truncated);
+        v("tick_accurate", &Entries::tickAccurate);
     }
 };
 

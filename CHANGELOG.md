@@ -75,6 +75,14 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   `ue::ObjectInTable` is an object check for hosts without one. The name
   pool's hashed layout honours its kind byte (kind-2 entries are 22
   characters).
+- **Pack reads off the engine's thread, opt-in, being measured**
+  ([unreal](docs/commands/unreal.md#off-the-engines-thread)):
+  `Context::offThreadReads` lets `find`, `describe`, `fields`, object
+  reads, array previews, `entries` and `names` run on a borrowed thread,
+  each under a fault guard with the object's identity checked before and
+  after. Everything that runs engine code stays refused. `dump` and
+  `entries` results carry `tick_accurate: false` off the engine's thread,
+  as `get` and batches already did.
 
 ## 0.2.0
 

@@ -329,12 +329,13 @@ Progress Functions(const Request& request, Response& response, bool, const Host&
 }
 
 // Reflected properties of a class or struct chain, most derived first, one page per request.
-Progress Fields(const Request& request, Response& response, bool, const Host& host) {
+Progress FieldsBody(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const SDK::UObject* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
+    const Ref before = Identify(object, pack);
     const bool signature = request.op == op::Parameters;
     if (signature && !pack.gameThread()) {
         Refuse(response, Status::Refused, "not on the game thread");
@@ -420,6 +421,12 @@ Progress Fields(const Request& request, Response& response, bool, const Host& ho
     }
     response.length = count * static_cast<uint32_t>(sizeof(FieldEntry));
     response.detail = FindDetail(index, blockSize);
+    StillSame(before, pack, response);
     return Progress::Done;
+}
+
+// Off the engine's thread (Context::offThreadReads) these run under a fault guard.
+Progress Fields(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&FieldsBody, request, response, first, host);
 }
 }

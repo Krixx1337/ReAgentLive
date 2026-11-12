@@ -106,15 +106,18 @@ ticks, after a dry run.
 ### 18 · Best-effort pack reads off the engine's thread
 
 On a host that ticks on a borrowed thread, let the Unreal pack answer
-reads while still refusing calls. Wait for a real request.
+reads while still refusing calls. **Built behind the opt-in for measuring**
+(`Context::offThreadReads`, [unreal](commands/unreal.md#off-the-engines-thread));
+it moves to [design](design.md) only if the measurement below is clean,
+and is removed otherwise.
 
 - Opt-in per host, off by default. Lookups and reads only: `find`,
   `describe`, `fields`, object range reads, container entries, names.
   Never `call`, never `each` with a function, never anything that runs
   engine code.
-- Every read already goes through a guarded copy, so a freed page is a
-  refusal, not a crash; the object's identity is checked before and after
-  the read, and a mismatch discards the result.
+- Every handler runs under a fault guard off the engine's thread, so a
+  freed page is a refusal, not a crash; the object's identity is checked
+  before and after the read, and a mismatch discards the result.
 - Results carry `tick_accurate: false` and may still be torn (a value can
   change between two fields of one read); the docs say so.
 - **Measure first:** walking the object table and reflection data while

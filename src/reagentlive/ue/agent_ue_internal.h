@@ -59,7 +59,16 @@ const Context& Pack(const Host& host);
 // False (and the response refused) when EngineThreadProblem names one or
 // the object table and name pool are not located and checked (globals.h);
 // the first call locates them.
-bool PackReady(const Context& pack, const Host& host, Response& response);
+// Access::Read handlers also run off the engine's thread when the host
+// opted in (Context::offThreadReads).
+enum class Access { Engine, Read };
+bool PackReady(const Context& pack, const Host& host, Response& response, Access access = Access::Engine);
+// True on the engine's thread, or when `before` still names the same live
+// object; otherwise the response is cleared and refused.
+bool StillSame(const Ref& before, const Context& pack, Response& response);
+// Runs a read handler, under a fault guard when off the engine's thread
+// (a fault there is a refusal, not a crash).
+Progress GuardedRead(Handler body, const Request& request, Response& response, bool first, const Host& host);
 // The located object table: valid once PackReady said yes.
 const SDK::TUObjectArray* Table();
 // A name from the located pool, without its instance number.

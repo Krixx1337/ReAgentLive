@@ -25,6 +25,13 @@ struct Context {
     // Optional: the image whose writable sections are scanned when a guess
     // fails; 0 is the process's exe.
     uintptr_t image = 0;
+    // Opt-in, off by default: answer lookups and reads (find, describe,
+    // fields, object reads, container entries, names) when gameThread()
+    // says no, as on a borrowed thread. Best effort: each runs under a
+    // fault guard, an object's identity is checked before and after its
+    // read, and values may still be torn. Calls and scans that run engine
+    // code stay refused.
+    bool offThreadReads = false;
 };
 
 // An object check for hosts without their own (Context::object): a readable

@@ -627,6 +627,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     result.from = command.limit;
     if (page->next) result.nextCursor = page->next;
     result.truncated = partial;
+    if (!TickAccurate(session)) result.tickAccurate = false;
     Emit(session, jsonCommand, std::move(result));
 }
 }
