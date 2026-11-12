@@ -247,7 +247,10 @@ std::vector<CachePack> SavePackCache(const Session& session) {
 }
 
 std::span<const Verb> PackVerbs() { return UnrealVerbs(); }
-Origin PackOrigin() { return UnrealOrigin; }
+std::span<const Origin> PackOrigins() {
+    static constexpr Origin origins[] = {UnrealOrigin};
+    return origins;
+}
 std::span<const std::string> PackNotes() { return UnrealNotes(); }
 
 std::vector<std::string> OfferedPacks(Session& session) {

@@ -18,9 +18,9 @@
 
 int main(int argc, char** argv) {
     using namespace reagentlive::cli;
-    auto verbs = CoreVerbs();
-    for (const auto& verb : UnrealVerbs()) verbs.push_back(verb);
-    const Origin origins[] = {CoreOrigin, UnrealOrigin, HostOrigin};
+    const Origin pack[] = {UnrealOrigin};
+    const auto verbs = TableRows(UnrealVerbs(), pack, {});
+    const auto origins = TableOrigins(pack);
     auto help = MakeHelpTable(verbs, origins);
     help.tableHash = TableHash(verbs, origins);
     const Json table = ToJson(help);

@@ -17,6 +17,7 @@
 #                       (frontends/cli/console/ and the pure headers); links the
 #                       x64 decoder (Zydis) for disasm and sig. No agent
 #                       target may link it: a configure check fails if one does.
+#                       REAGENTLIVE_CONSOLE_UE off leaves the Unreal pack out.
 #
 # Headers are included as "reagentlive/<layer>/<file>.h".
 cmake_minimum_required(VERSION 3.25)
@@ -44,8 +45,15 @@ option(REAGENTLIVE_BUILD_TESTS "Build reagentlive's tests" ${PROJECT_IS_TOP_LEVE
 # configure unless the parent project already provides them. A host that
 # links only the agent turns this off and downloads nothing.
 option(REAGENTLIVE_CONSOLE "Define the console targets (reagentlive::console, ::cli needs nothing)" ON)
+# The Unreal pack in the console: off, the console compiles none of the
+# pack's files and its verb table (help, the generated functions, the MCP
+# tools) holds core and host rows only. For a target that is not Unreal.
+option(REAGENTLIVE_CONSOLE_UE "Compile the Unreal pack into the console and the CLI syntax" ON)
 if(REAGENTLIVE_BUILD_TESTS AND NOT REAGENTLIVE_CONSOLE)
     message(FATAL_ERROR "reagentlive: REAGENTLIVE_BUILD_TESTS needs REAGENTLIVE_CONSOLE.")
+endif()
+if(REAGENTLIVE_BUILD_TESTS AND NOT REAGENTLIVE_CONSOLE_UE)
+    message(FATAL_ERROR "reagentlive: REAGENTLIVE_BUILD_TESTS needs REAGENTLIVE_CONSOLE_UE (the tests build both consoles).")
 endif()
 
 # Only src/ is on the include path: headers are "reagentlive/<layer>/<file>.h",
@@ -81,11 +89,23 @@ add_library(reagentlive-cli INTERFACE)
 add_library(reagentlive::cli ALIAS reagentlive-cli)
 target_include_directories(reagentlive-cli INTERFACE "${reagentlive_include_root}")
 target_compile_features(reagentlive-cli INTERFACE cxx_std_23)
-target_sources(reagentlive-cli INTERFACE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse_memory.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/ue/parse_unreal.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/syntax/parse_code.cpp")
+# Each part of the CLI as a core list and an Unreal pack list.
+set(reagentlive_cli_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli")
+set(reagentlive_syntax_sources "${reagentlive_cli_dir}/syntax/parse.cpp"
+    "${reagentlive_cli_dir}/syntax/parse_memory.cpp" "${reagentlive_cli_dir}/syntax/parse_code.cpp")
+set(reagentlive_syntax_ue_sources "${reagentlive_cli_dir}/syntax/ue/parse_unreal.cpp")
+set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
+    "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp"
+    "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp")
+set(reagentlive_console_ue_sources "${reagentlive_cli_dir}/console/ue/pack.cpp" "${reagentlive_cli_dir}/console/ue/dump.cpp"
+    "${reagentlive_cli_dir}/console/ue/capture.cpp" "${reagentlive_cli_dir}/console/ue/calls.cpp"
+    "${reagentlive_cli_dir}/console/ue/query.cpp" "${reagentlive_cli_dir}/console/ue/labels.cpp"
+    "${reagentlive_cli_dir}/console/ue/members.cpp")
+set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")
+target_sources(reagentlive-cli INTERFACE ${reagentlive_syntax_sources})
+if(REAGENTLIVE_CONSOLE_UE)
+    target_sources(reagentlive-cli INTERFACE ${reagentlive_syntax_ue_sources})
+endif()
 
 if(REAGENTLIVE_CONSOLE)
     add_library(reagentlive-console INTERFACE)
@@ -117,21 +137,14 @@ if(REAGENTLIVE_CONSOLE)
             GIT_TAG a2278f1d254e492f6a6b39f6cb5d1f5d515659dc) # v4.1.1
         FetchContent_MakeAvailable(zydis)
     endif()
-    target_sources(reagentlive-console INTERFACE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/console.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/output.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/memory.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/sig.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/code.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/native.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/pack.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/dump.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/capture.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/calls.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/query.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/labels.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli/console/ue/members.cpp")
-    target_link_libraries(reagentlive-console INTERFACE reagentlive-ue-client reagentlive-cli nlohmann_json::nlohmann_json Zydis)
+    if(REAGENTLIVE_CONSOLE_UE)
+        target_sources(reagentlive-console INTERFACE ${reagentlive_console_sources} ${reagentlive_console_ue_sources})
+        target_link_libraries(reagentlive-console INTERFACE reagentlive-ue-client)
+    else()
+        target_sources(reagentlive-console INTERFACE ${reagentlive_console_sources} ${reagentlive_console_no_pack_sources})
+        target_link_libraries(reagentlive-console INTERFACE reagentlive-client)
+    endif()
+    target_link_libraries(reagentlive-console INTERFACE reagentlive-cli nlohmann_json::nlohmann_json Zydis)
 endif()
 
 # The agent never decodes: fail the configure when Zydis reaches an agent
@@ -206,6 +219,13 @@ if(REAGENTLIVE_BUILD_TESTS)
     add_test(NAME reagentlive.results-doc
         COMMAND reagentlive-table --check "${CMAKE_CURRENT_SOURCE_DIR}/docs/commands/results.md")
     set_tests_properties(reagentlive.results-doc PROPERTIES LABELS "reagentlive" TIMEOUT 30)
+    # The console without the pack, built beside the default one: the proof
+    # that the core console does not lean on the pack (the example's main).
+    add_executable(reagentlive-core-console examples/own_thread/console.cpp
+        ${reagentlive_syntax_sources} ${reagentlive_console_sources} ${reagentlive_console_no_pack_sources})
+    target_link_libraries(reagentlive-core-console PRIVATE reagentlive-client nlohmann_json::nlohmann_json Zydis)
+    set_target_properties(reagentlive-core-console PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
+    target_compile_options(reagentlive-core-console PRIVATE /W4 /WX /EHsc)
     add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
@@ -242,6 +262,12 @@ if(REAGENTLIVE_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_mcp.py"
                 --table "$<TARGET_FILE:reagentlive-table>")
         set_tests_properties(reagentlive.python-mcp PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # The pack-less console's table: no pack row, no row that needs one;
+        # the generated module and the MCP tools follow from it.
+        add_test(NAME reagentlive.core-console
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_core_console.py"
+                --console "$<TARGET_FILE:reagentlive-core-console>" --table "$<TARGET_FILE:reagentlive-table>")
+        set_tests_properties(reagentlive.core-console PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         add_test(NAME reagentlive.ida-labels
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_ida_labels.py")
         set_tests_properties(reagentlive.ida-labels PROPERTIES LABELS "reagentlive" TIMEOUT 60)

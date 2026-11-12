@@ -19,9 +19,11 @@ snapshots across instances (every reflected field) remain open.
 ### 11 · A smaller default tool set
 
 The MCP tools ([clients](client.md#mcp-tools)) serve every verb; with the
-Unreal pack their schemas are about 110 KB. When a client that loads every
-schema up front runs short of context: serve core lookups by default and
-the rest on request (an adapter flag naming origins or verbs).
+Unreal pack their schemas are about 110 KB, most of it the pack's. A
+non-Unreal target already drops that half with a console built without
+the pack ([hosting](hosting.md#using-it-in-your-project)). When a client that loads every
+schema up front runs short of context even so: serve core lookups by
+default and the rest on request (an adapter flag naming verbs).
 
 ### 15 · Call probe (caution)
 

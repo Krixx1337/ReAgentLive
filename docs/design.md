@@ -356,7 +356,9 @@ the console.
   its headings from there, so no core file spells a pack's id.
 - **Mixed verbs stay on the side of their state.** `trial` is the core's
   (the write, the undo, the guard); its owner check is borrowed from the
-  pack through `console/pack.h`, and without a pack it is refused.
+  pack through `console/pack.h`, and without a pack it is refused. Its
+  row is marked `needsPack`, so a console built without a pack leaves it
+  out of its table ([source layout](#source-layout)).
 
 Rejected:
 
@@ -654,6 +656,23 @@ The layout itself and its rules are in
   its state, cache block, its rows of the [verb table](#self-describing-console),
   `status` line, its commands, and what core commands borrow. With one pack
   they need no interface.
+- **A console without the pack is a build of it** (`REAGENTLIVE_CONSOLE_UE`
+  off, [hosting](hosting.md#using-it-in-your-project)). `console/no_pack.cpp` answers the seams
+  for "no pack" (no rows, no state, no cache block, nothing offered); the
+  core files take no `#if`. Its table holds core and host rows only, less
+  the core rows marked `needsPack`, and `help`, the generated functions and
+  the MCP tools all read the table, so none of them needs a switch. A
+  non-Unreal target then pays for no pack tool schemas (most of the full
+  set). The tests build this console beside the default one: a core
+  console file that leans on the pack no longer compiles, which the layout
+  test only approximates from `#include` lines.
+- **Rejected for the pack-less console:** a flag on the MCP adapter or the
+  generator (the console's own `help` would still list the verbs, and the
+  module would no longer match the table it was made from); a run-time
+  console switch (every reader would have to pass it alike or the table
+  hash differs, and the pack stays linked for nothing); hiding tools by
+  what the live host offers (the tool list is known before a target runs,
+  [tool interface](#tool-interface)).
 - **Rejected for now:** a pack interface or registry (a table of packs
   each registering verbs, help and hooks). Designed around one pack it would
   guess the shape a second one needs; the seams list exactly what that

@@ -206,6 +206,9 @@ struct Verb {
     // Holds the console for seconds by design (a blocking capture): a tool
     // client leaves it out, since a call would outlast its timeout.
     bool blocks = false;
+    // A core verb that only works with an engine pack in the console: a
+    // console built without one leaves it out of its table (TableRows).
+    bool needsPack = false;
 };
 
 // Where verbs come from, as a caller sees it: "core", a pack's id or "host",

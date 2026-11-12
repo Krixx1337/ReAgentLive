@@ -80,7 +80,8 @@ rule.
 `console/ue/`), under the same layer rule. Outside a `ue/` folder no file
 includes `reagentlive/ue/` or a `ue/` header, or names `ue::`. The core
 console reaches the pack only through `console/pack.h`, which
-`console/ue/pack.cpp` implements: the pack's state for a run, its cache
+`console/ue/pack.cpp` implements (and `console/no_pack.cpp`, empty, for a
+console built without the pack): the pack's state for a run, its cache
 block, its rows of the verb table and `status` line, which commands are its own, and what core
 commands borrow (object guards, the trial owner check, `watch --then`,
 `peek`'s objects and names). `console/ue/internal_ue.h` is for
@@ -171,6 +172,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive.python-session`, `reagentlive.python-mcp`, `reagentlive.ida-labels` (`tests/python/`) | the session client and a module generated from the real table, against a scripted fake console (`fake_console.py`) that serves it (strict results, a method per verb, JSON calls, canned replies checked against their types); the MCP tools made from that module, through an in-memory client (skipped without the MCP SDK); and the IDA label importer |
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack |
 | `reagentlive.consumer` (`tests/consumer/`) | an agent-only host project built in its own tree: no downloads with the console off, and nothing past `src/` reachable through the include path |
+| `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help --json` has core rows only, none marked `needsPack`, each the same as in the full table, and the module generated from it no pack verb |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
 | `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, and no host or game name appears in the library |
 

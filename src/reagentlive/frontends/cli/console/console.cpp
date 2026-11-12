@@ -93,13 +93,8 @@ void RunHelp(Session& session, const Command& command, std::string_view jsonComm
 }
 
 // The verb table: the core's rows, the pack's, then the host's own.
-std::vector<Verb> AllVerbs(const ConsoleConfig& config) {
-    std::vector<Verb> verbs = CoreVerbs();
-    for (const auto& verb : PackVerbs()) verbs.push_back(verb);
-    for (const auto& verb : config.verbs) verbs.push_back(verb);
-    return verbs;
-}
-std::vector<Origin> AllOrigins() { return {CoreOrigin, PackOrigin(), HostOrigin}; }
+std::vector<Verb> AllVerbs(const ConsoleConfig& config) { return TableRows(PackVerbs(), PackOrigins(), config.verbs); }
+std::vector<Origin> AllOrigins() { return TableOrigins(PackOrigins()); }
 
 // A JSON call's own keys: the verb, its arguments, and the console's two line flags.
 std::string CallProblem(const Json& call) {

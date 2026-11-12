@@ -128,6 +128,9 @@ python reagentlive_mcp.py --console <console.exe> --module my_console.py [-- <pi
   `destructiveHint`, every other one `readOnlyHint`, so a client can
   allow the read-only tools and ask first for the rest. The host's own
   approval rules still apply.
+- **Only what the console has:** the tools are its table's rows, so a
+  console built without the pack ([hosting](hosting.md#using-it-in-your-project)) serves no
+  pack tools and no core tool that needs a pack.
 - **Left out:** `quit` (the adapter owns the console) and verbs marked
   `blocks` (`watch`, `record`, a host's countdown capture): a call would
   outlast a client's timeout. Use `watch-start`, then `watch-read`.

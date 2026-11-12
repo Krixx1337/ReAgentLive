@@ -1,7 +1,8 @@
 // reagentlive CLI console: what the core console asks of an engine pack. The
 // core files reach the pack only through these; console/ue/pack.cpp
-// implements them for the Unreal pack. With one pack they are plain
-// functions; a second pack would turn them into a table (docs/design.md).
+// implements them for the Unreal pack, console/no_pack.cpp for a console
+// built without one (REAGENTLIVE_CONSOLE_UE off). With one pack they are
+// plain functions; a second pack would turn them into a table (docs/design.md).
 // A pack's verbs are rows of the verb table like the core's (PackVerbs).
 #pragma once
 #include <cstdint>
@@ -23,10 +24,10 @@ std::string LoadPackFiles(Session& session);
 // The cache file: the pack's blocks, kept by the core without reading them.
 void LoadPackCache(Session& session, std::span<const CachePack> packs);
 std::vector<CachePack> SavePackCache(const Session& session);
-// The pack's rows of the verb table and the notes `help` prints under them.
-// status: `packs`, the packs this host offers.
+// The pack's rows of the verb table and the notes `help` prints under them;
+// its origin, none without a pack. status: `packs`, the packs this host offers.
 std::span<const Verb> PackVerbs();
-Origin PackOrigin();
+std::span<const Origin> PackOrigins();
 std::span<const std::string> PackNotes();
 std::vector<std::string> OfferedPacks(Session& session);
 // Pack verbs: whether a parsed command is one, whether it runs held (several

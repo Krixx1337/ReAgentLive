@@ -32,6 +32,11 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   as `get` takes) or one function; `columns`, then `rows` of `{ref,
   values}`, `errors` for failed cells and `same_tick`. Spans inside the
   instance share passes of 64 bytes over one scan.
+- **A console without the Unreal pack:** `REAGENTLIVE_CONSOLE_UE=OFF`
+  builds the console from core files and an empty pack seam
+  (`console/no_pack.cpp`). Its table, `help`, generated functions and MCP
+  tools hold no pack verbs and no core verb marked `needsPack` (`trial`).
+  The default console's table and hash are unchanged.
 - **Typed watches:** a range may be `<addr>:f64` or `<addr>:i32[2]`; its
   samples are numbers and the result adds a `summary` per value (first,
   last, least, greatest, `per_second`). The type is kept in the agent's

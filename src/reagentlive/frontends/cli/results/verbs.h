@@ -62,7 +62,7 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"--seconds", Takes::One, "int", "N", "how long", "10"}, {"--ms", Takes::One, "int", "N", "how long, in milliseconds"}},
             Of<shape::Trial>, parse::Trial,
             "Stops as conflict if the game changes the value, abandoned if the owner or --object's vtable changes. "
-            "The trial is the core's; the owner's check is the pack's, so without one it is refused.", {}, true},
+            "The trial is the core's; the owner's check is the pack's, so without one it is refused.", {}, true, false, true},
         {"trial-list", "core", "trials with their state", {}, {}, Of<shape::TrialList>, parse::TrialList},
         {"trial-clear", "core", "end one trial or all, restoring active ones",
             {{"id", "id", Optional, "int", "its id (default: all)"}}, {}, Of<shape::TrialClear>, parse::TrialClear, {}, {}, true},
@@ -151,6 +151,24 @@ inline const std::vector<Verb>& CoreVerbs() {
 // The core's origin; a pack gives its own beside its rows, the host's is HostOrigin.
 inline constexpr Origin CoreOrigin{"core", "Core"};
 inline constexpr Origin HostOrigin{"host", "Host"};
+
+// A console's verb table: the core's rows, the pack's, then the host's. With
+// no pack (no pack origin) the core rows that need one are left out.
+inline std::vector<Verb> TableRows(std::span<const Verb> packVerbs, std::span<const Origin> packOrigins,
+                                   std::span<const Verb> hostVerbs) {
+    std::vector<Verb> verbs;
+    for (const auto& verb : CoreVerbs())
+        if (!verb.needsPack || !packOrigins.empty()) verbs.push_back(verb);
+    verbs.insert(verbs.end(), packVerbs.begin(), packVerbs.end());
+    verbs.insert(verbs.end(), hostVerbs.begin(), hostVerbs.end());
+    return verbs;
+}
+inline std::vector<Origin> TableOrigins(std::span<const Origin> packOrigins) {
+    std::vector<Origin> origins{CoreOrigin};
+    origins.insert(origins.end(), packOrigins.begin(), packOrigins.end());
+    origins.push_back(HostOrigin);
+    return origins;
+}
 
 // What applies to every verb; `help` prints these under the rows.
 inline const std::vector<std::string>& GeneralNotes() {
