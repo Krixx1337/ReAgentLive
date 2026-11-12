@@ -64,6 +64,17 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   last, least, greatest, `per_second`). The type is kept in the agent's
   copy of the spec (`WatchRange::reserved` is now `note`, same layout), so
   `watch-read` in a later run decodes it.
+- **An Unreal pack that survives a game patch**
+  ([before the first command](docs/commands/unreal.md#before-the-first-command)):
+  the pack takes only types from the SDK and finds the object table and
+  name pool itself, from the host's guess or a scan of the image's
+  writable sections, checking both before its first command. A failed
+  check is `pack off: <reason>`; core commands keep working. Names come
+  from the located pool instead of the SDK's `FName::ToString`.
+  `Context` gains `objectsGuess`, `namesGuess` and `image` (all optional);
+  `ue::ObjectInTable` is an object check for hosts without one. The name
+  pool's hashed layout honours its kind byte (kind-2 entries are 22
+  characters).
 
 ## 0.2.0
 

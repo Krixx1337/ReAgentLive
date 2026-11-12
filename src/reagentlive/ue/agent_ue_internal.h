@@ -49,9 +49,23 @@ void ResetClassCache();
 std::string_view ClassArgument(const Request& request);
 bool Template(const SDK::UObject* object);
 std::string_view FullName(const SDK::FName& name, std::string& out);
+// FullName as a new string (the SDK's GetName and ToString without its name lookup).
+inline std::string NameOf(const SDK::FName& name) {
+    std::string out;
+    FullName(name, out);
+    return out;
+}
 const Context& Pack(const Host& host);
-// False (and the response refused) when EngineThreadProblem names one.
-bool OnEngineThread(const Context& pack, Response& response);
+// False (and the response refused) when EngineThreadProblem names one or
+// the object table and name pool are not located and checked (globals.h);
+// the first call locates them.
+bool PackReady(const Context& pack, const Host& host, Response& response);
+// The located object table: valid once PackReady said yes.
+const SDK::TUObjectArray* Table();
+// A name from the located pool, without its instance number.
+bool PoolName(int32_t index, char* out, size_t capacity, size_t& length);
+// The located pool and its entry layout, or 0.
+uint64_t NamePool(const names::Layout*& layout);
 Ref Identify(const SDK::UObject* object, const Context& pack);
 SDK::UObject* Resolve(const Ref& ref, const Context& pack);
 SDK::UObject* ResolveRequestObject(const Request& request, const Context& pack);

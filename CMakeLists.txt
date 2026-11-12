@@ -70,7 +70,8 @@ add_library(reagentlive-ue INTERFACE)
 add_library(reagentlive::ue ALIAS reagentlive-ue)
 target_sources(reagentlive-ue INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_reflect.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_scan.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_script.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_script.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_globals.cpp")
 target_link_libraries(reagentlive-ue INTERFACE reagentlive-core)
 
 add_library(reagentlive-client INTERFACE)
@@ -226,7 +227,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     target_link_libraries(reagentlive-core-console PRIVATE reagentlive-client nlohmann_json::nlohmann_json Zydis)
     set_target_properties(reagentlive-core-console PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
     target_compile_options(reagentlive-core-console PRIVATE /W4 /WX /EHsc)
-    add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp)
+    add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp tests/ue/globals_tests.cpp)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
         tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp)

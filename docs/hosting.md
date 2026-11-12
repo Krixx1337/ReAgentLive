@@ -56,7 +56,13 @@ A host is whatever code inside the target calls `Tick`. It provides:
   default, the agent will not open without it) and a call to `Tick` from
   that thread ([host thread](#host-thread)).
 - **For the Unreal pack:** an object check (`Context::object`) and the
-  engine-thread check (`Context::gameThread`). Both are required.
+  engine-thread check (`Context::gameThread`). Both are required. A host
+  without its own object check can pass `reagentlive::ue::ObjectInTable`.
+  Optional: starting guesses for the object table and name pool
+  (`Context::objectsGuess`, `namesGuess`, usually the SDK's offsets) and
+  the image to scan (`Context::image`, default the process's exe); the pack
+  finds and checks both globals itself
+  ([before the first command](commands/unreal.md#before-the-first-command)).
 - **Optional:** a log callback ([logging](#logging)), hold budgets
   ([protocol](protocol.md#exchange)), `Host::backgroundSearch`, and named
   roots for `watch --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).
@@ -155,7 +161,9 @@ constexpr reagentlive::Command Commands[] = {
 
 // Called by the host from a thread where engine access is safe (UE: the game thread).
 void OnGameTick() {
-    static reagentlive::ue::Context pack{&IsValidObject, &IsGameThread}; // Both required.
+    const uintptr_t base = SDK::InSDKUtils::GetImageBase(); // The SDK's addresses: a guess the pack checks.
+    static reagentlive::ue::Context pack{&IsValidObject, &IsGameThread, // Both required.
+                                     base + SDK::Offsets::GObjects, base + SDK::Offsets::GNames};
     const reagentlive::Host host{L"Local\\mygame-dev-1234", reagentlive::LayoutCore + reagentlive::ue::LayoutPart,
                              &IsReadable, &Log, &pack, reagentlive::HostThread::Engine};
     reagentlive::Tick(host, Commands);

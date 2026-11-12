@@ -138,7 +138,7 @@ void RefsPage(uint32_t from, Response& response) {
 Progress Script(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const SDK::UObject* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
     if (!object->IsA(SDK::EClassCastFlags::Struct)) { Refuse(response, Status::BadRequest, "not a function or struct"); return Progress::Done; }
@@ -157,7 +157,7 @@ Progress Script(const Request& request, Response& response, bool, const Host& ho
 
 Progress Refs(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const auto index = static_cast<int32_t>(request.args[0]);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -179,10 +179,10 @@ Progress Refs(const Request& request, Response& response, bool first, const Host
     g_region = {};
     std::string scratch;
     try {
-        const int32_t count = SDK::UObject::GObjects->Num();
+        const int32_t count = Table()->Num();
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
             if ((checked & 15) == 15 && budget.Spent()) return Progress::Continue;
-            SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(state.cursor);
+            SDK::UObject* object = Table()->GetByIndex(state.cursor);
             if (!object || !HeaderReadable(object) || object->Index != state.cursor ||
                 !object->IsA(SDK::EClassCastFlags::Function)) continue;
             if (!ReadScript(static_cast<const SDK::UStruct*>(object), host, state.scratch)) continue;

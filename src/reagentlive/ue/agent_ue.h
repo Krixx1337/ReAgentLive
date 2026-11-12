@@ -8,13 +8,29 @@ namespace SDK { class UObject; }
 // Every handler reads engine state, so every one first asks the host's
 // gameThread check; a context without one is refused, never assumed to be
 // on the right thread.
+//
+// From the SDK the pack takes engine layouts only (object, class, field and
+// table types), never addresses: it finds the object table and the name pool
+// at run time (globals.h) and checks them before its first command, so a
+// stale SDK after a game patch costs nothing but a scan.
 namespace reagentlive::ue {
 struct Context {
     bool (*object)(const SDK::UObject*);   // Required: readable object with a sane class/table slot.
     // Required: true on the engine's thread. A host that ticks there passes
     // a check that says so (one line), which makes the claim explicit.
     bool (*gameThread)();
+    // Optional starting guesses (absolute addresses), usually the SDK's
+    // offsets. Checked like a scan hit; a wrong one only costs the scan.
+    uintptr_t objectsGuess = 0, namesGuess = 0;
+    // Optional: the image whose writable sections are scanned when a guess
+    // fails; 0 is the process's exe.
+    uintptr_t image = 0;
 };
+
+// An object check for hosts without their own (Context::object): a readable
+// header whose index names its own slot in the located object table. False
+// until the pack has located the table.
+bool ObjectInTable(const SDK::UObject* object);
 
 // Why a pack handler may not run now, or nullptr when it may.
 inline const char* EngineThreadProblem(const Context& pack) {

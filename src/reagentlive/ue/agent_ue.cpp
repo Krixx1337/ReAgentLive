@@ -67,8 +67,14 @@ std::string_view BaseName(int32_t index, std::string& scratch) {
     if (g_names) {
         if (const auto found = g_names->names.find(index); found != g_names->names.end()) return found->second;
     }
-    const auto text = SDK::FName(index).ToString();
-    scratch.assign(text.c_str(), text.size());
+    // From the located pool, without the path before the last '/' (as the
+    // SDK's FName::ToString prints it); undecodable is empty.
+    char text[1024];
+    size_t length = 0;
+    if (!PoolName(index, text, sizeof(text), length)) length = 0;
+    std::string_view view(text, length);
+    if (const auto slash = view.rfind('/'); slash != std::string_view::npos) view.remove_prefix(slash + 1);
+    scratch.assign(view);
     if (!g_names) return scratch;
     try {
         if (g_names->bytes + scratch.size() + 48 > MaxNameCacheBytes) throw std::bad_alloc();
@@ -154,25 +160,18 @@ std::string_view FullName(const SDK::FName& name, std::string& out) {
 
 const Context& Pack(const Host& host) { return *static_cast<const Context*>(host.context); }
 
-bool OnEngineThread(const Context& pack, Response& response) {
-    const char* problem = EngineThreadProblem(pack);
-    if (!problem) return true;
-    Refuse(response, Status::Refused, problem);
-    return false;
-}
-
 // Object-table identity: slot index plus serial (0 = not assigned yet, which
 // agrees with any later serial for the same slot and address).
 Ref Identify(const SDK::UObject* object, const Context& pack) {
     if (!object || !pack.object(object) || object->Index < 0) return {};
-    const auto* item = SDK::UObject::GObjects->GetItemByIndex(object->Index);
+    const auto* item = Table()->GetItemByIndex(object->Index);
     if (!item || item->Object != object || item->SerialNumber < 0) return {};
     return {reinterpret_cast<uintptr_t>(object), object->Index, item->SerialNumber};
 }
 
 SDK::UObject* Resolve(const Ref& ref, const Context& pack) {
     if (!ref.address || ref.index < 0 || ref.serial < 0) return nullptr;
-    const auto* item = SDK::UObject::GObjects->GetItemByIndex(ref.index);
+    const auto* item = Table()->GetItemByIndex(ref.index);
     if (!item || reinterpret_cast<uintptr_t>(item->Object) != ref.address || item->SerialNumber < 0 ||
         (ref.serial && ref.serial != item->SerialNumber)) return nullptr;
     SDK::UObject* object = item->Object;
@@ -189,8 +188,8 @@ SDK::UObject* ResolveRequestObject(const Request& request, const Context& pack) 
 
 namespace {
 bool SameName(const SDK::UObject* object, std::string_view expected) {
-    const auto name = object->GetName();
-    return View(name) == expected;
+    std::string name;
+    return FullName(object->Name, name) == expected;
 }
 }
 
@@ -235,7 +234,7 @@ bool GuardedName(int32_t index, char* out, size_t capacity, size_t& length) {
 
 Progress Find(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const auto from = static_cast<int32_t>(request.args[1]);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -248,13 +247,13 @@ Progress Find(const Request& request, Response& response, bool first, const Host
     const std::string_view wantedClass = ClassArgument(request);
     auto* entries = reinterpret_cast<FindEntry*>(response.data);
     Budget budget;
-    const int32_t count = SDK::UObject::GObjects->Num();
+    const int32_t count = Table()->Num();
     g_region = {};
     std::string name, scratch;
     for (unsigned checked = 0; g_find.cursor < count; ++g_find.cursor, ++checked) {
         if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
         // Cheap header check while scanning; full validation only for matches.
-        SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(g_find.cursor);
+        SDK::UObject* object = Table()->GetByIndex(g_find.cursor);
         if (!object || !HeaderReadable(object) || object->Index != g_find.cursor) continue;
         if (!query.empty() && !NameMatches(FullName(object->Name, name), query)) continue;
         if (!wantedClass.empty() && !ClassMatches(object, wantedClass, scratch)) continue;
@@ -270,8 +269,7 @@ Progress Find(const Request& request, Response& response, bool first, const Host
         entry.object = Identify(object, pack);
         CopyText(entry.name, name);
         if (pack.object(object->Class)) {
-            const auto type = object->Class->GetName();
-            CopyText(entry.className, View(type));
+            CopyText(entry.className, FullName(object->Class->Name, scratch));
         } else {
             CopyText(entry.className, "?");
         }
@@ -291,7 +289,7 @@ namespace {
 bool DescribeRef(Ref ref, const Context& pack, FindEntry& entry, uint32_t* classSize = nullptr) {
     if (!ref.address) {
         if (ref.index < 0 || ref.serial <= 0) return false;
-        const auto* item = SDK::UObject::GObjects->GetItemByIndex(ref.index);
+        const auto* item = Table()->GetItemByIndex(ref.index);
         if (item && item->SerialNumber == ref.serial) ref.address = reinterpret_cast<uintptr_t>(item->Object);
     } else if (ref.index < 0) {
         ref = Identify(reinterpret_cast<const SDK::UObject*>(ref.address), pack);
@@ -300,11 +298,10 @@ bool DescribeRef(Ref ref, const Context& pack, FindEntry& entry, uint32_t* class
     if (!object) return false;
     entry = {};
     entry.object = Identify(object, pack);
-    const auto name = object->GetName();
-    CopyText(entry.name, View(name));
+    std::string name;
+    CopyText(entry.name, FullName(object->Name, name));
     if (pack.object(object->Class)) {
-        const auto type = object->Class->GetName();
-        CopyText(entry.className, View(type));
+        CopyText(entry.className, FullName(object->Class->Name, name));
         if (classSize && object->Class->Size > 0) *classSize = static_cast<uint32_t>(object->Class->Size);
     } else {
         CopyText(entry.className, "?");
@@ -316,7 +313,7 @@ bool DescribeRef(Ref ref, const Context& pack, FindEntry& entry, uint32_t* class
 Progress Describe(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     FindEntry entry{};
     uint32_t classSize = 0;
     if (!DescribeRef(GetRef(request), pack, entry, &classSize)) {
@@ -332,7 +329,7 @@ Progress Describe(const Request& request, Response& response, bool, const Host& 
 Progress DescribeMany(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const size_t count = request.length / sizeof(Ref);
     uint64_t found = 0;
     for (size_t i = 0; i < count; ++i) {
@@ -351,7 +348,7 @@ Progress DescribeMany(const Request& request, Response& response, bool, const Ho
 Progress ReadObject(const Request& request, Response& response, bool first, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     if (!Resolve(GetRef(request), pack)) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
         return Progress::Done;
@@ -366,7 +363,7 @@ Progress ReadObject(const Request& request, Response& response, bool first, cons
 Progress PreviewArray(const Request& request, Response& response, bool first, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
         Refuse(response, Status::NotFound, "array preview requires a live instance");
@@ -396,7 +393,7 @@ Progress PreviewArray(const Request& request, Response& response, bool first, co
 Progress Entries(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
         Refuse(response, Status::NotFound, "entries require a live instance");
@@ -480,7 +477,7 @@ Progress Entries(const Request& request, Response& response, bool, const Host& h
 Progress Names(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const uint32_t count = request.length / 4;
     size_t used = 0;
     uint32_t done = 0;

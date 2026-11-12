@@ -536,9 +536,25 @@ marks and the client's own prompt are not enough.
 ## Unreal pack
 
 - **Compile model:** compiled inside the host against its Dumper-7 SDK
-  (`UObject`, `GObjects`, `UStruct`, `FField`, `FProperty`, `UFunction`,
+  (`UObject`, `TUObjectArray`, `UStruct`, `FField`, `FProperty`, `UFunction`,
   `ProcessEvent`, `EClassCastFlags`). Those names are consistent across
   Dumper-7 dumps of UE4 and UE5 games, so no abstract engine interface.
+- **Layouts from the SDK, addresses found at run time.** A game patch moves
+  the object table and the name pool but rarely the engine's types, and
+  right after a patch is when the tool is needed most. So the pack takes
+  only types from the SDK, locates both globals itself (host guess, then a
+  shape scan of the image's writable sections) and checks them before its
+  first command: index equals slot, one class of classes, `None` and
+  `Class` decode ([before the first command](commands/unreal.md#before-the-first-command)).
+  A failed check turns the pack off with its reason; core commands stay.
+  Names are decoded from the located pool, not through the SDK's
+  `FName::ToString`, whose engine call sits at a baked address. Rejected:
+  trusting the SDK's offsets (stale after every patch, and a stale name
+  function is a call into random code); code signatures for the globals
+  (they break on patches too, and are game-specific work); a host-supplied
+  name decoder (it carries the host's stale address with it). An engine
+  version change that moves the types fails the check and turns the pack
+  off rather than reading garbage.
 - **String type:** the pack only uses `.c_str()` and `.size()` on SDK strings,
   so stock `std::string` dumps and adapted string types both compile.
 - **Three thread kinds, stated by the host.** `Host::thread` is `engine`,

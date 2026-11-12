@@ -27,7 +27,7 @@ bool PlainData(const SDK::FProperty* property, const Host& host) {
     // A struct's members, its super structs' included; -1 for anything else.
     const auto membersOf = [&](const SDK::FProperty* p, const auto& visit) -> int {
         if (!host.readable(p->ClassPrivate, sizeof(SDK::FFieldClass)) ||
-            View(p->ClassPrivate->Name.ToString()) != "StructProperty" || !host.readable(p, sizeof(SDK::FStructProperty)))
+            View(NameOf(p->ClassPrivate->Name)) != "StructProperty" || !host.readable(p, sizeof(SDK::FStructProperty)))
             return -1;
         const auto& pack = Pack(host);
         int count = 0;
@@ -58,7 +58,7 @@ void DescribeStruct(const SDK::FField* field, Ref& structType, char (&structName
     const Ref ref = Identify(type, pack);
     if (!ref.address || !type->IsA(SDK::EClassCastFlags::Struct)) return;
     structType = ref;
-    const auto name = type->GetName();
+    const auto name = NameOf(type->Name);
     CopyText(structName, View(name));
 }
 void DescribeStruct(const SDK::FField* field, FieldEntry& entry, const Context& pack, const Host& host) {
@@ -75,7 +75,7 @@ void DescribeContainer(const SDK::FField* field, bool map, FieldEntry& entry, co
         if (!host.readable(property, sizeof(SDK::FProperty)) ||
             !host.readable(property->ClassPrivate, sizeof(SDK::FFieldClass)) || property->ElementSize <= 0) return false;
         size = static_cast<uint32_t>(property->ElementSize);
-        CopyText(type, View(property->ClassPrivate->Name.ToString()));
+        CopyText(type, View(NameOf(property->ClassPrivate->Name)));
         if (std::string_view(type) == "StructProperty") DescribeStruct(property, structType, structName, pack, host);
         return true;
     };
@@ -106,7 +106,7 @@ InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_
     const auto isInterface = [&](const SDK::UStruct* type) {
         unsigned up = 0;
         for (; type && up < MaxClassDepth && pack.object(type) && HeaderReadable(type); type = type->SuperStruct, ++up) {
-            const auto name = type->GetName();
+            const auto name = NameOf(type->Name);
             if (View(name) == "Interface") return true;
         }
         return false;
@@ -170,7 +170,7 @@ bool ParameterSlots(const SDK::UFunction* function, const Host& host, ParameterS
 
 Progress Call(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     SDK::UObject* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
@@ -228,7 +228,7 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
 Progress Function(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
@@ -267,8 +267,8 @@ Progress Function(const Request& request, Response& response, bool, const Host& 
         entry.executable = (page.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ |
             PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
     }
-    const auto className = declaring->GetName();
-    const auto functionName = function->GetName();
+    const auto className = NameOf(declaring->Name);
+    const auto functionName = NameOf(function->Name);
     CopyText(entry.owner, View(className));
     CopyText(entry.name, View(functionName));
     entry.slot = -1;
@@ -295,7 +295,7 @@ Progress Function(const Request& request, Response& response, bool, const Host& 
 Progress Functions(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
@@ -307,12 +307,12 @@ Progress Functions(const Request& request, Response& response, bool, const Host&
     uint32_t count = 0, matched = 0;
     for (unsigned depth = 0; type && depth < MaxClassDepth && pack.object(type);
          type = type->SuperStruct, ++depth) {
-        const auto owner = type->GetName();
+        const auto owner = NameOf(type->Name);
         unsigned children = 0;
         for (const auto* field = type->Children; field && children < MaxChildren && pack.object(field);
              field = field->Next, ++children) {
             if (!field->HasTypeFlag(SDK::EClassCastFlags::Function)) continue;
-            const auto name = field->GetName();
+            const auto name = NameOf(field->Name);
             if (request.text[0] && !NameMatches(View(name), request.text)) continue;
             if (matched++ < request.length) continue;
             if (count == MaxFunctionsPerPage) {
@@ -331,7 +331,7 @@ Progress Functions(const Request& request, Response& response, bool, const Host&
 // Reflected properties of a class or struct chain, most derived first, one page per request.
 Progress Fields(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const SDK::UObject* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
@@ -354,7 +354,7 @@ Progress Fields(const Request& request, Response& response, bool, const Host& ho
     // table it is (an instance reports its class). Parameters: the block size.
     const uint32_t blockSize = signature ? static_cast<uint32_t>(type->Size) : static_cast<uint32_t>(type->Index);
     for (; type && depth < MaxClassDepth && pack.object(type); type = signature ? nullptr : type->SuperStruct, ++depth) {
-        const auto owner = type->GetName();
+        const auto owner = NameOf(type->Name);
         unsigned children = 0;
         const SDK::FField* field = type->ChildProperties;
         for (; field && children < MaxChildren && host.readable(field, sizeof(SDK::FProperty));
@@ -382,9 +382,9 @@ Progress Fields(const Request& request, Response& response, bool, const Host& ho
             entry.offset = property->Offset > 0 ? static_cast<uint32_t>(property->Offset) : 0;
             entry.size = size > 0 && size <= UINT32_MAX ? static_cast<uint32_t>(size) : 0;
             entry.boolMask = 0;
-            CopyText(entry.name, View(field->Name.ToString()));
+            CopyText(entry.name, View(NameOf(field->Name)));
             if (host.readable(field->ClassPrivate, sizeof(SDK::FFieldClass))) {
-                CopyText(entry.type, View(field->ClassPrivate->Name.ToString()));
+                CopyText(entry.type, View(NameOf(field->ClassPrivate->Name)));
                 const bool isBool = (field->ClassPrivate->CastFlags & static_cast<uint64_t>(SDK::EClassCastFlags::BoolProperty)) != 0;
                 if (isBool && host.readable(field, sizeof(SDK::FBoolProperty))) {
                     const auto* flag = static_cast<const SDK::FBoolProperty*>(field);
@@ -403,7 +403,7 @@ Progress Fields(const Request& request, Response& response, bool, const Host& ho
                     if (host.readable(inner, sizeof(SDK::FProperty)) &&
                         host.readable(inner->ClassPrivate, sizeof(SDK::FFieldClass)) && inner->ElementSize > 0) {
                         entry.elementSize = static_cast<uint32_t>(inner->ElementSize);
-                        CopyText(entry.elementType, View(inner->ClassPrivate->Name.ToString()));
+                        CopyText(entry.elementType, View(NameOf(inner->ClassPrivate->Name)));
                         if (std::string_view(entry.elementType) == "StructProperty")
                             DescribeStruct(inner, entry, pack, host);
                     }

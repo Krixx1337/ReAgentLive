@@ -60,7 +60,7 @@ void CensusPage(uint32_t from, Response& response) {
 
 Progress Census(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const std::string_view wanted = ClassArgument(request);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -81,13 +81,13 @@ Progress Census(const Request& request, Response& response, bool first, const Ho
     }
     auto& state = *g_census;
     Budget budget;
-    const int32_t count = SDK::UObject::GObjects->Num();
+    const int32_t count = Table()->Num();
     g_region = {};
     std::string scratch;
     try {
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
             if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
-            SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(state.cursor);
+            SDK::UObject* object = Table()->GetByIndex(state.cursor);
             if (!object || !HeaderReadable(object) || object->Index != state.cursor || Template(object)) continue;
             if (!wanted.empty() && !ClassMatches(object, wanted, scratch)) continue;
             const SDK::UStruct* type = object->Class;
@@ -119,8 +119,6 @@ Progress Census(const Request& request, Response& response, bool first, const Ho
 }
 
 namespace {
-// Name pool scan state. The layout is picked once per process.
-int g_nameLayout = -1; // Index into names::Layouts; -2 = none matched.
 struct NameScan { uint32_t block, offset, used, matches; };
 NameScan g_nameScan;
 
@@ -129,10 +127,9 @@ struct Pool {
     const uint8_t* const* blocks;
 };
 
-bool ReadPool(const Host& host, Pool& out) {
-    const auto* pool = reinterpret_cast<const uint8_t*>(SDK::InSDKUtils::GetImageBase() + SDK::Offsets::GNames);
-    if (!host.readable(pool, names::BlocksOffset)) return false;
-    memcpy(&out.header, pool, sizeof(out.header));
+bool ReadPool(uint64_t address, const Host& host, Pool& out) {
+    const auto* pool = reinterpret_cast<const uint8_t*>(address);
+    if (!address || !host.readable(pool, names::BlocksOffset) || !GuardedCopy(&out.header, pool, sizeof(out.header))) return false;
     if (out.header.currentBlock >= names::MaxBlocks ||
         !host.readable(pool + names::BlocksOffset, (out.header.currentBlock + 1) * sizeof(void*))) return false;
     out.blocks = reinterpret_cast<const uint8_t* const*>(pool + names::BlocksOffset);
@@ -146,41 +143,19 @@ std::span<const uint8_t> BlockBytes(const Pool& pool, uint32_t block, const name
     if (!data || !size || size > names::BlockBytes(layout) || !host.readable(data, static_cast<size_t>(size))) return {};
     return {data, static_cast<size_t>(size)};
 }
-
-// The layout whose first entries decode to the engine's own names.
-int PickLayout(const Pool& pool, const Host& host) {
-    for (int candidate = 0; candidate < static_cast<int>(std::size(names::Layouts)); ++candidate) {
-        const auto& layout = names::Layouts[candidate];
-        const auto block = BlockBytes(pool, 0, layout, host);
-        uint32_t offset = 0, agreed = 0;
-        names::Entry entry{};
-        for (; agreed < 32 && names::EntryAt(block, offset, layout, entry); ++agreed) {
-            char pooled[MaxNameFindText + 1], engine[MaxNameFindText + 1];
-            names::Text(block, entry, layout, pooled, sizeof(pooled));
-            size_t length = 0;
-            if (!GuardedName(names::Index(0, offset, layout), engine, sizeof(engine), length) ||
-                strcmp(pooled, engine) != 0) break;
-            const uint64_t next = names::NextOffset(entry, layout);
-            if (next > UINT32_MAX) break;
-            offset = static_cast<uint32_t>(next);
-        }
-        if (agreed >= 8) return candidate;
-    }
-    return -2;
-}
 }
 
 Progress NameFind(const Request& request, Response& response, bool first, const Host& host) {
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
         const Context& pack = Pack(host);
-        if (!OnEngineThread(pack, response)) return Progress::Done;
+        if (!PackReady(pack, host, response)) return Progress::Done;
     }
+    // PackReady located the pool and its layout on the first page.
+    const names::Layout* located = nullptr;
     Pool pool{};
-    if (!ReadPool(host, pool)) { Refuse(response, Status::NotReadable, "name pool not readable"); return Progress::Done; }
-    if (g_nameLayout == -1) g_nameLayout = PickLayout(pool, host);
-    if (g_nameLayout < 0) { Refuse(response, Status::Unsupported, "name pool layout not recognised"); return Progress::Done; }
-    const auto& layout = names::Layouts[g_nameLayout];
+    if (!ReadPool(NamePool(located), host, pool)) { Refuse(response, Status::NotReadable, "name pool not readable"); return Progress::Done; }
+    const auto& layout = *located;
     if (first) {
         const auto cursor = static_cast<int32_t>(request.args[1]);
         g_nameScan = {names::Block(cursor), names::Offset(cursor, layout), 0, 0};
@@ -305,7 +280,7 @@ bool EachEvaluate(const Request& request, Response& response, const Host& host) 
 
 Progress Each(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     const std::string_view className = ClassArgument(request);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -336,12 +311,12 @@ Progress Each(const Request& request, Response& response, bool first, const Host
     try {
         if (!state.listed) {
             Budget budget;
-            const int32_t count = SDK::UObject::GObjects->Num();
+            const int32_t count = Table()->Num();
             g_region = {};
             std::string scratch;
             for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
                 if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
-                SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(state.cursor);
+                SDK::UObject* object = Table()->GetByIndex(state.cursor);
                 if (!object || !HeaderReadable(object) || object->Index != state.cursor || Template(object) ||
                     !ClassMatches(object, className, scratch)) continue;
                 const Ref ref = Identify(object, pack);
@@ -398,7 +373,7 @@ void ExecPage(uint32_t from, Response& response, const Context& pack) {
 
 Progress ExecEntries(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!OnEngineThread(pack, response)) return Progress::Done;
+    if (!PackReady(pack, host, response)) return Progress::Done;
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
         if (!g_exec) g_exec = new (std::nothrow) ExecState;
@@ -415,10 +390,10 @@ Progress ExecEntries(const Request& request, Response& response, bool first, con
     Budget budget;
     g_region = {};
     try {
-        const int32_t count = SDK::UObject::GObjects->Num();
+        const int32_t count = Table()->Num();
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
             if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
-            SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(state.cursor);
+            SDK::UObject* object = Table()->GetByIndex(state.cursor);
             if (!object || !HeaderReadable(object) || object->Index != state.cursor ||
                 !object->IsA(SDK::EClassCastFlags::Function)) continue;
             const auto* function = static_cast<const SDK::UFunction*>(object);

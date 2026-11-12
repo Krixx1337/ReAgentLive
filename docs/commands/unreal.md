@@ -18,7 +18,7 @@ Each command's flags and result keys: `help <verb>` or
 | `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the game thread; an undecodable index returns empty |
 | Array preview | used by `dump`; resolves the instance on the game thread, reads the array header and a bounded prefix of its backing storage on the same tick |
 | `census [--cls C]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
-| `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor; checks the game thread. The pool's entry layout is chosen once by decoding the first block's entries and comparing them with the engine's own name lookup; an unknown layout is `unsupported` |
+| `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor; checks the game thread. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)) |
 | `each <Class> <Path\|[Owner:]Function>...` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
 | `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
 | `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
@@ -33,6 +33,9 @@ Each command's flags and result keys: `help <verb>` or
   gave no engine-thread check`), never treated as being on the right
   thread; one returning false is refused as `not on the game thread`.
 - **Faults inside engine calls are not caught.**
+- **Globals:** every command first needs the object table and name pool
+  located and checked ([below](#before-the-first-command)); until then it
+  is refused with `pack off: <reason>`.
 - **`fields` rows:** offset, size (element size × array dimension), property
   type, name and declaring class. Games may obfuscate property names; offsets,
   sizes and types stay real. Single TArray fields include the reflected element
@@ -40,6 +43,38 @@ Each command's flags and result keys: `help <verb>` or
   carry the struct's ref and name; the console shows the name (`Vector`) in
   place of `StructProperty`. Bool rows carry their bit mask, so bitfield bools
   sharing a byte are told apart.
+
+## Before the first command
+
+The pack takes layouts from the SDK (object, class, field and table types)
+but never addresses, so a dump made before a game patch still works once
+the globals are found again
+([design](../design.md#unreal-pack)). The first pack command, on the
+engine's thread, locates them:
+
+1. **Object table:** the host's guess (`Context::objectsGuess`), else every
+   8-byte aligned address in the image's writable sections whose bytes look
+   like a table header. A candidate passes when its counts and chunks are
+   plausible, every chunk pointer reads, and each object in the first 64
+   slots carries its own slot as its index and has a class chain ending in
+   the same class of classes (the one object that is its own class).
+2. **Name pool:** the host's guess (`Context::namesGuess`), else the same
+   scan for a plausible pool header. A candidate passes when one entry
+   layout decodes name 0 as `None` and the class of classes' name as
+   `Class`; that layout is used for every name from then on.
+
+Every read on the way is a preflighted, fault-guarded copy, so a garbage
+guess is a refusal, never a crash. The host log gets one line with both
+addresses and whether each came from the guess or the scan. A failure is
+the refusal `pack off: <reason>` (`table: index is not slot; scan: none`)
+and a warning line; it is tried again on a command at least 2 s later,
+since an early injection can run before the engine has built its globals.
+Core commands work either way.
+
+Names come from the located pool, not the SDK's `FName::ToString` (which
+calls into the engine at an address the patch may have moved): base name,
+the path before the last `/` dropped, `_<number - 1>` added for a numbered
+name; wide characters above 0x7f read `?`.
 
 ## Named calls
 
