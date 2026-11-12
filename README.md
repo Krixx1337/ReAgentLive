@@ -232,7 +232,7 @@ running process can answer, and it hands every address over as
 
 ## Status
 
-**Version 0.1.0** ([changelog](CHANGELOG.md)): usable, and the API can still
+**Version 0.2.0** ([changelog](CHANGELOG.md)): usable, and the API can still
 change before 1.0. Windows x64, C++23. Shipped: the in-process agent, tick-accurate reads,
 guarded writes, pins and trials, the Unreal pack, the fast lane, native
 objects, the console, the generated Python functions and MCP tools, and the own-thread example.

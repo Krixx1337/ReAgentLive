@@ -5,7 +5,12 @@ layout can change in any minor release; agent and client are always built
 from the same revision, and the handshake's layout check refuses a
 mismatched pair. The version lives in `src/reagentlive/version.h`.
 
-## Unreleased
+## 0.2.0
+
+AI agents get MCP tools: one tool per console verb, generated from the
+console's own verb table, with checked arguments and typed results. Every
+caller of the console breaks once: verbs, result keys and the Python client
+changed (below).
 
 - **Typed calls and MCP tools, generated from the verb table**
   ([design](docs/design.md#tool-interface), [clients](docs/client.md)):
@@ -23,7 +28,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
     (`find_all`, `search_addresses`, ...) are gone; `s.call(verb, args)`
     sends any verb.
   - `frontends/mcp/reagentlive_mcp.py` serves those functions as MCP tools
-    (needs the MCP Python SDK), read-only or destructive per `writes`.
+    (needs the MCP Python SDK), read-only or destructive per `writes`;
+    blocking verbs are left out, and a tool error carries the console's
+    whole error object (a refused `write --expect` keeps `found`).
+    Checked live in an AI client: read-only lookups, guarded writes, pins,
+    trials and engine calls.
   - Hosts: `ConsoleConfig::hostCommand` takes the verb's row and its
     checked `Args` in place of the line; rows give keys and types.
 
