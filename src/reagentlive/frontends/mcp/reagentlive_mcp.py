@@ -112,7 +112,8 @@ def make_tool(live, verb, method):
         except ReAgentLiveError as error:
             if error.error.get('message') == 'console exited' or error.command == 'startup':
                 live.drop()
-            raise
+            # The whole error object, not only its message: a refused --expect carries `found`, every error its kind.
+            raise RuntimeError(f'{error}; error: {json.dumps(error.error)}') from None
         raw = result.raw if isinstance(result, Record) else result
         # The console's result as it is: FastMCP would dump the TypedDict with every absent key as null,
         # which its own output schema then refuses. The schema still comes from the annotation.

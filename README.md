@@ -124,6 +124,32 @@ refused here, and `status` says which packs a host offers (`packs`). With
 no pid the console finds the process on its own.
 More: [own-thread example](docs/hosting.md#own-thread-example).
 
+## Recommended setup
+
+One console, three ways in. They are generated from the same verb table, so
+they take the same arguments and return the same keys.
+
+| Who | Use | Why |
+|---|---|---|
+| An AI agent, investigating | **MCP tools** (default) | picks a tool and fills named, checked arguments: no quoting, no JSON parsing, literal refs passed from one result to the next; read-only tools are marked, writes and calls ask first |
+| An AI agent, sweeping or looping (more than about 5 related calls, any loop) | **a script on the generated Python functions** | one call, only the summary comes back; typed and as strict as the tools |
+| You, in a shell; anyone, for `help` | **the console's text lines** | short to type; `help` needs no target running |
+
+Set it up once per console build (no target needed for either step):
+
+```powershell
+# Typed functions for your console, its own verbs included:
+python src/reagentlive/frontends/python/reagentlive_gen.py --console <console.exe> -o <dir>/console_api.py
+# Register the MCP server with your AI client, e.g. a project .mcp.json:
+#   "command": "python",
+#   "args": ["<reagentlive>/src/reagentlive/frontends/mcp/reagentlive_mcp.py",
+#            "--console", "<console.exe>", "--module", "<dir>/console_api.py"]
+```
+
+Regenerate the module after a build that changes any verb; the module and the
+server both refuse a stale one. The MCP server needs the MCP Python SDK
+(`pip install mcp`); the rest is standard library. Details: [clients](docs/client.md).
+
 ## Best on the game thread
 
 The own-thread DLL is the fast way in. ReAgentLive is at its best when the
@@ -150,8 +176,10 @@ thread is the host's business; what each choice gives is in
 - **Logic outside the game:** keep a tool or a mod's logic in its own
   program and use the core as a lean in-process proxy.
   [Outside programs](docs/outside-programs.md)
-- **AI agents:** the `reagentlive` skill teaches the investigation method:
-  rules, workflow, pitfalls. [Skill](.claude/skills/reagentlive/SKILL.md)
+- **AI agents:** MCP tools and typed Python functions
+  ([recommended setup](#recommended-setup)), and the `reagentlive` skill
+  that teaches the investigation method: rules, workflow, pitfalls.
+  [Skill](.claude/skills/reagentlive/SKILL.md)
 
 ## Where it can grow
 

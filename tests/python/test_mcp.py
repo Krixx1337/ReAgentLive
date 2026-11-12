@@ -112,6 +112,7 @@ class McpTests(unittest.TestCase):
         self.assertTrue(batched.structuredContent['same_tick'])
         self.assertTrue(refused.isError)
         self.assertIn('literal ref', refused.content[0].text)
+        self.assertIn('"kind": "syntax"', refused.content[0].text)   # The error object, not only its message.
 
     def test_a_stale_module_is_refused_before_the_server_starts(self):
         self.assertEqual(reagentlive_mcp.console_hash(self.console), self.table['table_hash'])
