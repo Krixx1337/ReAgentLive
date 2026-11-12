@@ -86,6 +86,13 @@ on live samples), where time and context went for no gain.
   rows between pages as counts change; the last census (with samples) and
   the one before it are kept in the session and cache file instead, so the
   pages of one filter join. `--limit 0` stays for all rows at once.
+- **`get` reads its values after resolving every path.** Reading each value
+  as its path resolved put console work (field table pages, pointer hops)
+  between held requests; past the agent's short wait for the next request,
+  the values split over ticks. Resolving first and then reading the values
+  back to back keeps the reads under that wait, so `same_tick` holds without
+  raising the host's budgets. Warm field tables are shared, not copied, for
+  the same reason.
 - **A batch says which command moved its tick.** `same_tick` alone did not
   stop a skewed reading; per-command ticks and `spans_ticks` come from the
   client's hold, no agent change.

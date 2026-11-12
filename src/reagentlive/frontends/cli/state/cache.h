@@ -1,6 +1,7 @@
 // reagentlive CLI: state kept between console runs against one agent instance.
 #pragma once
 #include <cstdint>
+#include <format>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -57,7 +58,9 @@ inline std::string SaveCache(const CacheData& data) {
             out << "section\t" << section.name << "\t0x" << std::hex << section.rva << "\t0x" << section.size
                 << "\t0x" << section.flags << std::dec << '\n';
     }
-    for (const auto& ref : data.refs) out << "ref\t" << RefText(ref) << '\n';
+    // An address-only ref (a pointer get followed) has no literal form: its address.
+    for (const auto& ref : data.refs)
+        out << "ref\t" << (ref.index < 0 ? "0x" + std::format("{:x}", ref.address) : RefText(ref)) << '\n';
     for (const auto& pack : data.packs) {
         out << "pack\t" << pack.name << '\t' << pack.lines.size() << '\n';
         for (const auto& line : pack.lines) out << line << '\n';
@@ -112,8 +115,10 @@ inline std::optional<CacheData> LoadCache(std::string_view text) {
             data.layouts.emplace_back(base, std::move(layout));
         } else if (parts[0] == "ref" && parts.size() == 2) {
             Ref ref{};
-            if (!text::LiteralRef(parts[1], ref)) return std::nullopt;
-            data.refs.push_back(ref);
+            uint64_t address = 0;
+            if (text::LiteralRef(parts[1], ref)) data.refs.push_back(ref);
+            else if (text::Number(parts[1], address) && address) data.refs.push_back(AddressRef(address));
+            else return std::nullopt;
         } else if (parts[0] == "pack" && parts.size() == 3) {
             uint64_t count = 0;
             if (parts[1].empty() || !text::Number(parts[2], count) || count > MaxCachedPackLines ||

@@ -52,18 +52,24 @@ std::span<const uint8_t> FieldBytes(std::span<const uint8_t> bytes, const ue::Fi
     return bytes.subspan(field.offset, field.size);
 }
 
+Result<FieldList> ObjectTable(Session& session, const Ref& object) {
+    auto& tables = Ue(session).tables;
+    const ue::KnownTable known = [&](int32_t type) -> const std::vector<ue::Field>* {
+        const auto found = tables.find(type);
+        return found == tables.end() ? nullptr : found->second.get();
+    };
+    auto table = ue::Fields(session.client, object, known);
+    if (!table) return std::unexpected(table.error());
+    if (table->cached) return tables.at(table->type);
+    auto list = std::make_shared<const std::vector<ue::Field>>(std::move(table->fields));
+    if (table->type >= 0 && (tables.size() < MaxCachedTables || tables.contains(table->type))) tables[table->type] = list;
+    return list;
+}
 
 Result<std::vector<ue::Field>> ObjectFields(Session& session, const Ref& object) {
-    Client& client = session.client;
-    const ue::KnownTable known = [&](int32_t type) -> const std::vector<ue::Field>* {
-        const auto found = Ue(session).tables.find(type);
-        return found == Ue(session).tables.end() ? nullptr : &found->second;
-    };
-    auto table = ue::Fields(client, object, known);
+    auto table = ObjectTable(session, object);
     if (!table) return std::unexpected(table.error());
-    if (!table->cached && table->type >= 0 && (Ue(session).tables.size() < MaxCachedTables || Ue(session).tables.contains(table->type)))
-        Ue(session).tables[table->type] = table->fields;
-    return std::move(table->fields);
+    return **table;
 }
 
 std::string FieldValue(const ue::Field& field, std::span<const uint8_t> bytes, StructCache& structs) {

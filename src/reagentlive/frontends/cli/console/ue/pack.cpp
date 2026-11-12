@@ -231,7 +231,7 @@ void LoadPackCache(Session& session, std::span<const CachePack> packs) {
     if (!data) return; // Malformed: the pack starts fresh.
     PackState& state = Ue(session);
     for (auto& [name, ref] : data->classes) state.classRefs.push_back({std::move(name), ref, false});
-    for (auto& [type, fields] : data->tables) state.tables[type] = std::move(fields);
+    for (auto& [type, fields] : data->tables) state.tables[type] = std::make_shared<const std::vector<ue::Field>>(std::move(fields));
     state.census = std::move(data->census);
     state.censusBefore = std::move(data->censusBefore);
 }
@@ -242,7 +242,7 @@ std::vector<CachePack> SavePackCache(const Session& session) {
     for (const auto& entry : state.classRefs)
         if (data.classes.size() < MaxCachedClasses) data.classes.emplace_back(entry.name, entry.ref);
     for (const auto& [type, fields] : state.tables)
-        if (data.tables.size() < MaxCachedTables) data.tables.emplace_back(type, fields);
+        if (data.tables.size() < MaxCachedTables) data.tables.emplace_back(type, *fields);
     data.census = state.census;
     data.censusBefore = state.censusBefore;
     return {{std::string(UnrealCachePack), SaveUnrealCache(data)}};

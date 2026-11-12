@@ -127,7 +127,10 @@ request costs up to a host tick. The console cuts both:
   into structs, follows object, class and weak object pointers, and returns
   typed values: `values[]` with `path`, `ok`, `value`, `address`,
   `object` (the ref the field was read from), or `error`; plus
-  `same_tick`. `--meta` adds each value's `type` and `hex`. Up to 16 paths of up to 8 steps. A dependent chain (read a
+  `same_tick`. Every path is resolved first (field tables and pointer hops,
+  which may span ticks), then the values are read back to back, each
+  guarded on its object; `same_tick` says whether those reads shared one
+  tick. `--meta` adds each value's `type` and `hex`. Up to 16 paths of up to 8 steps. A dependent chain (read a
   pointer, read through it) only works inside one command like this, where
   the console sees each response before the next request.
 - **`dump` filters:** `--match <text>` (field name or readable label,

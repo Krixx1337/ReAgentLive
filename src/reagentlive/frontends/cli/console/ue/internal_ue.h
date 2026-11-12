@@ -20,7 +20,14 @@
 namespace reagentlive::cli::detail {
 constexpr size_t MaxDumpBytes = ue::MaxObjectBytes;
 
+// A field table, shared with the session's cache: holding one costs no copy.
+using FieldList = std::shared_ptr<const std::vector<ue::Field>>;
+
 std::vector<ue::Field> SortedByOffset(std::vector<ue::Field> fields);
+// The object's field table (its class's, or its own for a class or struct);
+// page 0 is always fetched, and a matching cached table is reused, not copied.
+Result<FieldList> ObjectTable(Session& session, const Ref& object);
+// The same, as a copy the caller may change.
 Result<std::vector<ue::Field>> ObjectFields(Session& session, const Ref& object);
 
 // Struct members by struct ref for the session; a struct's layout is fixed in
@@ -60,7 +67,7 @@ struct PackState {
     // Field tables by type (object-table index), for the session and the cache
     // file. Every lookup still fetches page 0, which names the type and must
     // match the cached table; only the remaining pages are skipped.
-    std::unordered_map<int32_t, std::vector<ue::Field>> tables;
+    std::unordered_map<int32_t, FieldList> tables;
     std::vector<ClassRef> classRefs;
     std::optional<CensusBaseline> census;   // The last census: census --changed's baseline, census --from's rows.
     std::optional<CensusBaseline> censusBefore; // The census before it, for census --changed --from.

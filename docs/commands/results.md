@@ -31,7 +31,7 @@ another command, including a separate run.
 | `peek` | `address`, [`module`, `rva`], `count`, `rows` (`address`, [`module`, `rva`], `label` (`object`, `module`, `heap`, a region kind such as `mapped`, `value`, `unreadable`), `value`, [`object`, `value_module`, `value_rva`, `f32`, `f64`, `name_hint`]), [`labelled`] | ✓ rows | `peek` |
 | `write --trial` | `id`, `address`, `bytes`, `original`, `owner`, `object`, `state`, `changed_tick`, `remaining_ms`, [`guard`]; `list`: `trials`; `clear`: `cleared`, `trials` | | `trial`, `trials`, `end_trial` |
 | `label` | `path`, `line`, `owner`, `offset`, `type`, `name`, `size`, `timestamp` | | `label` |
-| `get` | `ref`, `values` (`path`, `ok`, `value`, `address`, `object`, `truncated`, [`native`, `stale`], [`module`, `rva`, `value_module`, `value_rva`], [`type`, `hex` with `--meta`] or `error`), `same_tick`, [`tick_accurate: false` off the engine's thread] | | `get` (values) |
+| `get` | `ref`, `values` (`path`, `ok`, `value`, `address`, `object`, `truncated`, [`native`, `stale`], [`module`, `rva`, `value_module`, `value_rva`], [`type`, `hex` with `--meta`] or `error`), `same_tick` (the value reads, not the lookups before them), [`tick_accurate: false` off the engine's thread] | | `get` (values) |
 | `batch` | `count`, `all_ok`, `same_tick`, `first_tick`, `last_tick`, `spans_ticks` (`index`, `command`), `results` (one envelope each, with [`tick`, `last_tick`]), [`tick_accurate: false` off the engine's thread] | ✓ | `batch` |
 | `snap` / `record` | `ref` with `size`, `path` (null without a file) / `path`, `samples` | | `snap`, `record` |
 | `modules` | `modules` (`name`, `base`, `size`), the exe first | | `modules` |

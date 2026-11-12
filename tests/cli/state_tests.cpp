@@ -61,7 +61,8 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     cli::CacheData data;
     data.owner = 0xabc;
     data.modules = {{"Game.exe", 0x7ff600000000, 0x1000}, {"engine dll.dll", 0x7ffa00000000, 0x2000}};
-    data.refs = {{0x7000, 1, 2}, {0x8000, 3, 4}};
+    // The last one is address-only: a pointer get followed, kept as its address.
+    data.refs = {{0x7000, 1, 2}, {0x8000, 3, 4}, {0x9000, -1, 0}};
     data.packs = {{"ue", {"class\tA\t0x10#1:1", "table\t1\t0", "field\tends\tin\ta\ttab\t"}}, {"other", {}}};
     const auto text = SaveCache(data);
     const auto loaded = LoadCache(text);

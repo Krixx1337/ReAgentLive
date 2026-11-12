@@ -65,12 +65,14 @@ static Result<Signature> ReadFields(Client& client, const Ref& object, uint32_t 
                 op == op::Parameters ? entry.reserved[0] : uint8_t{0}, entry.stride, entry.valueOffset, entry.valueSize,
                 Text(entry.valueType), entry.valueStructType, Text(entry.valueStructName)});
         }
-        // Page 0 names the type: a known table whose first page matches is reused.
-        if (known && *known && fields.size() == count && count < total) {
+        // Page 0 names the type: a known table whose first page matches is
+        // reused. Not copied: under a hold the next request must follow within
+        // the agent's short wait, and a large table takes longer to copy.
+        if (known && *known && cached && fields.size() == count && count < total) {
             const auto* table = (*known)(static_cast<int32_t>(size));
             if (table && table->size() == total && std::equal(fields.begin(), fields.end(), table->begin())) {
-                if (cached) *cached = true;
-                result.parameters = *table;
+                *cached = true;
+                fields.clear();
                 return result;
             }
         }

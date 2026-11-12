@@ -15,6 +15,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   the verbs into core and Unreal pack.
 - `Ref` moved to the core protocol. The cache file keeps each pack's state
   in its own block (format 8; older files are dropped).
+- `get` resolves every path, then reads the values back to back, so they
+  land in one host tick (`same_tick`) instead of splitting over the agent's
+  hold wait; warm field tables are shared instead of copied.
+- Fixed: an address-only `$N` (a pointer `get` followed) made the next run
+  drop the whole cache file; it is now stored as its address.
 
 ## 0.1.0
 

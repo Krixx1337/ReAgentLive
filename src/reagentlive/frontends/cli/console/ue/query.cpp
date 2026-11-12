@@ -204,8 +204,10 @@ const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields
 }
 
 // get: each path resolved through the field tables, following object
-// pointers and descending into structs. Runs held, so a path is usually read
-// in one host tick; same_tick says whether every value was.
+// pointers and descending into structs; then every value read back to back.
+// The lookups may span ticks. The value reads have no console work between
+// them, so under the hold they fit the agent's short wait for the next
+// request and land in one host tick; same_tick says whether they did.
 void RunGet(Session& session, const Command& command, StructCache& structs, std::vector<Ref>& refs,
             std::string_view jsonCommand) {
     Client& client = session.client;
@@ -215,6 +217,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         std::vector<uint8_t> bytes;
         uint64_t address = 0;
         Ref object{};
+        uint32_t offset = 0, size = 0;        // What to read in `object`, once every path is resolved.
         std::optional<NativeMember> native;   // A member from the native file, decoded by its type.
         bool stale = false;
     };
@@ -226,15 +229,16 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         out.path = path;
         Ref object = root;
         uint32_t base = 0; // Offset of the current struct inside the object.
-        std::vector<ue::Field> objectFields;
+        // Shared with the session's cache, not copied.
+        FieldList objectFields;
         const std::vector<ue::Field>* table = nullptr;
         std::string_view rest = path;
         while (out.error.empty()) {
             if (!table) {
-                auto fields = ObjectFields(session, object);
+                auto fields = ObjectTable(session, object);
                 if (!fields) { out.error = fields.error().message; break; }
                 objectFields = std::move(*fields);
-                table = &objectFields;
+                table = objectFields.get();
             }
             const size_t dot = rest.find('.');
             const auto name = rest.substr(0, dot);
@@ -242,21 +246,19 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             const auto* field = FindField(session.names, *table, name, out.error);
             if (!field) {
                 // A native member, as the last step on the object itself.
-                if (rest.empty() && table == &objectFields && !Ue(session).native.Empty()) {
-                    const auto native = NativeMembers(session, object, objectFields, object.index >= 0);
+                if (rest.empty() && table == objectFields.get() && !Ue(session).native.Empty()) {
+                    const auto native = NativeMembers(session, object, *objectFields, object.index >= 0);
                     const auto named = [&](const NativeCheck& c) { return NativeMatches(*c.member, name); };
                     if (const auto refused = std::ranges::find_if(native.refused, named); refused != native.refused.end()) {
                         out.error = std::string(name) + " (native file line " + std::to_string(refused->member->line) +
                             ") " + refused->problem;
                     } else if (const auto shown = std::ranges::find_if(native.shown, named); shown != native.shown.end()) {
                         const auto& member = *shown->member;
-                        auto bytes = object.index >= 0 ? ue::ReadObject(client, object, member.field.offset, member.field.Size()) :
-                            client.Read(object.address + member.field.offset, member.field.Size());
-                        if (!bytes) { out.error = bytes.error().message; break; }
                         out.error.clear();
                         out.native = member;
                         out.stale = shown->stale;
-                        out.bytes = std::move(*bytes);
+                        out.offset = member.field.offset;
+                        out.size = member.field.Size();
                         out.address = object.address + member.field.offset;
                         out.object = object;
                     }
@@ -266,11 +268,9 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             const uint32_t offset = base + field->offset;
             if (rest.empty()) {
                 if (!field->size || field->size > MaxRead) { out.error = "field size outside 1.." + std::to_string(MaxRead); break; }
-                auto bytes = object.index >= 0 ? ue::ReadObject(client, object, offset, field->size) :
-                    client.Read(object.address + offset, field->size);
-                if (!bytes) { out.error = bytes.error().message; break; }
                 out.field = *field;
-                out.bytes = std::move(*bytes);
+                out.offset = offset;
+                out.size = field->size;
                 out.address = object.address + offset;
                 out.object = object;
                 break;
@@ -300,6 +300,17 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             out.error = "cannot follow " + std::string(name) + " (" + field->type + ")";
         }
     }
+    // The values, back to back. A replaced object is refused by its read.
+    uint64_t firstTick = 0;
+    for (auto& value : values) {
+        if (!value.error.empty() || !value.size) continue;
+        auto bytes = value.object.index >= 0 ? ue::ReadObject(client, value.object, value.offset, value.size) :
+            client.Read(value.object.address + value.offset, value.size);
+        if (!firstTick) firstTick = hold.LastTick();
+        if (!bytes) { value.error = bytes.error().message; continue; }
+        value.bytes = std::move(*bytes);
+    }
+    const bool sameTick = firstTick == hold.LastTick();
     // FNames in the values, resolved in one lookup.
     std::vector<int32_t> indices;
     std::vector<std::string> names;
@@ -354,7 +365,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         rows.push_back(std::move(row));
     }
     session.failed |= failed;
-    Json result = {{"ref", ReusableRef(root)}, {"values", std::move(rows)}, {"same_tick", hold.SameTick()}};
+    Json result = {{"ref", ReusableRef(root)}, {"values", std::move(rows)}, {"same_tick", sameTick}};
     if (!TickAccurate(session)) result["tick_accurate"] = false;
     JsonResult(session, jsonCommand, std::move(result));
 }

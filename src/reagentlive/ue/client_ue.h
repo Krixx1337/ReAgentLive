@@ -50,11 +50,12 @@ Result<FindResult> Find(Client& client, std::string_view text, FindOptions optio
 Result<std::vector<Field>> Fields(Client& client, const Ref& object);
 // With a cache: page 0 names the listed type (its object-table index; an
 // instance lists its class). When `known` returns a table for that type of
-// the same length whose first page matches, the remaining pages are skipped.
+// the same length whose first page matches, the remaining pages are skipped
+// and nothing is copied: the caller already holds that table.
 struct FieldTable {
     int32_t type;                // Object-table index of the listed class or struct.
-    std::vector<Field> fields;
-    bool cached;                 // Reused from `known`.
+    std::vector<Field> fields;   // Empty when cached.
+    bool cached;                 // `known`'s table for `type` is the answer.
 };
 using KnownTable = std::function<const std::vector<Field>*(int32_t type)>;
 Result<FieldTable> Fields(Client& client, const Ref& object, const KnownTable& known);
