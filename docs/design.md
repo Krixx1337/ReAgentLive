@@ -101,12 +101,49 @@ on live samples), where time and context went for no gain.
   `<console>.native.txt`. Reflected names follow their field across patches;
   native offsets do not, so each line carries the main image's PE
   timestamp and shows `stale` under another one. Typed layouts share one
-  syntax with `read --as`, so a decoded layout pastes into `label`.
+  syntax with `read --type`, so a decoded layout pastes into `label`.
 - **A capture that does not hold the console**, without a second channel:
   the capture belongs to the agent instance (`watch --start`, `--read`,
   `--stop`), bounded by the existing buffer, so a long capture and other
   questions overlap. Following a replaced object asks the host: the core
   knows no names, a host offers roots through one optional callback.
+
+From one autonomous read-only agent session through the MCP tools only,
+where every question was answered and the cost was output and turns:
+
+- **Wrong-looking answers first, then output, then turns.** A one-hop chain
+  (`X->0`) answered the bytes at `X` with `hops: []`: right by the rule
+  that the last `->off` only adds, and read as a followed pointer. It is
+  refused with the form that follows one. A misspelt JSON key (`class_`)
+  was reported as a left-out argument; unknown keys are now checked first
+  and named with the verb's own. Refusals state their limit's number.
+- **One name per argument, never a Python keyword** (`cls`, `start`,
+  `type` for `class`, `from`, `as`), so the typed line, a JSON call, a
+  `batch` entry, the generated function and the tool spell it the same.
+  Keeping the keywords and letting the generator append `_` was the cause:
+  the tool said `class_`, `batch` wanted `class`. A table test refuses a
+  keyword.
+- **Compact rows, layout on request**, the rule values already followed.
+  A `dump` row is its name, offset and value (about 25 KB for one actor
+  before); the offset stays because it is the bridge to raw reads, and the
+  recovered readable name is the row's name, the reflected one beside it.
+  A `get` row is its value and address; `path` and `ok` went because rows
+  keep the order asked and a failed path keeps its place. The `batch`
+  envelope kept its shape: one envelope for every command beats the bytes.
+- **`each` became a table** because most questions were "these fields over
+  every instance": four values over 17 objects had taken 17 `get` calls.
+  The scan dominates its cost and a column adds none, so columns share
+  one scan; a function stays a single column (calls are the slow case and
+  their outputs do not fit one). An agent op for several spans was not
+  needed: passes of 64 bytes over the cached instance list do it.
+- **Typed watches** decode and summarise in the console, so every client
+  has the arithmetic. The type rides in a field the agent already kept
+  verbatim (`WatchRange::note`, formerly unused), so a later run decodes a
+  capture with no agent change.
+- **Not built:** a tolerance search (a narrowing scan is a memory scanner's,
+  [backlog](ideas.md#16--narrowing-scan)) and a mark on pooled instances
+  (game knowledge, a host's verb). A bool's `--nonzero` already tested its
+  bit; readable names already worked in `get` paths.
 
 ## Place among other tools
 
@@ -257,7 +294,7 @@ the console.
   skill) and agreed only because they were edited together.
 - **One verb, one result type.** Modes became verbs (`sig-check`,
   `sig-bytes`, `watch-start`, `census-diff`, `pin-list`, `trial`). A flag
-  may add optional keys and never changes a key's type (`read --as` with a
+  may add optional keys and never changes a key's type (`read --type` with a
   layout fills `layout`, not `values`). One name for a result's list
   (`rows`), one paging convention (`from`, `next_cursor`), `capped` for a
   list cut at a hard limit and `truncated` for an incomplete value.
@@ -576,7 +613,7 @@ answers what a native object is from live bytes, without a type system.
   follows `X->a->b` the same way the console does; the console only parses
   the syntax. Writes, pins and trials refuse chains: a write goes where the
   caller read, never through pointers that may have moved since.
-- **Strings** (`--as cstr|wstr`) escape what they cannot print, so a dump
+- **Strings** (`--type cstr|wstr`) escape what they cannot print, so a dump
   never hides a byte.
 - **`region` is a core op** because only the target can ask Windows about
   its own memory; the agent passes `VirtualQuery`'s numbers through and the
@@ -594,7 +631,7 @@ answers what a native object is from live bytes, without a type system.
   build without it; the one host checked has a few hundred type names in
   its image, none of them game classes: revisit for a host whose image has
   them), and a struct or type system in ReAgentLive (layouts come from the
-  engine pack, the host's SDK or the static tool; `read --as` and the
+  engine pack, the host's SDK or the static tool; `read --type` and the
   Python `read_struct` cover ad hoc ones).
 
 ## Source layout

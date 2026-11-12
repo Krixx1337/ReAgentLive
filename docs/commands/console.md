@@ -38,9 +38,11 @@ the MCP tools all read it, so none of them can disagree with the console.
   `sig-bytes`, `watch-start`, `census-diff`, `pin-list`, `trial`). A flag may
   add optional keys and never changes a key's type.
 - **A usage error names what is wrong and ends with the verb's usage
-  line**: an unknown flag, a flag given twice, a missing value, too few or
-  too many arguments, or a value its type refuses (an `int` that is not a
-  number, a word not in an enum).
+  line**: an unknown flag (with the flags the verb takes), a flag given
+  twice, a missing value, too few or too many arguments, or a value its type
+  refuses (an `int` that is not a number, a word not in an enum). A refused
+  limit states its number (`read-batch`'s total, `each`'s 64 bytes per
+  instance).
 - **Tokens.** Numbers are `0x` hex or decimal. A token in double quotes is
   taken exactly (spaces, `;` and `--` included; `\"` and `\\` escape) and is
   never a flag: quote a path or search text that needs it. Hex bytes may be
@@ -52,14 +54,19 @@ the MCP tools all read it, so none of them can disagree with the console.
 ## JSON calls
 
 A line starting with `{` is a JSON call:
-`{"verb": "read", "args": {"addr": "0x1000", "len": 16, "as": "f32"}}`.
+`{"verb": "read", "args": {"addr": "0x1000", "len": 16, "type": "f32"}}`.
 The typed line is shorthand for it; both sort into the same arguments and
 are checked once, against the row, by the same parser. Nothing is quoted
 or escaped: a path with spaces, search text with `;` or a layout is one
 string.
 
 - **Keys** are the row's: a positional's `key`, a flag's name without
-  `--` (`help <verb>` shows both). An unknown key is a usage error.
+  `--` (`help <verb>` shows both), spelt the same in a typed line, a JSON
+  call, a `batch` entry, a generated Python function and an MCP tool. No key
+  is a Python keyword, so none needs another spelling there (`cls`, `start`,
+  `type`). An unknown key is a usage error naming the keys the verb takes,
+  checked before anything else, so a misspelt name is never read as a
+  left-out argument.
 - **Values:** a string or number for one value; a list for a positional
   that takes several (`"paths": ["A.B", "C"]`; `read-batch` spans as
   `[["0x10", 8], ["0x20", 4]]`); bytes, a pattern or text as one string
@@ -136,8 +143,10 @@ request costs up to a host tick. The console cuts both:
 - **`get <object> <Field.Path>...`** resolves reflected names (or readable
   names; `Owner:Field` where ambiguous) through the field tables, descends
   into structs, follows object, class and weak object pointers, and returns
-  typed values: `rows` with `path`, `ok`, `value`, `address`,
-  `object` (the ref the field was read from), or `error`; plus
+  typed values: `rows` in the order asked, each `value` and `address`, or
+  `error` in the value's place (a failed path keeps its row, so positions
+  never shift); `object` (the holder of the last field) only when the path
+  crossed a pointer to reach it, `truncated` only when true; plus
   `same_tick`. Every path is resolved first (field tables and pointer hops,
   which may span ticks), then the values are read back to back, each
   guarded on its object; `same_tick` says whether those reads shared one
@@ -145,7 +154,9 @@ request costs up to a host tick. The console cuts both:
   pointer, read through it) only works inside one command like this, where
   the console sees each response before the next request.
 - **`dump` filters:** `--match <text>` (field name or readable label,
-  case-insensitive), `--nonzero`, `--changed [file]` (against the session's
+  case-insensitive), `--nonzero` (a bool tests its own bit, not the byte it
+  shares), `--own` (only the fields the object's own class declares, none
+  it inherits), `--changed [file]` (against the session's
   `snap` baseline or a snapshot file; refused with neither; rows add
   `before`; refused when the reflected field layout differs from the
   baseline's). Filtered rows cost no pointer lookups or array previews; the
@@ -162,8 +173,9 @@ request costs up to a host tick. The console cuts both:
   **`--meta`** at the end of a line (with or without `--timing`; inside a
   `batch` per item, or on the batch for all) restores the layout: a struct
   as `members` (`name`, `owner`, `type`, `offset`, `size`, `value`) with
-  `truncated`, plus `type` and `hex` on `get` rows, `hex` on `each` rows
-  and `meta` (the parameter's layout) on typed outputs. `fields` is the layout command
+  `truncated`, plus `meta` (the field's layout) on `dump` rows, `type` and
+  `hex` on `get` rows, `hex` on one-column `each` rows and `meta` (the
+  parameter's layout) on typed outputs. `fields` is the layout command
   and has no compact form. JSON keys print sorted.
 - **Cache file.** `%TEMP%\reagentlive-<pid>.cache` keeps class refs, field
   tables, the loaded modules with their headers (exception directory and
@@ -202,5 +214,5 @@ emit a `startup` error. Exit status is 1 if any command failed. Capture
 countdowns and start markers go to stderr.
 
 ```powershell
-<console> -c 'find --class SceneComponent; params $1 SceneComponent:GetSocketTransform'
+<console> -c 'find --cls SceneComponent; params $1 SceneComponent:GetSocketTransform'
 ```

@@ -5,7 +5,7 @@
 // One member per line, whitespace-separated:
 //   <Owner> <offset> <type>[n] <Name> <timestamp>
 // Owner is the reflected class that declares the fields around it; type and
-// count are a `read --as` layout field's; a trailing '?' on Name marks an
+// count are a `read --type` layout field's; a trailing '?' on Name marks an
 // unconfirmed name; timestamp is the main image's PE timestamp when it was
 // labelled (hex). A later line for the same owner and offset replaces an
 // earlier one. Blank lines and '#' comments are ignored.

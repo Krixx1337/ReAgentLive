@@ -93,7 +93,7 @@ inline std::string Notation(const Type& type, bool full = false) {
 //   text     free text; the tokens of a list are joined by spaces
 //   str      one token: a name, a class, a field path
 //   path     a file path
-//   layout   read --as: a type or a layout
+//   layout   read --type: a type or a layout
 //   range    <addr>:<len>, or following a root <offset>:<len>
 //   span     an address, then a length
 //   line     a command line, verbatim
@@ -130,7 +130,7 @@ struct Positional {
 // remainder of the line.
 enum class Takes { Nothing, One, Maybe, Some, Rest };
 struct Flag {
-    std::string_view name;      // "--from"; its key is the name without the dashes ("from").
+    std::string_view name;      // "--start"; its key is the name without the dashes ("from").
     Takes takes = Takes::Nothing;
     std::string_view type = "bool";
     std::string_view value = {};    // Placeholder in usage: "N", "addr".
@@ -214,7 +214,7 @@ struct Origin {
     std::string_view id, title;
 };
 
-// "read <addr> [len] [--as <type>]": the verb's usage line, from its row.
+// "read <addr> [len] [--type <type>]": the verb's usage line, from its row.
 inline std::string Usage(const Verb& verb) {
     std::string text(verb.name);
     for (const auto& positional : verb.positionals) {
@@ -350,7 +350,11 @@ inline std::expected<Args, std::string> Tokenise(const Verb& verb, std::string_v
         if (!next(rest, token)) break;
         const Flag* flag = token.quoted ? nullptr : flagNamed(token.text);
         if (!flag) {
-            if (!token.quoted && token.text.starts_with("--")) return fail("unknown flag " + token.text);
+            if (!token.quoted && token.text.starts_with("--")) {
+                std::string known;
+                for (const auto& f : verb.flags) known += (known.empty() ? "" : ", ") + std::string(f.name);
+                return fail("unknown flag " + token.text + (known.empty() ? " (it takes none)" : " (it takes " + known + ")"));
+            }
             args.positionals.push_back(std::move(token.text));
             continue;
         }

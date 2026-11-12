@@ -27,8 +27,8 @@ struct CensusClass {
 };
 // A census's rows (all of them, before --match and --limit), kept for the
 // console run and in the cache file: the last one is the baseline for
-// census-diff and the rows `--from` pages through; the one before it is what
-// a later page of census-diff compares with. Tagged with the --class filter it
+// census-diff and the rows `--start` pages through; the one before it is what
+// a later page of census-diff compares with. Tagged with the --cls filter it
 // was taken with (empty: the whole table).
 struct CensusBaseline {
     std::string filter;
@@ -199,7 +199,7 @@ template<class Result> void Paging(Result& result, size_t total, size_t first, s
     result.from = first;
     if (next < total) {
         result.nextCursor = next;
-        result.hint = "--from " + std::to_string(next) + " for more, --limit 0 for all";
+        result.hint = "--start " + std::to_string(next) + " for more, --limit 0 for all";
     }
 }
 }
@@ -237,18 +237,18 @@ inline shape::CensusDiff MakeCensusDiff(const CensusBaseline& before, const ue::
     return out;
 }
 
-// Why a later page (`--from`) of a census under `filter` has nothing stored
+// Why a later page (`--start`) of a census under `filter` has nothing stored
 // to page through; empty when it has. census-diff also needs the census before it.
 inline std::string CensusPageProblem(const std::optional<CensusBaseline>& last, const std::optional<CensusBaseline>& before,
                                      std::string_view filter, bool changed) {
     if (last && last->filter == filter && (!changed || (before && before->filter == filter))) return {};
     return std::string("no stored census to page: run ") + (changed ? "census-diff" : "census") +
-        (filter.empty() ? std::string() : " --class " + std::string(filter)) + " without --from first";
+        (filter.empty() ? std::string() : " --cls " + std::string(filter)) + " without --start first";
 }
 
 // Why `census-diff` under `filter` has nothing to compare with; empty when it has.
 inline std::string CensusBaselineProblem(const std::optional<CensusBaseline>& baseline, std::string_view filter) {
-    const auto command = [](std::string_view f) { return "census" + (f.empty() ? std::string() : " --class " + std::string(f)); };
+    const auto command = [](std::string_view f) { return "census" + (f.empty() ? std::string() : " --cls " + std::string(f)); };
     if (!baseline) return "no census baseline for this agent: run " + command(filter) + " first";
     if (baseline->filter != filter)
         return "the baseline is from " + command(baseline->filter) + ": run " + command(filter) + " first";

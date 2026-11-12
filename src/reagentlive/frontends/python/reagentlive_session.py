@@ -16,7 +16,7 @@ typed result, a host's verbs included.
     from my_console import Console
     with Session(r'path\\to\\console.exe') as s:
         c = Console(s)                       # Refuses a module generated from another table.
-        pawn = c.ue.find('Pawn', class_='Pawn')['rows'][0]['ref']
+        pawn = c.ue.find('Pawn', cls='Pawn')['rows'][0]['ref']
         region = c.region(0x7ff600001000)    # A Record: region['kind'], region['module'] (None outside a module)
         region['protection']                 # ResultKeyError: region has no key 'protection'; keys: ..., protect, ...
         tick, items = s.read_batch_bytes([(0x1000, 8), (0x2000, 4)])
@@ -290,9 +290,10 @@ class Session:
     def get_values(self, ref, *paths):
         """The decoded values of get: one path returns its value, several a list. Raises if a path fails."""
         values = []
-        for row in self.call('get', {'object': ref, 'paths': list(paths)})['rows']:
-            if not row['ok']:
-                raise ReAgentLiveError(f'get {row["path"]}', {'message': row['error']})
+        # Rows come in the order asked; a failed path keeps its place with `error`.
+        for path, row in zip(paths, self.call('get', {'object': ref, 'paths': list(paths)})['rows']):
+            if row.get('error') is not None:
+                raise ReAgentLiveError(f'get {path}', {'message': row['error']})
             values.append(row['value'])
         return values[0] if len(paths) == 1 else values
 

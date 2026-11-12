@@ -37,7 +37,7 @@ bool HasUnreal(const Client& client) {
 }
 
 // census, or census-diff: only the classes whose count differs from the
-// last census under the same --class. Either way the new census becomes the
+// last census under the same --cls. Either way the new census becomes the
 // baseline; --match and --limit only shape what is printed.
 void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
     const Request& request = command.request;

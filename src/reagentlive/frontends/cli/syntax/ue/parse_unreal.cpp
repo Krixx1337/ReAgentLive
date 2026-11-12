@@ -10,16 +10,16 @@ namespace reagentlive::cli::parse {
 using namespace text;
 static_assert(MaxTypeName == ue::MaxClassName);
 namespace {
-// --from N: a cursor from a previous page's next_cursor; 0 when absent.
+// --start N: a cursor from a previous page's next_cursor; 0 when absent.
 bool Cursor(const Args& args, uint64_t most, uint64_t& from) {
     from = 0;
-    return !args.Has("--from") || (Number(args.Value("--from"), from) && from <= most);
+    return !args.Has("--start") || (Number(args.Value("--start"), from) && from <= most);
 }
 
-// --class Class into the request's data, as the agent takes it.
+// --cls Class into the request's data, as the agent takes it.
 bool ClassFilter(const Args& args, Request& request) {
-    if (!args.Has("--class")) return true;
-    const auto value = args.Value("--class");
+    if (!args.Has("--cls")) return true;
+    const auto value = args.Value("--cls");
     if (value.empty() || value.size() >= ue::MaxClassName) return false;
     memcpy(request.data, value.data(), value.size());
     request.data[value.size()] = 0;
@@ -60,21 +60,21 @@ Parsed CensusOptions(const Args& args, bool changed) {
     command.limit = DefaultCensusLimit;
     command.changed = changed;
     command.match = args.Value("--match");
-    if (args.Has("--class") && (!ClassName(args.Value("--class")) || !ClassFilter(args, request)))
-        return Fail("--class is one class name");
+    if (args.Has("--cls") && (!ClassName(args.Value("--cls")) || !ClassFilter(args, request)))
+        return Fail("--cls is one class name");
     uint64_t number = 0;
     if (args.Has("--limit")) {
         if (!Number(args.Value("--limit"), number) || number > UINT32_MAX) return Fail("--limit is a number (0: all)");
         command.limit = static_cast<uint32_t>(number);
     }
-    if (!Cursor(args, UINT32_MAX, number)) return Fail("--from is a row number");
+    if (!Cursor(args, UINT32_MAX, number)) return Fail("--start is a row number");
     command.from = static_cast<uint32_t>(number);
     request.op = ue::op::Census;
     return command;
 }
 }
 
-// find [text] [--class Class] [--from cursor]; text keeps its inner spaces.
+// find [text] [--cls Class] [--start cursor]; text keeps its inner spaces.
 Parsed Find(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
@@ -120,7 +120,7 @@ Parsed Funcs(const Args& args, const ParseContext& context) {
     Request& request = command.request;
     if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
     uint64_t cursor = 0;
-    if (!Cursor(args, ue::MaxFieldStart, cursor)) return Fail("--from is a cursor");
+    if (!Cursor(args, ue::MaxFieldStart, cursor)) return Fail("--start is a cursor");
     request.length = static_cast<uint32_t>(cursor);
     if (args.At(1).size() >= MaxText) return Fail("function filter too long");
     request.op = ue::op::Functions;
@@ -212,6 +212,7 @@ Parsed Dump(const Args& args, const ParseContext& context) {
     if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
     command.nonzero = args.Has("--nonzero");
     command.changed = args.Has("--changed");
+    command.own = args.Has("--own");
     command.file = args.Value("--changed");
     command.match = args.Value("--match");
     command.request.op = ue::op::Fields;
@@ -248,12 +249,12 @@ Parsed ExportLabels(const Args& args, const ParseContext&) {
     return command;
 }
 
-// entries <object> <[Owner:]Field> [--from N]: one page of an array, set or map.
+// entries <object> <[Owner:]Field> [--start N]: one page of an array, set or map.
 Parsed Entries(const Args& args, const ParseContext& context) {
     Command command;
     if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
     uint64_t from = 0;
-    if (!Cursor(args, INT32_MAX, from)) return Fail("--from is a cursor");
+    if (!Cursor(args, INT32_MAX, from)) return Fail("--start is a cursor");
     command.kind = Kind::Entries;
     command.target = args.At(1);
     command.limit = static_cast<uint32_t>(from);
@@ -281,7 +282,7 @@ Parsed Get(const Args& args, const ParseContext& context) {
 
 Parsed Census(const Args& args, const ParseContext&) { return CensusOptions(args, false); }
 
-// census-diff: only the classes whose count differs from the last census of that --class.
+// census-diff: only the classes whose count differs from the last census of that --cls.
 Parsed CensusDiff(const Args& args, const ParseContext&) { return CensusOptions(args, true); }
 
 // refs <name|#index>: functions whose bytecode names it. Text must match a
@@ -307,7 +308,7 @@ Parsed NameFind(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
     uint64_t from = 0;
-    if (!Cursor(args, INT32_MAX, from)) return Fail("--from is a cursor");
+    if (!Cursor(args, INT32_MAX, from)) return Fail("--start is a cursor");
     request.args[1] = from;
     if (args.At(0).size() >= MaxText) return Fail("search text too long");
     request.op = ue::op::NameFind;
@@ -325,10 +326,18 @@ Parsed Each(const Args& args, const ParseContext&) {
             return Fail("--seconds is 1.." + std::to_string(MaxEachSeconds));
         command.seconds = static_cast<uint32_t>(seconds);
     }
-    if (args.At(1).size() >= MaxText) return Fail("target name too long");
+    for (size_t i = 1; i < args.positionals.size(); ++i) {
+        const std::string_view path = args.positionals[i];
+        size_t depth = 1;
+        for (char c : path) depth += c == '.';
+        if (command.fields.size() == MaxGetPaths) return Fail("at most " + std::to_string(MaxGetPaths) + " columns");
+        if (path.size() >= MaxText) return Fail("a path or function name is under " + std::to_string(MaxText) + " characters");
+        if (path.empty() || path.front() == '.' || path.back() == '.' || path.find("..") != std::string_view::npos ||
+            depth > MaxGetDepth) return Fail("a path is Field[.Field...], up to " + std::to_string(MaxGetDepth) + " deep");
+        command.fields.emplace_back(path);
+    }
     command.kind = Kind::Each;
     command.className = args.At(0);
-    command.target = args.At(1);
     command.request.op = ue::op::Each;
     return command;
 }

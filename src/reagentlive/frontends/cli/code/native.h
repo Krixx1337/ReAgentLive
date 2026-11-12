@@ -86,7 +86,7 @@ inline std::expected<void, std::string> ResolveBodies(const ReadFn& read, std::v
     return {};
 }
 
-// Text read with --as cstr|wstr: up to the terminator, or every byte read
+// Text read with --type cstr|wstr: up to the terminator, or every byte read
 // when there is none (`terminated` false). Unprintable characters are
 // escaped (\n, \t, \r, \\, \xNN; wide: \uNNNN), never dropped.
 struct Decoded { std::string text; size_t length = 0; bool terminated = false; };

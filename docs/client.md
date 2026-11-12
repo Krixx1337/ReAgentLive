@@ -47,16 +47,16 @@ from reagentlive_session import Session
 from my_console import Console
 with Session(r'path\to\console.exe') as s:
     c = Console(s)
-    pawn = c.ue.find('Pawn', class_='Pawn')['rows'][0]['ref']
+    pawn = c.ue.find('Pawn', cls='Pawn')['rows'][0]['ref']
     c.ue.get(pawn, ['Health', 'Controller.PlayerState'])
-    c.read(0x7ff600001000, 16, as_='u32')
+    c.read(0x7ff600001000, 16, type='u32')
 ```
 
 - **One method per verb, named by origin:** core verbs on `Console`
   (`c.read`, `c.sig_check`), a pack's and the host's under their origin
   (`c.ue.find`, `c.host.world`). Positionals in order, flags as
   keyword-only arguments; a Python keyword or `self` gets a trailing `_`
-  (`class_`, `from_`, `as_`). A positional that takes several values takes
+  (`cls`, `start`, `type`). A positional that takes several values takes
   a list, except bytes, patterns and text, which are one string (or
   `bytes`). Each docstring is the verb's usage, arguments and notes.
 - **Typed:** argument types from the row (`addr` is `int | str`, an int
@@ -97,7 +97,7 @@ module calls through it; scripts use it for the rest.
   call), `batch_results` (`(items, same_tick)`, each item a strict result
   or a `ReAgentLiveError`), and the module's `samples(result)` (a watch's
   rows with values as bytes). Paging, filtering and retrying are the
-  console's: follow `next_cursor` with `from_`, or use the verb's limit
+  console's: follow `next_cursor` with `start`, or use the verb's limit
   flag (`census --limit 0`).
 - `s.table_hash` is the console's `table_hash`.
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`

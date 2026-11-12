@@ -555,9 +555,12 @@ TEST_CASE("pointer chains in read-only commands, refused for writes") {
     CHECK(read->request.address == 0x5008);
     CHECK(read->chain == std::vector<uint64_t>{0x30, 0x10});
     CHECK(read->request.length == 16);
-    CHECK(Parse("peek Game.exe+0x100->0x8", refs, modules)->chain == std::vector<uint64_t>{0x8});
+    CHECK(Parse("peek Game.exe+0x100->0->0x8", refs, modules)->chain == std::vector<uint64_t>{0, 0x8});
     CHECK(Parse("disasm 0x1000->0x8->0", refs)->chain.size() == 2);
-    CHECK(Parse("vtable 0x1000->0x20 --offset 8", refs)->chain.size() == 1);
+    CHECK(Parse("vtable 0x1000->0->0x20 --offset 8", refs)->chain.size() == 2);
+    // One ->off reads no pointer: refused, never answered with the bytes at the base.
+    for (const char* line : {"read 0x1000->0x0", "peek $1->0x30", "region 0x1000->0x8", "disasm 0x1000->0"})
+        CHECK(Parse(line, refs).error().starts_with(text::ChainNoHop));
     CHECK(Parse("read 0x1000", refs)->chain.empty());
     CHECK_FALSE(Parse("read 0x1000->", refs));
     CHECK_FALSE(Parse("read 0x1000->x", refs));
@@ -571,12 +574,12 @@ TEST_CASE("pointer chains in read-only commands, refused for writes") {
     }
 }
 
-TEST_CASE("read --as cstr and wstr") {
+TEST_CASE("read --type cstr and wstr") {
     const std::vector<Ref> refs;
-    auto cstr = Parse("read 0x1000 --as cstr", refs);
+    auto cstr = Parse("read 0x1000 --type cstr", refs);
     REQUIRE(cstr);
     CHECK(cstr->request.length == DefaultStringRead);
-    CHECK(Parse("read 0x1000 33 --as wstr", refs)->request.length == 33);
+    CHECK(Parse("read 0x1000 33 --type wstr", refs)->request.length == 33);
 
     const std::vector<uint8_t> text{'W', 'e', '\n', '\\', 0x01, 'x', 0, 'z'};
     const auto c = native::CString(text);
@@ -629,7 +632,7 @@ TEST_CASE("region kinds, protection text, syntax and result") {
     CHECK(r::Protection(0x04 | r::WriteCombine) == "rw+writecombine");
 
     const std::vector<Ref> refs;
-    auto parsed = Parse("region 0x1000->0x8", refs);
+    auto parsed = Parse("region 0x1000->0->0x8", refs);
     REQUIRE(parsed);
     CHECK(parsed->kind == Kind::Region);
     CHECK(parsed->request.op == op::Region);

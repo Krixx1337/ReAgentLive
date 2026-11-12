@@ -69,7 +69,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     Emit(session, jsonCommand, std::move(result));
 }
 
-// read --as: the bytes as a list of one element type.
+// read --type: the bytes as a list of one element type.
 std::vector<Json> DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type) {
     std::vector<Json> values;
     const size_t size = ElementSize(type);
@@ -231,6 +231,10 @@ std::vector<shape::WatchRange> WatchRanges(const WatchSpec& spec) {
     for (uint32_t i = 0; i < spec.count; ++i) {
         shape::WatchRange range;
         range.length = spec.ranges[i].length;
+        if (const auto type = WatchTypeName(spec.ranges[i].note); !type.empty()) {
+            const size_t count = range.length / ElementSize(type);
+            range.type = std::string(type) + (count > 1 ? "[" + std::to_string(count) + "]" : "");
+        }
         range.guarded = spec.ranges[i].guard.address != 0 || spec.root[0];
         if (spec.root[0]) range.offset = HexNum(spec.ranges[i].address);
         else range.address = Addr(spec.ranges[i].address);
@@ -260,8 +264,19 @@ std::vector<shape::WatchSample> WatchSamples(const WatchSpec& spec, const WatchR
             continue;
         }
         sample.values.emplace();
-        for (const auto& bytes : row.ranges)
-            sample.values->push_back(bytes.empty() ? std::nullopt : std::optional<HexBytes>(HexBytes(bytes)));
+        for (size_t i = 0; i < row.ranges.size(); ++i) {
+            const auto& bytes = row.ranges[i];
+            const auto type = i < spec.count ? WatchTypeName(spec.ranges[i].note) : std::string_view{};
+            if (bytes.empty()) {
+                sample.values->emplace_back(nullptr);
+            } else if (type.empty()) {
+                sample.values->emplace_back(HexBytes(bytes).text);
+            } else {
+                auto numbers = DecodeValues(bytes, type);
+                if (numbers.size() == 1) sample.values->push_back(std::move(numbers.front()));
+                else sample.values->emplace_back(std::move(numbers));
+            }
+        }
         if (spec.root[0] && row.header.root != lastRoot) sample.root = Addr(row.header.root);
         if (row.header.flags & WatchRowResumed) {
             sample.resumed = true;
@@ -291,6 +306,7 @@ void PrintCapture(Session& session, std::string_view jsonCommand) {
     result.root = WatchRoot(info->spec);
     result.ranges = WatchRanges(info->spec);
     if (info->spec.root[0]) result.gaps = std::move(gaps);
+    if (auto summary = shape::SummariseWatch(result.ranges, result.rows); !summary.empty()) result.summary = std::move(summary);
     Emit(session, jsonCommand, std::move(result));
 }
 }
@@ -313,7 +329,8 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
         // Object-relative ranges are guarded on the object; a followed root brings its own guard.
         auto guard = command.root.empty() ? ObjectGuard(session, command.guardObjects[i]) : Result<Guard>(Guard{});
         if (!guard) return CommandError(session, jsonCommand, guard.error());
-        spec.ranges[i] = {command.reads[i].address, static_cast<uint32_t>(command.reads[i].length), 0, *guard};
+        spec.ranges[i] = {command.reads[i].address, static_cast<uint32_t>(command.reads[i].length),
+            i < command.watchTypes.size() ? command.watchTypes[i] : 0, *guard};
     }
     if (!WatchSpecValid(spec))
         return JsonError(session, jsonCommand, "syntax", "ranges exceed the row limit of " + std::to_string(MaxWatchRowBytes) + " bytes");
@@ -353,6 +370,7 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
     result.complete = !rows->running;
     if (info) result.stopped = WatchEndText(info->stop);
     result.ranges = WatchRanges(spec);
+    if (auto summary = shape::SummariseWatch(result.ranges, result.rows); !summary.empty()) result.summary = std::move(summary);
     Emit(session, jsonCommand, std::move(result));
 }
 }

@@ -43,7 +43,7 @@ inline std::string ResultsMarkdown(const Json& table) {
         "| `Name` | a named type, defined once under [Named types](#named-types); a pack's carry its prefix |\n\n"
         "## Conventions\n\n"
         "- `rows` is a result's list; `total` is how many there are in all when `rows` may show fewer.\n"
-        "- A page carries `from` (where it began) and `next_cursor` (pass it as `--from`; absent when done).\n"
+        "- A page carries `from` (where it began) and `next_cursor` (pass it as `--start`; absent when done).\n"
         "- `capped`: the rows were cut at a hard limit and there is no cursor. `truncated`: a value in the\n"
         "  result is incomplete.\n"
         "- `module` and `rva` stand beside an address inside a loaded module, so it opens at the same RVA\n"

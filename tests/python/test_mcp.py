@@ -93,11 +93,11 @@ class McpTests(unittest.TestCase):
         self.assertTrue(tools['ue_call'].annotations.destructiveHint)
         schema = tools['read'].inputSchema
         self.assertEqual(schema['required'], ['addr'])
-        self.assertEqual(set(schema['properties']), {'addr', 'len', 'as_'})
+        self.assertEqual(set(schema['properties']), {'addr', 'len', 'type'})
         self.assertIn('rows', tools['ue_find'].outputSchema['properties'])
         self.assertIn('Object', tools['ue_find'].outputSchema['$defs'])   # Named types stay named.
         self.assertIn('calls', tools['batch'].inputSchema['properties'])
-        self.assertIn('read <addr> [len] [--as type]', tools['read'].description)
+        self.assertIn('read <addr> [len] [--type type]', tools['read'].description)
 
     def test_calls_return_the_console_result_and_errors_are_tool_errors(self):
         async def body(client):

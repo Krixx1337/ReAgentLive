@@ -6,12 +6,12 @@ keys: `help <verb>` or [result shapes](results.md).
 
 | Command | Guard |
 |---|---|
-| `read <addr> [len] [--as T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--as i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--as "<layout>"`: a block of mixed types (below). `--as cstr\|wstr` and pointer chains: [native objects](native-objects.md) |
+| `read <addr> [len] [--type T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--type i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--type "<layout>"`: a block of mixed types (below). `--type cstr\|wstr` and pointer chains: [native objects](native-objects.md) |
 | `read-batch <addr> <len> [<addr> <len> ...]` | 1–8 ranges in one host tick. The 4096-byte response budget includes 4 status bytes per range |
 | `peek <addr> [count] [--label <file>] [--name <name>]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword `read-batch` when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one `region` per readable pointer and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file; `--name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
 | `write <addr> <hex> [--expect <hex>]` | 1..256 bytes; committed, writable pages; page protection is never changed. `--expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
-| `search <type> <value> [--from A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
+| `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
 | `pin <addr> <hex> [--seconds N\|--ms N] [--expect <hex>]` | up to 8 pins of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests |
 | `pin-list` / `pin-clear [id]` | each pin's state (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`), writes and time left; clear one or all |
 | `trial <addr> <hex> --owner <ref> --expect <hex> [--object <addr>] [--seconds N\|--ms N]` | up to 8 trials of 1..64 bytes, 1 ms..60 s (default 10 s). One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear trials before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so a trial needs a host with the Unreal pack; the agent does not check classes |
@@ -30,14 +30,16 @@ first-chance fault is still visible to any exception observer in the host.
 at execution) and ordered `rows`. Each row has `address`, `size`,
 `ok`, and either `hex` or an `error` with status and message. The command
 envelope's `ok` reports whether the batch ran. Check each row's `ok` for
-read success. Malformed or over-budget batches are rejected before copying.
+read success. Malformed or over-budget batches are rejected before copying,
+the refusal stating the limit: at most 8 ranges, totalling 4096 bytes less
+4 per range (each range's status shares the response).
 Addresses must be known when the request is sent. Like `read`, this checks
 memory accessibility. A reference used as an address does not check object
 identity. The copies run sequentially inside one host tick.
 
 ## Typed layouts
 
-`read <addr> --as "u8 phase, pad 3, f32 duration, f32
+`read <addr> --type "u8 phase, pad 3, f32 duration, f32
 elapsed, f64[3] start"` decodes a block that reflection does not describe:
 fields in memory order, comma-separated, each a type from the list above
 with an optional `[n]` count and an optional name (letters, digits, `_`, a
@@ -62,7 +64,7 @@ values align to their size unless `--align` says otherwise; hex aligns to 1.
 Aligned 4- and 8-byte values compare whole words; other patterns jump
 between first-byte candidates. It returns `rows` (`address`, with
 `module` and `rva` inside a module), `from` and `next_cursor`: the address
-to pass as `--from` for the next page, absent once the range is done.
+to pass as `--start` for the next page, absent once the range is done.
 
 `--background` runs the scan on the agent's worker thread instead of in host-tick slices, so the host pays only a poll per tick; the host must allow it (`Host::backgroundSearch`), otherwise the search is refused. A newer background search cancels an abandoned one first.
 
@@ -95,7 +97,8 @@ state (a timer, an eased value) stays pinned.
 
 `watch` samples ranges every host tick inside the agent and prints the
 `rows`: each with `tick` (agent heartbeat), `us` (since start) and
-`values` (bytes per range, null while unreadable). Object-relative ranges are
+`values` (one per range, null while unreadable: its bytes as hex, or a
+[typed range](#typed-ranges)'s numbers). Object-relative ranges are
 guarded like pins: when the object is freed or replaced the capture stops,
 `stopped: "object replaced"`, and the rows so far stay. `--then call <object>
 <[Class:]Function> [hex]` runs that call right after sampling starts (a setter
@@ -103,6 +106,20 @@ that starts the action, such as aiming); its result is `then`. Rows
 before it show the state before the action. `stopped` says why a capture
 ended: `deadline`, `stopped`, `buffer full`, `object replaced` (absent while
 it runs).
+
+### Typed ranges
+
+A range may name its type in the [read --type](#typed-layouts) element
+vocabulary in place of a length: `0x9000:f64`, `$1+0x40:i32[2]`. Its
+samples come back as numbers (a list for `[n]`), its `ranges` entry carries
+`type`, and the result adds `summary`: for each value (each element of an
+`[n]` range) `first`, `last`, `least`, `greatest`, the `samples` that held a
+number, and `per_second`, the change from first to last over the time
+between them (absent with one sample). The console keeps the type in the
+agent's copy of the spec (`WatchRange::note`, [protocol](../protocol.md)),
+so `watch-read` and `watch-stop` from any later run decode the capture
+too. The arithmetic lives in the console, so a typed line, a script and a
+tool all get it.
 
 ### A capture that does not hold the console
 

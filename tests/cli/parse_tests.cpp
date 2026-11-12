@@ -88,12 +88,12 @@ TEST_CASE("entries takes an object, a field and an optional cursor") {
     CHECK(parsed->request.op == ue::op::Entries);
     CHECK(parsed->target == "Comp:Attributes");
     CHECK(parsed->limit == 0);
-    parsed = Parse("entries $1 Attributes --from 12", TwoRefs);
+    parsed = Parse("entries $1 Attributes --start 12", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->limit == 12);
     CHECK_FALSE(Parse("entries $1", TwoRefs).has_value());
-    CHECK_FALSE(Parse("entries $1 Attributes --from", TwoRefs).has_value());
-    CHECK_FALSE(Parse("entries $1 Attributes --from 1 2", TwoRefs).has_value());
+    CHECK_FALSE(Parse("entries $1 Attributes --start", TwoRefs).has_value());
+    CHECK_FALSE(Parse("entries $1 Attributes --start 1 2", TwoRefs).has_value());
 }
 
 TEST_CASE("peek reads up to 64 qwords and labels exactly one") {
@@ -247,7 +247,7 @@ TEST_CASE("search parses typed values, options and limits") {
     CHECK(parsed->request.args[1] == 64);
     CHECK(Check(parsed->request) == Status::Ok);
 
-    parsed = Parse("search ptr 0x7ff7bb2a7740 --writable --max 8 --from 0x10000 --to 0x20000", NoRefs);
+    parsed = Parse("search ptr 0x7ff7bb2a7740 --writable --max 8 --start 0x10000 --to 0x20000", NoRefs);
     REQUIRE(parsed.has_value());
     uint64_t pointer = 0;
     memcpy(&pointer, parsed->request.data, 8);
@@ -272,7 +272,7 @@ TEST_CASE("search parses typed values, options and limits") {
     CHECK_FALSE(Parse("search f32 abc", NoRefs).has_value());
     CHECK_FALSE(Parse("search u32 1 --align 3", NoRefs).has_value());
     CHECK_FALSE(Parse("search u32 1 --max 0", NoRefs).has_value());
-    CHECK_FALSE(Parse("search u32 1 --from 0x2000 --to 0x1000", NoRefs).has_value());
+    CHECK_FALSE(Parse("search u32 1 --start 0x2000 --to 0x1000", NoRefs).has_value());
     CHECK_FALSE(Parse("search str abc", NoRefs).has_value());
 }
 
@@ -315,7 +315,7 @@ TEST_CASE("search filters and safe write parse") {
     CHECK((parsed->request.flags & SearchPaged) != 0);
     CHECK(parsed->target == "Game.exe");
     CHECK(Check(parsed->request) == Status::Ok);
-    CHECK_FALSE(Parse("search ptr 0x1234 --module Game.exe --from 0x1000", NoRefs).has_value());
+    CHECK_FALSE(Parse("search ptr 0x1234 --module Game.exe --start 0x1000", NoRefs).has_value());
     CHECK_FALSE(Parse("search ptr 0x1234 --module", NoRefs).has_value());
 
     parsed = Parse("write 0x1000 01 02 --expect 03 04", NoRefs);
@@ -458,16 +458,16 @@ TEST_CASE("func resolves a named entry without a call payload") {
 }
 
 TEST_CASE("function discovery, signatures and named calls preserve object refs") {
-    auto functions = Parse("funcs $1 Socket --from 32", TwoRefs);
+    auto functions = Parse("funcs $1 Socket --start 32", TwoRefs);
     REQUIRE(functions.has_value());
     CHECK(functions->request.op == ue::op::Functions);
     CHECK(ue::GetRef(functions->request) == TwoRefs[0]);
     CHECK(std::string_view(functions->request.text) == "Socket");
     CHECK(functions->request.length == 32);
     CHECK(ue::Check(functions->request) == Status::Ok);
-    CHECK(Parse("funcs $1 --from 32", TwoRefs).has_value());
-    CHECK_FALSE(Parse("funcs $1 --from", TwoRefs).has_value());
-    CHECK_FALSE(Parse("funcs $1 Socket --from 99999", TwoRefs).has_value());
+    CHECK(Parse("funcs $1 --start 32", TwoRefs).has_value());
+    CHECK_FALSE(Parse("funcs $1 --start", TwoRefs).has_value());
+    CHECK_FALSE(Parse("funcs $1 Socket --start 99999", TwoRefs).has_value());
 
     auto signature = Parse("params $1 SceneComponent:GetSocketTransform", TwoRefs);
     REQUIRE(signature.has_value());
@@ -530,15 +530,15 @@ TEST_CASE("one-shot commands split on semicolons and newlines") {
 }
 
 TEST_CASE("read decodes element types and name takes long index lists") {
-    auto parsed = Parse("read 0x1000 16 --as f32", NoRefs);
+    auto parsed = Parse("read 0x1000 16 --type f32", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->view == "f32");
     CHECK(parsed->request.length == 16);
-    parsed = Parse("read 0x1000 --as ptr", NoRefs);
+    parsed = Parse("read 0x1000 --type ptr", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.length == 64);
-    CHECK_FALSE(Parse("read 0x1000 6 --as f32", NoRefs).has_value());
-    CHECK_FALSE(Parse("read 0x1000 8 --as f16", NoRefs).has_value());
+    CHECK_FALSE(Parse("read 0x1000 6 --type f32", NoRefs).has_value());
+    CHECK_FALSE(Parse("read 0x1000 8 --type f16", NoRefs).has_value());
     CHECK_FALSE(Parse("read 0x1000 8 --bytes", NoRefs).has_value());
     std::string many = "name";
     for (int i = 0; i < 100; ++i) many += " " + std::to_string(i + 1);
@@ -568,24 +568,24 @@ TEST_CASE("name takes FName indices and the agent bounds them") {
 }
 
 TEST_CASE("find takes a class filter and a cursor") {
-    const auto both = Parse("find Vendor --class Character --from 4096", NoRefs);
+    const auto both = Parse("find Vendor --cls Character --start 4096", NoRefs);
     REQUIRE(both.has_value());
     CHECK(std::string_view(both->request.text) == "Vendor");
     CHECK(std::string_view(reinterpret_cast<const char*>(both->request.data)) == "Character");
     CHECK(both->request.length == 10);
     CHECK(both->request.args[1] == 4096);
     CHECK(ue::Check(both->request) == Status::Ok);
-    const auto classOnly = Parse("find --class DataTable", NoRefs);
+    const auto classOnly = Parse("find --cls DataTable", NoRefs);
     REQUIRE(classOnly.has_value());
     CHECK(classOnly->request.text[0] == 0);
     CHECK(ue::Check(classOnly->request) == Status::Ok);
-    const auto spaced = Parse("find two words --from 1", NoRefs);
+    const auto spaced = Parse("find two words --start 1", NoRefs);
     REQUIRE(spaced.has_value());
     CHECK(std::string_view(spaced->request.text) == "two words");
     CHECK_FALSE(Parse("find", NoRefs).has_value());
-    CHECK_FALSE(Parse("find --class", NoRefs).has_value());
-    CHECK_FALSE(Parse("find x --from -1", NoRefs).has_value());
-    CHECK_FALSE(Parse("find --class A --class B", NoRefs).has_value());
+    CHECK_FALSE(Parse("find --cls", NoRefs).has_value());
+    CHECK_FALSE(Parse("find x --start -1", NoRefs).has_value());
+    CHECK_FALSE(Parse("find --cls A --cls B", NoRefs).has_value());
 }
 
 TEST_CASE("read-batch parses ranges and bounds the total response") {
@@ -601,6 +601,10 @@ TEST_CASE("read-batch parses ranges and bounds the total response") {
     CHECK_FALSE(Parse("read-batch 1 2 3", {}).has_value());
     CHECK_FALSE(Parse("read-batch 0xffffffffffffffff 1", {}).has_value());
     CHECK_FALSE(Parse("read-batch 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1", {}).has_value());
+    // A refusal states the limit it hit.
+    CHECK(Parse("read-batch 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1", {}).error().starts_with("at most 8 ranges"));
+    CHECK(Parse("read-batch 1 600 2 600 3 600 4 600 5 600 6 600 7 600 8 600", {}).error().starts_with(
+        "the ranges total 4200 bytes; 7 ranges take at most 4068 (4096 less 4 per range)"));
 }
 
 TEST_CASE("object commands take a bare class name for the console to resolve") {
@@ -628,15 +632,15 @@ TEST_CASE("census takes an optional class and row limit") {
     CHECK(parsed->request.op == ue::op::Census);
     CHECK(parsed->limit == DefaultCensusLimit);
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    parsed = Parse("census --class Actor --limit 0", NoRefs);
+    parsed = Parse("census --cls Actor --limit 0", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(std::string_view(reinterpret_cast<const char*>(parsed->request.data)) == "Actor");
     CHECK(parsed->limit == 0);
     CHECK(ue::Check(parsed->request) == Status::Ok);
     CHECK_FALSE(Parse("census Actor", NoRefs).has_value());
-    CHECK_FALSE(Parse("census --class", NoRefs).has_value());
-    CHECK_FALSE(Parse("census --class A --class B", NoRefs).has_value());
-    parsed = Parse("census-diff --class Actor --match proj --limit 5", NoRefs);
+    CHECK_FALSE(Parse("census --cls", NoRefs).has_value());
+    CHECK_FALSE(Parse("census --cls A --cls B", NoRefs).has_value());
+    parsed = Parse("census-diff --cls Actor --match proj --limit 5", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->changed);
     CHECK(parsed->match == "proj");
@@ -644,12 +648,12 @@ TEST_CASE("census takes an optional class and row limit") {
     CHECK_FALSE(Parse("census --match", NoRefs).has_value());
     CHECK_FALSE(Parse("census-diff --match", NoRefs).has_value());
     CHECK_FALSE(Parse("census --match a --match b", NoRefs).has_value());
-    parsed = Parse("census --class Actor --match zone --from 100 --limit 50", NoRefs);
+    parsed = Parse("census --cls Actor --match zone --start 100 --limit 50", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->from == 100);
     CHECK(parsed->limit == 50);
-    CHECK_FALSE(Parse("census --from", NoRefs).has_value());
-    CHECK_FALSE(Parse("census --from 1 --from 2", NoRefs).has_value());
+    CHECK_FALSE(Parse("census --start", NoRefs).has_value());
+    CHECK_FALSE(Parse("census --start 1 --start 2", NoRefs).has_value());
     CHECK_FALSE(Parse("census-diff --changed", NoRefs).has_value());
     Request request = parsed->request;
     CopyText(request.text, "x");
@@ -657,28 +661,35 @@ TEST_CASE("census takes an optional class and row limit") {
 }
 
 TEST_CASE("name-find takes text and a cursor") {
-    const auto parsed = Parse("name-find Jump --from 131072", NoRefs);
+    const auto parsed = Parse("name-find Jump --start 131072", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.op == ue::op::NameFind);
     CHECK(std::string_view(parsed->request.text) == "Jump");
     CHECK(parsed->request.args[1] == 131072);
     CHECK(ue::Check(parsed->request) == Status::Ok);
     CHECK_FALSE(Parse("name-find", NoRefs).has_value());
-    CHECK_FALSE(Parse("name-find --from 3", NoRefs).has_value());
-    CHECK_FALSE(Parse("name-find x --from", NoRefs).has_value());
+    CHECK_FALSE(Parse("name-find --start 3", NoRefs).has_value());
+    CHECK_FALSE(Parse("name-find x --start", NoRefs).has_value());
     Request empty{};
     empty.op = ue::op::NameFind;
     CHECK(ue::Check(empty) == Status::BadRequest);
 }
 
-TEST_CASE("each takes a class, a target and an optional repeat") {
+TEST_CASE("each takes a class, its columns and an optional repeat") {
     auto parsed = Parse("each Character Character:CanJump --seconds 10", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Each);
     CHECK(parsed->request.op == ue::op::Each);
     CHECK(parsed->className == "Character");
-    CHECK(parsed->target == "Character:CanJump");
+    CHECK(parsed->fields == std::vector<std::string>{"Character:CanJump"});
     CHECK(parsed->seconds == 10);
+    parsed = Parse("each Pawn Health Stats.MaxSpeed Controller.PlayerState.Score", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->fields == std::vector<std::string>{"Health", "Stats.MaxSpeed", "Controller.PlayerState.Score"});
+    CHECK_FALSE(Parse("each Pawn Health..Max", NoRefs).has_value());
+    std::string many = "each Pawn";
+    for (int i = 0; i <= 16; ++i) many += " F" + std::to_string(i);
+    CHECK(Parse(many, NoRefs).error().starts_with("at most 16 columns"));
     parsed = Parse("each Pawn Controller", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->seconds == 0);
@@ -736,17 +747,17 @@ TEST_CASE("dump filters parse; fields takes none") {
     CHECK_FALSE(Parse("fields $1 --nonzero", TwoRefs).has_value());
 }
 
-TEST_CASE("read --as takes a layout whose size is the read length") {
-    auto parsed = Parse("read 0x1000 --as \"u8 phase, pad 3, f32 duration, f32 elapsed, f64[3] start\"", NoRefs);
+TEST_CASE("read --type takes a layout whose size is the read length") {
+    auto parsed = Parse("read 0x1000 --type \"u8 phase, pad 3, f32 duration, f32 elapsed, f64[3] start\"", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.length == 36);
     CHECK(parsed->view == "u8 phase, pad 3, f32 duration, f32 elapsed, f64[3] start");
-    parsed = Parse("read 0x1000 8 --as u32 a, u32 b", NoRefs); // Quotes optional; the length agrees.
+    parsed = Parse("read 0x1000 8 --type u32 a, u32 b", NoRefs); // Quotes optional; the length agrees.
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.length == 8);
-    CHECK_FALSE(Parse("read 0x1000 16 --as \"u32 a, u32 b\"", NoRefs).has_value()); // Length mismatch.
-    CHECK_FALSE(Parse("read 0x1000 --as \"u32 a, f16 b\"", NoRefs).has_value());     // Bad type.
-    CHECK_FALSE(Parse("read 0x1000 --as \"u32 a,\"", NoRefs).has_value());
+    CHECK_FALSE(Parse("read 0x1000 16 --type \"u32 a, u32 b\"", NoRefs).has_value()); // Length mismatch.
+    CHECK_FALSE(Parse("read 0x1000 --type \"u32 a, f16 b\"", NoRefs).has_value());     // Bad type.
+    CHECK_FALSE(Parse("read 0x1000 --type \"u32 a,\"", NoRefs).has_value());
 }
 
 TEST_CASE("label names an unreflected member by object or class, offset, type and name") {
@@ -793,6 +804,21 @@ TEST_CASE("watch-start takes an interval and a root; --read and --stop take noth
     CHECK_FALSE(Parse("watch-start 10s --follow pawn 0x10000:4", refs).has_value()); // Offset past an object.
     CHECK_FALSE(Parse("watch-start 10s 0x9000:4 --then call $1 F", refs).has_value());
     CHECK_FALSE(Parse("watch 10s --every 1s 0x9000:4", refs).has_value());           // Options need --start.
+}
+
+TEST_CASE("a watch range may carry a read --type element, with a count") {
+    const std::vector<Ref> refs{{0x1000, 5, 2}};
+    auto parsed = Parse("watch-start 20s --every 1s 0x9000:f64 0x1000#5:2+0x40:i32[2] 0x9100:16", refs);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->reads.size() == 3);
+    CHECK(parsed->reads[0].length == 8);
+    CHECK(parsed->reads[1].address == 0x1040);   // A literal ref keeps its own colon.
+    CHECK(parsed->reads[1].length == 8);
+    CHECK(parsed->watchTypes == std::vector<uint32_t>{WatchTypeCode("f64"), WatchTypeCode("i32"), 0});
+    CHECK(WatchTypeName(parsed->watchTypes[1]) == "i32");
+    CHECK(Parse("watch-start 10s --follow pawn +0x538:f32", refs)->watchTypes.front() == WatchTypeCode("f32"));
+    for (const char* bad : {"watch 1s 0x9000:f16", "watch 1s 0x9000:i32[0]", "watch 1s 0x9000:i32[", "watch 1s 0x9000:cstr"})
+        CHECK(Parse(bad, refs).error().starts_with("a range is <addr>:<len>"));
 }
 
 TEST_CASE("the version text matches its parts") {

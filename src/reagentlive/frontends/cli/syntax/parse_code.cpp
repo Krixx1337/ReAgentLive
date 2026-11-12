@@ -11,7 +11,8 @@ using namespace text;
 Parsed Disasm(const Args& args, const ParseContext& context) {
     Command command;
     uint64_t count = DefaultDisasm;
-    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain)) return Fail();
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
     if (!args.At(1).empty() && (!Number(args.At(1), count) || !count || count > MaxDisasm))
         return Fail("count must be 1.." + std::to_string(MaxDisasm));
     command.function = args.Has("--function");
@@ -58,7 +59,8 @@ Parsed Touches(const Args& args, const ParseContext& context) {
 // region <addr>: one VirtualQuery in the target, named by the console.
 Parsed Region(const Args& args, const ParseContext& context) {
     Command command;
-    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain)) return Fail();
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
     command.kind = Kind::Region;
     command.request.op = op::Region;
     return command;
@@ -68,7 +70,8 @@ Parsed Region(const Args& args, const ParseContext& context) {
 Parsed Vtable(const Args& args, const ParseContext& context) {
     Command command;
     uint64_t count = 0;
-    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain)) return Fail();
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
     if (!args.At(1).empty() && (!Number(args.At(1), count) || !count || count > MaxRead / 8))
         return Fail("count must be 1.." + std::to_string(MaxRead / 8));
     command.table = args.Has("--table");

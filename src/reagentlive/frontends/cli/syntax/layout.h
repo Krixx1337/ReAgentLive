@@ -1,6 +1,6 @@
 // reagentlive CLI: typed layouts for raw bytes that reflection does not
 // describe ("u8 phase, pad 3, f32 duration, f64[3] start"), shared by
-// `read --as` and the native-member names file. Pure; tests cover it.
+// `read --type` and the native-member names file. Pure; tests cover it.
 #pragma once
 #include <cstdint>
 #include <expected>
@@ -12,7 +12,7 @@
 
 namespace reagentlive::cli::layout {
 // One field in memory order: `count` elements of `type` (one of the `read
-// --as` element types), or a gap of `count` bytes when `type` is empty.
+// --type` element types), or a gap of `count` bytes when `type` is empty.
 struct Field {
     std::string type;
     uint32_t count = 1;

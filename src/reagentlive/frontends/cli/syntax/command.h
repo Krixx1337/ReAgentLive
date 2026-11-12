@@ -26,14 +26,15 @@ struct Command {
     std::string file;
     std::vector<std::string> fields;
     std::vector<ReadSpan> reads;
+    std::vector<uint32_t> watchTypes; // watch: per range in `reads`, its element type (WatchTypeCode), 0 = raw.
     // A class or struct named instead of an object ref (fields, dump, func,
     // funcs, params; each's class): the console resolves it before the request.
     std::string className;
-    std::string target;         // each: field or [Owner:]Function.
+    std::string target;         // A name the verb acts on (a function, a member, a watch action).
     uint32_t seconds = 0;       // each: repeat for this long, printing changes.
     uint32_t limit = 0;         // census: rows to print, 0 = all.
     uint32_t from = 0;          // census: the first row printed (a later page of the stored census).
-    std::string view;           // read --as: element type for decoded values.
+    std::string view;           // read --type: element type or layout for decoded values.
     // pin and watch: per target (watch: per range in `reads`), the object an
     // address was given relative to ($N+0x10), 0 for raw addresses. The
     // console guards those on the object's identity.
@@ -50,7 +51,7 @@ struct Command {
     // sets `changed`, comparing with the census baseline. batch: `fields` holds the command
     // lines. get: `fields` holds the paths.
     std::string match;
-    bool nonzero = false, changed = false;
+    bool nonzero = false, changed = false, own = false; // dump filters; own: only the fields the class itself declares.
     // write --trial: the owning object (guarded on its identity) and an
     // optional native object base inside it whose vtable is guarded too.
     Ref owner{};
@@ -121,17 +122,30 @@ inline std::string RefText(const Ref& ref) {
     return text;
 }
 
-// read --as cstr|wstr: text, not elements.
+// read --type cstr|wstr: text, not elements.
 inline bool StringView(std::string_view type) { return type == "cstr" || type == "wstr"; }
 constexpr uint64_t DefaultStringRead = 256;
 
-// Element size of a read --as type, 0 if unknown.
+// Element size of a read --type type, 0 if unknown.
 inline size_t ElementSize(std::string_view type) {
     if (type == "i8" || type == "u8") return 1;
     if (type == "i16" || type == "u16") return 2;
     if (type == "i32" || type == "u32" || type == "f32") return 4;
     if (type == "i64" || type == "u64" || type == "f64" || type == "ptr") return 8;
     return 0;
+}
+
+// A typed watch range's element type, as the number the console keeps in the
+// agent's WatchRange::note so a later run decodes the capture: 0 = raw bytes.
+inline constexpr std::string_view WatchElementTypes[] = {"", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
+    "f32", "f64", "ptr"};
+inline uint32_t WatchTypeCode(std::string_view type) {
+    for (uint32_t i = 1; i < std::size(WatchElementTypes); ++i)
+        if (WatchElementTypes[i] == type) return i;
+    return 0;
+}
+inline std::string_view WatchTypeName(uint32_t code) {
+    return code < std::size(WatchElementTypes) ? WatchElementTypes[code] : std::string_view{};
 }
 
 }

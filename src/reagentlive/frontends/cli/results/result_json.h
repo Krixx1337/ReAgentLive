@@ -5,7 +5,7 @@
 //
 // Conventions every result follows:
 //   rows          the result's list.           total        how many there are in all, when rows may show fewer.
-//   from, next_cursor   a page: where it began, and what to pass as --from for the next (absent when done).
+//   from, next_cursor   a page: where it began, and what to pass as --start for the next (absent when done).
 //   capped        rows were cut at a hard limit; there is no cursor.
 //   truncated     a value in the result is incomplete.
 //   module, rva   beside an address inside a loaded module (absent elsewhere), so it opens in a static tool.
@@ -145,9 +145,9 @@ struct Read {
     uint64_t size = 0;
     HexBytes hex;
     std::optional<ReadViews> views;
-    std::optional<std::vector<Json>> values;    // --as <type>: one per element.
-    std::optional<Json> layout;                 // --as "<layout>": {name: value}.
-    std::optional<std::string> text;            // --as cstr|wstr.
+    std::optional<std::vector<Json>> values;    // --type <type>: one per element.
+    std::optional<Json> layout;                 // --type "<layout>": {name: value}.
+    std::optional<std::string> text;            // --type cstr|wstr.
     std::optional<uint64_t> length;
     std::optional<bool> terminated;
     std::optional<Chain> chain;
@@ -297,20 +297,23 @@ struct WatchRange {
     std::optional<Addr> address;
     std::optional<HexNum> offset;
     uint32_t length = 0;
+    std::optional<std::string> type;    // A typed range: f64, or i32[2] for several.
     bool guarded = false;
     template<class V> static void Describe(V& v) {
         v("address", &WatchRange::address);
         v("offset", &WatchRange::offset);
         v("length", &WatchRange::length);
+        v("type", &WatchRange::type);
         v("guarded", &WatchRange::guarded);
     }
 };
-// One sample: a value per range (null while unreadable). Following a root,
+// One sample: a value per range, null while unreadable: the bytes as hex, or
+// for a typed range a number (a list of them for [n]). Following a root,
 // `lost` rows and `resumed` ones (with the new object's address) bound each gap.
 struct WatchSample {
     static constexpr std::string_view TypeName = "WatchSample";
     uint64_t tick = 0, us = 0;
-    std::optional<std::vector<std::optional<HexBytes>>> values;
+    std::optional<std::vector<Json>> values;
     std::optional<bool> lost, resumed;
     std::optional<Addr> root;
     template<class V> static void Describe(V& v) {
@@ -328,6 +331,26 @@ struct WatchGap {
     template<class V> static void Describe(V& v) {
         v("from_us", &WatchGap::fromUs);
         v("to_us", &WatchGap::toUs);
+    }
+};
+// A typed range's value over the capture: `element` for one of an [n] range.
+// per_second: (last - first) over the time between them; absent with one sample.
+struct WatchSummary {
+    static constexpr std::string_view TypeName = "WatchSummary";
+    uint32_t range = 0;
+    std::optional<uint32_t> element;
+    uint64_t samples = 0;
+    double first = 0, last = 0, least = 0, greatest = 0;
+    std::optional<double> perSecond;
+    template<class V> static void Describe(V& v) {
+        v("range", &WatchSummary::range);
+        v("element", &WatchSummary::element);
+        v("samples", &WatchSummary::samples);
+        v("first", &WatchSummary::first);
+        v("last", &WatchSummary::last);
+        v("least", &WatchSummary::least);
+        v("greatest", &WatchSummary::greatest);
+        v("per_second", &WatchSummary::perSecond);
     }
 };
 // watch --then: what the call right after the start returned.
@@ -349,6 +372,7 @@ struct Watch {
     std::vector<WatchRange> ranges;
     std::optional<WatchThen> then;
     std::vector<WatchSample> rows;
+    std::optional<std::vector<WatchSummary>> summary;
     template<class V> static void Describe(V& v) {
         v("capacity", &Watch::capacity);
         v("complete", &Watch::complete);
@@ -356,6 +380,7 @@ struct Watch {
         v("ranges", &Watch::ranges);
         v("then", &Watch::then);
         v("rows", &Watch::rows);
+        v("summary", &Watch::summary);
     }
 };
 struct WatchStart {
@@ -379,6 +404,7 @@ struct WatchCapture {
     std::vector<WatchRange> ranges;
     std::vector<WatchSample> rows;
     std::optional<std::vector<WatchGap>> gaps;
+    std::optional<std::vector<WatchSummary>> summary;
     template<class V> static void Describe(V& v) {
         v("running", &WatchCapture::running);
         v("stopped", &WatchCapture::stopped, WatchStops);
@@ -389,8 +415,51 @@ struct WatchCapture {
         v("ranges", &WatchCapture::ranges);
         v("rows", &WatchCapture::rows);
         v("gaps", &WatchCapture::gaps);
+        v("summary", &WatchCapture::summary);
     }
 };
+
+// The summary of each typed range's values, one entry per value (per element
+// of an [n] range), from the samples that held a number for it.
+inline std::vector<WatchSummary> SummariseWatch(std::span<const WatchRange> ranges, std::span<const WatchSample> rows) {
+    std::vector<WatchSummary> out;
+    for (uint32_t r = 0; r < ranges.size(); ++r) {
+        if (!ranges[r].type) continue;
+        const bool several = ranges[r].type->find('[') != std::string::npos;
+        size_t elements = 0;
+        for (const auto& row : rows)
+            if (row.values && r < row.values->size() && (*row.values)[r].is_array())
+                elements = std::max(elements, (*row.values)[r].size());
+        if (!several) elements = 1;
+        for (uint32_t e = 0; e < elements; ++e) {
+            WatchSummary summary;
+            summary.range = r;
+            if (several) summary.element = e;
+            uint64_t firstUs = 0, lastUs = 0;
+            for (const auto& row : rows) {
+                if (!row.values || r >= row.values->size()) continue;
+                const Json& cell = (*row.values)[r];
+                const Json* value = several ? (cell.is_array() && e < cell.size() ? &cell[e] : nullptr) : &cell;
+                if (!value || !value->is_number()) continue;
+                const double number = value->get<double>();
+                if (!summary.samples) {
+                    summary.first = summary.least = summary.greatest = number;
+                    firstUs = row.us;
+                }
+                summary.last = number;
+                lastUs = row.us;
+                summary.least = std::min(summary.least, number);
+                summary.greatest = std::max(summary.greatest, number);
+                ++summary.samples;
+            }
+            if (!summary.samples) continue;
+            if (summary.samples > 1 && lastUs > firstUs)
+                summary.perSecond = (summary.last - summary.first) * 1e6 / static_cast<double>(lastUs - firstUs);
+            out.push_back(summary);
+        }
+    }
+    return out;
+}
 
 // One confirmed label for the static tool; also a line of a labels file. The
 // module's image size and timestamp tie it to one build.

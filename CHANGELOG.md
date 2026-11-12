@@ -5,6 +5,39 @@ layout can change in any minor release; agent and client are always built
 from the same revision, and the handshake's layout check refuses a
 mismatched pair. The version lives in `src/reagentlive/version.h`.
 
+## Unreleased
+
+Cheaper agent sessions: fewer wrong-looking answers, less output, fewer
+turns ([design](docs/design.md#output-weight-and-dead-ends)). Every caller
+breaks once: three argument names, and the `dump`, `get`, `each` and
+`watch` results changed.
+
+- **No answer that points the wrong way:**
+  - A pointer chain of one `->off` (it follows no pointer) is refused,
+    from a typed line and a JSON call alike, with the form that follows
+    one: `<addr>->0->0x30`.
+  - No argument is a Python keyword: `--class` is `--cls`, `--from` is
+    `--start`, `read --as` is `read --type`, and `each`'s class is `cls`;
+    every form spells them the same. A table test refuses a keyword.
+  - An unknown JSON key is checked first and named with the keys the verb
+    takes; an unknown flag lists the verb's flags; `read-batch` and `each`
+    state the limit they hit.
+- **Compact rows:** a `dump` row is `name` (the recovered readable one,
+  `raw` beside it), `offset` and `value`, with `meta` (the layout) on
+  `--meta` and `truncated` only when true; `dump --own` keeps the fields the
+  object's own class declares. A `get` row is `value` and `address`, with
+  `object` only when the path crossed a pointer; `path` and `ok` are gone
+  (rows keep the order asked; a failed path keeps its place as `error`).
+- **`each` is a table:** up to 16 field paths (structs and object pointers,
+  as `get` takes) or one function; `columns`, then `rows` of `{ref,
+  values}`, `errors` for failed cells and `same_tick`. Spans inside the
+  instance share passes of 64 bytes over one scan.
+- **Typed watches:** a range may be `<addr>:f64` or `<addr>:i32[2]`; its
+  samples are numbers and the result adds a `summary` per value (first,
+  last, least, greatest, `per_second`). The type is kept in the agent's
+  copy of the spec (`WatchRange::reserved` is now `note`, same layout), so
+  `watch-read` in a later run decodes it.
+
 ## 0.2.0
 
 AI agents get MCP tools: one tool per console verb, generated from the

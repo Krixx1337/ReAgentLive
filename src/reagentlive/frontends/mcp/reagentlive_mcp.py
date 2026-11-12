@@ -50,7 +50,7 @@ INSTRUCTIONS = (
     '(0x<address>#<index>:<serial>) to the next call; $N is refused. Use `batch` for reads that must come from '
     'one moment. Read-only tools may be allowed freely; tools marked destructive write the target\'s memory '
     'or call into it, so confirm each one first. Results keep the console\'s keys: a list is `rows`, a page '
-    'carries `next_cursor` (pass it as `from_`), a key that does not apply is absent.')
+    'carries `next_cursor` (pass it as `start`), a key that does not apply is absent.')
 
 
 def load_module(path):

@@ -57,8 +57,8 @@ and `status` lists the packs a host offers (`packs`).
 | `watch`, `watch-start`, `watch-read`, `watch-stop` | core | [memory](commands/memory.md#watch) |
 | `trial`, `trial-list`, `trial-clear` | core; the owner check needs the Unreal pack | [memory](commands/memory.md) |
 | `search` | core | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
-| `read --as "<layout>"` | core | [memory](commands/memory.md#typed-layouts) |
-| `read --as cstr\|wstr`, `<addr>->off`, `vtable`, `region` | core | [native objects](commands/native-objects.md) |
+| `read --type "<layout>"` | core | [memory](commands/memory.md#typed-layouts) |
+| `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `region` | core | [native objects](commands/native-objects.md) |
 | `disasm`, `xrefs`, `touches` | core | [fast lane](commands/fast-lane.md) |
 | `sig-check`, `sig-file`, `sig-bytes` | core | [fast lane](commands/fast-lane.md#signatures) |
 | `find`, `describe`, `name`, `name-find`, `fields`, `entries`, `refs` | Unreal pack | [Unreal pack](commands/unreal.md) |

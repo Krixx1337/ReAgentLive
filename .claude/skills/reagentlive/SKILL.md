@@ -45,30 +45,30 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 
 | Command | For |
 |---|---|
-| `find [text] [--class C]` | Objects by name and/or class; 24 per page |
-| `census [--class C] [--match T] [--limit N] [--from N]` / `census-diff` (same flags) | Live instances per class, with sample refs / only the classes whose count differs since the last census. Pages of 100: `--from <next_cursor>` for the next, no rescan; `--limit 0` for all |
-| `each <Class> <Field\|Owner:Fn>` | One field or pure getter for every instance, one tick |
-| `dump <obj> [--match T] [--nonzero] [--changed]` | Every reflected field with its value; filters cut output |
-| `get <obj> <Field.Path>...` | Typed values along pointer and struct paths |
+| `find [text] [--cls C]` | Objects by name and/or class; 24 per page |
+| `census [--cls C] [--match T] [--limit N] [--start N]` / `census-diff` (same flags) | Live instances per class, with sample refs / only the classes whose count differs since the last census. Pages of 100: `--start <next_cursor>` for the next, no rescan; `--limit 0` for all |
+| `each <Class> <Path>... \| <Owner:Fn>` | A table over every instance: up to 16 field paths (structs, pointers) or one pure getter; `rows` of `{ref, values}`, failed cells in `errors`. One scan, so ask for every column at once |
+| `dump <obj> [--match T] [--nonzero] [--own] [--changed]` | Every reflected field: `name` (readable where recovered, `raw` beside it), `offset`, `value`; `--own` drops inherited fields, `--meta` adds the layout |
+| `get <obj> <Field.Path>...` | Typed values along pointer and struct paths: rows in the order asked, `value` and `address`, or `error` in place |
 | `batch { cmd; cmd; ... }` | Many commands in as few ticks as possible |
 | `fields <obj\|class>` / `describe <ref>` | Field layout / an object's name, class and ref |
 | `name <index>...` / `name-find <text>` | FName index to text / text to index |
 | `read` / `read-batch` / `search` | Raw memory; same-tick ranges; addresses holding a value |
-| `entries <obj> <Field> [--from N]` | Every element of an array, set or map field, paged; maps as key and value |
+| `entries <obj> <Field> [--start N]` | Every element of an array, set or map field, paged; maps as key and value |
 | `peek <addr> [count]` | What qwords hold: object, `module`+`rva`, heap pointer or value (with a name hint) |
 | `disasm <addr> [n] [--function] [--follow]` | Instructions from live bytes: targets, string hints, address fields; `--function` uses the exception table's bounds |
 | `xrefs <addr> [--module M]` | What points here: calls, jumps, RIP-relative lea/load/store, stored pointers, each with its function |
 | `search text "<s>" [--wide]` | Where a string lives, quoted for spaces (then `xrefs` on it) |
 | `vtable <obj> [n] [--offset N] [--resolve]` | A native object's virtual table, slots until one is not code |
 | `region <addr>` | What memory is: `code`, `rodata`, `data` (with section), `mapped`, `private`, `free` |
-| `read <addr>->0x10->0x8 [n] [--as cstr\|wstr]` | Read through a pointer chain (each `->off` but the last reads a pointer); C or UTF-16 strings |
+| `read <addr>->0x10->0x8 [n] [--type cstr\|wstr]` | Read through a pointer chain (each `->off` but the last reads a pointer, so `<addr>->0->0x30` reads through the pointer at `<addr>`; one `->off` alone is refused); C or UTF-16 strings |
 | `sig-check <pattern>` / `sig-file <file>` / `sig-bytes <addr>` | Is a byte signature unique and does it land there / several at once / live bytes with address fields masked |
 | `func` / `funcs <obj> [text]` / `params` / `script` | A UFunction's entry / functions matching text / its parameter block / a Blueprint function's bytecode names |
 | `call <obj> Owner:Fn <hex\|Name=value>` | ProcessEvent; prints the block after the call |
 | `write` / `pin` / `trial` | Change memory once / every tick / once with an automatic undo (approval). `help` marks every verb that writes or calls into the game with `writes` |
 | `watch <s> <addr>:<len>... [--then call ...]` | Sample ranges every tick inside the agent |
-| `watch-start <dur> <ranges> [--every <dur>] [--follow root]` / `watch-read` / `watch-stop` | A capture the agent keeps while the console is free |
-| `read <addr> --as "<layout>"` / `label <obj> <off> <type> <Name>` | Decode a block of mixed types / name an unreflected member for good |
+| `watch-start <dur> <ranges> [--every <dur>] [--follow root]` / `watch-read` / `watch-stop` | A capture the agent keeps while the console is free; a range `<addr>:f64` or `:i32[2]` comes back as numbers with a `summary` (first, last, least, greatest, `per_second`) |
+| `read <addr> --type "<layout>"` / `label <obj> <off> <type> <Name>` | Decode a block of mixed types / name an unreflected member for good |
 | `snap` / `dump --changed` / `record` | Baseline, changed fields, named fields over time |
 | `status` / `base` / `modules` | Agent build and tick rate; exe and module ranges |
 
@@ -91,7 +91,7 @@ to cross to the static tool (native-code reference).
 1. **Question first.** Write the runtime question and what would answer it
    ("which field drops when I fire?", "what spread does the gun really have?").
    Read what the project's docs already record about it.
-2. **Locate.** `find --class <Class>` lists instances; add name text to narrow.
+2. **Locate.** `find --cls <Class>` lists instances; add name text to narrow.
    Name text is a substring match anywhere, so short text floods the page; use
    a distinctive suffix or a class.
 3. **Navigate.** `dump` an owner object and follow the printed refs instead of
@@ -156,7 +156,7 @@ to cross to the static tool (native-code reference).
 ## When ReAgentLive hits a limit
 
 Add the missing piece instead of working around it twice; `name`,
-`find --class`, larger array previews and `describe #index:serial` all came
+`find --cls`, larger array previews and `describe #index:serial` all came
 from real investigations. Keep ReAgentLive engine- and game-agnostic, test it,
 document it in ReAgentLive's docs, and re-rank its backlog (`docs/ideas.md`)
 with the evidence.

@@ -150,10 +150,14 @@ inline bool Bytes(std::string_view s, uint8_t* out, size_t capacity, uint32_t& l
     }
     return high < 0;
 }
+// Each ->off but the last reads a pointer, so a chain of one reads none: it
+// would answer the bytes at <addr>+off as if a pointer had been followed.
+constexpr auto ChainNoHop = "a chain of one ->off follows no pointer (each ->off but the last reads one): "
+    "<addr>->0->0x30 reads the pointer at <addr> and adds 0x30";
 // An address with an optional pointer chain: <addr>->0x10->0x8 (each
-// offset a number). Read-only commands only.
+// offset a number). Read-only commands only. `why` says what is wrong when it can.
 inline bool ChainAddress(std::string_view s, std::span<const Ref> refs, std::span<const Module> modules, uint64_t& out,
-                         std::vector<uint64_t>& chain) {
+                         std::vector<uint64_t>& chain, std::string* why = nullptr) {
     const size_t arrow = s.find("->");
     if (!Address(s.substr(0, arrow), refs, modules, out)) return false;
     chain.clear();
@@ -164,6 +168,10 @@ inline bool ChainAddress(std::string_view s, std::span<const Ref> refs, std::spa
             chain.size() == MaxChainHops) return false;
         chain.push_back(offset);
         at = next;
+    }
+    if (chain.size() == 1) {
+        if (why) *why = ChainNoHop;
+        return false;
     }
     return true;
 }

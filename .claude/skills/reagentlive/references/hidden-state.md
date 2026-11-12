@@ -11,9 +11,9 @@ No reflection, no engine pack, or a native member behind a reflected one:
    `rva` for the static tool. An interface part or secondary base:
    `vtable <addr> --offset N` (`func` on an interface reports the offset).
    `--resolve` shows where jump stubs lead.
-3. **Read through it:** `read <addr>->0x30->0x10 8 --as ptr` follows
+3. **Read through it:** `read <addr>->0x30->0x10 8 --type ptr` follows
    pointers in one command; the result's `chain` names a null or unreadable
-   hop. Strings: `--as cstr` / `--as wstr`. Never write through a chain:
+   hop. Strings: `--type cstr` / `--type wstr`. Never write through a chain:
    resolve it, read, then write to that address with `--expect`.
 4. **What a slot does:** `disasm <target> --function`.
 
@@ -31,15 +31,15 @@ No reflection, no engine pack, or a native member behind a reflected one:
   DLL's linker map and its logged base, verify the live image against that
   DLL, then read the runtime copy with ReAgentLive.
 - **A block of native state inside a reflected class's padding** (`Pad_N`
-  between reflected members): `read <obj>+<pad> <len> --as f64`, then
-  `--as f32`. World positions show as doubles near live locations, sizes as
+  between reflected members): `read <obj>+<pad> <len> --type f64`, then
+  `--type f32`. World positions show as doubles near live locations, sizes as
   round numbers that match a reflected extent, timers as small floats that
   grow between two reads. Then find the code: `func <obj> <Class>:<any
   native function>` gives an exec in the class's own code, and
   `touches <exec> <offset>...` ranks the functions using the block; the
   writers are setup and tick. Name the fields from the decompiled writers,
   not from the values alone, then decode the whole block in one command:
-  `read <obj>+0x538 --as "u8 phase, pad 3, f32 duration, f32 elapsed,
+  `read <obj>+0x538 --type "u8 phase, pad 3, f32 duration, f32 elapsed,
   f64[3] start"` (Python: `read_layout`). No hand slicing of hex.
 - **Name what you decoded, once.** `label <obj> 0x538 f64[3] Start` (same
   type syntax; `?` after an unconfirmed name) writes the console's native

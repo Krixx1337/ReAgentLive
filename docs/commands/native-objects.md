@@ -7,7 +7,7 @@ pack ([design](../design.md#native-objects)).
 vtable <addr> [count] [--offset N] [--table] [--resolve]
 <addr>->0x10->0x8                 a pointer chain, in read, peek, vtable, disasm and region
 region <addr>                     what the memory there is
-read <addr> [max] --as cstr|wstr  a C string (UTF-16 with wstr)
+read <addr> [max] --type cstr|wstr  a C string (UTF-16 with wstr)
 ```
 
 ## vtable
@@ -29,7 +29,10 @@ module is a result: no `table`, and `found` holding the qword.
 
 An address may be written `<addr>->0x10->0x8` (up to 16
 offsets) in `read`, `peek`, `vtable`, `disasm` and `region`. Each `->off` but the last
-reads a pointer: `X->a->b` is `*(X + a) + b`. The client library resolves
+reads a pointer: `X->a->b` is `*(X + a) + b`. A chain of one (`X->a`)
+follows no pointer, so it is refused rather than answered with the bytes at
+`X + a`: to read through the pointer at `X`, start with `->0`
+(`X->0->0x30` is `*X + 0x30`). The client library resolves
 it (`Client::ResolveChain`, one held read per hop) and the command runs at
 the end; its result adds `chain`: `base`, `hops` (`hop`, `address` where
 the pointer was read, `value` it held, [`module`, `rva`]) and `address`. A
@@ -56,7 +59,7 @@ when its memory is private, and otherwise labelled with its kind
 
 ## Strings
 
-`read <addr> [max] --as cstr` (or `wstr` for UTF-16) reads
+`read <addr> [max] --type cstr` (or `wstr` for UTF-16) reads
 `max` bytes (default 256, up to the read limit; up to the page end when the
 rest is unreadable) and adds `text`, `length` (characters before the
 terminator, or every one read) and `terminated`. Unprintable characters are

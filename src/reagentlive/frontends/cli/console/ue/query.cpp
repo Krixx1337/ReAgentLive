@@ -84,70 +84,177 @@ Json EachValue(const std::optional<ue::Field>& field, const ue::Signature& signa
 }
 }
 
+namespace {
+// A field by [Owner:]Name, readable or reflected; nullptr when missing or ambiguous (why says which).
+const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields, std::string_view wanted, std::string& why) {
+    const auto colon = wanted.find(':');
+    const auto matches = [&](const ue::Field& field) {
+        if (colon == std::string_view::npos) return names.Matches(field, wanted);
+        return wanted.substr(0, colon) == field.owner && names.Matches(field, wanted.substr(colon + 1));
+    };
+    const auto found = std::ranges::find_if(fields, matches);
+    if (found == fields.end()) {
+        why = "no field " + std::string(wanted);
+        return nullptr;
+    }
+    if (std::ranges::find_if(std::next(found), fields.end(), matches) != fields.end()) {
+        why = "ambiguous field " + std::string(wanted) + " (use Owner:Field)";
+        return nullptr;
+    }
+    return &*found;
+}
+
+bool IsPointer(const ue::Field& field) {
+    return (field.type == "ObjectProperty" || field.type == "ClassProperty" || field.type == "WeakObjectProperty") &&
+        field.size == 8;
+}
+
+// Where a field path leads: the object holding its last field and what to
+// read there, or why it leads nowhere. `stopAtPointer` (each on a class)
+// stops at the first object pointer with the path past it in `rest`, since
+// there is no instance yet to read the pointer from.
+struct PathTarget {
+    std::string error;
+    ue::Field field;
+    Ref object{};
+    uint32_t offset = 0, size = 0;        // What to read in `object`.
+    uint64_t address = 0;
+    std::optional<NativeMember> native;   // A member from the native file, decoded by its type.
+    bool stale = false;
+    bool pointer = false;                 // stopAtPointer: `field` is the pointer, `rest` the path past it.
+    std::string rest;
+};
+
+PathTarget ResolvePath(Session& session, StructCache& structs, Ref object, std::string_view path, bool stopAtPointer) {
+    Client& client = session.client;
+    PathTarget out;
+    uint32_t base = 0; // Offset of the current struct inside the object.
+    // Shared with the session's cache, not copied.
+    FieldList objectFields;
+    const std::vector<ue::Field>* table = nullptr;
+    std::string_view rest = path;
+    while (out.error.empty()) {
+        if (!table) {
+            auto fields = ObjectTable(session, object);
+            if (!fields) { out.error = fields.error().message; break; }
+            objectFields = std::move(*fields);
+            table = objectFields.get();
+        }
+        const size_t dot = rest.find('.');
+        const auto name = rest.substr(0, dot);
+        rest = dot == std::string_view::npos ? std::string_view{} : rest.substr(dot + 1);
+        const auto* field = FindField(session.names, *table, name, out.error);
+        if (!field) {
+            // A native member, as the last step on the object itself.
+            if (!stopAtPointer && rest.empty() && table == objectFields.get() && !Ue(session).native.Empty()) {
+                const auto native = NativeMembers(session, object, *objectFields, object.index >= 0);
+                const auto named = [&](const NativeCheck& c) { return NativeMatches(*c.member, name); };
+                if (const auto refused = std::ranges::find_if(native.refused, named); refused != native.refused.end()) {
+                    out.error = std::string(name) + " (native file line " + std::to_string(refused->member->line) +
+                        ") " + refused->problem;
+                } else if (const auto shown = std::ranges::find_if(native.shown, named); shown != native.shown.end()) {
+                    const auto& member = *shown->member;
+                    out.error.clear();
+                    out.native = member;
+                    out.stale = shown->stale;
+                    out.offset = member.field.offset;
+                    out.size = member.field.Size();
+                    out.address = object.address + member.field.offset;
+                    out.object = object;
+                }
+            }
+            break;
+        }
+        const uint32_t offset = base + field->offset;
+        if (rest.empty()) {
+            if (!field->size || field->size > MaxRead) { out.error = "field size outside 1.." + std::to_string(MaxRead); break; }
+            out.field = *field;
+            out.offset = offset;
+            out.size = field->size;
+            out.address = object.address + offset;
+            out.object = object;
+            break;
+        }
+        if (field->type == "StructProperty" && field->structType.address) {
+            table = structs(field->structType);
+            if (!table) { out.error = "struct layout unavailable: " + std::string(name); break; }
+            base = offset;
+            continue;
+        }
+        if (IsPointer(*field)) {
+            if (stopAtPointer) {
+                out.pointer = true;
+                out.field = *field;
+                out.offset = offset;
+                out.size = 8;
+                out.rest = rest;
+                break;
+            }
+            auto bytes = object.index >= 0 ? ue::ReadObject(client, object, offset, 8) : client.Read(object.address + offset, 8);
+            if (!bytes) { out.error = bytes.error().message; break; }
+            Ref next = PointerRef(field->type, *bytes);
+            if (!next.address && !next.serial) { out.error = "null pointer at " + std::string(name); break; }
+            if (!next.address) {
+                auto described = ue::Describe(client, next);
+                if (!described) { out.error = described.error().message; break; }
+                next = described->ref;
+            }
+            object = next;
+            base = 0;
+            table = nullptr;
+            continue;
+        }
+        out.error = "cannot follow " + std::string(name) + " (" + field->type + ")";
+    }
+    return out;
+}
+
+// FNames in a set of decoded values, resolved in one lookup: collect, then name.
+struct NameBatch {
+    std::vector<int32_t> indices;
+    std::vector<std::string> names;
+    void Add(const ue::Field& field, std::span<const uint8_t> bytes, StructCache& structs) {
+        const auto collect = [&](int32_t index) -> std::string_view {
+            if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
+            return {};
+        };
+        FormatField(field, bytes, structs, 0, collect);
+    }
+    void Resolve(Client& client) {
+        if (!indices.empty() && client.Supports(ue::op::Names))
+            if (auto result = ue::Names(client, indices); result) names = std::move(*result);
+    }
+    std::string_view operator()(int32_t index) const {
+        const auto at = std::ranges::find(indices, index);
+        const auto slot = static_cast<size_t>(at - indices.begin());
+        return at == indices.end() || slot >= names.size() ? std::string_view{} : std::string_view(names[slot]);
+    }
+};
+}
+
+// each: one row per live instance, a value per column, the columns in the
+// order asked. A function is the only column (one call per instance). Field
+// paths are resolved on the class: the spans they need inside the instance
+// (a field, or the pointer a path follows) are read by as few agent passes as
+// fit MaxEachValue bytes each, the first in one tick and the rest over its
+// instance list; a path's part past a pointer is resolved and read per
+// instance, as get does. A cell that fails is null, with an `errors` entry.
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand) {
     Client& client = session.client;
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, "validation", message); };
     auto type = ResolveClass(session, command.className);
     if (!type) return CommandError(session, jsonCommand, type.error());
-    ue::EachQuery query{command.className};
-    std::optional<ue::Field> field;
-    ue::Signature signature;
-    std::string target;
-    auto function = ue::Function(client, *type, command.target);
-    if (function) {
-        auto parameters = ue::Parameters(client, function->address);
-        if (!parameters) return CommandError(session, jsonCommand, parameters.error());
-        signature = std::move(*parameters);
-        if (!ue::EachFunctionAllowed(function->flags)) return fail("each calls only const or pure functions");
-        if (auto refusal = calls::EachRefusal(signature, structs); !refusal.empty()) return fail(std::move(refusal));
-        if (!signature.size || signature.size > ue::MaxEachValue)
-            return fail("parameter block must be 1.." + std::to_string(ue::MaxEachValue) + " bytes");
-        target = function->owner + ":" + function->name;
-        query.function = target;
-        query.size = signature.size;
-    } else if (function.error().kind == Error::Kind::Agent && function.error().status == Status::NotFound) {
-        auto fields = ObjectFields(session, *type);
-        if (!fields) return CommandError(session, jsonCommand, fields.error());
-        const std::string_view wanted = command.target;
-        const auto matches = [&](const ue::Field& candidate) {
-            const auto colon = wanted.find(':');
-            if (colon == std::string_view::npos) return session.names.Matches(candidate, wanted);
-            return wanted.substr(0, colon) == candidate.owner && session.names.Matches(candidate, wanted.substr(colon + 1));
-        };
-        const auto found = std::ranges::find_if(*fields, matches);
-        if (found == fields->end())
-            return fail("neither a function nor a field of " + command.className + ": " + command.target);
-        if (std::ranges::find_if(std::next(found), fields->end(), matches) != fields->end())
-            return fail("ambiguous field " + command.target + " (use Owner:Field)");
-        if (!found->size || found->size > ue::MaxEachValue)
-            return fail("field must be 1.." + std::to_string(ue::MaxEachValue) + " bytes");
-        field = *found;
-        target = found->owner + ":" + found->name;
-        query.offset = found->offset;
-        query.size = found->size;
-    } else {
-        return CommandError(session, jsonCommand, function.error());
-    }
-    auto result = ue::Each(client, query);
-    if (!result) return CommandError(session, jsonCommand, result.error());
-    refs.clear();
-    bool truncated = false;
+    const auto& paths = command.fields;
     shape::Each record;
-    std::vector<std::pair<Ref, std::vector<uint8_t>>> last;
-    for (const auto& row : result->rows) {
-        refs.push_back(row.object);
-        shape::EachRow item{FullRef(row.object), EachValue(field, signature, row.value, structs, Style(session), truncated), {}};
-        if (session.meta) item.hex = HexBytes(row.value);
-        record.rows.push_back(std::move(item));
-        last.emplace_back(row.object, row.value);
-    }
     record.className = command.className;
     record.classRef = FullRef(*type);
-    record.target = target;
-    record.mode = field ? "field" : "call";
-    record.capped = result->capped;
-    if (command.seconds) {
+    bool truncated = false;
+    refs.clear();
+
+    // --seconds: the one column polled again until the deadline, its changes reported.
+    const auto watch = [&](ue::EachQuery query, const std::optional<ue::Field>& field, const ue::Signature& signature,
+                           std::vector<std::pair<Ref, std::vector<uint8_t>>> last) {
         std::vector<shape::EachChange> changes;
         std::optional<Error> pollError;
         size_t polls = 0;
@@ -180,30 +287,172 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         record.polls = polls;
         record.changes = std::move(changes);
         if (pollError) record.pollError = pollError->message;
+    };
+
+    // A function: the only column, called on each instance.
+    if (paths.size() == 1) {
+        auto function = ue::Function(client, *type, paths[0]);
+        if (function) {
+            auto parameters = ue::Parameters(client, function->address);
+            if (!parameters) return CommandError(session, jsonCommand, parameters.error());
+            const ue::Signature signature = std::move(*parameters);
+            if (!ue::EachFunctionAllowed(function->flags)) return fail("each calls only const or pure functions");
+            if (auto refusal = calls::EachRefusal(signature, structs); !refusal.empty()) return fail(std::move(refusal));
+            if (!signature.size || signature.size > ue::MaxEachValue)
+                return fail(function->owner + ":" + function->name + "'s parameter block is " +
+                    std::to_string(signature.size) + " bytes; each takes 1.." + std::to_string(ue::MaxEachValue) +
+                    " per instance (call it on one object instead)");
+            const std::string target = function->owner + ":" + function->name;
+            ue::EachQuery query{command.className};
+            query.function = target;
+            query.size = signature.size;
+            auto result = ue::Each(client, query);
+            if (!result) return CommandError(session, jsonCommand, result.error());
+            std::vector<std::pair<Ref, std::vector<uint8_t>>> last;
+            for (const auto& row : result->rows) {
+                refs.push_back(row.object);
+                shape::EachRow item{FullRef(row.object), {EachValue(std::nullopt, signature, row.value, structs,
+                    Style(session), truncated)}, {}};
+                if (session.meta) item.hex = HexBytes(row.value);
+                record.rows.push_back(std::move(item));
+                last.emplace_back(row.object, row.value);
+            }
+            record.columns = {target};
+            record.mode = "call";
+            record.capped = result->capped;
+            record.sameTick = true;
+            if (command.seconds) watch(query, std::nullopt, signature, std::move(last));
+            record.truncated = truncated;
+            return Emit(session, jsonCommand, std::move(record));
+        }
+        if (function.error().kind != Error::Kind::Agent || function.error().status != Status::NotFound)
+            return CommandError(session, jsonCommand, function.error());
+    }
+
+    // Field paths, resolved on the class; one past a pointer stops there for now.
+    std::vector<PathTarget> columns;
+    for (const auto& path : paths) {
+        auto column = ResolvePath(session, structs, *type, path, true);
+        if (!column.error.empty())
+            return fail(paths.size() == 1 ? "neither a function nor a field of " + command.className + ": " + path +
+                " (" + column.error + ")" : path + ": " + column.error + " (a function is each's only column)");
+        if (column.size > ue::MaxEachValue)
+            return fail(path + " is " + std::to_string(column.size) + " bytes; each reads 1.." +
+                std::to_string(ue::MaxEachValue) + " per instance (get reads it on one object)");
+        columns.push_back(std::move(column));
+    }
+    if (command.seconds && (columns.size() != 1 || columns.front().pointer))
+        return fail("--seconds watches one field or function, not a path through a pointer");
+
+    // The spans inside the instance, in passes of at most MaxEachValue bytes.
+    struct Pass {
+        uint32_t start = 0, end = 0;
+        std::vector<std::pair<Ref, std::vector<uint8_t>>> rows;
+    };
+    std::vector<std::pair<uint32_t, uint32_t>> spans;
+    for (const auto& column : columns) spans.emplace_back(column.offset, column.offset + column.size);
+    std::vector<Pass> passes;
+    for (const auto& [begin, end] : shape::EachPasses(std::move(spans), ue::MaxEachValue)) passes.push_back({begin, end, {}});
+    bool capped = false;
+    ue::EachQuery first{command.className};
+    for (size_t i = 0; i < passes.size(); ++i) {
+        ue::EachQuery query{command.className};
+        query.offset = passes[i].start;
+        query.size = passes[i].end - passes[i].start;
+        query.reuse = i > 0;
+        if (!i) first = query;
+        auto result = ue::Each(client, query);
+        if (!result) return CommandError(session, jsonCommand, result.error());
+        capped |= result->capped;
+        for (auto& row : result->rows) passes[i].rows.emplace_back(row.object, std::move(row.value));
+    }
+    // A column's bytes in one instance, from the pass that holds its span; empty when the instance left.
+    const auto inObject = [&](const Ref& object, const PathTarget& column) -> std::span<const uint8_t> {
+        for (const auto& pass : passes) {
+            if (column.offset < pass.start || column.offset + column.size > pass.end) continue;
+            const auto found = std::ranges::find(pass.rows, object, &std::pair<Ref, std::vector<uint8_t>>::first);
+            const size_t at = column.offset - pass.start;
+            if (found == pass.rows.end() || found->second.size() < at + column.size) return {};
+            return std::span(found->second).subspan(at, column.size);
+        }
+        return {};
+    };
+
+    // Each cell: the field and bytes to decode, or why there are none.
+    struct Cell {
+        std::string error;
+        ue::Field field;
+        std::vector<uint8_t> bytes;
+        std::optional<NativeMember> native;
+    };
+    const bool pointers = std::ranges::any_of(columns, &PathTarget::pointer);
+    const Client::Hold hold(client);
+    std::vector<std::vector<Cell>> cells;
+    for (const auto& entry : passes.front().rows) {
+        const Ref& object = entry.first;
+        auto& row = cells.emplace_back();
+        for (const auto& column : columns) {
+            Cell& cell = row.emplace_back();
+            const auto data = inObject(object, column);
+            if (data.size() != column.size) { cell.error = "the instance was gone by a later pass"; continue; }
+            if (!column.pointer) {
+                cell.field = column.field;
+                cell.bytes.assign(data.begin(), data.end());
+                continue;
+            }
+            Ref next = PointerRef(column.field.type, data);
+            if (!next.address && !next.serial) { cell.error = "null pointer at " + column.field.name; continue; }
+            if (!next.address) {
+                auto described = ue::Describe(client, next);
+                if (!described) { cell.error = described.error().message; continue; }
+                next = described->ref;
+            }
+            const auto target = ResolvePath(session, structs, next, column.rest, false);
+            if (!target.error.empty()) { cell.error = target.error; continue; }
+            auto bytes = target.object.index >= 0 ? ue::ReadObject(client, target.object, target.offset, target.size) :
+                client.Read(target.object.address + target.offset, target.size);
+            if (!bytes) { cell.error = bytes.error().message; continue; }
+            cell.field = target.field;
+            cell.native = target.native;
+            cell.bytes = std::move(*bytes);
+        }
+    }
+    NameBatch names;
+    for (const auto& row : cells)
+        for (const auto& cell : row)
+            if (cell.error.empty() && !cell.native) names.Add(cell.field, cell.bytes, structs);
+    names.Resolve(client);
+
+    std::vector<shape::EachError> errors;
+    for (size_t i = 0; i < cells.size(); ++i) {
+        const Ref& object = passes.front().rows[i].first;
+        refs.push_back(object);
+        shape::EachRow item{FullRef(object), {}, {}};
+        for (size_t c = 0; c < cells[i].size(); ++c) {
+            const Cell& cell = cells[i][c];
+            if (!cell.error.empty()) {
+                item.values.emplace_back(nullptr);
+                errors.push_back({FullRef(object), static_cast<uint32_t>(c), cell.error});
+            } else if (cell.native) {
+                item.values.push_back(layout::Value(cell.native->field, cell.bytes));
+            } else {
+                item.values.push_back(JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)));
+            }
+        }
+        if (session.meta && columns.size() == 1 && !columns.front().pointer) item.hex = HexBytes(cells[i].front().bytes);
+        record.rows.push_back(std::move(item));
+    }
+    record.columns = paths;
+    record.mode = "field";
+    record.capped = capped;
+    record.sameTick = passes.size() == 1 && !pointers;
+    if (!errors.empty()) record.errors = std::move(errors);
+    if (command.seconds) {
+        std::vector<std::pair<Ref, std::vector<uint8_t>>> last = passes.front().rows;
+        watch(first, columns.front().field, {}, std::move(last));
     }
     record.truncated = truncated;
     Emit(session, jsonCommand, std::move(record));
-}
-
-namespace {
-// A field by [Owner:]Name, readable or reflected; nullptr when missing or ambiguous (why says which).
-const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields, std::string_view wanted, std::string& why) {
-    const auto colon = wanted.find(':');
-    const auto matches = [&](const ue::Field& field) {
-        if (colon == std::string_view::npos) return names.Matches(field, wanted);
-        return wanted.substr(0, colon) == field.owner && names.Matches(field, wanted.substr(colon + 1));
-    };
-    const auto found = std::ranges::find_if(fields, matches);
-    if (found == fields.end()) {
-        why = "no field " + std::string(wanted);
-        return nullptr;
-    }
-    if (std::ranges::find_if(std::next(found), fields.end(), matches) != fields.end()) {
-        why = "ambiguous field " + std::string(wanted) + " (use Owner:Field)";
-        return nullptr;
-    }
-    return &*found;
-}
 }
 
 // get: each path resolved through the field tables, following object
@@ -214,95 +463,13 @@ const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields
 void RunGet(Session& session, const Command& command, StructCache& structs, std::vector<Ref>& refs,
             std::string_view jsonCommand) {
     Client& client = session.client;
-    struct Value {
-        std::string path, error;
-        ue::Field field;
+    struct Value : PathTarget {
         std::vector<uint8_t> bytes;
-        uint64_t address = 0;
-        Ref object{};
-        uint32_t offset = 0, size = 0;        // What to read in `object`, once every path is resolved.
-        std::optional<NativeMember> native;   // A member from the native file, decoded by its type.
-        bool stale = false;
     };
     const Client::Hold hold(client);
     const Ref root = ue::GetRef(command.request);
     std::vector<Value> values;
-    for (const auto& path : command.fields) {
-        Value& out = values.emplace_back();
-        out.path = path;
-        Ref object = root;
-        uint32_t base = 0; // Offset of the current struct inside the object.
-        // Shared with the session's cache, not copied.
-        FieldList objectFields;
-        const std::vector<ue::Field>* table = nullptr;
-        std::string_view rest = path;
-        while (out.error.empty()) {
-            if (!table) {
-                auto fields = ObjectTable(session, object);
-                if (!fields) { out.error = fields.error().message; break; }
-                objectFields = std::move(*fields);
-                table = objectFields.get();
-            }
-            const size_t dot = rest.find('.');
-            const auto name = rest.substr(0, dot);
-            rest = dot == std::string_view::npos ? std::string_view{} : rest.substr(dot + 1);
-            const auto* field = FindField(session.names, *table, name, out.error);
-            if (!field) {
-                // A native member, as the last step on the object itself.
-                if (rest.empty() && table == objectFields.get() && !Ue(session).native.Empty()) {
-                    const auto native = NativeMembers(session, object, *objectFields, object.index >= 0);
-                    const auto named = [&](const NativeCheck& c) { return NativeMatches(*c.member, name); };
-                    if (const auto refused = std::ranges::find_if(native.refused, named); refused != native.refused.end()) {
-                        out.error = std::string(name) + " (native file line " + std::to_string(refused->member->line) +
-                            ") " + refused->problem;
-                    } else if (const auto shown = std::ranges::find_if(native.shown, named); shown != native.shown.end()) {
-                        const auto& member = *shown->member;
-                        out.error.clear();
-                        out.native = member;
-                        out.stale = shown->stale;
-                        out.offset = member.field.offset;
-                        out.size = member.field.Size();
-                        out.address = object.address + member.field.offset;
-                        out.object = object;
-                    }
-                }
-                break;
-            }
-            const uint32_t offset = base + field->offset;
-            if (rest.empty()) {
-                if (!field->size || field->size > MaxRead) { out.error = "field size outside 1.." + std::to_string(MaxRead); break; }
-                out.field = *field;
-                out.offset = offset;
-                out.size = field->size;
-                out.address = object.address + offset;
-                out.object = object;
-                break;
-            }
-            if (field->type == "StructProperty" && field->structType.address) {
-                table = structs(field->structType);
-                if (!table) { out.error = "struct layout unavailable: " + std::string(name); break; }
-                base = offset;
-                continue;
-            }
-            if ((field->type == "ObjectProperty" || field->type == "ClassProperty" || field->type == "WeakObjectProperty") &&
-                field->size == 8) {
-                auto bytes = object.index >= 0 ? ue::ReadObject(client, object, offset, 8) : client.Read(object.address + offset, 8);
-                if (!bytes) { out.error = bytes.error().message; break; }
-                Ref next = PointerRef(field->type, *bytes);
-                if (!next.address && !next.serial) { out.error = "null pointer at " + std::string(name); break; }
-                if (!next.address) {
-                    auto described = ue::Describe(client, next);
-                    if (!described) { out.error = described.error().message; break; }
-                    next = described->ref;
-                }
-                object = next;
-                base = 0;
-                table = nullptr;
-                continue;
-            }
-            out.error = "cannot follow " + std::string(name) + " (" + field->type + ")";
-        }
-    }
+    for (const auto& path : command.fields) values.push_back({ResolvePath(session, structs, root, path, false), {}});
     // The values, back to back. A replaced object is refused by its read.
     uint64_t firstTick = 0;
     for (auto& value : values) {
@@ -315,43 +482,28 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     }
     const bool sameTick = firstTick == hold.LastTick();
     // FNames in the values, resolved in one lookup.
-    std::vector<int32_t> indices;
-    std::vector<std::string> names;
-    if (client.Supports(ue::op::Names)) {
-        const auto collect = [&](int32_t index) -> std::string_view {
-            if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
-            return {};
-        };
-        for (const auto& value : values)
-            if (value.error.empty() && !value.native) FormatField(value.field, std::span(value.bytes), structs, 0, collect);
-        if (!indices.empty())
-            if (auto result = ue::Names(client, indices); result) names = std::move(*result);
-    }
-    const auto lookupName = [&](int32_t index) -> std::string_view {
-        const auto at = std::ranges::find(indices, index);
-        const auto slot = static_cast<size_t>(at - indices.begin());
-        return at == indices.end() || slot >= names.size() ? std::string_view{} : std::string_view(names[slot]);
-    };
+    NameBatch lookupName;
+    for (const auto& value : values)
+        if (value.error.empty() && !value.native) lookupName.Add(value.field, std::span(value.bytes), structs);
+    lookupName.Resolve(client);
     const auto modules = LoadedModules(session);
     shape::Get result;
     bool failed = false;
     for (const auto& value : values) {
         shape::GetRow row;
-        row.path = value.path;
         if (!value.error.empty()) {
             failed = true;
             row.error = value.error;
             result.rows.push_back(std::move(row));
             continue;
         }
-        row.ok = true;
         row.address = Addr(value.address);
         row.where = Locate(value.address, modules);
-        row.object = ReusableRef(value.object);
+        // The holder only when a pointer led there; otherwise it is the ref asked about.
+        if (!(value.object == root)) row.object = ReusableRef(value.object);
         if (session.meta) row.hex = HexBytes(value.bytes);
         if (value.native) {
             row.value = layout::Value(value.native->field, value.bytes);
-            row.truncated = false;
             row.native = true;
             if (value.stale) row.stale = true;
             if (session.meta) row.type = NativeType(value.native->field);
@@ -360,7 +512,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         }
         bool partial = false;
         row.value = JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session));
-        row.truncated = partial;
+        if (partial) row.truncated = true;
         if (session.meta) row.type = value.field.type;
         const auto target = PointerRef(value.field.type, value.bytes);
         row.valueWhere = Locate(target.address, modules);

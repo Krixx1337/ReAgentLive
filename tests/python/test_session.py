@@ -26,7 +26,6 @@ TABLE_TOOL = os.environ.get('REAGENTLIVE_TABLE') and os.path.abspath(os.environ[
 FAKE = os.path.join(HERE, 'fake_console.py')
 
 OBJECT = {'ref': '0x10#1:1', 'name': 'A', 'class': 'Pawn'}
-FIELD = {'name': 'Health', 'owner': 'Pawn', 'type': 'FloatProperty', 'offset': 256, 'size': 4, 'label': 'Health'}
 RANGE = {'address': '0x9000', 'length': 4, 'guarded': False}
 SIG = {'pattern': '48 8b', 'list': '0x48, 0x8B', 'module': 'Game.exe', 'unique': True, 'total': 1,
        'rows': [{'address': '0x140001000', 'module': 'Game.exe', 'rva': '0x1000'}], 'length': 2, 'fixed_bytes': 2,
@@ -60,9 +59,9 @@ CALLS = [
     [C('read', {'addr': 4096, 'len': 4}), ok({'address': '0x1000', 'size': 4, 'hex': '00 00 80 3f'})],
     [C('read', {'addr': '0x10#1:1->0x30->0x8', 'len': 2}), ok({'address': '0x18', 'size': 2, 'hex': '01 02',
                                                              'chain': {'base': '0x10', 'hops': [], 'address': '0x18'}})],
-    [C('read', {'addr': 16, 'as': 'cstr'}), ok({'address': '0x10', 'size': 2, 'hex': '41 00', 'text': 'A', 'length': 1,
+    [C('read', {'addr': 16, 'type': 'cstr'}), ok({'address': '0x10', 'size': 2, 'hex': '41 00', 'text': 'A', 'length': 1,
                                               'terminated': True})],
-    [C('read', {'addr': '0x10#1:1+0x538', 'as': 'u8 phase, pad 1'}), ok({'address': '0x538', 'size': 2, 'hex': '01 00',
+    [C('read', {'addr': '0x10#1:1+0x538', 'type': 'u8 phase, pad 1'}), ok({'address': '0x538', 'size': 2, 'hex': '01 00',
                                                                          'layout': {'phase': 1}})],
     [C('read-batch', {'spans': [[4096, 2], ['base+0x10', 4]]}), ok({'tick': 7, 'rows': [
         {'address': '0x1000', 'size': 2, 'ok': True, 'hex': '01 02'},
@@ -114,22 +113,21 @@ CALLS = [
     [C('trial', {'addr': '0x10#1:1+0x28', 'data': '0000000000000040', 'owner': REF, 'expect': '000000000000f03f',
                  'object': 0x2000, 'seconds': 5}), ok(TRIAL)],
     [C('trial-clear', {'id': 1}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
-    [C('find', {'text': 'A', 'class': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
-    [C('find', {'text': 'A', 'class': 'Pawn', 'from': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
-    [C('dump', {'target': REF, 'changed': True}), ok({'ref': REF, 'rows': [dict(FIELD, name='Ammo', value=4, before=5,
-                                                                                truncated=False)],
+    [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
+    [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
+    [C('dump', {'target': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': 256, 'value': 4, 'before': 5}],
                                                       'truncated': False, 'capped': False, 'object_lookup_limited': False})],
     [C('dump', {'target': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False, 'object_lookup_limited': False})],
-    [C('census-diff', {'class': 'Actor'}), ok({'classes': {'before': 3, 'after': 4}, 'instances': {'before': 9, 'after': 11},
+    [C('census-diff', {'cls': 'Actor'}), ok({'classes': {'before': 3, 'after': 4}, 'instances': {'before': 9, 'after': 11},
                                                'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'before': 0, 'after': 2, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
     [C('get', {'object': REF, 'paths': ['A.B']}), ok({'ref': REF, 'same_tick': True, 'rows': [
-        {'path': 'A.B', 'ok': True, 'value': 1.5, 'address': '0x18', 'object': REF, 'truncated': False}]})],
+        {'value': 1.5, 'address': '0x18', 'object': REF}]})],
     [C('get', {'object': REF, 'paths': ['A.B', 'C']}), ok({'ref': REF, 'same_tick': True, 'rows': [
-        {'path': 'A.B', 'ok': True, 'value': 1.5, 'address': '0x18', 'object': REF, 'truncated': False},
-        {'path': 'C', 'ok': False, 'error': 'no field C'}]})],
+        {'value': 1.5, 'address': '0x18', 'object': REF},
+        {'error': 'no field C'}]})],
     [C('name', {'indices': [5, 6]}), ok({'rows': [{'index': 5, 'name': 'Five'}, {'index': 6}]})],
     [C('refs', {'name': 'Missing'}), error(kind='validation', message='no pooled name is exactly Missing')],
     [C('call', {'object': REF, 'function': 'Pawn:Fn', 'params': ['01']}), ok(CALL)],
@@ -234,19 +232,19 @@ class SessionTests(unittest.TestCase):
 
     def test_generated_signatures_follow_the_rows(self):
         read = inspect.signature(self.gen.Console.read)
-        self.assertEqual(list(read.parameters), ['self', 'addr', 'len', 'as_'])
-        self.assertEqual(read.parameters['as_'].kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertEqual(list(read.parameters), ['self', 'addr', 'len', 'type'])
+        self.assertEqual(read.parameters['type'].kind, inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(read.return_annotation.__name__, 'ReadResult')
         trial = inspect.signature(self.gen.Console.trial)
         self.assertIs(trial.parameters['owner'].default, inspect.Parameter.empty)   # A required flag.
         self.assertEqual(trial.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
         find = inspect.signature(self.gen.UeVerbs.find)
-        self.assertEqual(list(find.parameters), ['self', 'text', 'class_', 'from_'])
+        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'start'])
         self.assertIn('Literal', str(inspect.signature(self.gen.Console.search).parameters['type'].annotation))
         self.assertIn('class_size', self.gen.Object.__annotations__)              # Named types are classes.
         self.assertIn('Chain', str(self.gen.ReadResult.__annotations__['chain']))
         with self.assertRaises(TypeError):
-            self.c.read(16, as_='cstr', length=4)                                  # A guessed argument fails at once.
+            self.c.read(16, type='cstr', length=4)                                  # A guessed argument fails at once.
 
     def test_a_stale_module_is_refused(self):
         hash_was = self.session.table_hash
@@ -296,23 +294,23 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.c.help('region')['rows'][0]['result'], '{address: addr}')
 
     def test_calls_go_as_json_with_named_arguments(self):
-        self.c.read(0x10, as_='cstr')
-        self.c.read('0x10#1:1+0x538', as_='u8 phase, pad 1')
+        self.c.read(0x10, type='cstr')
+        self.c.read('0x10#1:1+0x538', type='u8 phase, pad 1')
         self.c.write(0x1000, dl.pack('f32', 1.0))
         self.c.search('text', 'Fatal error', max=1)
         self.c.sig_file('my sigs.jsonl')                 # A space needs no quoting.
         self.c.disasm('Game.exe+0x10', 8, function=True, follow=True)
         self.c.xrefs('base+0x10', module='engine.dll', all=True)
         self.c.touches('Game.exe+0x10', [0x538, 0x540], range=0x1000)
-        self.c.ue.find('A', class_='Pawn', from_=24)
+        self.c.ue.find('A', cls='Pawn', start=24)
         self.assertEqual(self.sent(), [
-            C('read', {'addr': 16, 'as': 'cstr'}), C('read', {'addr': '0x10#1:1+0x538', 'as': 'u8 phase, pad 1'}),
+            C('read', {'addr': 16, 'type': 'cstr'}), C('read', {'addr': '0x10#1:1+0x538', 'type': 'u8 phase, pad 1'}),
             C('write', {'addr': 4096, 'data': '0000803f'}), C('search', {'type': 'text', 'value': 'Fatal error', 'max': 1}),
             C('sig-file', {'file': 'my sigs.jsonl'}),
             C('disasm', {'addr': 'Game.exe+0x10', 'count': 8, 'function': True, 'follow': True}),
             C('xrefs', {'addr': 'base+0x10', 'module': 'engine.dll', 'all': True}),
             C('touches', {'addr': 'Game.exe+0x10', 'offsets': [0x538, 0x540], 'range': 0x1000}),
-            C('find', {'text': 'A', 'class': 'Pawn', 'from': 24})])
+            C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24})])
 
     def test_helpers_convert_and_say_so(self):
         self.assertEqual(dl.f32(self.session.read_bytes(0x1000, 4)), 1.0)
@@ -353,10 +351,10 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(rows[2], {'tick': 12, 'us': 20, 'values': [b'\x02\x00'], 'resumed': True, 'root': '0x20'})
 
     def test_pack_verbs(self):
-        self.assertEqual(self.c.ue.find('A', class_='Pawn')['total'], 2)
+        self.assertEqual(self.c.ue.find('A', cls='Pawn')['total'], 2)
         self.assertEqual(self.c.ue.dump(REF, changed=True)['rows'][0]['before'], 5)
         self.c.ue.dump(REF, match='Ammo', changed='ctrl.snap')
-        self.assertEqual(self.c.ue.census_diff(class_='Actor')['rows'][0]['after'], 2)
+        self.assertEqual(self.c.ue.census_diff(cls='Actor')['rows'][0]['after'], 2)
         self.assertEqual(self.c.ue.describe(REF)['class_size'], 1264)
         typed = self.c.ue.call(REF, 'Pawn:Get', ['Name=#5', 'Mode=2'])
         self.assertTrue(typed['kept'])

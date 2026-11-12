@@ -70,8 +70,8 @@ struct PackState {
     // match the cached table; only the remaining pages are skipped.
     std::unordered_map<int32_t, FieldList> tables;
     std::vector<ClassRef> classRefs;
-    std::optional<CensusBaseline> census;   // The last census: census --changed's baseline, census --from's rows.
-    std::optional<CensusBaseline> censusBefore; // The census before it, for census --changed --from.
+    std::optional<CensusBaseline> census;   // The last census: census --changed's baseline, census --start's rows.
+    std::optional<CensusBaseline> censusBefore; // The census before it, for census --changed --start.
 
     explicit PackState(Session& session) : structs(session) {}
 };

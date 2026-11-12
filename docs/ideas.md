@@ -13,8 +13,8 @@ when an investigation needs a larger read budget across ticks.
 
 ### 2 · Class-wide snapshot and compare
 
-`each` compares one field or getter across a class. Whole-object snapshots
-across instances (every reflected field) remain open.
+`each` reads up to 16 fields or one getter across a class. Whole-object
+snapshots across instances (every reflected field) remain open.
 
 ### 11 · A smaller default tool set
 
@@ -162,6 +162,23 @@ in that engine ([design](design.md#not-now)); no pack is promised.
 - **What it needs from the host:** a tick on the engine's thread and an
   object check, as the Unreal pack does ([hosting](hosting.md#host-checklist)).
 
+### 22 · `entries` through a struct path
+
+`entries` takes one field of the object, so a container inside a struct
+member is out of reach: a curve's keys (`FloatCurve.Keys`) came back as
+an address and a count from `get`, and `entries` refused `FloatCurve` as
+"StructProperty, not an array". Pull forward when a container inside a
+struct is the question again: take `get`'s paths and page the container
+the path ends at.
+
+### 23 · `each` over the last instance list
+
+`each`'s cost is its scan of the object table (about 315 host ticks on a
+370 000-object table, field or call alike). The agent keeps the instance
+list; a later `each` of the same class could read over it, at the price of
+missing instances spawned since. Pull forward when a session repeats
+`each` on one class: an explicit flag, never a silent reuse.
+
 ### 16 · Narrowing scan
 
 Changed, unchanged, increased or decreased since the last pass over a
@@ -190,9 +207,9 @@ keeps refusals, approvals and output shapes documented; scripts stay
 outside, in the Python client.
 Also "what is the camera looking at": it only means something while a
 person points the camera, so it cannot be checked without one; `census`,
-`find --class` and the host's roots are the way in.
+`find --cls` and the host's roots are the way in.
 Also a census that marks which instances are new: it needs per-instance state
-in the agent for a question `census-diff` plus `find --class` answers.
+in the agent for a question `census-diff` plus `find --cls` answers.
 Also showing a function's first instructions inside `touches`: `disasm` on
 the row is one more command, and the result stays small.
 Also saved, named layouts or a type system: `label` names members one by

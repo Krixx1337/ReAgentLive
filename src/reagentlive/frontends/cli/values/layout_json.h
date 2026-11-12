@@ -9,7 +9,7 @@
 #include "reagentlive/frontends/cli/syntax/layout.h"
 
 namespace reagentlive::cli::layout {
-// One element of a `read --as` type; NaN and null pointers as null.
+// One element of a `read --type` type; NaN and null pointers as null.
 inline Json Element(std::string_view type, std::span<const uint8_t> bytes) {
     const auto load = [&]<class T>(T) { T value{}; memcpy(&value, bytes.data(), sizeof(T)); return value; };
     if (bytes.size() < ElementSize(type)) return nullptr;

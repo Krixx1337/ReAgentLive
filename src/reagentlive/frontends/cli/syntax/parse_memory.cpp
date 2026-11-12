@@ -39,23 +39,43 @@ uint64_t Milliseconds(std::string_view text) {
     return Number(text, n) && n <= UINT32_MAX / scale ? n * scale : 0;
 }
 
-// watch's ranges: <addr>:<len>, or following a root <offset>:<len>.
+// What follows a watch range's last colon: a length, or a type in read --type's
+// element names with an optional count (f64, i32[2]). False when it is neither.
+bool RangeSize(std::string_view text, uint64_t& length, uint32_t& type) {
+    type = 0;
+    if (Number(text, length)) return true;
+    uint64_t count = 1;
+    if (const size_t open = text.find('['); open != std::string_view::npos) {
+        if (!text.ends_with(']') || !Number(text.substr(open + 1, text.size() - open - 2), count) || !count) return false;
+        text = text.substr(0, open);
+    }
+    const size_t size = ElementSize(text);
+    if (!size || count > MaxWatchRange) return false;
+    type = WatchTypeCode(text);
+    length = size * count;
+    return type != 0;
+}
+
+// watch's ranges: <addr>:<len> or <addr>:<type>[n], or following a root <offset>:<len|type>.
 Parsed WatchRanges(const Args& args, const ParseContext& context, Command command) {
     for (size_t i = 1; i < args.positionals.size(); ++i) {
         const std::string_view item = args.positionals[i];
         const size_t colon = item.rfind(':');
         ReadSpan range{};
+        uint32_t type = 0;
         // A literal ref has its own colon (0x..#index:serial); the length is after the last one.
         // Following a root, the part before the colon is an offset from it (+0x10 or 0x10).
         auto where = colon == std::string_view::npos ? std::string_view{} : item.substr(0, colon);
         if (!command.root.empty() && where.starts_with('+')) where.remove_prefix(1);
         const bool placed = command.root.empty() ? Address(where, context.refs, context.modules, range.address) :
             Number(where, range.address) && range.address < MaxRootOffset;
-        if (colon == std::string_view::npos || !placed || !Number(item.substr(colon + 1), range.length) ||
+        if (colon == std::string_view::npos || !placed || !RangeSize(item.substr(colon + 1), range.length, type) ||
             !range.length || range.length > MaxWatchRange)
-            return Fail("a range is <addr>:<len>, len 1.." + std::to_string(MaxWatchRange));
+            return Fail("a range is <addr>:<len> (1.." + std::to_string(MaxWatchRange) +
+                ") or <addr>:<type>[n] with a read --type element (i8..u64, f32, f64, ptr): " + std::string(item));
         if (command.reads.size() == MaxWatchRanges) return Fail("at most " + std::to_string(MaxWatchRanges) + " ranges");
         command.reads.push_back(range);
+        command.watchTypes.push_back(type);
         command.guardObjects.push_back(command.root.empty() ? ObjectBase(where, context.refs) : 0);
     }
     return command;
@@ -67,11 +87,12 @@ Parsed Read(const Args& args, const ParseContext& context) {
     Request& request = command.request;
     uint64_t length = 64;
     const bool counted = !args.At(1).empty();
-    if (!ChainAddress(args.At(0), context.refs, context.modules, request.address, command.chain)) return Fail();
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, request.address, command.chain, &why)) return Fail(why);
     if (counted && !Number(args.At(1), length)) return Fail("length must be a number");
-    if (args.Has("--as")) {
+    if (args.Has("--type")) {
         // The rest of the line: one type, or a layout (quotes optional).
-        std::string_view view = args.Value("--as");
+        std::string_view view = args.Value("--type");
         if (view.size() >= 2 && view.front() == '"' && view.back() == '"') view = Trim(view.substr(1, view.size() - 2));
         if (view.empty()) return Fail();
         command.view = view;
@@ -101,7 +122,8 @@ Parsed Peek(const Args& args, const ParseContext& context) {
     Request& request = command.request;
     uint64_t count = 8;
     const bool counted = !args.At(1).empty();
-    if (!ChainAddress(args.At(0), context.refs, context.modules, request.address, command.chain)) return Fail();
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, request.address, command.chain, &why)) return Fail(why);
     if (counted && (!Number(args.At(1), count) || !count || count > MaxPeek))
         return Fail("count must be 1.." + std::to_string(MaxPeek));
     if (args.Has("--name") && !args.Has("--label")) return Fail("--name goes with --label");
@@ -122,12 +144,22 @@ Parsed Peek(const Args& args, const ParseContext& context) {
 Parsed ReadBatch(const Args& args, const ParseContext& context) {
     Command command;
     if (args.positionals.size() % 2) return Fail();
+    uint64_t total = 0;
     for (size_t i = 0; i < args.positionals.size(); i += 2) {
         ReadSpan read{};
         if (!Address(args.At(i), context.refs, context.modules, read.address) || !Number(args.At(i + 1), read.length))
             return Fail();
+        if (command.reads.size() == MaxBatchReads) return Fail("at most " + std::to_string(MaxBatchReads) + " ranges");
+        if (!read.address || !read.length) return Fail("range " + std::to_string(i / 2 + 1) + ": an address and a length above 0");
         command.reads.push_back(read);
-        if (!ReadBatchSize(command.reads)) return Fail("read batch exceeds limits or contains an invalid range");
+        total += read.length;
+        // The response holds every range's bytes and one status per range.
+        const uint64_t budget = MaxRead - command.reads.size() * sizeof(reagentlive::Status);
+        if (total > budget)
+            return Fail("the ranges total " + std::to_string(total) + " bytes; " + std::to_string(command.reads.size()) +
+                " ranges take at most " + std::to_string(budget) + " (" + std::to_string(MaxRead) + " less " +
+                std::to_string(sizeof(reagentlive::Status)) + " per range)");
+        if (!ReadBatchSize(command.reads)) return Fail("range " + std::to_string(i / 2 + 1) + " wraps past the address space");
     }
     command.request.op = op::ReadBatch;
     return command;
@@ -264,10 +296,10 @@ Parsed Search(const Args& args, const ParseContext& context) {
     if (args.Has("--heap")) request.flags |= SearchPrivate;
     if (args.Has("--paged")) request.flags |= SearchPaged;
     if (args.Has("--background")) request.flags |= SearchBackground;
-    command.target = args.Value("--module"); // The console turns it into --from/--to.
+    command.target = args.Value("--module"); // The console turns it into --start/--to.
     uint64_t n = 0;
-    if (args.Has("--from") && !Address(args.Value("--from"), context.refs, context.modules, request.address))
-        return Fail("--from is an address");
+    if (args.Has("--start") && !Address(args.Value("--start"), context.refs, context.modules, request.address))
+        return Fail("--start is an address");
     if (args.Has("--to") && !Address(args.Value("--to"), context.refs, context.modules, request.args[0]))
         return Fail("--to is an address");
     if (args.Has("--align")) {
@@ -278,11 +310,11 @@ Parsed Search(const Args& args, const ParseContext& context) {
         if (!Number(args.Value("--max"), n) || !n || n > MaxSearchHits) return Fail("--max is 1.." + std::to_string(MaxSearchHits));
         request.args[1] = n;
     }
-    if (!command.target.empty() && (request.address || request.args[0])) return Fail("--module replaces --from and --to");
+    if (!command.target.empty() && (request.address || request.args[0])) return Fail("--module replaces --start and --to");
     request.flags |= align;
     request.op = op::Search;
     if (Check(request) != Status::Ok) return Fail("invalid search: alignment 1, 2, 4, 8 or 16; --max 1.." +
-        std::to_string(MaxSearchHits) + "; --to above --from");
+        std::to_string(MaxSearchHits) + "; --to above --start");
     return command;
 }
 

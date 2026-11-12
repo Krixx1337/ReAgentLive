@@ -6,22 +6,22 @@ Each command's flags and result keys: `help <verb>` or
 
 | Command | Guard |
 |---|---|
-| `find [text] [--class C] [--from N]` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `C` (case-insensitive; `--class Character` includes vendors); pages of 24 from the object-table slot `N` and the next page's cursor; at most 1 ms of scanning per tick (`Progress::Continue`). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
+| `find [text] [--cls C] [--start N]` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `C` (case-insensitive; `--cls Character` includes vendors); pages of 24 from the object-table slot `N` and the next page's cursor; at most 1 ms of scanning per tick (`Progress::Continue`). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
 | `call <object> <[Class:]Function> [hex]` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns |
 | `release <object> <[Class:]Function> [hex]` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
 | `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection on the game thread. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (UE5 `UClass+0x1E0`, `{UClass*, int32 PointerOffset}` entries, read live). The offset is not in the SDK, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
-| `funcs <object\|class> [text] [--from N]` | lists owner-qualified function names on the class chain, derived class first, with a case-insensitive substring filter and a next-page cursor |
+| `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, with a case-insensitive substring filter and a next-page cursor |
 | `params <object\|class> <[Owner:]Function>` | resolves the function as for `func`, then reads its reflected parameters, directions and block size |
 | `fields <object>` | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
 | Object range read | used by `snap` and `record`; checks the game thread and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
 | `describe <address\|$N>` | checks the game thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
 | `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the game thread; an undecodable index returns empty |
 | Array preview | used by `dump`; resolves the instance on the game thread, reads the array header and a bounded prefix of its backing storage on the same tick |
-| `census [--class C]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
-| `name-find <text> [--from N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor; checks the game thread. The pool's entry layout is chosen once by decoding the first block's entries and comparing them with the engine's own name lookup; an unknown layout is `unsupported` |
-| `each <Class> <Field\|[Owner:]Function>` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one field (up to 64 bytes) or calls one function for every instance in a single tick on the game thread. A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
+| `census [--cls C]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
+| `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor; checks the game thread. The pool's entry layout is chosen once by decoding the first block's entries and comparing them with the engine's own name lookup; an unknown layout is `unsupported` |
+| `each <Class> <Path\|[Owner:]Function>...` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
 | `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
-| `entries <object> <[Owner:]Field> [--from N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--from` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
+| `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
 | `refs <name\|#index>` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). Text must match a pooled name exactly (the console resolves it through `name-find`) |
 
 - **Object identity:** an object-table slot plus its serial. Serial 0 means
@@ -59,10 +59,31 @@ and reuses its ref through the cache file.
 
 ## each
 
-`each` resolves the class the same way, then tries the target as a
-function and, if there is none, as a field (`Owner:Field` or a readable
-name). With `--seconds N` it repeats every 100 ms on the cached instance
-list and prints each changed row to stderr as it happens.
+`each <Class> <path>...` is a table: `columns` once, then `rows` of
+`{ref, values}`, one value per column in the order asked. The same shape
+for one column, so the verb keeps one result type.
+
+- **Columns.** Up to 16 field paths, as `get` takes them (`Owner:Field` or
+  a readable name, struct members, object, class and weak object
+  pointers), or one function (a call per instance, refused beside other
+  columns: calls are the slow case and their outputs do not fit a column).
+  A single column is tried as a function first, then as a field.
+- **Passes.** The paths are resolved on the class. What they need inside
+  the instance (a field, or the pointer a path follows) is grouped into
+  passes of at most 64 bytes: one agent `each` per pass, the first with
+  the scan, the rest over its cached instance list. A path's part past a
+  pointer is resolved and read per instance, as `get` does. `same_tick`
+  is true when one pass with no pointer path read every value.
+- **Failed cells.** A cell that cannot be read (a null pointer on the way,
+  an instance gone by a later pass) is null, with an `errors` entry (`ref`,
+  `column`, `message`). The row stays, so no instance is hidden.
+- **Cost.** The scan of the object table dominates, and a column adds none:
+  measured on a table of about 370 000 objects, an `each` spanned about 315
+  host ticks (3.5 s at 90 ticks per second) for a field and for a call
+  alike, where a `get` took 2.
+- **`--seconds N`** (one field or function) repeats every 100 ms on the
+  cached instance list and prints each changed row to stderr as it
+  happens.
 
 ## census
 
@@ -72,29 +93,29 @@ whole census, and `--limit` applies after the filter.
 
 <a id="census-changes"></a>**Pages and changes.** A result shows `from`, `total`
 (rows after `--match`) and, while more rows remain, `next_cursor` with a
-`hint` (`--from <cursor> for more, --limit 0 for all`). `--from N` is a
-later page of the last census with the same `--class` (of the same verb):
+`hint` (`--start <cursor> for more, --limit 0 for all`). `--start N` is a
+later page of the last census with the same `--cls` (of the same verb):
 the stored rows, sliced, with no new scan and
 `ms` 0, so the pages of one filter join without gaps; refused when there
-is none. A census without `--from` scans again. Every census becomes the
-baseline for its `--class` filter, in the session and the cache file
+is none. A census without `--start` scans again. Every census becomes the
+baseline for its `--cls` filter, in the session and the cache file
 (which keeps the census before it too, for later pages of `census-diff`).
 
-`census-diff [--class C]` runs a new census and prints only the classes whose count
+`census-diff [--cls C]` runs a new census and prints only the classes whose count
 differs from that baseline, largest change first, with `before` and
-`after`; then the new census is the baseline. So: `census --class C`, the
-action, `census-diff --class C`. It is refused when there is no
+`after`; then the new census is the baseline. So: `census --cls C`, the
+action, `census-diff --cls C`. It is refused when there is no
 baseline for that filter (none taken, another agent instance, or another
-`--class`). `--match` and `--limit` apply to the changed rows. Classes
+`--cls`). `--match` and `--limit` apply to the changed rows. Classes
 match by ref. Samples are any live instances, not the new ones: for a
 class absent before they are necessarily new, otherwise follow up with
-`find --class`; a class now gone has none.
+`find --cls`; a class now gone has none.
 
 - A census scans across several ticks, so it is not one moment in time,
   and an object that lives a tick or two can fall between two censuses.
   For those, `watch` a container or use `each --seconds`.
 - A broad filter shows unrelated churn (effects, audio, UI). Narrow
-  `--class` to a base class instead.
+  `--cls` to a base class instead.
 
 ## func
 
@@ -106,6 +127,13 @@ generated wrapper, so follow it separately when locating native game logic.
 
 ## dump
 
+- **A row is its name, offset and value**: the readable name where one was
+  recovered, with the reflected one beside it as `raw`; `before` with
+  `--changed`, `object` for a named pointer, `preview` for a container,
+  `truncated` only when true. The layout (owner, type, size, bool mask)
+  comes as `meta` with `--meta`; `fields` stays the layout command.
+- `--own` keeps the fields the object's own class declares (an instance's
+  class is looked up; a class target is its own).
 - `dump` is `fields` plus `read`s of the object (4 KB per tick, up to 64 KB),
   formatted by property type (`frontends/cli/values/format.h`): structs expanded,
   bools by mask,
@@ -171,8 +199,9 @@ written: `total` rows, of which `globals`, `exec`, `vtables` and
 Games may obfuscate reflected property names. A host can supply a names file
 (format in `frontends/cli/state/names.h`: owner, offset, size, bool mask, name), loaded
 from `ConsoleConfig::namesFile` beside the console or `--names <file>`.
-`fields` and `dump` then show `ControlRotation (_qkzvxwmpltrnhdbgf)`;
-struct members show the readable name alone. `record` and `Owner:Field` accept
+`fields` then shows `ControlRotation (_qkzvxwmpltrnhdbgf)` as a row's
+`label`, and a `dump` row is named `ControlRotation` with `raw`
+`_qkzvxwmpltrnhdbgf`; struct members show the readable name alone. `record` and `Owner:Field` accept
 either name. A size or bit mismatch keeps the raw name, so a stale file never
 labels a moved field. Snapshot files keep raw names.
 

@@ -141,22 +141,28 @@ struct Preview {
         v("elements", &Preview::elements);
     }
 };
-// A dump row: a fields row plus the value (`before` with --changed), the
-// object a pointer names, and the first elements of a container.
+// A dump row, compact: the name (the readable one where it was recovered,
+// with the reflected one as `raw` beside it), the offset and the value;
+// `before` with --changed, the object a pointer names and the first elements
+// of a container. The layout (owner, type, size, bool mask) is `meta`, with
+// --meta; `fields` is the layout command.
 struct DumpRow {
-    FieldInfo field;
-    std::string label;
+    std::string name;
+    std::optional<std::string> raw;
+    uint32_t offset = 0;
     std::optional<bool> native, stale;
     Json value;
     std::optional<Json> before;
-    bool truncated = false;
+    std::optional<bool> truncated;
     Location valueWhere;
     std::optional<Object> object;
     std::optional<Preview> preview;
     std::optional<std::string> previewError;
+    std::optional<FieldInfo> meta;
     template<class V> static void Describe(V& v) {
-        v.flat("", &DumpRow::field);
-        v("label", &DumpRow::label);
+        v("name", &DumpRow::name);
+        v("raw", &DumpRow::raw);
+        v("offset", &DumpRow::offset);
         v("native", &DumpRow::native);
         v("stale", &DumpRow::stale);
         v("value", &DumpRow::value);
@@ -166,6 +172,7 @@ struct DumpRow {
         v("object", &DumpRow::object);
         v("preview", &DumpRow::preview);
         v("preview_error", &DumpRow::previewError);
+        v("meta", &DumpRow::meta);
     }
 };
 struct Filtered {
@@ -386,16 +393,28 @@ struct Refs {
     }
 };
 
-// each: one value per live instance. A call's value is its return value, or
-// {return, outputs}. With --seconds also the polls and the changes seen.
+// each: a table, one row per live instance with a value per column, in the
+// columns' order. A call's value is its return value, or {return, outputs}.
+// A cell that failed is null, with an `errors` entry naming its row and
+// column. With --seconds (one column) also the polls and the changes seen.
 struct EachRow {
     RefId ref;
-    Json value;
-    std::optional<HexBytes> hex;
+    std::vector<Json> values;
+    std::optional<HexBytes> hex;    // --meta, one column read in the instance: its bytes.
     template<class V> static void Describe(V& v) {
         v("ref", &EachRow::ref);
-        v("value", &EachRow::value);
+        v("values", &EachRow::values);
         v("hex", &EachRow::hex);
+    }
+};
+struct EachError {
+    RefId ref;
+    uint32_t column = 0;
+    std::string message;
+    template<class V> static void Describe(V& v) {
+        v("ref", &EachError::ref);
+        v("column", &EachError::column);
+        v("message", &EachError::message);
     }
 };
 struct EachChange {
@@ -411,12 +430,31 @@ struct EachChange {
         v("after", &EachChange::after);
     }
 };
+// each's passes: the [begin, end) spans its columns need inside an instance,
+// grouped so each pass reads at most `most` bytes. Sorted by begin.
+inline std::vector<std::pair<uint32_t, uint32_t>> EachPasses(std::vector<std::pair<uint32_t, uint32_t>> spans, uint32_t most) {
+    std::ranges::sort(spans);
+    std::vector<std::pair<uint32_t, uint32_t>> passes;
+    for (const auto& [begin, end] : spans) {
+        if (!passes.empty() && end <= passes.back().first + most) {
+            passes.back().second = std::max(passes.back().second, end);
+            continue;
+        }
+        passes.emplace_back(begin, end);
+    }
+    return passes;
+}
+
+// `same_tick`: every value came from one agent pass (one column window, no
+// path through a pointer).
 struct Each {
     std::string className;
     RefId classRef;
-    std::string target, mode;
+    std::vector<std::string> columns;
+    std::string mode;
     std::vector<EachRow> rows;
-    bool capped = false, truncated = false;
+    bool sameTick = false, capped = false, truncated = false;
+    std::optional<std::vector<EachError>> errors;
     std::optional<uint32_t> seconds;
     std::optional<uint64_t> polls;
     std::optional<std::vector<EachChange>> changes;
@@ -424,11 +462,13 @@ struct Each {
     template<class V> static void Describe(V& v) {
         v("class", &Each::className);
         v("class_ref", &Each::classRef);
-        v("target", &Each::target);
+        v("columns", &Each::columns);
         v("mode", &Each::mode, "field|call");
         v("rows", &Each::rows);
+        v("same_tick", &Each::sameTick);
         v("capped", &Each::capped);
         v("truncated", &Each::truncated);
+        v("errors", &Each::errors);
         v("seconds", &Each::seconds);
         v("polls", &Each::polls);
         v("changes", &Each::changes);
@@ -493,10 +533,11 @@ struct NativeLabel {
     }
 };
 
-// get: one row per path, a value or an error. `type` and `hex` with --meta.
+// get: one row per path, in the order asked; a failed path keeps its place
+// with `error` in place of the value. `object` is the holder of the last
+// field, given only when the path crossed a pointer to reach it. `truncated`
+// only when true; `type` and `hex` with --meta.
 struct GetRow {
-    std::string path;
-    bool ok = false;
     std::optional<Json> value;
     std::optional<Addr> address;
     Location where;
@@ -507,8 +548,6 @@ struct GetRow {
     std::optional<HexBytes> hex;
     std::optional<std::string> error;
     template<class V> static void Describe(V& v) {
-        v("path", &GetRow::path);
-        v("ok", &GetRow::ok);
         v("value", &GetRow::value);
         v("address", &GetRow::address);
         v.flat("", &GetRow::where);
@@ -656,7 +695,11 @@ shape::Fields MakeFields(const Ref& ref, std::span<const ue::Field> sorted, cons
 
 // Field rows (reflected and native) in offset order.
 template<class Row> void SortRowsByOffset(std::vector<Row>& rows) {
-    std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.field.offset < b.field.offset; });
+    const auto offset = [](const Row& row) {
+        if constexpr (requires { row.field.offset; }) return row.field.offset;
+        else return row.offset;
+    };
+    std::stable_sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) { return offset(a) < offset(b); });
 }
 
 inline std::vector<shape::NativeRefused> MakeNativeRefused(std::span<const NativeCheck> refused) {

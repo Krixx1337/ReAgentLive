@@ -118,7 +118,7 @@ one file:
 | `console/native.cpp` | `vtable` and `region` (native objects) |
 | `console/pack.h`, `console/ue/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `console/ue/members.cpp`, `state/ue/native_names.h` | native members: `label`, the native file and its checks |
-| `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --as "<layout>"`, native member types) |
+| `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --type "<layout>"`, native member types) |
 | `console/ue/dump.cpp` | field tables, struct layouts, `fields`, `dump` |
 | `console/ue/labels.cpp` | `export-labels` |
 | `console/ue/capture.cpp` | snapshots, `snap`, `record`, replay |

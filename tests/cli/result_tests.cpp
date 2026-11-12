@@ -113,7 +113,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     CHECK_FALSE(detail.contains("type"));
     const Verb* search = FindVerb(AllVerbs(), "search");
     REQUIRE(search);
-    CHECK(Usage(*search).starts_with("search <hex|u32|i32|u64|ptr|f32|f64|text> <value>... [--wide] [--from <addr>]"));
+    CHECK(Usage(*search).starts_with("search <hex|u32|i32|u64|ptr|f32|f64|text> <value>... [--wide] [--start <addr>]"));
     const auto full = Checked(MakeHelpRow(*search, true, true));
     CHECK(full["positionals"][1] == Json{{"key", "value"}, {"name", "value"}, {"arity", "some"}, {"type", "text"},
         {"help", "the value to find"}});
@@ -127,7 +127,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
         if (verb.writes) writers.insert(std::string(verb.name));
     CHECK(writers == std::set<std::string>{"write", "trial", "trial-clear", "pin", "watch", "each", "call", "release"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
-    CHECK(full["flags"][1] == Json{{"flag", "--from"}, {"key", "from"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
+    CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
         {"help", "start, or a page's next_cursor"}});
     CHECK(full["type"]["struct"]["next_cursor"] == Json{{"type", "addr"}, {"optional", true}});
     CHECK(FindVerb(AllVerbs(), "exit") == FindVerb(AllVerbs(), "quit"));
@@ -163,7 +163,7 @@ TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors
     const Verb strict{"strict", "core", "", {}, {{"--owner", Takes::One, "ref", "ref", "", {}, true}}};
     CHECK(Tokenise(strict, "").error() == "missing --owner; usage: strict --owner <ref>");
     CHECK(Tokenise(verb, "0x10").error() == "too few arguments" + usage);
-    CHECK(Tokenise(verb, "0x10 01 --bogus").error() == "unknown flag --bogus" + usage);
+    CHECK(Tokenise(verb, "0x10 01 --bogus").error() == "unknown flag --bogus (it takes --expect, --changed, --all, --then)" + usage);
     CHECK(Tokenise(verb, "0x10 01 --all --all").error() == "--all given twice" + usage);
     CHECK(Tokenise(verb, "0x10 01 --expect").error() == "--expect needs a value" + usage);
     CHECK(Tokenise(verb, "0x10 01 --then").error() == "--then needs a value" + usage);
@@ -171,8 +171,8 @@ TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors
     const Verb one{"single", "core", "", {{"addr", "addr", Arity::One}, {"len", "len", Arity::Optional}}, {}};
     CHECK(Tokenise(one, "1 2 3").error() == "too many arguments; usage: single <addr> [len]");
     // A parser's own complaint also ends with the usage line; a bare failure is the usage line.
-    CHECK(Parse("read 0x10 0x", {}).error() == "len: '0x' is not a number; usage: read <addr> [len] [--as type]");
-    CHECK(Parse("read zz", {}).error() == "usage: read <addr> [len] [--as type]");
+    CHECK(Parse("read 0x10 0x", {}).error() == "len: '0x' is not a number; usage: read <addr> [len] [--type type]");
+    CHECK(Parse("read zz", {}).error() == "usage: read <addr> [len] [--type type]");
     CHECK(Parse("frobnicate", {}).error() == "unknown command 'frobnicate' (try help)");
 }
 
@@ -191,7 +191,13 @@ TEST_CASE("every argument has a key, a type from the vocabulary, and keys are un
             CHECK(((flag.takes == Takes::Nothing) == (flag.type == "bool")));
             CHECK((flag.type == "bool" || vocabulary.contains(flag.type) || arg::Enum(flag.type)));
         }
+        // One name in every form: a Python keyword would need another spelling in the generated functions.
+        static const std::set<std::string_view> python{"False", "None", "True", "and", "as", "assert", "async", "await",
+            "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if",
+            "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with",
+            "yield"};
         for (const auto key : keys) {
+            CHECK_FALSE(python.contains(key));
             CHECK_FALSE(key.empty());
             CHECK(std::ranges::all_of(key, [](char c) { return (c >= 'a' && c <= 'z') || c == '_'; }));
         }
@@ -199,7 +205,7 @@ TEST_CASE("every argument has a key, a type from the vocabulary, and keys are un
 }
 
 TEST_CASE("an argument of type int or an enum is checked against the row, typed or as a JSON call") {
-    CHECK(Parse("read 0x10 zz", {}).error() == "len: 'zz' is not a number; usage: read <addr> [len] [--as type]");
+    CHECK(Parse("read 0x10 zz", {}).error() == "len: 'zz' is not a number; usage: read <addr> [len] [--type type]");
     CHECK(Parse("search u16 5", {}).error().starts_with("hex|u32|i32|u64|ptr|f32|f64|text: 'u16' is not one of"));
     CHECK(Parse("touches 0x10 0x538 x1", {}).error().starts_with("offset: 'x1' is not a number"));
     CHECK(Parse("census --limit many", {}).error().starts_with("--limit: 'many' is not a number"));
@@ -227,7 +233,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
             CHECK(other->rest == given.rest);
         }
     };
-    same("read 0x10 16 --as u8 phase, pad 3", {{"addr", "0x10"}, {"len", 16}, {"as", "u8 phase, pad 3"}});
+    same("read 0x10 16 --type u8 phase, pad 3", {{"addr", "0x10"}, {"len", 16}, {"type", "u8 phase, pad 3"}});
     same("read 0x10", {{"addr", 16}});
     same("write 0x10 00 00 80 3f --expect 01 02", {{"addr", "0x10"}, {"data", {"00", "00", "80", "3f"}}, {"expect", {"01", "02"}}});
     same("write 0x10 \"00 00 80 3f\"", {{"addr", "0x10"}, {"data", "00 00 80 3f"}});
@@ -241,16 +247,23 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     same("dump 0x10#1:1 --changed f.snap --nonzero", {{"target", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
     same("get 0x10#1:1 A.B C", {{"object", "0x10#1:1"}, {"paths", {"A.B", "C"}}});
     same("name 5 6", {{"indices", {5, 6}}});
-    same("census --class Actor --from 100", {{"class", "Actor"}, {"from", 100}});
+    same("census --cls Actor --start 100", {{"cls", "Actor"}, {"start", 100}});
     // A quoted file path with spaces needs no quoting as a value.
     same("sig-file \"my sigs.jsonl\"", {{"file", "my sigs.jsonl"}});
 
     const Verb* read = FindVerb(AllVerbs(), "read");
-    const std::string usage = "; usage: read <addr> [len] [--as type]";
+    const std::string usage = "; usage: read <addr> [len] [--type type]";
     CHECK(CallArgs(*read, Json{{"addr", "$1"}}).error() ==
         "addr: '$1': a JSON call takes the literal ref a result carries, not $N" + usage);
-    CHECK(CallArgs(*read, Json{{"addr", "0x10"}, {"length", 4}}).error() == "unknown argument 'length'" + usage);
+    CHECK(CallArgs(*read, Json{{"addr", "0x10"}, {"length", 4}}).error() == "unknown argument 'length' (it takes addr, len, type)" + usage);
     CHECK(CallArgs(*read, Json{{"len", 4}}).error() == "len given after a left-out argument" + usage);
+    // A chain that follows no pointer is refused from a JSON call as from a typed line.
+    const auto chain = CallArgs(*read, Json{{"addr", "0x1000->0x0"}});
+    REQUIRE(chain.has_value());
+    CHECK(Build(*read, *chain, {}).error().starts_with(text::ChainNoHop));
+    // A misspelt key is named as unknown, never read as a left-out argument.
+    CHECK(CallArgs(*FindVerb(AllVerbs(), "each"), Json{{"class_", "Pawn"}, {"paths", "Health"}}).error().starts_with(
+        "unknown argument 'class_' (it takes cls, paths, seconds)"));
     CHECK(CallArgs(*read, Json::object()).error() == "too few arguments" + usage);
     CHECK(CallArgs(*read, Json{{"addr", {"0x10", "0x20"}}}).error() == "addr: one value, not a list" + usage);
     CHECK_FALSE(CallArgs(*FindVerb(AllVerbs(), "xrefs"), Json{{"addr", "0x10"}, {"all", "yes"}}).has_value());
@@ -331,6 +344,88 @@ TEST_CASE("funcs lists functions with owner and name") {
     CHECK(result["rows"][1] == Json{{"owner", "Actor"}, {"name", "K2_GetActorLocation"}});
     CHECK(result["rows"][2] == Json{{"name", "Bare"}});
     CHECK_FALSE(result.contains("next_cursor"));
+}
+
+TEST_CASE("a typed watch range is summarised per value") {
+    std::vector<shape::WatchRange> ranges(3);
+    ranges[0].type = "f64";
+    ranges[1].type = "i32[2]";      // ranges[2] is raw: no summary.
+    std::vector<shape::WatchSample> rows(3);
+    rows[0].us = 0;
+    rows[0].values = std::vector<Json>{41.9, Json::array({30452, 30549}), "01 02"};
+    rows[1].us = 500000;
+    rows[1].values = std::vector<Json>{nullptr, Json::array({30452, 30549}), "01 02"};  // Unreadable once.
+    rows[2].us = 2000000;
+    rows[2].values = std::vector<Json>{41.8, Json::array({30549, 30650}), "01 03"};
+    const auto summary = shape::SummariseWatch(ranges, rows);
+    REQUIRE(summary.size() == 3);
+    CHECK(summary[0].range == 0);
+    CHECK_FALSE(summary[0].element);
+    CHECK(summary[0].samples == 2);
+    CHECK(summary[0].first == doctest::Approx(41.9));
+    CHECK(summary[0].least == doctest::Approx(41.8));
+    CHECK(*summary[0].perSecond == doctest::Approx(-0.05));   // -0.1 over 2 s.
+    CHECK(summary[1].element == 0u);
+    CHECK(summary[2].element == 1u);
+    CHECK(summary[2].greatest == 30650);
+    CHECK(*summary[2].perSecond == doctest::Approx(50.5));
+    CHECK(Checked(shape::WatchCapture{false, std::nullopt, 9, 2000, 1000, std::nullopt, ranges, rows, std::nullopt,
+        summary})["summary"][0]["per_second"].is_number());
+}
+
+TEST_CASE("each groups its columns' spans into passes of at most 64 bytes") {
+    using Spans = std::vector<std::pair<uint32_t, uint32_t>>;
+    // Near fields share a pass; a far one starts its own; overlaps merge.
+    CHECK(shape::EachPasses({{0x130, 0x134}, {0x100, 0x108}, {0x134, 0x138}, {0x400, 0x404}}, 64) ==
+        Spans{{0x100, 0x138}, {0x400, 0x404}});
+    CHECK(shape::EachPasses({{0, 8}, {4, 12}}, 64) == Spans{{0, 12}});
+    // Exactly 64 bytes fits; one more starts a pass.
+    CHECK(shape::EachPasses({{0, 4}, {60, 64}}, 64) == Spans{{0, 64}});
+    CHECK(shape::EachPasses({{0, 4}, {61, 65}}, 64) == Spans{{0, 4}, {61, 65}});
+
+    shape::Each each;
+    each.className = "Pawn";
+    each.classRef = RefId{"0x1#1:0"};
+    each.columns = {"Health", "Controller.PlayerState"};
+    each.mode = "field";
+    each.rows.push_back({RefId{"0x10#2:1"}, {100.0, nullptr}, {}});
+    each.errors = std::vector<shape::EachError>{{RefId{"0x10#2:1"}, 1, "null pointer at Controller"}};
+    const auto json = Checked(each);
+    CHECK(json["rows"][0] == Json{{"ref", "0x10#2:1"}, {"values", Json::array({100.0, nullptr})}});
+    CHECK(json["errors"][0]["column"] == 1);
+    CHECK(json["same_tick"] == false);
+}
+
+TEST_CASE("compact rows: dump is name, offset and value; get is value and address") {
+    shape::Dump dump;
+    shape::DumpRow row;
+    row.name = "MaxHealth";
+    row.raw = "_aaabcd";
+    row.offset = 308;
+    row.value = 100;
+    dump.rows.push_back(row);
+    row.raw.reset();
+    row.name = "Flags";
+    row.truncated = true;
+    row.meta = MakeFieldInfo(Field("Flags", 0x60, 1, "ByteProperty"));
+    dump.rows.push_back(row);
+    const auto json = Checked(dump);
+    CHECK(json["rows"][0] == Json{{"name", "MaxHealth"}, {"raw", "_aaabcd"}, {"offset", 308}, {"value", 100}});
+    CHECK(json["rows"][1]["truncated"] == true);    // Only when true, and the layout only with --meta.
+    CHECK(json["rows"][1]["meta"]["type"] == "ByteProperty");
+
+    shape::Get get;
+    get.ref = RefId{"0x10#1:1"};
+    shape::GetRow value;
+    value.value = 1.5;
+    value.address = Addr(0x18);
+    get.rows.push_back(value);
+    shape::GetRow failed;
+    failed.error = "no field C";
+    get.rows.push_back(failed);
+    const auto got = Checked(get);
+    CHECK(got["rows"][0] == Json{{"value", 1.5}, {"address", "0x18"}});
+    CHECK(got["rows"][1] == Json{{"error", "no field C"}});    // A failed path keeps its place.
 }
 
 TEST_CASE("fields, func and params results") {
@@ -478,7 +573,7 @@ TEST_CASE("census rows filter by class name and keep the whole census's totals")
     CHECK(result["next_cursor"] == 1);
     CHECK(result["total"] == 2);
     CHECK(result["filter"] == "Actor");
-    CHECK(result["hint"] == "--from 1 for more, --limit 0 for all");
+    CHECK(result["hint"] == "--start 1 for more, --limit 0 for all");
     const auto plain = Checked(MakeCensus("", census, census.rows, {}, 5));
     CHECK_FALSE(plain.contains("hint"));
     CHECK_FALSE(plain.contains("next_cursor"));
@@ -515,7 +610,7 @@ TEST_CASE("census pages join to every row of a filter, and the last page has no 
     CHECK_FALSE(past.contains("next_cursor"));
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", false).empty());
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", true) ==
-        "no stored census to page: run census-diff --class Actor without --from first");
+        "no stored census to page: run census-diff --cls Actor without --start first");
     CHECK_FALSE(CensusPageProblem(MakeCensusBaseline("Pawn", census), std::nullopt, "Actor", false).empty());
     CHECK_FALSE(CensusPageProblem(std::nullopt, std::nullopt, "", false).empty());
 }
@@ -556,7 +651,7 @@ TEST_CASE("census-diff keeps grown, shrunk, new and vanished classes, largest ch
 TEST_CASE("census-diff needs a baseline under the same filter") {
     CHECK(CensusBaselineProblem(std::nullopt, "Actor").starts_with("no census baseline"));
     const CensusBaseline all{"", {}};
-    CHECK(CensusBaselineProblem(all, "Actor") == "the baseline is from census: run census --class Actor first");
+    CHECK(CensusBaselineProblem(all, "Actor") == "the baseline is from census: run census --cls Actor first");
     CHECK(CensusBaselineProblem(all, "").empty());
     CHECK(CensusBaselineProblem(CensusBaseline{"Actor", {}}, "Actor").empty());
 }

@@ -34,12 +34,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             {}, Of<shape::Batch>, parse::Batch,
             "A $N from an earlier find in the batch works in a typed line. rows holds each command's envelope, with "
             "tick (and last_tick when its responses spanned ticks)."},
-        {"read", "core", "hex dump of 1..4096 bytes (default 64); --as decodes values",
+        {"read", "core", "hex dump of 1..4096 bytes (default 64); --type decodes values",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}},
-            {{"--as", Takes::Rest, "layout", "type", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": layout"}},
+            {{"--type", Takes::Rest, "layout", "type", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": layout"}},
             Of<shape::Read>, parse::Read,
-            "--as <type> adds values (one per element); --as cstr|wstr adds text, length and terminated (default "
-            "256 bytes); --as \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read "
+            "--type <type> adds values (one per element); --type cstr|wstr adds text, length and terminated (default "
+            "256 bytes); --type \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read "
             "adds views. <addr>->0x10->0x8 follows a pointer chain and adds chain."},
         {"read-batch", "core", "read up to 8 ranges in one host tick",
             {{"spans", "addr len", Some, "span", "an address and a length, per range"}}, {}, Of<shape::ReadBatch>, parse::ReadBatch},
@@ -73,8 +73,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"type", "hex|u32|i32|u64|ptr|f32|f64|text", One, "hex|u32|i32|u64|ptr|f32|f64|text", "the value's type"},
              {"value", "value", Some, "text", "the value to find"}},
             {{"--wide", Takes::Nothing, "bool", "", "text as UTF-16"},
-             {"--from", Takes::One, "addr", "addr", "start, or a page's next_cursor"},
-             {"--to", Takes::One, "addr", "addr", "end"}, {"--module", Takes::One, "str", "name", "in place of --from and --to"},
+             {"--start", Takes::One, "addr", "addr", "start, or a page's next_cursor"},
+             {"--to", Takes::One, "addr", "addr", "end"}, {"--module", Takes::One, "str", "name", "in place of --start and --to"},
              {"--align", Takes::One, "int", "N", "1, 2, 4, 8 or 16 (typed values default to their size)"},
              {"--writable", Takes::Nothing, "bool", "", "writable memory only"},
              {"--heap", Takes::Nothing, "bool", "", "private memory only"},
@@ -93,15 +93,19 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::PinClear>, parse::PinClear},
         {"watch", "core", "sample up to 8 ranges every tick (up to 30 s) and return the rows",
             {{"duration", "seconds|Nms", One, "dur", "how long: seconds, or Nms, Ns"},
-             {"ranges", "addr:len", Some, "range", "a range to sample, per range"}},
+             {"ranges", "addr:len|addr:type[n]", Some, "range", "a range to sample, per range: a length, or a read --type element (f64, i32[2]) to decode"}},
             {{"--then", Takes::Rest, "line", "call line", "a raw call (a pack runs it) right after sampling starts"}},
             Of<shape::Watch>, parse::Watch, {}, {}, true, true},
         {"watch-start", "core", "a capture the agent keeps (up to 60 min with --every); returns at once",
             {{"duration", "duration", One, "dur", "how long: seconds, or Nms, Ns, Nm"},
-             {"ranges", "addr|offset:len", Some, "range", "a range to sample; following a root, its offset from the root"}},
+             {"ranges", "addr|offset:len|type[n]", Some, "range",
+              "a range to sample: a length, or a read --type element (f64, i32[2]) to decode; following a root, its offset from the root"}},
             {{"--every", Takes::One, "dur", "duration", "sample interval (default: every tick, then at most 30 s)"},
              {"--follow", Takes::One, "str", "root", "continue on a host root's replacement; ranges are offsets from it"}},
-            Of<shape::WatchStart>, parse::WatchStart, "status lists the roots. The capture outlives the console."},
+            Of<shape::WatchStart>, parse::WatchStart,
+            "status lists the roots. The capture outlives the console, its types too. A typed range's samples are "
+            "numbers (a list for [n]), and watch-read and watch-stop add its summary: first, last, least, greatest "
+            "and the change per second, per value."},
         {"watch-read", "core", "the capture's rows so far", {}, {}, Of<shape::WatchCapture>, parse::WatchRead},
         {"watch-stop", "core", "end the capture and return its rows", {}, {}, Of<shape::WatchCapture>, parse::WatchStop},
         {"sig-check", "core", "is a byte signature unique in a module, and does it land where expected",
@@ -154,7 +158,8 @@ inline const std::vector<std::string>& GeneralNotes() {
         "help <verb> shows a verb's flags, its result's keys and notes; help --json the whole table.",
         "Numbers: 0x hex or decimal. <addr> accepts $N, $N+offset, base+offset and <module>+offset "
         "(game.exe+0x1a2b3c, inside the image). Addresses inside a module carry module and rva.",
-        "<addr>->0x10->0x8 is a pointer chain in read, peek, vtable, disasm and region: each ->off but the last reads a pointer.",
+        "<addr>->0x10->0x8 is a pointer chain in read, peek, vtable, disasm and region: each ->off but the last reads a "
+        "pointer, so one ->off alone is refused (<addr>->0->0x30 reads the pointer at <addr>).",
         "A token in double quotes is taken exactly. A key that does not apply is omitted from a result.",
         "Any line ending in --timing adds trips, wait_ms and total_ms; --meta prints struct values with their layout.",
         "A line starting with { is a JSON call: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}, "
@@ -315,6 +320,18 @@ inline std::expected<Args, std::string> CallArgs(const Verb& verb, const Json& g
             if (auto problem = one(item); !problem.empty()) return problem;
         return {};
     };
+    // An unknown key first: a misspelt name would otherwise read as a left-out argument.
+    if (given.is_object()) {
+        for (const auto& [key, value] : given.items()) {
+            const bool known = std::ranges::any_of(verb.positionals, [&](const Positional& p) { return p.key == key; }) ||
+                std::ranges::any_of(verb.flags, [&](const Flag& f) { return FlagKey(f) == key; });
+            if (known) continue;
+            std::string keys;
+            for (const auto& p : verb.positionals) keys += (keys.empty() ? "" : ", ") + std::string(p.key);
+            for (const auto& f : verb.flags) keys += (keys.empty() ? "" : ", ") + std::string(FlagKey(f));
+            return fail("unknown argument '" + key + "'" + (keys.empty() ? " (it takes none)" : " (it takes " + keys + ")"));
+        }
+    }
     Args args;
     // Positionals fill in order: one left out ends the run (only optional ones may be).
     std::vector<bool> taken(verb.positionals.size()), flagTaken(verb.flags.size());
@@ -381,13 +398,6 @@ inline std::expected<Args, std::string> CallArgs(const Verb& verb, const Json& g
             break;
         }
         args.flags.push_back(std::move(item));
-    }
-    if (given.is_object()) {
-        for (const auto& [key, value] : given.items()) {
-            const bool known = std::ranges::any_of(verb.positionals, [&](const Positional& p) { return p.key == key; }) ||
-                std::ranges::any_of(verb.flags, [&](const Flag& f) { return FlagKey(f) == key; });
-            if (!known) return fail("unknown argument '" + key + "'");
-        }
     }
     // batch's calls stand in for its body.
     if (!args.calls.empty()) args.rest = "{}";

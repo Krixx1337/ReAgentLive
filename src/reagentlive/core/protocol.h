@@ -205,7 +205,8 @@ enum class WatchAction : uint32_t { Start = 1, Read = 2, Stop = 3, Info = 4, Roo
 enum class WatchEnd : uint32_t { Running, Deadline, Stopped, BufferFull, ObjectReplaced };
 struct WatchRange {
     uint64_t address;     // Following a root: the offset from it.
-    uint32_t length, reserved;
+    uint32_t length;
+    uint32_t note;        // The client's own: kept with the capture and returned by Info, never read here.
     Guard guard;
 };
 struct WatchSpec {

@@ -82,7 +82,7 @@ agent has, so frontends can refuse the rest locally.
 | `read-batch` | 4 | core |
 | `search` | 5 | core |
 | `pin` | 6 | core |
-| `watch` (start, read, stop, info, roots; interval and followed root in `WatchSpec`, `protocol.h`) | 7 | core |
+| `watch` (start, read, stop, info, roots; interval and followed root in `WatchSpec`, `protocol.h`; each range's `note` is the client's, kept and returned by info, never read by the agent) | 7 | core |
 | `trial` | 8 | core |
 | `xrefs` (relative-reference scan; request fields in `protocol.h`) | 9 | core |
 | `region` (one `VirtualQuery`; response `RegionInfo`) | 10 | core |

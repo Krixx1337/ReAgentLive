@@ -33,8 +33,8 @@
   - **One method per verb, named by origin:** core on `c` (`c.read`,
     `c.sig_check`, `c.watch_start`), the pack's and the host's under
     their origin (`c.ue.find`, `c.ue.census_diff`, `c.host.<verb>`).
-    Flags are keyword arguments; a Python keyword gets `_` (`class_`,
-    `from_`, `as_`). A wrong argument name is a `TypeError` at once.
+    Flags are keyword arguments; a Python keyword gets `_` (`cls`,
+    `start`, `type`). A wrong argument name is a `TypeError` at once.
   - **Literal refs, never `$N`:** calls go as JSON, which refuses `$1`.
     Take `rows[0]['ref']` from the result and pass it on.
   - `StaleTableError` at `Console(s)`: the console was rebuilt; generate
@@ -52,7 +52,7 @@
     `read_struct`, `read_batch_bytes`, `get_values`, `name_map`,
     `call_bytes`, `batch_results` (`(items, same_tick)`), and
     `samples(result)` for a watch's rows as bytes. Paging is yours:
-    follow `next_cursor` with `from_` in a loop, or a limit flag
+    follow `next_cursor` with `start` in a loop, or a limit flag
     (`census --limit 0`).
   - `addr` and `hex` values are the text the console prints (`"0x7ff6..."`):
     `addr(text)` gives the int, `unhex(text)` the bytes of a `bytes` value.
@@ -76,7 +76,7 @@
 - Read one-shot results by the keys `help <verb>` shows, never by guess.
   Every result's list is `rows` (`find`, `census`, `name-find`, `funcs`,
   `get`, `each`, `batch`, `search`, `disasm`...); a page that has more
-  carries `next_cursor` (and `census` a `hint`): page with `--from`. A key
+  carries `next_cursor` (and `census` a `hint`): page with `--start`. A key
   that does not apply is absent, so test for the key, not for null.
 - `name` takes many indices on one line (40+ verified); the console pages
   them to the agent.
