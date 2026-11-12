@@ -35,33 +35,24 @@ Doing it by hand: [agent setup](docs/agent-setup.md).
 You're in a match. You ask your agent one question, and it works it out
 in the running game:
 
-```text
-you    Find my health. Is it the same for everyone? Then make me tanky.
+> **You:** Find my health. Is it the same for everyone? Then make me tanky.
 
-agent  ue_find --cls Character
-         BP_Soldier_C_0 (you)  BP_Soldier_C_3  BP_Soldier_C_7  … 12 total
+| | Tool | What the agent learns |
+|---|---|---|
+| 1 | `ue_find` | 12 soldiers in the match; you are `BP_Soldier_C_0` |
+| 2 | `ue_get` | your health: **87.5 / 100** |
+| 3 | `ue_each` | every soldier's health, read in the same tick |
+| 4 | `touches` | the one damage function that writes it |
+| 5 | `trial` | your health held at 1000 for 30 s, then restored *(asks you first)* |
 
-       ue_get BP_Soldier_C_0  HealthComp.Health  HealthComp.MaxHealth
-         Health 87.5  MaxHealth 100.0                     same tick
+> **Agent:** Health is a float at `HealthComp+0x1A8`, written by one damage
+> function at `Game.exe+0x9A3F10`. Every soldier uses it. I held yours at
+> 1000 for 30 s, and the original came back on its own.
 
-       ue_each BP_Soldier_C  HealthComp.Health
-         12 soldiers: 100  87.5  64  0  100  …            one tick
-
-       touches Game.exe+0x1c42d0 0x1a8
-         Game.exe+0x9a3f10  writes +0x1a8   (ApplyDamage)
-
-       trial HealthComp+0x1a8  00 00 7a 44  --seconds 30  ← asks you first
-         active … restored after 30 s
-
-agent  Health is a float at HealthComp+0x1A8, written by one damage
-       function at Game.exe+0x9A3F10. Every soldier uses it. I held
-       yours at 1000 for 30 s; the original came back on its own.
-```
-
-Five tool calls, a few seconds. No dump to guess from, no rebuild, nothing
-left changed. An example session, condensed: the tools are real, the game
-and its names are made up. Every address comes back as `module` + `rva`,
-ready for IDA or Ghidra.
+A few seconds, with no dump to guess from, no rebuild, and nothing left
+changed. This is an example: the tools are real, and the game and its
+names are made up. Addresses come back as `module` + `rva`, ready for IDA
+or Ghidra.
 
 ## Where it works
 
