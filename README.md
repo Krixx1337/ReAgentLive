@@ -17,7 +17,9 @@ Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agent-set
 ```
 
 The agent builds ReAgentLive, registers its MCP tools, installs the
-skill that teaches it the method, and checks the result. You need
+skill that teaches it the method, and checks the result. If you want, it
+also fetches a command-line injector, so it can load ReAgentLive into the
+process you name. You need
 Windows x64, Visual Studio's C++ tools and Python.
 Doing it by hand: [agent setup](docs/agent-setup.md).
 
@@ -83,7 +85,8 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
 ## What it is not
 
 - **Not an injector.** Something has to load it: your mod, or any DLL
-  loader.
+  loader. The setup offers [Injector](https://github.com/nefarius/Injector),
+  a command-line one your agent can run itself.
 - **Not a way around protection.** A game that blocks other tools blocks
   this too.
 - **Not a debugger or decompiler.** It checks and reports; analysis stays

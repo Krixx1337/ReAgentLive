@@ -16,7 +16,8 @@ Steps:
 4. Register the MCP server
 5. Install the skill
 6. Verify
-7. Report
+7. (Optional) Get an injector
+8. Report
 
 ---
 
@@ -158,23 +159,64 @@ Pass when the result has `"ok":true`, `"ticking":true` and
 `"host_thread":"own"`. If it fails, report the output; do not work around
 it.
 
-## 7. Report
+## 7. (Optional) Get an injector
+
+ReAgentLive does not load itself into a process. Any DLL loader works;
+a command-line one lets you load it without the user's help. Ask the user
+whether they want [Injector](https://github.com/nefarius/Injector) (MIT,
+by nefarius), a third-party command-line DLL injector. If they already
+have a loader, or say no, skip this step.
+
+If they agree, download the latest release into the build folder and find
+the x64 binary:
+
+```powershell
+$zip = "<dir>\build\injector.zip"
+$url = (Invoke-RestMethod https://api.github.com/repos/nefarius/Injector/releases/latest).assets |
+  Where-Object name -like '*.zip' | Select-Object -First 1 -ExpandProperty browser_download_url
+Invoke-WebRequest $url -OutFile $zip
+Expand-Archive $zip "<dir>\build\injector" -Force
+Get-ChildItem "<dir>\build\injector" -Recurse -Filter Injector.exe | Select-Object FullName
+```
+
+Use the path whose folder names x64 (`x64` or `amd64`), not x86 or ARM64.
+Antivirus software often flags DLL injectors; if the file is quarantined,
+tell the user and skip this step.
+
+Load the host into a process by name or by pid:
+
+```powershell
+& "<injector.exe>" --process-name <target.exe> --inject "<dir>\build\own-thread\reagentlive-own-thread.dll"
+& "<injector.exe>" --process-id <pid> --inject "<dir>\build\own-thread\reagentlive-own-thread.dll"
+```
+
+Inject only into a process the user names. Never pick a target yourself.
+The host is never unloaded, so do not use `--eject` on it. Restart the
+process instead.
+
+Add this line to the user-level instructions file from step 5:
+
+```
+ReAgentLive host: <dir>/build/own-thread/reagentlive-own-thread.dll; load it with <injector.exe> --process-name <name> --inject <dll>, only into a process the user names.
+```
+
+## 8. Report
 
 Tell the user:
 
 ```
 ┌─ ReAgentLive setup complete ──────────────────────────┐
-│  ✓ Built   <dir>\build\own-thread                     │
-│  ✓ MCP     reagentlive (<client>)                     │
-│  ✓ Skill   <path>                                     │
-│  ✓ Check   status ok, ticking                         │
+│  ✓ Built     <dir>\build\own-thread                   │
+│  ✓ MCP       reagentlive (<client>)                   │
+│  ✓ Skill     <path>                                   │
+│  ✓ Check     status ok, ticking                       │
+│  ✓ Injector  <path, or "skipped">                     │
 │                                                       │
 │  ⚡ Restart your agent to load the MCP tools           │
-│  Then load reagentlive-own-thread.dll into a process  │
-│  and ask: "what does this process have in memory?"    │
+│  Then name a process and ask:                         │
+│  "load ReAgentLive into it and find <something>"      │
 └───────────────────────────────────────────────────────┘
 ```
 
-Then say in one line that loading the DLL into a process is the user's
-job, with any DLL loader, and that their own mod can host ReAgentLive
-instead for Unreal objects by name ([hosting](hosting.md)).
+Then say in one line that their own mod can host ReAgentLive instead, for
+Unreal objects by name ([hosting](hosting.md)).
