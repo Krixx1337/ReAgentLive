@@ -12,6 +12,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 |---|---|
 | Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
 | Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
+| Have an AI agent set it all up | [agent setup](agent-setup.md) (build, MCP tools, skill, check) |
 | Try it in any process, no mod or SDK | [own-thread example](hosting.md#own-thread-example) |
 | Put the agent into a process | [hosting](hosting.md) |
 | Write a client or change the wire format | [clients](client.md), [protocol](protocol.md) |
@@ -26,7 +27,8 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 
 | Page | Home of |
 |---|---|
-| [../README.md](../README.md) | the pitch: what it is, why it is different, a demo, try it in five minutes |
+| [../README.md](../README.md) | the pitch: what it changes for you, a demo, where it works, the setup prompt |
+| [agent-setup.md](agent-setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill and check |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
@@ -41,7 +43,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | [design.md](design.md) | principles, decisions (the self-describing console among them), rejected alternatives, not now |
 | [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
 | [ideas.md](ideas.md) | backlog with triggers; what is out |
-| [positioning.md](positioning.md) | the pitch, role among other tools, what it is not |
+| [positioning.md](positioning.md) | the pitch, role among other tools, low footprint, safety model, what it is not |
 
 ## Commands
 

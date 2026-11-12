@@ -1,7 +1,8 @@
 # ReAgentLive positioning
 
 What ReAgentLive is for, what makes it different, and how to describe it.
-Written for a future README and a possible public release. It states the
+The README is the short, benefits-first pitch built from it; the detail
+lives here. It states the
 direction; [design](design.md) holds the decisions and
 the [command pages](INDEX.md#commands) the behaviour. Update it when the role changes, not
 when a feature ships.
@@ -124,6 +125,42 @@ does not already have. One client connects at a time; a second channel is
 deferred until an investigation and an outside program must run together
 ([outside programs](outside-programs.md#not-built-yet)).
 
+## Low footprint
+
+ReAgentLive answers when asked and otherwise stays out of the process's
+way:
+
+- **No hooks of its own.** The core never patches code or swaps a
+  pointer; where the tick comes from is the host's business.
+- **No threads of its own.** It runs on a thread the host already has.
+  The own-thread example adds exactly one, its tick; background search
+  adds a worker only when the host allows it.
+- **No process handle.** The client never opens the target process: no
+  `OpenProcess`, no `ReadProcessMemory`, no debugger. Requests travel
+  through one named shared-memory section.
+- **Next to nothing while idle:** one atomic increment and one compare
+  per tick. Fixed buffers, no allocation at load.
+
+Low footprint means it does not disturb the target. It does not mean
+hidden: see [what it is not](#what-it-is-not).
+
+## Safety model
+
+- **Writes check first.** A write can require the bytes you expect to
+  still be there; otherwise it is refused and shows what it found.
+- **Identity, not just addresses.** An object reference carries its table
+  slot and serial, so a replaced object is refused instead of written
+  into.
+- **Changes that end on their own.** Pins expire; a trial write restores
+  the original bytes when it expires or is cleared, and stops writing as
+  soon as its owner is replaced.
+- **Engine calls only on the engine's thread.** A host that ticks
+  elsewhere gets memory commands, and engine commands are refused
+  ([host thread](hosting.md#host-thread)).
+- **Approval stays the user's.** Anything that can change state is a
+  separate, explicit command, and its MCP tool is marked destructive
+  ([MCP tools](client.md#mcp-tools)).
+
 ## What it is not
 
 - **Not a standalone injector.** It needs a host inside the process that
@@ -173,14 +210,13 @@ what has shipped.
 ## Before a public release
 
 - ✅ A licence: MIT, and every dependency is MIT too (README).
-- A README built from the one line, the short description and the "what it
-  is not" list.
+- ✅ A benefits-first README with an [agent setup](agent-setup.md) prompt
+  an AI agent follows on its own.
 - What lets someone else use the core: the host and client guides and the
   own-thread example host exist ([hosting](hosting.md),
   [clients](client.md)); still missing are a minimal client example and a
   "bring your own SDK" guide ([backlog](ideas.md#20--example-client-and-sdk-guide)).
-- A plain statement of intended use (a development tool) and of the safety
-  model (what is guarded, what needs the user's
-  approval).
+- ✅ A plain statement of the [safety model](#safety-model).
+- A plain statement of intended use (a development tool).
 - The docs stay free of any one game; the `reagentlive.docs` test checks
   that no host or game name appears.
