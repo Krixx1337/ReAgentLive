@@ -5,6 +5,14 @@ layout can change in any minor release; agent and client are always built
 from the same revision, and the handshake's layout check refuses a
 mismatched pair. The version lives in `src/reagentlive/version.h`.
 
+## Unreleased
+
+- **Compact `disasm` rows:** the listing names its module once; rows keep
+  `rva`, `bytes`, `text`, `target`, `target_rva`, `string` and `import`,
+  and `target_module` only for another module. `--meta` adds each row's
+  `module` and `fields`, as before. Callers that read `fields` or a row's
+  `module` change once. One session's `disasm` output was half its total.
+
 ## 0.3.0
 
 Sessions that cost less and reach further: a tool list half the size,

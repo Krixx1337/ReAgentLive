@@ -129,7 +129,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             known = directories.emplace(module->base, pe::ReadImportDirectories(AgentRead(session), *module)).first;
         if (known->second) row.import = pe::ImportAt(AgentRead(session), *module, *known->second, *row.target);
     }
-    Emit(session, jsonCommand, MakeDisasm(address, *listing, *function, modules));
+    Emit(session, jsonCommand, MakeDisasm(address, *listing, *function, modules, session.meta));
 }
 
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand) {

@@ -40,8 +40,8 @@ unreadable, up to the page end and on from there.
   target, at most 3 times inside the same limits, listed in `followed`.
   With `--function` each target's own entry bounds it. Calls, conditional
   jumps and indirect jumps are never followed.
-- Per instruction (`rows`): `address`, `module`, `rva`, `bytes`, `text`; `target`
-  (with `target_module`, `target_rva`) for a relative call, jump or branch
+- Per instruction (`rows`): `address`, `rva`, `bytes`, `text`; `target`
+  (with `target_rva`, and `target_module` when it lies in another module) for a relative call, jump or branch
   and for a `[rip + disp]` operand; `string` when a RIP-relative target in
   a loaded module holds at least 4 printable characters and a terminator
   (ASCII, or UTF-16 with `wide: true`), cut at 96, read in held
@@ -51,6 +51,10 @@ unreadable, up to the page end and on from there.
   `!#12` by ordinal), read from the live headers; `fields` (`offset`, `size`, `kind`:
   `relative`, `rip`, `displacement`, `immediate`), which bytes of the
   instruction hold each value; `ends` on a return or unconditional jump.
+- Rows are compact: the listing names its `module` once. `--meta` (a line
+  ending in it, or `"meta": true` in a JSON call) adds each row's `module`,
+  every `target_module` and `fields`; the generated tools do not pass it.
+  For masks to build a signature from, `sig-bytes` gives the same fields.
 - `size` is the bytes the rows cover; `stop` says why it ended (`count`,
   `bytes`, `function end`, or `end`'s reason). Bytes that do not decode, an instruction running past the byte
   limit or the function end, or into unreadable memory end it with `end`

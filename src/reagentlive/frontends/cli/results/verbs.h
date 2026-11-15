@@ -151,7 +151,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions", "24"}},
             {{"--function", Takes::Nothing, "bool", "", "list the containing function (exception table)"},
              {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
-            Of<shape::Disasm>, parse::Disasm, "Rows carry targets, string hints and address fields. Accepts a pointer chain."},
+            Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints and import names; the "
+            "listing names the module once. --meta adds each row's module and address fields. Accepts a pointer chain."},
         {"xrefs", "core", "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", One, "addr", at}},
             {{"--module", Takes::One, "str", "name", "scan another loaded module"},

@@ -502,6 +502,20 @@ TEST_CASE("fast-lane results have their documented keys") {
     listing.end = dis::End{Base + 0x1005, 5, "undecodable"};
     listing.stop = "undecodable";
     const auto json = Checked(MakeDisasm(Base + 0x1000, listing, function, modules));
+    // Full rows (--meta): each row's module and its address fields.
+    CHECK(json["rows"][0]["module"] == "Game.exe");
+    CHECK(json["rows"][0]["target_module"] == "Game.exe");
+    CHECK(json["rows"][0].contains("fields"));
+    // Compact rows (the default): the listing names the module once; rva, target and string stay.
+    const auto compact = Checked(MakeDisasm(Base + 0x1000, listing, function, modules, false));
+    CHECK(compact["module"] == "Game.exe");
+    CHECK_FALSE(compact["rows"][0].contains("module"));
+    CHECK_FALSE(compact["rows"][0].contains("target_module"));
+    CHECK_FALSE(compact["rows"][0].contains("fields"));
+    CHECK(compact["rows"][0]["rva"] == "0x1000");
+    CHECK(compact["rows"][0]["target_rva"] == "0x1005");
+    CHECK(compact["rows"][0]["string"] == "Weapon.cpp");
+    CHECK(compact.dump().size() < json.dump().size());
 
     const std::vector<xref::Hit> hits{{Base + 0x2001, "call", Base + 0x2000}, {Base + 0x3000, "unknown", std::nullopt},
         {Base + 0x4000, "pointer", std::nullopt}};

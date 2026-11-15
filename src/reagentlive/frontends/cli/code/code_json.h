@@ -332,7 +332,9 @@ inline std::optional<shape::FunctionBounds> MakeFunction(const std::optional<unw
     return bounds;
 }
 
-inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span<const Module> modules) {
+// Compact unless `full` (--meta): no `fields`, and no module name the listing
+// already gives (the row's own, or a target's in the same module).
+inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span<const Module> modules, bool full = true) {
     shape::Instruction out;
     out.address = row.address;
     out.where = Locate(row.address, modules);
@@ -341,27 +343,30 @@ inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span
     if (row.target) {
         out.target = Addr(*row.target);
         out.targetWhere = Locate(*row.target, modules);
+        if (!full && out.targetWhere.module == out.where.module) out.targetWhere.module.reset();
     }
     if (row.string) {
         out.string = *row.string;
         if (row.wide) out.wide = true;
     }
     out.import = row.import;
-    if (!row.fields.empty()) {
+    if (full && !row.fields.empty()) {
         out.fields.emplace();
         for (const auto& field : row.fields) out.fields->push_back({field.offset, field.size, std::string(field.kind)});
     }
     if (row.ends) out.ends = true;
+    if (!full) out.where.module.reset();
     return out;
 }
 
 inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
-                                const std::optional<unwind::Function>& function, std::span<const Module> modules) {
+                                const std::optional<unwind::Function>& function, std::span<const Module> modules,
+                                bool full = true) {
     shape::Disasm out;
     out.address = address;
     out.where = Locate(address, modules);
     for (const auto& row : listing.rows) {
-        out.rows.push_back(MakeInstruction(row, modules));
+        out.rows.push_back(MakeInstruction(row, modules, full));
         out.size += row.bytes.size();
     }
     out.stop = listing.stop;
