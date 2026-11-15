@@ -1,6 +1,7 @@
 // reagentlive CLI state files: readable names files and the console cache file.
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/state/ue/cache_ue.h"
+#include "reagentlive/frontends/cli/state/mem_snapshot.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/frontends/cli/state/usage.h"
 #include "reagentlive/frontends/cli/state/ue/native_names.h"
@@ -293,4 +294,51 @@ TEST_CASE("the usage log past its cap keeps its newest whole sessions") {
     REQUIRE(lines.size() == 8);
     CHECK(lines.front().session == "mid");
     CHECK(lines.back().session == "new");
+}
+
+TEST_CASE("a memory snapshot round-trips and narrows to the elements that pass each test") {
+    memsnap::Snapshot before;
+    before.address = 0x10000;
+    before.owner = 7;
+    before.tick = 42;
+    const float start[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    before.bytes.resize(sizeof(start));
+    memcpy(before.bytes.data(), start, sizeof(start));
+    std::stringstream file;
+    memsnap::Save(file, before);
+    auto loaded = memsnap::Load(file);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->address == 0x10000);
+    CHECK(loaded->owner == 7);
+    CHECK(loaded->bytes == before.bytes);
+    CHECK_FALSE(loaded->narrowed);
+
+    const float later[] = {1.0f, 2.5f, 2.0f, 4.0f};
+    std::vector<uint8_t> now(sizeof(later));
+    memcpy(now.data(), later, sizeof(later));
+    const auto offsets = [&](memsnap::Test test) { return memsnap::Compare(before, now, "f32", 4, test).offsets; };
+    CHECK(offsets(memsnap::Test::Changed) == std::vector<uint32_t>{4, 8});
+    CHECK(offsets(memsnap::Test::Unchanged) == std::vector<uint32_t>{0, 12});
+    CHECK(offsets(memsnap::Test::Increased) == std::vector<uint32_t>{4});
+    CHECK(offsets(memsnap::Test::Decreased) == std::vector<uint32_t>{8});
+
+    // --keep: only the candidates are compared next time.
+    memsnap::Snapshot kept = before;
+    kept.bytes = now;
+    kept.narrowed = true;
+    kept.type = "f32";
+    kept.candidates = {4, 8};
+    const float third[] = {9.0f, 2.5f, 1.0f, 9.0f};
+    memcpy(now.data(), third, sizeof(third));
+    const auto diff = memsnap::Compare(kept, now, "f32", 4, memsnap::Test::Changed);
+    CHECK(diff.compared == 2);
+    CHECK(diff.offsets == std::vector<uint32_t>{8});
+    std::stringstream again;
+    memsnap::Save(again, kept);
+    auto reloaded = memsnap::Load(again);
+    REQUIRE(reloaded.has_value());
+    CHECK(reloaded->candidates == kept.candidates);
+    CHECK(reloaded->type == "f32");
+    std::stringstream garbage("nope");
+    CHECK_FALSE(memsnap::Load(garbage).has_value());
 }

@@ -46,6 +46,7 @@ struct Instruction {
     bool directJump = false;          // Unconditional jump with a relative target (--follow steps through).
     std::optional<std::string> string; // Text at a RIP-relative target, cut at MaxString.
     bool wide = false;                // string was UTF-16.
+    std::optional<std::string> import; // An import-table slot target: the DLL and function it holds.
 };
 
 namespace detail {

@@ -242,7 +242,8 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
         g_find.cursor = from; // Later pages start at their cursor instead of rescanning from slot 0.
         ResetClassCache();
     }
-    const bool counting = from == 0; // Only the first page counts every match.
+    const bool exact = (request.flags & FindExact) != 0;
+    const bool counting = from == 0 && !exact; // Only the first page counts every match.
     const std::string_view query(request.text);
     const std::string_view wantedClass = ClassArgument(request);
     auto* entries = reinterpret_cast<FindEntry*>(response.data);
@@ -255,7 +256,8 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
         // Cheap header check while scanning; full validation only for matches.
         SDK::UObject* object = Table()->GetByIndex(g_find.cursor);
         if (!object || !HeaderReadable(object) || object->Index != g_find.cursor) continue;
-        if (!query.empty() && !NameMatches(FullName(object->Name, name), query)) continue;
+        if (!query.empty() && (exact ? FullName(object->Name, name) != query : !NameMatches(FullName(object->Name, name), query)))
+            continue;
         if (!wantedClass.empty() && !ClassMatches(object, wantedClass, scratch)) continue;
         if (!pack.object(object)) continue;
         if (query.empty()) FullName(object->Name, name);
@@ -272,6 +274,10 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
             CopyText(entry.className, FullName(object->Class->Name, scratch));
         } else {
             CopyText(entry.className, "?");
+        }
+        if (exact) { // The first match is the answer; the next slot lets a caller look on.
+            g_find.next = g_find.cursor + 1 < count ? static_cast<uint32_t>(g_find.cursor + 1) : 0;
+            break;
         }
     }
     response.length = static_cast<uint32_t>(g_find.count * sizeof(FindEntry));

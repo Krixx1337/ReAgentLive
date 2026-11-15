@@ -32,7 +32,12 @@ struct Context {
     // read, and values may still be torn. Calls and scans that run engine
     // code stay refused.
     bool offThreadReads = false;
+    // Optional: microseconds of each tick an object-table scan (find --cls,
+    // census, each, refs, exec entries) may spend; 0 is 1000. More is fewer
+    // ticks per scan and a longer stall in each; at most MaxScanMicroseconds.
+    uint32_t scanMicroseconds = 0;
 };
+constexpr uint32_t MaxScanMicroseconds = 50000;
 
 // An object check for hosts without their own (Context::object): a readable
 // header whose index names its own slot in the located object table. False

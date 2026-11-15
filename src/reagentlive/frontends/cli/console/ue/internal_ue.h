@@ -99,15 +99,20 @@ void Snap(Session& session, const Ref& object, const std::string& path, std::opt
           std::string_view jsonCommand);
 void Record(Session& session, const Ref& object, const Command& command, StructCache& structs, std::string_view jsonCommand);
 shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept);
+// call --dry: the block that would be sent, with the function's native entry and whether it is const or pure.
+shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, const ue::FunctionInfo& function);
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand);
 void PrintParameters(Session& session, const ue::FunctionInfo& function, const ue::Signature& signature, const Ref& object);
-void RunTypedCall(Session& session, const Command& command, uint64_t functionAddress,
+// A typed call (or with --dry its block only); the request's flags go to the agent (CallPure).
+void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
                   const ue::Signature& signature, StructCache& structs, std::string_view jsonCommand);
 Result<Ref> ResolveClass(Session& session, const std::string& name);
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand);
 void RunEntries(Session& session, const Command& command, std::string_view jsonCommand);
 void RunExportLabels(Session& session, const Command& command, std::string_view jsonCommand);
+// layout-export and layout-check (command.target "export" or "check").
+void RunLayout(Session& session, const Command& command, std::string_view jsonCommand);
 void RunGet(Session& session, const Command& command, StructCache& structs, std::vector<Ref>& refs,
             std::string_view jsonCommand);
 // The main image's PE timestamp (0 while unreadable), read once per run.

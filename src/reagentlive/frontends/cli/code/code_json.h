@@ -10,6 +10,7 @@
 #include "reagentlive/frontends/cli/code/disasm.h"
 #include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/code/native.h"
+#include "reagentlive/frontends/cli/code/pe_names.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/code/touches.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
@@ -55,6 +56,7 @@ struct Instruction {
     Location targetWhere;
     std::optional<std::string> string;
     std::optional<bool> wide;
+    std::optional<std::string> import;   // An import-table slot target: "kernel32.dll!VirtualAlloc".
     std::optional<std::vector<InstructionField>> fields;
     std::optional<bool> ends;
     template<class V> static void Describe(V& v) {
@@ -66,6 +68,7 @@ struct Instruction {
         v.flat("target_", &Instruction::targetWhere);
         v("string", &Instruction::string);
         v("wide", &Instruction::wide);
+        v("import", &Instruction::import);
         v("fields", &Instruction::fields);
         v("ends", &Instruction::ends);
     }
@@ -192,6 +195,44 @@ struct Vtable {
     }
 };
 
+// rtti: the class an MSVC object's run-time type information names.
+struct RttiType {
+    std::string name, decorated;
+    template<class V> static void Describe(V& v) {
+        v("name", &RttiType::name);
+        v("decorated", &RttiType::decorated);
+    }
+};
+struct Rtti {
+    Addr address;
+    Location where;
+    HexNum offset;
+    Addr table;
+    Location tableWhere;
+    Addr locator;
+    std::string name, decorated;
+    Addr complete;               // The complete object: this part minus its offset inside it.
+    HexNum completeOffset;
+    std::vector<RttiType> bases;
+    bool capped = false;
+    std::optional<Chain> chain;
+    template<class V> static void Describe(V& v) {
+        v("address", &Rtti::address);
+        v.flat("", &Rtti::where);
+        v("offset", &Rtti::offset);
+        v("table", &Rtti::table);
+        v.flat("table_", &Rtti::tableWhere);
+        v("locator", &Rtti::locator);
+        v("name", &Rtti::name);
+        v("decorated", &Rtti::decorated);
+        v("complete", &Rtti::complete);
+        v("complete_offset", &Rtti::completeOffset);
+        v("bases", &Rtti::bases);
+        v("capped", &Rtti::capped);
+        v("chain", &Rtti::chain);
+    }
+};
+
 // region: the VirtualQuery facts and a one-word kind; `section` inside an image.
 struct Region {
     Addr address;
@@ -305,6 +346,7 @@ inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span
         out.string = *row.string;
         if (row.wide) out.wide = true;
     }
+    out.import = row.import;
     if (!row.fields.empty()) {
         out.fields.emplace();
         for (const auto& field : row.fields) out.fields->push_back({field.offset, field.size, std::string(field.kind)});
@@ -354,6 +396,24 @@ inline shape::Xrefs MakeXrefs(uint64_t address, const Module& scanned, std::span
     }
     out.capped = capped;
     out.scanMs = milliseconds;
+    return out;
+}
+
+inline shape::Rtti MakeRtti(uint64_t address, uint64_t offset, uint64_t table, const pe::Rtti& rtti,
+                            std::span<const Module> modules) {
+    shape::Rtti out;
+    out.address = address;
+    out.where = Locate(address, modules);
+    out.offset = offset;
+    out.table = table;
+    out.tableWhere = Locate(table, modules);
+    out.locator = rtti.locator;
+    out.name = rtti.type.name;
+    out.decorated = rtti.type.decorated;
+    out.complete = address + offset - rtti.offset;
+    out.completeOffset = rtti.offset;
+    for (const auto& base : rtti.bases) out.bases.push_back({base.name, base.decorated});
+    out.capped = rtti.capped;
     return out;
 }
 

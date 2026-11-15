@@ -90,9 +90,12 @@ Parsed Find(const Args& args, const ParseContext&) {
     return command;
 }
 
-// call <object> <[Class:]Function> [hex params] | Name=value ... | --typed
-Parsed Call(const Args& args, const ParseContext& context) {
+namespace {
+// call and call-pure: <object> <[Class:]Function> [hex params] | Name=value ... | --typed
+Parsed CallLine(const Args& args, const ParseContext& context, uint32_t flags) {
     Command command;
+    command.request.flags = flags;
+    command.dry = args.Has("--dry");
     const bool named = std::ranges::any_of(args.positionals.begin() + 2, args.positionals.end(),
         [](const std::string& token) { return token.find('=') != std::string::npos; });
     if (!named && !args.Has("--typed")) return CallBlock(args, context, 2, std::move(command));
@@ -105,6 +108,13 @@ Parsed Call(const Args& args, const ParseContext& context) {
     CopyText(command.request.text, args.At(1));
     return command;
 }
+}
+
+Parsed Call(const Args& args, const ParseContext& context) { return CallLine(args, context, 0); }
+
+// The agent refuses, before calling, a function that is not const or pure
+// or whose outputs own memory (ue::CallPure).
+Parsed CallPure(const Args& args, const ParseContext& context) { return CallLine(args, context, ue::CallPure); }
 
 // Drops a kept call result: one more call with zeroed inputs (or the given
 // block), so the engine releases what the kept block held.
@@ -246,6 +256,33 @@ Parsed ExportLabels(const Args& args, const ParseContext&) {
         return Fail("kinds are exec, vtable, interface and global");
     command.kind = Kind::ExportLabels;
     command.request.op = ue::op::ExecEntries;
+    return command;
+}
+
+// layout-export <file> <Class>...: the fields each class declares, as JSON lines.
+Parsed LayoutExport(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::Layout;
+    command.target = "export";
+    command.file = args.At(0);
+    for (size_t i = 1; i < args.positionals.size(); ++i) {
+        if (!ClassName(args.positionals[i])) return Fail("'" + args.positionals[i] + "' is not a class or struct name");
+        command.fields.push_back(args.positionals[i]);
+    }
+    if (command.fields.empty()) return Fail();
+    if (command.fields.size() > MaxLayoutClasses)
+        return Fail("at most " + std::to_string(MaxLayoutClasses) + " classes per call");
+    command.request.op = ue::op::Fields;
+    return command;
+}
+
+// layout-check <file>: the file's lines against the live layout.
+Parsed LayoutCheck(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::Layout;
+    command.target = "check";
+    command.file = args.At(0);
+    command.request.op = ue::op::Fields;
     return command;
 }
 

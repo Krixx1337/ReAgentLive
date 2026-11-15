@@ -4,6 +4,7 @@
 // built here is also checked against its own described type.
 #include "reagentlive/frontends/cli/results/ue/call_text.h"
 #include "reagentlive/frontends/cli/results/ue/census.h"
+#include "reagentlive/frontends/cli/results/ue/layout.h"
 #include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
@@ -849,4 +850,23 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     const auto none = MakeStats({}, std::string(), AllVerbs());
     CHECK_FALSE(Checked(none).contains("session"));
     CHECK(none.rows.empty());
+}
+
+TEST_CASE("a layout line round-trips and names the first thing that differs") {
+    const auto written = LayoutJson("Pawn", "Controller", 0x2e8, 8, "ObjectProperty").dump();
+    const auto line = ParseLayoutLine(written);
+    REQUIRE(line.has_value());
+    CHECK(line->owner == "Pawn");
+    CHECK(line->offset == 0x2e8);
+    CHECK(line->size == 8u);
+    CHECK(LayoutProblem(*line, 0x2e8, 8, "ObjectProperty").empty());
+    CHECK(LayoutProblem(*line, 0x2f0, 4, "IntProperty") == "offset");
+    CHECK(LayoutProblem(*line, 0x2e8, 4, "IntProperty") == "size");
+    CHECK(LayoutProblem(*line, 0x2e8, 8, "IntProperty") == "type");
+    const auto bare = ParseLayoutLine(R"({"owner": "Pawn", "field": "Controller", "offset": 744})");
+    REQUIRE(bare.has_value());                                  // Size and type are optional, offset a plain number.
+    CHECK(LayoutProblem(*bare, 744, 4, "IntProperty").empty());
+    CHECK_FALSE(ParseLayoutLine(R"({"owner": "Pawn", "field": "X"})").has_value());
+    CHECK_FALSE(ParseLayoutLine(R"({"owner": "Pawn", "field": "X", "offset": "nope"})").has_value());
+    CHECK_FALSE(ParseLayoutLine("not json").has_value());
 }

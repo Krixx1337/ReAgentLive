@@ -6,8 +6,9 @@ Each command's flags and result keys: `help <verb>` or
 
 | Command | Guard |
 |---|---|
-| `find [text] [--cls C] [--start N]` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `C` (case-insensitive; `--cls Character` includes vendors); pages of 24 from the object-table slot `N` and the next page's cursor; at most 1 ms of scanning per tick (`Progress::Continue`). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
-| `call <object> <[Class:]Function> [hex]` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns |
+| `find [text] [--cls C] [--start N]` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `C` (case-insensitive; `--cls Character` includes vendors); pages of 24 from the object-table slot `N` and the next page's cursor; at most 1 ms of scanning per tick (`Progress::Continue`; the host may allow more, `Context::scanMicroseconds`, up to 50 ms). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
+| `call <object> <[Class:]Function> [hex]` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns. **Faults:** `ProcessEvent` runs under a fault guard; an access fault inside the engine answers `access faulted` ("call faulted: the target may be in a bad state", `detail` = the object) instead of ending the process, and a fresh kept block is dropped. Nothing else is caught, and a fault can leave engine state half-changed: treat the session as suspect afterwards. **`--dry`** (console only) resolves the function and builds the block, raw or typed, and calls nothing: `mode: dry`, `hex` is the block that would be sent, with `exec` and `pure` (const or blueprint-pure). Show it when asking for approval |
+| `call-pure <object> <[Class:]Function> [hex\|Name=value]` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill says which to call freely |
 | `release <object> <[Class:]Function> [hex]` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
 | `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection on the game thread. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (UE5 `UClass+0x1E0`, `{UClass*, int32 PointerOffset}` entries, read live). The offset is not in the SDK, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
 | `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, with a case-insensitive substring filter and a next-page cursor |
@@ -32,7 +33,9 @@ Each command's flags and result keys: `help <verb>` or
   handler runs. A context without it is refused by every handler (`host
   gave no engine-thread check`), never treated as being on the right
   thread; one returning false is refused as `not on the game thread`.
-- **Faults inside engine calls are not caught.**
+- **Faults inside engine calls** (`call`, `call-pure`, `each` with a
+  function): an access fault is caught and answered `access faulted`; the
+  engine may be left in a bad state. Other exceptions are not caught.
 - **Globals:** every command first needs the object table and name pool
   located and checked ([below](#before-the-first-command)); until then it
   is refused with `pack off: <reason>`.
@@ -111,8 +114,27 @@ approval rules still apply. Use the raw hex form for other layouts.
 
 `fields`, `dump`, `func`, `funcs` and `params` also take a bare class or
 struct name (`fields Character`). The console finds the object of
-that exact name under `Struct` once per agent instance (one table scan)
-and reuses its ref through the cache file.
+that exact name under `Struct` once per agent instance and reuses its ref
+through the cache file. The lookup is an exact `find` (`FindExact`): the
+agent stops at the first match instead of scanning and counting the whole
+table, so a class costs the slots up to it; only a name that is no class
+costs a full scan. An agent built before it treats the name as a substring
+and counts, as before: slower, the same answer.
+
+## Layouts in bulk
+
+`layout-export <file> <Class>...` (up to 256 names) writes one JSON line
+per field each class itself declares: `owner`, `field`, `offset` (as
+`"0x.."`), `size`, `type`; names that are no class or struct come back in
+`missing`. `layout-check <file>` reads such lines (written by
+`layout-export`, by hand, or by a tool from an SDK; `size` and `type` are
+optional) and answers only what the live layout does not hold: rows of
+`owner`, `field`, `problem` (`no class`, `no field`, `offset`, `size`,
+`type`, checked in that order), `expected` and `found`, at most 200
+(`capped`), with `ok` when every line holds. Each class costs one lookup
+and one field table, both cached for the agent instance, so re-checking a
+mod's offsets after a game patch is one command, not one `fields` per
+class.
 
 ## each
 

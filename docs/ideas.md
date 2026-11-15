@@ -16,15 +16,6 @@ when an investigation needs a larger read budget across ticks.
 `each` reads up to 16 fields or one getter across a class. Whole-object
 snapshots across instances (every reflected field) remain open.
 
-### 11 · A smaller default tool set
-
-The MCP tools ([clients](client.md#mcp-tools)) serve every verb; with the
-Unreal pack their schemas are about 110 KB, about two fifths of it the
-pack's and the rest the core's. A non-Unreal target already drops the
-pack's part with a console built without the pack ([hosting](hosting.md#using-it-in-your-project)). When a client that loads every
-schema up front runs short of context even so: serve core lookups by
-default and the rest on request (an adapter flag naming verbs).
-
 ### 15 · Call probe (caution)
 
 Log who calls one function, and with what arguments, for a few seconds: the
@@ -130,7 +121,7 @@ and is removed otherwise.
 
 Waits for the first game patch that moves a labelled offset. Native lines
 already go `stale` under another image timestamp; this makes re-confirming
-one command. An optional check per line (`--check finite`, `--check range
+one command, as `layout-check` already does for reflected fields. An optional check per line (`--check finite`, `--check range
 a..b`, or `--check equals <Owner:Getter>`, a pure getter returning the same
 value); `label --verify <Class>` runs them on a live instance and, when all
 pass, rewrites the timestamp. Tests: a check passing and one failing.
@@ -184,13 +175,6 @@ list; a later `each` of the same class could read over it, at the price of
 missing instances spawned since. Pull forward when a session repeats
 `each` on one class: an explicit flag, never a silent reuse.
 
-### 16 · Narrowing scan
-
-Changed, unchanged, increased or decreased since the last pass over a
-range, aligned to the tick. A memory scanner does this from outside; build
-it only for a case where the outside tool is not usable or its timing is
-not good enough.
-
 ## Not ideas
 
 Deliberately out of scope, see [design](design.md#not-now): other transports,
@@ -200,9 +184,10 @@ reads, writes and calls, and stays free of hooks and renderers. A tool that
 wants visuals draws in its own window
 ([positioning](positioning.md#what-it-is-not)).
 Also more `search` modes or filters: it finds addresses that hold a known
-value, and that is its whole job. Narrowing by change is idea 16; anything
-beyond that is a memory scanner's
-([positioning](positioning.md#pairings)).
+value, and that is its whole job. Narrowing by change over one range is
+`mem-diff` ([memory](commands/memory.md#mem-snap-and-mem-diff)); anything
+beyond that (the whole process, tolerances, pointer scans) is a memory
+scanner's ([positioning](positioning.md#pairings)).
 Also sweeps over the image (every vtable, every function, tables grouped or
 named from nearby strings): the fast lane answers one address at a time,
 and a sweep is a script over the Python client or the static tool's job

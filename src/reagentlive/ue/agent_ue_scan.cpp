@@ -265,7 +265,11 @@ bool EachEvaluate(const Request& request, Response& response, const Host& host) 
                 checked = function;
             }
             alignas(16) uint8_t params[MaxEachValue] = {};
-            object->ProcessEvent(function, params);
+            if (!GuardedProcessEvent(object, function, params)) {
+                Refuse(response, Status::Faulted, "call faulted: the target may be in a bad state",
+                    reinterpret_cast<uintptr_t>(object));
+                return false;
+            }
             memcpy(row + sizeof(Ref), params, size);
         } else {
             const auto* source = reinterpret_cast<const uint8_t*>(object) + offset;

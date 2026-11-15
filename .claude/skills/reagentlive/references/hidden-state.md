@@ -8,7 +8,9 @@ No reflection, no engine pack, or a native member behind a reflected one:
    constant), `code`, `mapped`. `peek <addr>` labels each qword: a
    `module` value in slot 0 is usually the vtable.
 2. **Its virtual table:** `vtable <addr>`; slot targets have `module` and
-   `rva` for the static tool. An interface part or secondary base:
+   `rva` for the static tool. `rtti <addr>` names the class and its bases
+   when the image carries MSVC type information (many native programs do;
+   engine game code often does not). An interface part or secondary base:
    `vtable <addr> --offset N` (`func` on an interface reports the offset).
    `--resolve` shows where jump stubs lead.
 3. **Read through it:** `read <addr>->0x30->0x10 8 --type ptr` follows
@@ -55,6 +57,18 @@ No reflection, no engine pack, or a native member behind a reflected one:
   model on every row (on the line between two stored points, progress equal
   to elapsed over duration). Then predict the end state and keep sampling
   until it happens.
+
+## Narrowing by change
+
+- To find which bytes of a range react to an action (no reflection, or a
+  native block): `mem-snap <owner> <len>`, then `mem-diff unchanged f32
+  --keep` while nothing happens (drops noise), the user acts, `mem-diff
+  decreased f32 --keep` (or `changed`, `increased`); repeat until a few
+  rows remain, then `watch` them for the timing. Use the type the value
+  really has: elements step by its size from the snap's start, so a snap
+  that starts off alignment misses aligned fields.
+- `mem-diff` is one read of the range, not one tick: confirm a candidate
+  with a `watch` before naming it.
 
 ## Searching memory
 

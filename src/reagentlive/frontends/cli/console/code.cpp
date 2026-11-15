@@ -14,6 +14,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/code/disasm.h"
+#include "reagentlive/frontends/cli/code/pe_names.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
 #include "reagentlive/core/client.h"
@@ -117,6 +118,17 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     const auto modules = LoadedModules(session);
     if (auto strings = dis::AddStrings(AgentRead(session), listing->rows, modules); !strings)
         return JsonError(session, jsonCommand, "read", strings.error());
+    // [rip + disp] targets in a module's import table: the DLL function the slot holds.
+    std::map<uint64_t, std::optional<pe::ImportDirectories>> directories;
+    for (auto& row : listing->rows) {
+        if (!row.target || !row.ripTarget || row.string) continue;
+        const Module* module = ModuleAt(*row.target, modules);
+        if (!module) continue;
+        auto known = directories.find(module->base);
+        if (known == directories.end())
+            known = directories.emplace(module->base, pe::ReadImportDirectories(AgentRead(session), *module)).first;
+        if (known->second) row.import = pe::ImportAt(AgentRead(session), *module, *known->second, *row.target);
+    }
     Emit(session, jsonCommand, MakeDisasm(address, *listing, *function, modules));
 }
 

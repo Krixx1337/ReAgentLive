@@ -180,7 +180,10 @@ void Locate(const Context& pack, const Host& host) {
 
 const SDK::TUObjectArray* Table() { return g_located.table; }
 
+int64_t g_scanMicroseconds = FindBudgetMicroseconds;
+
 bool PackReady(const Context& pack, const Host& host, Response& response, Access access) {
+    g_scanMicroseconds = pack.scanMicroseconds ? std::min(pack.scanMicroseconds, MaxScanMicroseconds) : FindBudgetMicroseconds;
     const bool offThread = access == Access::Read && pack.offThreadReads && pack.gameThread && !pack.gameThread();
     if (const char* problem = offThread ? nullptr : EngineThreadProblem(pack)) {
         Refuse(response, Status::Refused, problem);

@@ -168,6 +168,17 @@ bool ParameterSlots(const SDK::UFunction* function, const Host& host, ParameterS
 }
 }
 
+// No objects that unwind in this frame: SEH and C++ unwinding do not mix.
+__declspec(noinline) bool GuardedProcessEvent(SDK::UObject* object, SDK::UFunction* function, void* params) {
+    __try {
+        object->ProcessEvent(function, params);
+        return true;
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
+                EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return false;
+    }
+}
+
 Progress Call(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response)) return Progress::Done;
@@ -198,6 +209,16 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
         Refuse(response, Status::Refused, "parameter list unreadable");
         return Progress::Done;
     }
+    if (request.flags & CallPure) {
+        if (!EachFunctionAllowed(static_cast<uint32_t>(function->FunctionFlags))) {
+            Refuse(response, Status::Refused, "not a const or pure function: use call");
+            return Progress::Done;
+        }
+        if (owning) {
+            Refuse(response, Status::Refused, "an output owns memory: use call");
+            return Progress::Done;
+        }
+    }
     const bool release = (request.flags & CallRelease) != 0;
     const auto key = reinterpret_cast<uintptr_t>(function);
     KeptResult* kept = owning ? g_kept.Find(key) : nullptr;
@@ -214,7 +235,12 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
     alignas(16) uint8_t params[MaxParams];
     memcpy(params, request.data, request.length);
     if (kept && !fresh) CarryOutputs(slots, slotCount, kept->block, params, request.length);
-    object->ProcessEvent(function, params); // The function's own flags, as ProcessEvent sees them.
+    // The function's own flags, as ProcessEvent sees them.
+    if (!GuardedProcessEvent(object, function, params)) {
+        if (fresh) KeptResults::Drop(*kept); // Nothing was kept; an older kept block stays as it was.
+        Refuse(response, Status::Faulted, "call faulted: the target may be in a bad state", reinterpret_cast<uintptr_t>(object));
+        return Progress::Done;
+    }
     memcpy(response.data, params, request.length);
     response.length = request.length;
     if (kept && release) KeptResults::Drop(*kept);

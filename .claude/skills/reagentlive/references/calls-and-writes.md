@@ -9,6 +9,14 @@ first (see the skill's rules).
   `params`) for the parameter layout, then a hex block of exactly that size;
   outputs come back in the same block. A getter with only outputs needs no
   block: `call <obj> <Fn>` sends zeros of the right size.
+- Getters: `call-pure` first. The agent refuses it for a function that is
+  not const or pure or keeps an owned result, so a refusal tells you the
+  call needs approval and `call`.
+- Before asking for a `call`, run it with `--dry` and put its output in the
+  request: the function, its `exec` address, `pure`, and the exact block.
+- A call that answers `access faulted` was caught inside the engine; the
+  game may now be unstable. Tell the user, and confirm later readings with a
+  second read before trusting them.
 - Named getter calls: discover with `funcs` and copy exact input names from
   `params`. To pass an FName whose text appears in a dump, read its
   reflected eight bytes to recover the index and instance number.

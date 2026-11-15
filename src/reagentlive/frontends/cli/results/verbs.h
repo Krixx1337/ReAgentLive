@@ -10,6 +10,7 @@
 #include <vector>
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
+#include "reagentlive/frontends/cli/results/mem_json.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/stats.h"
 #include "reagentlive/frontends/cli/syntax/parse_internal.h"
@@ -93,6 +94,20 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"--max", Takes::One, "int", "N", "rows per page", "64"}},
             Of<shape::Search>, parse::Search,
             "Quote text to keep spaces, ';' and '--'. next_cursor is present while more of the range is left."},
+        {"mem-snap", "core", "keep up to 1 MiB of memory for mem-diff (a file beside the cache, across runs)",
+            {{"addr", "addr", One, "addr", at}, {"len", "len", One, "int", "how many bytes, up to 1048576"}},
+            {}, Of<shape::MemSnap>, parse::MemSnap,
+            "A new snap replaces the last one and its candidates. Refused when part of the range is unreadable. "
+            "Accepts a pointer chain."},
+        {"mem-diff", "core", "elements of the last mem-snap that changed, stayed, rose or fell since; --keep narrows",
+            {{"test", "changed|unchanged|increased|decreased", One, "changed|unchanged|increased|decreased", "what an element must have done"},
+             {"type", "type", One, "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start"}},
+            {{"--keep", Takes::Nothing, "bool", "", "keep only the matches as candidates and today's bytes as the new baseline"},
+             {"--limit", Takes::One, "int", "N", "rows shown (1..256)", "64"}},
+            Of<shape::MemDiff>, parse::MemDiff,
+            "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
+            "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 --keep, act, mem-diff ... --keep "
+            "until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
         {"pin", "core", "write the bytes every tick (default 10 s, up to 60 s)",
             {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
             {{"--seconds", Takes::One, "int", "N", "how long", "10"}, {"--ms", Takes::One, "int", "N", "how long, in milliseconds"},
@@ -152,6 +167,14 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"--table", Takes::Nothing, "bool", "", "addr is the table itself"},
              {"--resolve", Takes::Nothing, "bool", "", "where jump stubs lead"}},
             Of<shape::Vtable>, parse::Vtable, "Accepts a pointer chain."},
+        {"rtti", "core", "an object's class and bases from its run-time type information (MSVC images)",
+            {{"addr", "addr", One, "addr", at}},
+            {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},
+             {"--table", Takes::Nothing, "bool", "", "addr is the table itself"}},
+            Of<shape::Rtti>, parse::Rtti,
+            "Read from the locator in the slot before the virtual table. complete is the whole object when addr is "
+            "one of its parts. Refused when that slot holds no locator: no type information, or not an MSVC image "
+            "(engines often build without it). Accepts a pointer chain."},
         {"region", "core", "what the memory at an address is: kind, base, size, protection",
             {{"addr", "addr", One, "addr", at}}, {}, Of<shape::Region>, parse::Region, "Accepts a pointer chain."},
     };

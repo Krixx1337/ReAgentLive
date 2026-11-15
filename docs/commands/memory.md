@@ -12,6 +12,7 @@ keys: `help <verb>` or [result shapes](results.md).
 | `write <addr> <hex> [--expect <hex>]` | 1..256 bytes; committed, writable pages; page protection is never changed. `--expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
 | `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
+| `mem-snap <addr> <len>` / `mem-diff <test> <type> [--keep] [--limit N]` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
 | `pin <addr> <hex> [--seconds N\|--ms N] [--expect <hex>]` | up to 8 pins of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests |
 | `pin-list` / `pin-clear [id]` | each pin's state (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`), writes and time left; clear one or all |
 | `trial <addr> <hex> --owner <ref> --expect <hex> [--object <addr>] [--seconds N\|--ms N]` | up to 8 trials of 1..64 bytes, 1 ms..60 s (default 10 s). One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear trials before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so a trial needs a host with the Unreal pack; the agent does not check classes |
@@ -81,6 +82,31 @@ agent's own request buffer can still hold old patterns. A match that spans two
 regions or reaches a skipped page is missed. Use it to find where a native
 struct lives (search its vtable pointer with `--heap`) or which copies of a
 value exist.
+
+## mem-snap and mem-diff
+
+`dump --changed` compares reflected fields; these compare raw bytes, for
+state no reflection names (a native block, a struct found by `search`, an
+object with no engine pack). `mem-snap` keeps the range
+(`%TEMP%\reagentlive-<pid>.memsnap`, tied to the agent instance like the
+cache file; a new snap replaces it). `mem-diff` reads the range again and
+tests every `type`-sized element from the snap's start: `changed` and
+`unchanged` compare bytes, `increased` and `decreased` compare numbers
+(NaN never passes). It answers `compared`, `matched` and the first
+`--limit` rows (default 64, at most 256; `capped` when cut) of `address`,
+`before` and `after`.
+
+`--keep` narrows: only the matches stay as candidates, the bytes just read
+become the baseline, and later diffs compare the candidates alone (`kept`).
+A diff with another type than the candidates were narrowed under is
+refused. So "which value fell when I got hit?" is a snap of the owner's
+native range, `mem-diff unchanged f32 --keep` while nothing happens,
+`mem-diff decreased f32 --keep` after the hit, repeated until a few rows
+remain. Each diff is one read of the range, not one tick: values may be
+torn across 4 KB requests, so confirm a candidate with `watch`. This is a
+bounded narrowing scan over one range the agent names, not a memory
+scanner: no whole-process scan, no tolerance, no pointer scan
+([design](../design.md#place-among-other-tools)).
 
 ## pin
 

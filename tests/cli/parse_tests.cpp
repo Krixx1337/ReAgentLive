@@ -209,6 +209,24 @@ TEST_CASE("release is a call with the release flag and an optional block") {
     CHECK_FALSE(Parse("release $1", TwoRefs).has_value());
 }
 
+TEST_CASE("call-pure is a call with the pure flag; --dry marks either form") {
+    auto parsed = Parse("call-pure $1 Actor:K2_GetActorLocation", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->request.op == ue::op::Call);
+    CHECK(parsed->request.flags == ue::CallPure);
+    CHECK_FALSE(parsed->dry);
+    CHECK(ue::Check(parsed->request) == Status::Ok);
+    parsed = Parse("call-pure $1 SceneComponent:GetSocketTransform SocketName=#42 TransformSpace=0", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::TypedCall);
+    CHECK(parsed->request.flags == ue::CallPure);
+    parsed = Parse("call $1 Actor:K2_GetActorLocation --dry", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->dry);
+    CHECK(parsed->request.flags == 0);
+    CHECK(Parse("call $1 Controller:GetControlRotation --typed --dry", TwoRefs)->dry);
+}
+
 TEST_CASE("call keeps the full ref from find and marks raw addresses for identification") {
     auto parsed = Parse("call $1 Actor:K2_GetActorLocation 00", TwoRefs);
     REQUIRE(parsed.has_value());
@@ -833,4 +851,38 @@ TEST_CASE("the version text matches its parts") {
     const std::string expected = std::to_string(REAGENTLIVE_VERSION_MAJOR) + "." +
         std::to_string(REAGENTLIVE_VERSION_MINOR) + "." + std::to_string(REAGENTLIVE_VERSION_PATCH);
     CHECK(std::string(Version) == expected);
+}
+
+TEST_CASE("layout-export takes class names; layout-check a file") {
+    auto parsed = Parse("layout-export out.jsonl Pawn PlayerController", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::Layout);
+    CHECK(parsed->target == "export");
+    CHECK(parsed->fields == std::vector<std::string>{"Pawn", "PlayerController"});
+    CHECK_FALSE(Parse("layout-export out.jsonl", NoRefs).has_value());
+    CHECK_FALSE(Parse("layout-export out.jsonl Bad.Name", NoRefs).has_value());
+    parsed = Parse("layout-check expected.jsonl", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->target == "check");
+    CHECK(parsed->file == "expected.jsonl");
+}
+
+TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an element type") {
+    auto parsed = Parse("mem-snap 0x10000 4096", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::MemSnap);
+    CHECK(parsed->range == 4096);
+    CHECK_FALSE(Parse("mem-snap 0x10000 0", NoRefs).has_value());
+    CHECK_FALSE(Parse("mem-snap 0x10000 2000000", NoRefs).has_value());
+    parsed = Parse("mem-diff decreased f32 --keep --limit 10", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::MemDiff);
+    CHECK(parsed->target == "decreased");
+    CHECK(parsed->view == "f32");
+    CHECK(parsed->all);
+    CHECK(parsed->limit == 10);
+    CHECK_FALSE(Parse("mem-diff bigger f32", NoRefs).has_value());
+    CHECK_FALSE(Parse("mem-diff changed cstr", NoRefs).has_value());
+    CHECK(Parse("rtti 0x10000 --offset 0x620", NoRefs)->kind == Kind::Rtti);
+    CHECK_FALSE(Parse("rtti 0x10000 --offset 8 --table", NoRefs).has_value());
 }

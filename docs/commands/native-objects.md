@@ -5,6 +5,7 @@ pack ([design](../design.md#native-objects)).
 
 ```text
 vtable <addr> [count] [--offset N] [--table] [--resolve]
+rtti <addr> [--offset N] [--table]  the class an MSVC object's type information names
 <addr>->0x10->0x8                 a pointer chain, in read, peek, vtable, disasm and region
 region <addr>                     what the memory there is
 read <addr> [max] --type cstr|wstr  a C string (UTF-16 with wstr)
@@ -24,6 +25,23 @@ table, read once with its exception directory and kept in the cache file.
 target is a stub of unconditional direct jumps: the address `disasm
 --follow` would end at, one read per hop. A qword that points into no
 module is a result: no `table`, and `found` holding the qword.
+
+## rtti
+
+`rtti` reads the table pointer as `vtable` does, then the slot before the
+table: in an MSVC image built with run-time type information it points to
+the class's complete object locator. The locator must say signature 1 and
+name its own RVA (which gives the module's base); then its type descriptor
+gives `name` (undecorated for plain and nested classes, `Game::Weapon`;
+templates stay decorated) and `decorated` (`.?AVWeapon@Game@@`), and its
+class hierarchy gives `bases`, every base it lists without the class
+itself, up to 32 (`capped`). `offset` is the part's offset inside the
+complete object, so `complete` is the whole object when `addr` is a
+secondary base or an interface part. A slot that holds no locator is
+refused (`rtti`): no type information, another compiler, or not a virtual
+table. Engines often build their game code without it; most native
+programs and libraries keep it. Everything is read from live bytes in the
+console; the agent only reads.
 
 ## Pointer chains
 

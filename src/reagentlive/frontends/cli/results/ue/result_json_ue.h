@@ -504,16 +504,21 @@ struct Call {
     std::optional<std::string> keptReason;
     std::optional<std::vector<CallOutput>> outputs;
     std::optional<bool> truncated;
+    // --dry: the function's native entry and whether it is const or pure.
+    std::optional<Addr> exec;
+    std::optional<bool> pure;
     template<class V> static void Describe(V& v) {
         v("ref", &Call::ref);
         v("function", &Call::function);
-        v("mode", &Call::mode, "raw|typed|release");
+        v("mode", &Call::mode, "raw|typed|release|dry");
         v("block_size", &Call::blockSize);
         v("hex", &Call::hex);
         v("kept", &Call::kept);
         v("kept_reason", &Call::keptReason);
         v("outputs", &Call::outputs);
         v("truncated", &Call::truncated);
+        v("exec", &Call::exec);
+        v("pure", &Call::pure);
     }
 };
 
@@ -598,6 +603,59 @@ struct Record {
         v("total", &Record::total);
     }
 };
+// layout-export: the reflected fields each named class or struct declares,
+// one JSON line each in the file; names that are no class or struct.
+struct LayoutExport {
+    std::string path;
+    uint64_t classes = 0, fields = 0;
+    std::optional<std::vector<std::string>> missing;
+    template<class V> static void Describe(V& v) {
+        v("path", &LayoutExport::path);
+        v("classes", &LayoutExport::classes);
+        v("fields", &LayoutExport::fields);
+        v("missing", &LayoutExport::missing);
+    }
+};
+// layout-check: only the lines the live layout does not hold.
+struct LayoutField {
+    HexNum offset;
+    uint32_t size = 0;
+    std::string type;
+    template<class V> static void Describe(V& v) {
+        v("offset", &LayoutField::offset);
+        v("size", &LayoutField::size);
+        v("type", &LayoutField::type);
+    }
+};
+struct LayoutMismatch {
+    std::string owner, field, problem;
+    LayoutField expected;
+    std::optional<LayoutField> found;
+    template<class V> static void Describe(V& v) {
+        v("owner", &LayoutMismatch::owner);
+        v("field", &LayoutMismatch::field);
+        v("problem", &LayoutMismatch::problem, "no class|no field|offset|size|type");
+        v("expected", &LayoutMismatch::expected);
+        v("found", &LayoutMismatch::found);
+    }
+};
+struct LayoutCheck {
+    std::string path;
+    uint64_t classes = 0, checked = 0, mismatched = 0;
+    bool ok = false;
+    std::vector<LayoutMismatch> rows;
+    bool capped = false;
+    template<class V> static void Describe(V& v) {
+        v("path", &LayoutCheck::path);
+        v("classes", &LayoutCheck::classes);
+        v("checked", &LayoutCheck::checked);
+        v("mismatched", &LayoutCheck::mismatched);
+        v("ok", &LayoutCheck::ok);
+        v("rows", &LayoutCheck::rows);
+        v("capped", &LayoutCheck::capped);
+    }
+};
+
 struct ExportLabels {
     std::string path, module;
     uint32_t timestamp = 0;

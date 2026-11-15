@@ -17,7 +17,8 @@
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
-    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label, Stats };
+    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label, Stats, Layout,
+    Rtti, MemSnap, MemDiff };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -80,6 +81,8 @@ struct Command {
     // touches: struct offsets to find and the bytes scanned each side of the address.
     std::vector<uint32_t> offsets;
     uint64_t range = 0;
+    // call --dry: resolve the function and build the block, call nothing.
+    bool dry = false;
 };
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).
@@ -88,6 +91,16 @@ constexpr size_t MaxTypeName = 64;
 constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;
 constexpr uint32_t DefaultCensusLimit = 100;
+// mem-snap: bytes kept; mem-diff: rows shown and the tests it takes.
+namespace memsnap {
+constexpr uint64_t MaxLength = uint64_t{1} << 20;
+constexpr size_t MaxRows = 256, DefaultRows = 64;
+inline bool TestName(std::string_view name) {
+    return name == "changed" || name == "unchanged" || name == "increased" || name == "decreased";
+}
+}
+// layout-export: classes per call; layout-check: lines per file and mismatch rows shown.
+constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows = 200;
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.
 constexpr uint64_t MaxDisasm = 64, DefaultDisasm = 24;
 namespace touch {

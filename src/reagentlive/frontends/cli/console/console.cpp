@@ -87,6 +87,13 @@ void RunStats(Session& session, const Command& command, std::string_view jsonCom
     Emit(session, jsonCommand, BuildStats(session.usage.path, session.verbs, command.all, session.usage.session));
 }
 
+std::filesystem::path CachePath(uint32_t pid) {
+    wchar_t folder[MAX_PATH + 1];
+    const DWORD length = GetTempPathW(MAX_PATH + 1, folder);
+    if (!length || length > MAX_PATH) return {};
+    return std::filesystem::path(folder) / (L"reagentlive-" + std::to_wstring(pid) + L".cache");
+}
+
 namespace {
 // help: the verbs, one verb in full, or the whole table for programs. It
 // reads the table only, so it also answers with no agent to attach to.
@@ -498,6 +505,9 @@ bool Execute(Session& session, const std::string& original, bool inBatch) {
     case Kind::Xrefs: RunXrefs(session, *parsed, jsonCommand); return false;
     case Kind::Touches: RunTouches(session, *parsed, jsonCommand); return false;
     case Kind::Vtable: RunVtable(session, *parsed, jsonCommand); return false;
+    case Kind::Rtti: RunRtti(session, *parsed, jsonCommand); return false;
+    case Kind::MemSnap: RunMemSnap(session, *parsed, jsonCommand); return false;
+    case Kind::MemDiff: RunMemDiff(session, *parsed, jsonCommand); return false;
     case Kind::Region: RunRegion(session, *parsed, jsonCommand); return false;
     default: break;
     }
@@ -515,12 +525,6 @@ bool Execute(Session& session, const std::string& original, bool inBatch) {
     return false;
 }
 
-std::filesystem::path CachePath(uint32_t pid) {
-    wchar_t folder[MAX_PATH + 1];
-    const DWORD length = GetTempPathW(MAX_PATH + 1, folder);
-    if (!length || length > MAX_PATH) return {};
-    return std::filesystem::path(folder) / (L"reagentlive-" + std::to_wstring(pid) + L".cache");
-}
 
 // One-shot runs against the same agent instance join the cache's usage session.
 void LoadSessionCache(Session& session, const std::filesystem::path& path, bool oneShot) {

@@ -122,6 +122,12 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand);
 void RunTouches(Session& session, const Command& command, std::string_view jsonCommand);
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand);
+void RunRtti(Session& session, const Command& command, std::string_view jsonCommand);
+// %TEMP%\reagentlive-<pid>.cache: the cache file of the agent in that process.
+std::filesystem::path CachePath(uint32_t pid);
+// mem-snap and mem-diff: a raw range kept in a file beside the cache, then compared.
+void RunMemSnap(Session& session, const Command& command, std::string_view jsonCommand);
+void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand);
 void RunRegion(Session& session, const Command& command, std::string_view jsonCommand);
 void RunStats(Session& session, const Command& command, std::string_view jsonCommand);
 // The region kind at an address (code, data, private, mapped...), nullopt

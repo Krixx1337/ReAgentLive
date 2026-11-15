@@ -23,6 +23,10 @@ struct FindResult {
 struct FindOptions {
     std::string_view className;  // The object's class or a parent class; empty: any.
     uint32_t from = 0;           // Cursor from a previous page's next.
+    // The whole name equals text (case-sensitive); the agent stops at the
+    // first match and counts nothing (FindExact). An agent built before it
+    // treats text as a substring and counts: slower, same first exact match.
+    bool exact = false;
 };
 struct Field {
     uint32_t offset, size;

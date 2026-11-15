@@ -97,11 +97,12 @@ set(reagentlive_syntax_sources "${reagentlive_cli_dir}/syntax/parse.cpp"
 set(reagentlive_syntax_ue_sources "${reagentlive_cli_dir}/syntax/ue/parse_unreal.cpp")
 set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
     "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp"
-    "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp")
+    "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp"
+    "${reagentlive_cli_dir}/console/snapshot.cpp")
 set(reagentlive_console_ue_sources "${reagentlive_cli_dir}/console/ue/pack.cpp" "${reagentlive_cli_dir}/console/ue/dump.cpp"
     "${reagentlive_cli_dir}/console/ue/capture.cpp" "${reagentlive_cli_dir}/console/ue/calls.cpp"
     "${reagentlive_cli_dir}/console/ue/query.cpp" "${reagentlive_cli_dir}/console/ue/labels.cpp"
-    "${reagentlive_cli_dir}/console/ue/members.cpp")
+    "${reagentlive_cli_dir}/console/ue/members.cpp" "${reagentlive_cli_dir}/console/ue/layout.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")
 target_sources(reagentlive-cli INTERFACE ${reagentlive_syntax_sources})
 if(REAGENTLIVE_CONSOLE_UE)

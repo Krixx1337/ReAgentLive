@@ -86,6 +86,21 @@ Parsed Vtable(const Args& args, const ParseContext& context) {
     return command;
 }
 
+// rtti <addr> [--offset N | --table]: the class an object's type information names.
+Parsed Rtti(const Args& args, const ParseContext& context) {
+    Command command;
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
+    command.table = args.Has("--table");
+    if (args.Has("--offset")) {
+        if (!Number(args.Value("--offset"), command.offset) || command.offset > 0x100000) return Fail("--offset is 0..0x100000");
+        if (command.table) return Fail("--offset reads a table pointer; --table says there is none");
+    }
+    command.kind = Kind::Rtti;
+    command.request.op = op::ReadBatch;
+    return command;
+}
+
 // sig-check <pattern> [--module M] [--expect <addr> [--offset N | --resolve next,field[,size]]]
 Parsed SigCheck(const Args& args, const ParseContext& context) {
     Command command;

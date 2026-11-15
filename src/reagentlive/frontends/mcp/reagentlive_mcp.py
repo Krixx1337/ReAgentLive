@@ -1,6 +1,7 @@
 """MCP tools for one ReAgentLive console, made from its own verb table.
 
-    python reagentlive_mcp.py --console <console.exe> [-- <console args>]
+    python reagentlive_mcp.py --console <console.exe> [--output-schemas full|compact|off]
+                              [--families core,<pack>,host] [--read-only] [-- <console args>]
 
 One tool per verb, made in memory with the generator's code
 (reagentlive_gen.py) from the console's `help --json`: a core verb by its
@@ -29,6 +30,14 @@ shares a usage-log session (`--session`) and is marked `--caller tool`:
 its results reach the agent's context. Transport: standard input and
 output; the protocol revision is whichever the installed SDK negotiates.
 
+What a client loads up front is the tool list, so it is kept small: output
+schemas are `compact` by default (each result's top-level keys and their
+JSON types, widened so every console result still validates; the console
+checks results strictly either way), `full` keeps every nested type, `off`
+advertises none. `--families` serves only the verbs of the origins named
+(`help --json` lists them under `origins`) and `--read-only` leaves out every
+verb that writes the target or calls into it.
+
 Needs the MCP Python SDK (its FastMCP, mcp.server.fastmcp); the session
 client and the generator need only the standard library.
 """
@@ -50,6 +59,7 @@ from typing import Annotated  # noqa: E402
 
 import anyio  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.server.fastmcp.utilities.func_metadata import func_metadata  # noqa: E402
 from mcp.server.lowlevel.server import NotificationOptions  # noqa: E402
 from mcp.types import CallToolResult, TextContent, ToolAnnotations  # noqa: E402
 
@@ -117,11 +127,35 @@ class Live:
         return (result.raw if isinstance(result, Record) else result), changed
 
 
+OUTPUT_SCHEMAS = ('full', 'compact', 'off')
+SCALARS = {'string', 'integer', 'number', 'boolean', 'array', 'object'}
+
+
+def compact_schema(schema):
+    """A result's schema cut to its top-level keys and their JSON types: never narrower than the full one."""
+    properties = {}
+    for key, value in schema.get('properties', {}).items():
+        kind = value.get('type')
+        properties[key] = {'type': kind} if isinstance(kind, str) and kind in SCALARS else {}
+    out = {'type': 'object', 'properties': properties}
+    if schema.get('required'):
+        out['required'] = list(schema['required'])
+    return out
+
+
+def served(verb, families, read_only):
+    """Whether the server offers a tool for this verb."""
+    if verb['blocks'] or (read_only and verb['writes']):
+        return False
+    return families is None or verb['origin'] in families
+
+
 def make_tool(live, server, verb, method):
     """A function FastMCP reads: the method's parameters (without self) and result type; returns the plain result."""
     signature = inspect.signature(method)
     parameters = list(signature.parameters.values())[1:]
     name = tool_name(verb)
+    full = server.output_schemas == 'full'
 
     async def tool(**kwargs):
         raw, changed = await anyio.to_thread.run_sync(live.run, name, kwargs)
@@ -132,7 +166,8 @@ def make_tool(live, server, verb, method):
         # which its own output schema then refuses. The schema still comes from the annotation.
         return CallToolResult(content=[TextContent(type='text', text=json.dumps(raw))], structuredContent=raw)
 
-    returns = Annotated[CallToolResult, signature.return_annotation]
+    # Full: the schema from the result's type. Otherwise none from the type; compact sets its own after.
+    returns = Annotated[CallToolResult, signature.return_annotation] if full else CallToolResult
     tool.__signature__ = signature.replace(parameters=parameters, return_annotation=returns)
     tool.__annotations__ = {p.name: p.annotation for p in parameters} | {'return': returns}
     tool.__name__ = name
@@ -147,25 +182,61 @@ def register(server, live):
     server.tool_names = []
     module = live.module
     for verb in module.VERBS:
-        if verb['blocks']:
+        if not served(verb, server.families, server.read_only):
             continue
         method = getattr(getattr(module, verb['cls']), verb['method'])
         writes = verb['writes']
         server.add_tool(make_tool(live, server, verb, method), name=tool_name(verb), description=method.__doc__,
                         annotations=ToolAnnotations(readOnlyHint=not writes, destructiveHint=writes,
                                                     idempotentHint=False, openWorldHint=False))
+        if server.output_schemas == 'compact':
+            full = full_schema(method)
+            if full is not None:
+                # Tool.output_schema is a cached property: setting it here is what the list and the check read.
+                server._tool_manager.get_tool(tool_name(verb)).__dict__['output_schema'] = compact_schema(full)
         server.tool_names.append(tool_name(verb))
 
 
-def build(console, args=(), name='reagentlive'):
-    """The server for a console: its tools from the console's table, which needs no target."""
-    server = FastMCP(name, instructions=INSTRUCTIONS)
+def full_schema(method):
+    """The full output schema FastMCP makes from the method's result type."""
+    def probe():
+        ...
+    probe.__annotations__ = {'return': Annotated[CallToolResult, inspect.signature(method).return_annotation]}
+    return func_metadata(probe, structured_output=True).output_schema
+
+
+def instructions(families, read_only):
+    """The server's instructions, saying what it leaves out."""
+    text = INSTRUCTIONS
+    if families is not None:
+        text += f' This server serves only the {", ".join(sorted(families))} verbs; the console has more (help lists them).'
+    if read_only:
+        text += ' It serves no verb that writes the target or calls into it.'
+    return text
+
+
+def build(console, args=(), name='reagentlive', output_schemas='compact', families=None, read_only=False):
+    """The server for a console: its tools from the console's table, which needs no target.
+
+    output_schemas: full, compact or off. families: the origins to serve (None: all). read_only: no writing verbs.
+    """
+    if output_schemas not in OUTPUT_SCHEMAS:
+        raise ValueError(f'output_schemas is one of {", ".join(OUTPUT_SCHEMAS)}, not {output_schemas!r}')
+    live = Live(console, args)
+    if families is not None:
+        families = set(families)
+        known = {origin['origin'] for origin in live.table.get('origins', [])}
+        if unknown := families - known:
+            raise ValueError(f'unknown famil{"ies" if len(unknown) > 1 else "y"} {", ".join(sorted(unknown))}; '
+                             f'this console has {", ".join(sorted(known))}')
+    server = FastMCP(name, instructions=instructions(families, read_only))
+    server.output_schemas, server.families, server.read_only = output_schemas, families, read_only
     # Say the tool list can change, so a client asks again on the notice.
     lowlevel = server._mcp_server
     options = lowlevel.create_initialization_options
     lowlevel.create_initialization_options = lambda notification_options=None, experimental_capabilities=None: \
         options(notification_options or NotificationOptions(tools_changed=True), experimental_capabilities)
-    server.live = Live(console, args)
+    server.live = live
     register(server, server.live)
     return server
 
@@ -174,9 +245,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--console', required=True, help='the console executable')
     parser.add_argument('--name', default='reagentlive', help='the server name clients show')
+    parser.add_argument('--output-schemas', choices=OUTPUT_SCHEMAS, default='compact',
+                        help='result schemas in the tool list: every nested type, top-level keys only, or none')
+    parser.add_argument('--families', help='serve only these origins, comma-separated (help --json lists them)')
+    parser.add_argument('--read-only', action='store_true', help='leave out every verb that writes or calls')
     parser.add_argument('console_args', nargs='*', help='after --: arguments for the console (a pid, --names <file>)')
     args = parser.parse_args(argv)
-    build(args.console, args.console_args, args.name).run()
+    families = [f.strip() for f in args.families.split(',') if f.strip()] if args.families else None
+    try:
+        server = build(args.console, args.console_args, args.name, args.output_schemas, families, args.read_only)
+    except ValueError as error:
+        parser.error(str(error))
+    server.run()
 
 
 if __name__ == '__main__':

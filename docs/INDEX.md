@@ -43,6 +43,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | [design.md](design.md) | principles, decisions (the self-describing console among them), rejected alternatives, not now |
 | [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
 | [ideas.md](ideas.md) | backlog with triggers; what is out |
+| [improvement-plan.md](improvement-plan.md) | proposal: prioritized improvements with their evidence; nothing in it is built |
 | [positioning.md](positioning.md) | the pitch, role among other tools, low footprint, safety model, what it is not |
 
 ## Commands

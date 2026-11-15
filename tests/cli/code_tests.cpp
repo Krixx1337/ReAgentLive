@@ -725,3 +725,88 @@ TEST_CASE("touches syntax and result") {
     CHECK(json["rows"][0]["uses"][0]["rva"] == "0x1004");
     CHECK(json["offsets"][0] == "0x538");
 }
+
+// Run-time type information and imports, read from this test program's own
+// image: MSVC builds it with type information and it imports from kernel32.
+namespace rtti_probe {
+struct Shape { virtual ~Shape() = default; virtual int Sides() const { return 0; } };
+struct Square final : Shape { int Sides() const override { return 4; } };
+}
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#include "reagentlive/frontends/cli/code/pe_names.h"
+namespace {
+// Reads this process's memory; an unreadable range is a missing item.
+sig::ReadFn SelfRead() {
+    return [](std::span<const ReadSpan> spans) -> std::expected<std::vector<std::optional<std::vector<uint8_t>>>, std::string> {
+        std::vector<std::optional<std::vector<uint8_t>>> out;
+        for (const auto& span : spans) {
+            std::vector<uint8_t> bytes(span.length);
+            SIZE_T read = 0;
+            if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(span.address), bytes.data(), span.length, &read) &&
+                read == span.length) out.emplace_back(std::move(bytes));
+            else out.emplace_back(std::nullopt);
+        }
+        return out;
+    };
+}
+Module SelfModule() {
+    MODULEINFO info{};
+    K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(nullptr), &info, sizeof(info));
+    return {"self.exe", reinterpret_cast<uint64_t>(info.lpBaseOfDll), info.SizeOfImage};
+}
+}
+
+TEST_CASE("type names undecorate plain and nested classes and keep anything else as it is") {
+    CHECK(pe::Undecorate(".?AVWeapon@@") == "Weapon");
+    CHECK(pe::Undecorate(".?AUState@Game@Studio@@") == "Studio::Game::State");
+    CHECK(pe::Undecorate(".?AV?$TArray@H@@") == ".?AV?$TArray@H@@");      // Templates stay decorated.
+    CHECK(pe::Undecorate("not a type") == "not a type");
+}
+
+TEST_CASE("rtti names a live object's class and its base from this program's own image") {
+    const rtti_probe::Square square;
+    const rtti_probe::Shape& shape = square;
+    uint64_t table = 0;
+    memcpy(&table, &shape, 8);
+    const Module self = SelfModule();
+    const std::vector<Module> modules{self};
+    auto rtti = pe::ReadRtti(SelfRead(), modules, table);
+    REQUIRE_MESSAGE(rtti.has_value(), rtti.error());
+    CHECK(rtti->type.name == "rtti_probe::Square");
+    CHECK(rtti->type.decorated == ".?AUSquare@rtti_probe@@");
+    CHECK(rtti->offset == 0);
+    REQUIRE(rtti->bases.size() == 1);
+    CHECK(rtti->bases[0].name == "rtti_probe::Shape");
+    // A table with no locator before it (the image's first bytes) is refused, not guessed.
+    CHECK_FALSE(pe::ReadRtti(SelfRead(), modules, self.base + 0x10).has_value());
+}
+
+TEST_CASE("an import-table slot is named by its DLL and function") {
+    const Module self = SelfModule();
+    const auto read = SelfRead();
+    const auto directories = pe::ReadImportDirectories(read, self);
+    REQUIRE(directories.has_value());
+    REQUIRE(directories->tableSize);
+    // The slot that holds GetTickCount64 (this file calls it through the table).
+    const auto wanted = reinterpret_cast<uint64_t>(&GetTickCount64);
+    CHECK(GetTickCount64() > 0);
+    uint64_t slot = 0;
+    for (uint32_t at = 0; at + 8 <= directories->tableSize && !slot; at += 8) {
+        uint64_t value = 0;
+        memcpy(&value, reinterpret_cast<const void*>(self.base + directories->tableRva + at), 8);
+        if (value == wanted) slot = self.base + directories->tableRva + at;
+    }
+    REQUIRE(slot);
+    const auto name = pe::ImportAt(read, self, *directories, slot);
+    REQUIRE(name.has_value());
+    CHECK(name->ends_with("!GetTickCount64"));
+    CHECK(name->find(".dll") != std::string::npos);
+    CHECK_FALSE(pe::ImportAt(read, self, *directories, self.base + 0x10).has_value()); // Not a table slot.
+}

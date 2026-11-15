@@ -123,7 +123,8 @@ tools over standard input and output, so an agent picks a tool and fills
 in checked, named arguments instead of writing a command line:
 
 ```
-python reagentlive_mcp.py --console <console.exe> [-- <pid>]
+python reagentlive_mcp.py --console <console.exe> [--output-schemas full|compact|off]
+                          [--families core,ue,host] [--read-only] [-- <pid>]
 ```
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
@@ -162,9 +163,26 @@ python reagentlive_mcp.py --console <console.exe> [-- <pid>]
   per server, so `stats` counts every tool result as context and groups
   the server's calls. Each result goes to the client twice, as text and
   as structured content.
-- **Cost:** with every pack verb the tool list is about 110 KB of schema;
-  a client that loads every tool's schema up front pays that before any
-  work.
+- **Cost, and how to cut it:** a client that loads every tool up front
+  pays for the whole list before any work. Result schemas were most of
+  it, so they are `compact` by default: each result's top-level keys and
+  their JSON types, never narrower than the full schema, so every console
+  result still validates (the console checks results strictly either
+  way). Measured once, on one host's console (core, pack and two host
+  verbs), as the serialized tool list:
+
+  | Option | Tool list |
+  |---|---|
+  | `--output-schemas full` | about 126 KB |
+  | default (`compact`) | about 63 KB |
+  | `--output-schemas off` | about 45 KB |
+  | `--families core --read-only` | about 30 KB |
+
+  `--families` serves only the verbs of the origins named (`help --json`
+  lists them; an unknown one stops the server with the list) and
+  `--read-only` leaves out every verb marked `writes`; the server's
+  instructions then say what it leaves out. `help <verb>` still shows any
+  verb's full result in notation.
 - Needs the MCP Python SDK (`pip install mcp`; its FastMCP). Check a
   build with the MCP Inspector: it lists the tools and calls one with no
   AI client.

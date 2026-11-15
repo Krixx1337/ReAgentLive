@@ -37,7 +37,22 @@
 namespace reagentlive::cli::detail {
 
 shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept) {
-    return {ReusableRef(ue::GetRef(request)), request.text, mode, block.size(), HexBytes(block), kept, {}, {}, {}};
+    shape::Call out;
+    out.ref = ReusableRef(ue::GetRef(request));
+    out.function = request.text;
+    out.mode = mode;
+    out.blockSize = block.size();
+    out.hex = HexBytes(block);
+    out.kept = kept;
+    return out;
+}
+
+shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, const ue::FunctionInfo& function) {
+    auto out = MakeCall(request, block, "dry", false);
+    out.function = function.owner + ":" + function.name;
+    out.exec = NonZero(function.exec);
+    out.pure = ue::EachFunctionAllowed(function.flags);
+    return out;
 }
 
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand) {
@@ -84,7 +99,7 @@ bool PackInput(Session& session, const ue::Field& parameter, std::string_view va
 }
 }
 
-void RunTypedCall(Session& session, const Command& command, uint64_t functionAddress,
+void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
                   const ue::Signature& signature, StructCache& structs, std::string_view jsonCommand) {
     Client& client = session.client;
     const auto& arguments = command.fields;
@@ -112,8 +127,10 @@ void RunTypedCall(Session& session, const Command& command, uint64_t functionAdd
             return fail("invalid or unsupported input: " + parameter.name);
     }
     if (inputs != arguments.size()) return fail("unexpected typed argument");
+    if (command.dry) return Emit(session, jsonCommand, MakeDryCall(command.request, bytes, function));
     bool kept = false;
-    auto result = ue::Call(client, ue::GetRef(command.request), command.request.text, bytes, functionAddress, 0, &kept);
+    auto result = ue::Call(client, ue::GetRef(command.request), command.request.text, bytes, function.address,
+        command.request.flags, &kept);
     if (!result) return CommandError(session, jsonCommand, result.error());
     if (result->size() != bytes.size())
         return CommandError(session, jsonCommand, Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "incomplete typed call result"});

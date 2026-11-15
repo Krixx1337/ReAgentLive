@@ -11,7 +11,11 @@
 // class (case-insensitive); args[1] = cursor, the object-table slot to start
 // scanning from. detail packs the total matches and the next cursor (see
 // FindDetail); only the first page (cursor 0) scans the whole table and
-// counts the total, later pages report 0 and stop once full. Call: object ref (see SetRef), text =
+// counts the total, later pages report 0 and stop once full. flags =
+// FindExact: the whole name equals text (case-sensitive) and the scan stops
+// at the first match, counting nothing (total 0; next = the slot after it),
+// so a lookup by name costs the slots up to the match, not the table.
+// Call: object ref (see SetRef), text =
 // "Function" or "Class:Function", length and data = the parameter block.
 // Fields: object ref (a class or struct lists its own fields, anything else
 // its class's), length = index of the first field of this page.
@@ -49,6 +53,7 @@ constexpr size_t MaxFindResults = 24;
 constexpr uint32_t MaxClassName = 64;
 // Find's detail: total matches in the low 32 bits, the cursor for the next page
 // in the high 32 bits (0 when this page holds the last matches).
+constexpr uint32_t FindExact = 1;
 inline uint64_t FindDetail(uint32_t total, uint32_t next) { return total | static_cast<uint64_t>(next) << 32; }
 inline uint32_t FindTotal(uint64_t detail) { return static_cast<uint32_t>(detail); }
 inline uint32_t FindNext(uint64_t detail) { return static_cast<uint32_t>(detail >> 32); }
@@ -275,8 +280,12 @@ bool PlainProperty(const Property& property, const FlagsOf& flagsOf, const Membe
 // CallRelease run once more with the request's inputs (usually empty) and drop
 // the entry. A call that would need a new entry while the table is full is
 // refused: an entry still owns references, so it is never evicted. Response
-// detail CallKept marks a kept block.
-constexpr uint32_t CallRelease = 1;
+// detail CallKept marks a kept block. CallPure refuses, before calling, a
+// function that is not const or pure (EachFunctionAllowed) or whose outputs
+// own memory: such a call reads, so a client may run it without approval.
+// A call that faults inside the engine is answered Faulted (detail: the
+// object); the engine may be left in a bad state.
+constexpr uint32_t CallRelease = 1, CallPure = 2;
 constexpr uint64_t CallKept = 1;
 constexpr uint32_t MaxKeptResults = 8;
 // Slots carried from a kept block: the return value and outputs that are not
@@ -477,7 +486,8 @@ inline bool FunctionText(std::string_view name) {
 inline Status Check(const Request& request) {
     switch (request.op) {
     case op::Find: {
-        if (!Terminated(request.text) || request.args[1] > INT32_MAX || request.length > MaxClassName) return Status::BadRequest;
+        if (!Terminated(request.text) || request.args[1] > INT32_MAX || request.length > MaxClassName ||
+            (request.flags & ~FindExact) || ((request.flags & FindExact) && !request.text[0])) return Status::BadRequest;
         const bool hasClass = detail::HasClass(request);
         if (request.length && !hasClass) return Status::BadRequest;
         return request.text[0] || hasClass ? Status::Ok : Status::BadRequest;
@@ -499,7 +509,7 @@ inline Status Check(const Request& request) {
     }
     case op::Call:
         return request.address && Terminated(request.text) && request.text[0] &&
-            request.length <= MaxParams && !(request.flags & ~CallRelease) ? Status::Ok : Status::BadRequest;
+            request.length <= MaxParams && !(request.flags & ~(CallRelease | CallPure)) ? Status::Ok : Status::BadRequest;
     case op::Script:
         return request.address && !request.length && request.args[1] <= MaxScriptEntries ? Status::Ok : Status::BadRequest;
     case op::Entries: {

@@ -173,7 +173,16 @@ name in `data` (`length` includes the terminator) and the starting slot in
 `args[1]`, where scanning starts. `detail` packs the total (low 32 bits) and
 the slot of the first match not returned (high 32 bits, 0 when none). Only
 the first page (slot 0) scans the whole table and counts the total; later
-pages report 0 and stop at the first match past a full page.
+pages report 0 and stop at the first match past a full page. `flags` =
+`FindExact` (1): the whole name equals `text` (case-sensitive, `text`
+required) and the scan stops at the first match, total 0 and next = the
+slot after it. Any other flag is a bad request. An agent built before the
+flag ignores it.
+
+`call` takes `flags` `CallRelease` (1, drop the kept block) and `CallPure`
+(2: refuse, before calling, a function that is neither const nor
+blueprint-pure or whose outputs own memory). A call that raises an access
+fault inside `ProcessEvent` answers `Faulted`, `detail` = the object.
 
 `census` takes an optional class name in `data` as for `find`, empty `text`,
 and the first row of the page in `args[1]`. The response holds

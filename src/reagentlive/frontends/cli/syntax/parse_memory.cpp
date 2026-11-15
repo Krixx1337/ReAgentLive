@@ -82,6 +82,35 @@ Parsed WatchRanges(const Args& args, const ParseContext& context, Command comman
 }
 }
 
+// mem-snap <addr> <len>: up to 1 MiB kept for mem-diff.
+Parsed MemSnap(const Args& args, const ParseContext& context) {
+    Command command;
+    std::string why;
+    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
+    if (!Number(args.At(1), command.range) || !command.range || command.range > memsnap::MaxLength)
+        return Fail("length must be 1.." + std::to_string(memsnap::MaxLength));
+    command.kind = Kind::MemSnap;
+    command.request.op = op::Read;
+    return command;
+}
+
+// mem-diff <changed|unchanged|increased|decreased> <type> [--keep] [--limit N]
+Parsed MemDiff(const Args& args, const ParseContext&) {
+    Command command;
+    if (!memsnap::TestName(args.At(0))) return Fail("the test is changed, unchanged, increased or decreased");
+    command.target = args.At(0);
+    command.view = args.At(1);
+    if (!ElementSize(command.view)) return Fail("the type is one of i8..u64, f32, f64 or ptr");
+    command.all = args.Has("--keep");
+    uint64_t limit = memsnap::DefaultRows;
+    if (args.Has("--limit") && (!Number(args.Value("--limit"), limit) || !limit || limit > memsnap::MaxRows))
+        return Fail("--limit is 1.." + std::to_string(memsnap::MaxRows));
+    command.limit = static_cast<uint32_t>(limit);
+    command.kind = Kind::MemDiff;
+    command.request.op = op::Read;
+    return command;
+}
+
 Parsed Read(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;

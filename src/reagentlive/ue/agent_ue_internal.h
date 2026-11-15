@@ -16,9 +16,11 @@
 #include "reagentlive/ue/agent_ue.h"
 
 namespace reagentlive::ue {
-// A full object table takes many ticks; bound each tick.
+// A full object table takes many ticks; bound each tick (Context::scanMicroseconds).
 constexpr int64_t FindBudgetMicroseconds = 1000;
 constexpr unsigned MaxClassDepth = 64, MaxChildren = 8192;
+// The host's scan budget, set by PackReady before any handler runs.
+extern int64_t g_scanMicroseconds;
 
 // One tick's share of a long scan.
 class Budget {
@@ -30,7 +32,7 @@ public:
     bool Spent() const {
         LARGE_INTEGER now{};
         QueryPerformanceCounter(&now);
-        return now.QuadPart - start_.QuadPart > frequency_.QuadPart * FindBudgetMicroseconds / 1000000;
+        return now.QuadPart - start_.QuadPart > frequency_.QuadPart * g_scanMicroseconds / 1000000;
     }
 private:
     LARGE_INTEGER frequency_{}, start_{};
@@ -83,4 +85,7 @@ SDK::UFunction* FindFunction(const SDK::UStruct* start, std::string_view owner, 
 bool GuardedName(int32_t index, char* out, size_t capacity, size_t& length);
 // Plain data by the property's flags or, where it lacks one, by its struct's members (protocol_ue.h).
 bool PlainData(const SDK::FProperty* property, const Host& host);
+// ProcessEvent under a fault guard: false when the call raised an access
+// fault (the engine may be left in a bad state). Other exceptions pass.
+bool GuardedProcessEvent(SDK::UObject* object, SDK::UFunction* function, void* params);
 }

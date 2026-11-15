@@ -45,14 +45,17 @@ unreadable, up to the page end and on from there.
   and for a `[rip + disp]` operand; `string` when a RIP-relative target in
   a loaded module holds at least 4 printable characters and a terminator
   (ASCII, or UTF-16 with `wide: true`), cut at 96, read in held
-  `read-batch`es for the whole listing; `fields` (`offset`, `size`, `kind`:
+  `read-batch`es for the whole listing; `import` when a `[rip + disp]`
+  target is a slot of its module's import address table: the DLL and
+  function the import directory names for it (`KERNELBASE.dll!Sleep`, or
+  `!#12` by ordinal), read from the live headers; `fields` (`offset`, `size`, `kind`:
   `relative`, `rip`, `displacement`, `immediate`), which bytes of the
   instruction hold each value; `ends` on a return or unconditional jump.
 - `size` is the bytes the rows cover; `stop` says why it ended (`count`,
   `bytes`, `function end`, or `end`'s reason). Bytes that do not decode, an instruction running past the byte
   limit or the function end, or into unreadable memory end it with `end`
   {`address`, `offset` (bytes listed before it), `reason`}, never a guess.
-- No summary of what a function does, no names beyond `string`.
+- No summary of what a function does, no names beyond `string` and `import`.
 
 ## xrefs
 

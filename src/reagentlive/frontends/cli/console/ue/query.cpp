@@ -51,9 +51,12 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
         Ue(session).classRefs.erase(entry);
         break;
     }
+    // Exact: the agent stops at the first class or struct of that name instead
+    // of scanning (and counting) the whole table; an older agent gives the
+    // same first match by substring, so the name is still compared here.
     uint32_t from = 0;
     for (int page = 0; page < 64; ++page) {
-        auto found = ue::Find(client, name, {"Struct", from});
+        auto found = ue::Find(client, name, {"Struct", from, true});
         if (!found) return std::unexpected(found.error());
         for (const auto& object : found->objects) {
             if (object.name != name) continue;

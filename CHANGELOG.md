@@ -12,6 +12,31 @@ turns ([design](docs/design.md#output-weight-and-dead-ends)). Every caller
 breaks once: three argument names, and the `dump`, `get`, `each` and
 `watch` results changed.
 
+- **A tool list half the size** ([clients](docs/client.md#mcp-tools)): the
+  MCP adapter advertises compact result schemas by default (top-level keys
+  and types, widened; the console still checks every result in full), about
+  63 KB in place of 126 on one host's console. `--output-schemas
+  full|compact|off`, `--families <origins>` and `--read-only` cut it further.
+- **Safer engine calls** ([unreal](docs/commands/unreal.md)): an access
+  fault inside `ProcessEvent` (`call`, `each`) is answered `access faulted`
+  instead of ending the game. New `call-pure`: the agent refuses, before
+  calling, anything not const or pure or with an output that owns memory,
+  so its tool is read-only. `call --dry` builds the block and calls
+  nothing (`mode: dry`, with `exec` and `pure`). Wire: `CallPure`.
+- **Class names without a table scan each:** a bare class name (`fields
+  Character`) is an exact `find` that stops at the first match
+  (`FindExact`); an older agent still answers, slower. Hosts may let scans
+  run longer per tick (`Context::scanMicroseconds`).
+- **Layouts in bulk:** `layout-export <file> <Class>...` writes the fields
+  classes declare as JSON lines; `layout-check <file>` answers only the
+  lines the live layout does not hold.
+- **Names the image carries:** `rtti <addr>` names an MSVC object's class
+  and bases from its type information; `disasm` rows add `import`
+  (`KERNELBASE.dll!Sleep`) for a call or jump through the import table.
+- **Raw narrowing over one range:** `mem-snap <addr> <len>` (up to 1 MiB,
+  kept beside the cache file) and `mem-diff
+  changed|unchanged|increased|decreased <type> [--keep]`.
+
 - **No answer that points the wrong way:**
   - A pointer chain of one `->off` (it follows no pointer) is refused,
     from a typed line and a JSON call alike, with the form that follows

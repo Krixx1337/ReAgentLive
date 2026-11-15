@@ -129,6 +129,14 @@ TEST_CASE("find bounds and detail packing") {
     CHECK(ue::Check(request) == Status::Ok);
     request.args[1] = 0x80000000ull;
     CHECK(ue::Check(request) == Status::BadRequest);
+    request.args[1] = 0;
+    request.flags = ue::FindExact;                            // Exact needs a name, not only a class.
+    CHECK(ue::Check(request) == Status::BadRequest);
+    CopyText(request.text, "Pawn");
+    CHECK(ue::Check(request) == Status::Ok);
+    request.flags = 2;                                        // No other flag.
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.flags = 0;
     const auto detail = ue::FindDetail(2620, 331227);
     CHECK(ue::FindTotal(detail) == 2620);
     CHECK(ue::FindNext(detail) == 331227);
@@ -326,7 +334,7 @@ TEST_CASE("a full kept-result table refuses a new function and keeps every entry
     CHECK(table.Find(0) == nullptr);
 }
 
-TEST_CASE("call accepts only the release flag") {
+TEST_CASE("call accepts only the release and pure flags") {
     Request request{};
     request.op = ue::op::Call;
     request.address = 0x1000;
@@ -334,7 +342,9 @@ TEST_CASE("call accepts only the release flag") {
     CHECK(ue::Check(request) == Status::Ok);
     request.flags = ue::CallRelease;
     CHECK(ue::Check(request) == Status::Ok);
-    request.flags = 2;
+    request.flags = ue::CallPure;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.flags = 4;
     CHECK(ue::Check(request) == Status::BadRequest);
 }
 TEST_CASE("the script scan finds anchored names, calls and locals in real bytecode") {

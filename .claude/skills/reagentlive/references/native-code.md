@@ -6,7 +6,9 @@ Answer one-address questions live, at once, with no database
 ([commands](../../../../docs/commands/fast-lane.md)):
 
 - What is here: `disasm <addr>` (`--function` for the whole entry from the
-  exception table, `--follow` through a jump stub).
+  exception table, `--follow` through a jump stub). A call through the
+  import table shows `import` (`KERNELBASE.dll!Sleep`): an API call named
+  with no static tool.
 - What points here: `xrefs <addr>` (kinds `call`, `jmp`, `jcc`, `lea`,
   `load`, `store`, `rip`, `pointer`; `--module` for a DLL calling into the
   exe).

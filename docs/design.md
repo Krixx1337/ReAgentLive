@@ -140,8 +140,9 @@ where every question was answered and the cost was output and turns:
   has the arithmetic. The type rides in a field the agent already kept
   verbatim (`WatchRange::note`, formerly unused), so a later run decodes a
   capture with no agent change.
-- **Not built:** a tolerance search (a narrowing scan is a memory scanner's,
-  [backlog](ideas.md#16--narrowing-scan)) and a mark on pooled instances
+- **Not built:** a tolerance search (narrowing by change over one range is
+  [`mem-diff`](commands/memory.md#mem-snap-and-mem-diff); the rest is a
+  memory scanner's) and a mark on pooled instances
   (game knowledge, a host's verb). A bool's `--nonzero` already tested its
   bit; readable names already worked in `get` paths.
 
@@ -217,7 +218,7 @@ borrowed from the tool that already does it:
 | Need | Borrow from | Not built here because |
 |---|---|---|
 | What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch` for the tick a value changes on, a trial write or `pin` to tell a value recomputed every tick from one set once, and `func --script` or `refs` for Blueprint readers |
-| Narrowing scans (changed, unchanged, increased), pointer scans | a memory scanner | large, and needs no tick or identity |
+| Narrowing scans over the whole process, pointer scans | a memory scanner | large, and needs no tick or identity. A bounded one over one range (`mem-snap`, `mem-diff`, up to 1 MiB) is built: an AI agent cannot drive the scanner's window, and the range is usually an object it already found |
 | Function tracing and hooking | a dynamic instrumentation tool | hooks in the target; the core never hooks |
 | What is at one address, what points at it, whether a signature holds there | nothing: the [fast lane](#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |
 | Call graphs, whole-function logic, decompiling, types, naming | a static analysis tool | it has the whole image, names and types |
@@ -528,10 +529,30 @@ Rejected:
 | JSON between the target and the console | see the table above |
 | Python paging helpers (`find_all`, `search_addresses`) | behaviour in one frontend only; the console's cursors and limits serve all of them |
 
-Open: whether a smaller default tool set is needed (core lookups only, the
-rest on request): every tool's schema together is about 110 KB. Confirmed
-writes (a dry run the client repeats with a confirmation) wait until the
-marks and the client's own prompt are not enough.
+**A smaller tool list.** Measured, result schemas were about two thirds of
+the list (about 72 KB of 112), and every result of 18 sessions together
+was smaller than the list. So:
+
+- **Compact result schemas by default:** each result's top-level keys and
+  JSON types, widened, never narrowed, so a console result always
+  validates. The strictness that matters stays where it was: the console
+  checks every result against its full type, and `help <verb>` and the
+  Python records keep the full shape. `full` and `off` are adapter flags.
+- **Families and read-only** are adapter flags over origins and `writes`,
+  the marks the table already has. Nothing in the console changes, so
+  `help`, the hash and the generated module stay the same for every
+  client.
+
+| Rejected | Why |
+|---|---|
+| Full schemas by default | the cost every client pays up front for detail only a script reads, and the console already checks |
+| A hot set plus a `discover` tool (tools loaded on request) | a second way to reach a tool, and no gain once an agent needs the cold tools; revisit if the compact list is still too large for a client |
+| Hiding tools by what the live host offers | the list is known before a target runs ([source layout](#source-layout)) |
+
+**Confirmed calls:** `call --dry` resolves and builds the block and calls
+nothing, so an approval request shows exactly what will be sent. A dry run
+the client must repeat with a token waits until the marks and the
+client's own prompt are not enough.
 
 ## Unreal pack
 
@@ -604,6 +625,28 @@ marks and the client's own prompt are not enough.
   host's stop path (small, but the risk is one value until restart, and only
   inside a trial's 60 s), and an unloadable agent (it would still need that
   restore, and the host keeps its image loaded by design).
+- **Calls run under a fault guard.** An access fault inside `ProcessEvent`
+  is answered `access faulted`, saying the target may be in a bad state,
+  instead of ending the game. It is no safety net: a fault can leave a lock
+  held or state half-changed, so the session is suspect afterwards. Only
+  access faults are caught, as in the agent's reads. Rejected: catching
+  everything (a C++ exception or a debug break belongs to the engine) and
+  no guard (one wrong block ended the process and the investigation).
+- **`call-pure` is a read the agent checks.** A const or blueprint-pure
+  function whose outputs own nothing is what `each` already calls freely,
+  and the skill already called such getters without approval; the verb
+  makes the claim checkable (`CallPure`, refused before calling) and gives
+  it a read-only tool. The flag is the engine's convention, not a proof,
+  and the docs say so. Rejected: marking `call` read-only when the
+  function is pure (a verb's mark cannot depend on its arguments).
+- **Class names by exact find.** A bare class name was resolved by
+  `find`'s first page, which scans and counts the whole table even after
+  the match, so every new class cost a full scan: the likely cause of a
+  925 ms median for `fields` in one host's usage log, where `fields` on
+  class names was most of the time (not yet measured live against the
+  fix). `FindExact` stops at the first match. Rejected for now: a
+  name-to-class index built by one scan (thousands of pages for the
+  classes of a large game; the exact find makes a miss the only full scan).
 - **Known debt: the interface stub pattern decodes bytes in the agent.**
   `func` on an interface function matches one stub shape
   (`mov rax, [reg]; call [rax + disp]`, `StubVtableSlot`) inside the agent,
@@ -725,12 +768,17 @@ answers what a native object is from live bytes, without a type system.
   calls are safe, and approval stays the host's rule. Out for good: hooks,
   tracing and breakpoints; calling by symbol name (shipping images have
   none); floating-point arguments and callbacks until a case needs them.
-- **Rejected:** class names from run-time type information (engines often
-  build without it; the one host checked has a few hundred type names in
-  its image, none of them game classes: revisit for a host whose image has
-  them), and a struct or type system in ReAgentLive (layouts come from the
-  engine pack, the host's SDK or the static tool; `read --type` and the
-  Python `read_struct` cover ad hoc ones).
+- **`rtti`: class names where the image has them.** Declined while the
+  one host checked (an engine game) had none for its game classes; built
+  because a target with no engine pack is the case native objects exist
+  for, and most native programs and libraries are built with type
+  information. It is a one-address answer from bytes (locator, descriptor,
+  hierarchy), console only, and refuses instead of guessing when the slot
+  before the table holds no locator. Not used to label `peek` or `vtable`
+  rows: one more read per row for what one `rtti` answers.
+- **Rejected:** a struct or type system in ReAgentLive (layouts come from
+  the engine pack, the host's SDK or the static tool; `read --type` and
+  the Python `read_struct` cover ad hoc ones).
 
 ## Source layout
 

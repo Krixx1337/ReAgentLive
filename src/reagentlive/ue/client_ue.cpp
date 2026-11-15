@@ -24,6 +24,10 @@ Result<FindResult> Find(Client& client, std::string_view text, FindOptions optio
         request.length = static_cast<uint32_t>(options.className.size() + 1);
     }
     request.args[1] = options.from;
+    if (options.exact) {
+        if (text.empty()) return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "an exact find needs a name"});
+        request.flags = FindExact;
+    }
     auto response = client.Send(request, timeout);
     if (!response) return std::unexpected(response.error());
     if (response->status != Status::Ok) return std::unexpected(AgentError(*response));

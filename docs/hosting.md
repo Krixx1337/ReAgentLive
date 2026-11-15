@@ -66,6 +66,11 @@ A host is whatever code inside the target calls `Tick`. It provides:
   `Context::offThreadReads` (off by default, being measured) lets lookups
   and reads run off the engine's thread
   ([off the engine's thread](commands/unreal.md#off-the-engines-thread)).
+  `Context::scanMicroseconds` (default 1000, at most 50 000) is how long
+  each tick an object-table scan (`find --cls`, `census`, `each`, `refs`,
+  label export) may run: more is fewer ticks per scan and a longer stall
+  in each. A host that ticks at 100 Hz and can spare 4 ms finishes a
+  370 000-object scan about four times sooner.
 - **Optional:** a log callback ([logging](#logging)), hold budgets
   ([protocol](protocol.md#exchange)), `Host::backgroundSearch`, and named
   roots for `watch --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).

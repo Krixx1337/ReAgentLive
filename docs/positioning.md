@@ -84,10 +84,9 @@ this list.
   process handle. Fewer moving parts. This is a statement about setup, not
   about protected software; see "What it is not".
 
-Candidates, because they need the running process anyway: a minimal
-narrowing scan (changed, unchanged, increased, aligned to the tick) and a
-log-only call probe. Neither is planned; each waits for a case the
-neighbours cannot cover.
+A minimal narrowing scan over one range (`mem-snap`, `mem-diff`) is built:
+an AI agent cannot drive a scanner's window. A log-only call probe remains
+a candidate, not planned; it waits for a case the neighbours cannot cover.
 
 ## Ways to host it
 

@@ -143,8 +143,22 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         auto signature = ue::Parameters(client, function->address);
         if (!signature) return CommandError(session, jsonCommand, signature.error());
         if (command.kind == Kind::TypedCall)
-            return RunTypedCall(session, command, function->address, *signature, structs, jsonCommand);
+            return RunTypedCall(session, command, *function, *signature, structs, jsonCommand);
         return PrintParameters(session, *function, *signature, object);
+    }
+    if (request.op == ue::op::Call && command.dry) {
+        auto function = ue::Function(client, ue::GetRef(command.request), request.text);
+        if (!function) return CommandError(session, jsonCommand, function.error());
+        if (!callSignature) {
+            auto signature = ue::Parameters(client, function->address);
+            if (!signature) return CommandError(session, jsonCommand, signature.error());
+            callSignature = std::move(*signature);
+        }
+        if (callSignature->size != command.request.length)
+            return JsonError(session, jsonCommand, "validation", "the block is " + std::to_string(command.request.length) +
+                " bytes; the function's is " + std::to_string(callSignature->size));
+        return Emit(session, jsonCommand, MakeDryCall(command.request,
+            std::span(command.request.data, command.request.length), *function));
     }
     switch (request.op) {
     case ue::op::Find: {
@@ -263,6 +277,7 @@ bool PackCommand(const Command& command) {
     switch (command.kind) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Record: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
+    case Kind::Layout:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -275,7 +290,7 @@ bool PackCommand(const Command& command) {
 bool PackHeld(const Command& command) {
     switch (command.kind) {
     case Kind::Dump: case Kind::Snap: case Kind::Get: case Kind::TypedCall: case Kind::Release:
-    case Kind::Script: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: return true;
+    case Kind::Script: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: case Kind::Layout: return true;
     case Kind::Each: return !command.seconds;
     case Kind::Remote: break;
     default: return false;
@@ -296,6 +311,10 @@ void RunPackCommand(Session& session, const Command& command, std::string_view j
     }
     if (command.kind == Kind::ExportLabels) {
         RunExportLabels(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::Layout) {
+        RunLayout(session, command, jsonCommand);
         return;
     }
     if (command.kind == Kind::Entries) {

@@ -56,11 +56,22 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"call", "ue", "call a reflected function with a raw block or Name=value inputs",
             {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
-            {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"}},
+            {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"},
+             {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"}},
             Of<shape::Call>, parse::Call,
             "A raw block must match the function's size (params shows it); none sends a zeroed block when every "
             "parameter is an output. hex is the block after the call; a typed call adds outputs. kept: an output "
-            "owns memory (a handle, a string), so the agent reuses the block and the next call releases the old values.", {}, true},
+            "owns memory (a handle, a string), so the agent reuses the block and the next call releases the old values. "
+            "--dry answers mode dry: hex is the block that would be sent, with exec and pure; show it when asking to call. "
+            "A call that faults in the engine is refused as faulted: the target may be left in a bad state.", {}, true},
+        {"call-pure", "ue", "call a const or pure function that keeps nothing (read-only); as call takes",
+            {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
+             {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
+            {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"},
+             {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"}},
+            Of<shape::Call>, parse::CallPure,
+            "The agent refuses, before calling, a function that is neither const nor pure, or one with an output "
+            "that owns memory (use call). Pure is the engine's flag, not a proof: a function can still change state."},
         {"release", "ue", "one more call (zeroed inputs by default) that drops the kept block",
             {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params", Any, "bytes", "the parameter block as hex pairs (default: zeroed)"}},
@@ -88,6 +99,15 @@ inline const std::vector<Verb>& UnrealVerbs() {
             Of<shape::ExportLabels>, parse::ExportLabels,
             "Native exec thunks, vtables, interface implementations, and the globals peek --label put in the "
             "file (always kept). After another tool's mappings: --kinds interface,global."},
+        {"layout-export", "ue", "the reflected fields classes declare, into a file (JSON lines) for layout-check",
+            {{"file", "file", One, "path", path}, {"classes", "Class", Some, "str", "a class or struct name, per class (up to 256)"}},
+            {}, Of<shape::LayoutExport>, parse::LayoutExport,
+            "One line per field the class itself declares: owner, field, offset, size, type. A line may be written "
+            "by hand or by a tool from an SDK. missing lists names that are no class or struct."},
+        {"layout-check", "ue", "a file of expected fields against the live layout; only the mismatches",
+            {{"file", "file", One, "path", path}}, {}, Of<shape::LayoutCheck>, parse::LayoutCheck,
+            "Lines as layout-export writes them; offset as a number or \"0x..\", size and type optional. problem: "
+            "no class, no field, offset, size or type; ok when every line holds. Rows stop at 200 (capped)."},
         {"entries", "ue", "one page of an array, set or map: elements, or key and value",
             {{"object", "object", One, "ref", object},
              {"field", "[Owner:]Field", One, "str", "the field, with its declaring class where the name is ambiguous"}},

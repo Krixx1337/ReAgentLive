@@ -64,8 +64,8 @@ class McpTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.dir.cleanup()
 
-    def run_client(self, body, notices=None):
-        server = reagentlive_mcp.build(sys.executable, ['-I', FAKE])
+    def run_client(self, body, notices=None, **options):
+        server = reagentlive_mcp.build(sys.executable, ['-I', FAKE], **options)
 
         async def handler(message):
             if notices is not None:
@@ -79,7 +79,7 @@ class McpTests(unittest.TestCase):
     def test_the_tool_list_is_the_table(self):
         async def body(client):
             return {tool.name: tool for tool in (await client.list_tools()).tools}
-        tools = self.run_client(body)
+        tools = self.run_client(body, output_schemas='full')
         rows = [row for row in self.table['rows'] if row['verb'] != 'quit' and not row.get('blocks')]
         expected = {(row['verb'] if row['origin'] == 'core' else f'{row["origin"]}_{row["verb"]}').replace('-', '_')
                     for row in rows}
@@ -96,6 +96,42 @@ class McpTests(unittest.TestCase):
         self.assertIn('Object', tools['ue_find'].outputSchema['$defs'])   # Named types stay named.
         self.assertIn('calls', tools['batch'].inputSchema['properties'])
         self.assertIn('read <addr> [len] [--type type]', tools['read'].description)
+
+    def tool_list(self, **options):
+        async def body(client):
+            return {tool.name: tool for tool in (await client.list_tools()).tools}
+        return self.run_client(body, **options)
+
+    def test_compact_output_schemas_keep_the_top_level_keys_only(self):
+        full, compact, off = (self.tool_list(output_schemas=p) for p in ('full', 'compact', 'off'))
+        self.assertEqual(set(full), set(compact))
+        self.assertEqual(set(compact['ue_find'].outputSchema['properties']),
+                         set(full['ue_find'].outputSchema['properties']))
+        self.assertEqual(compact['ue_find'].outputSchema['properties']['rows'], {'type': 'array'})
+        self.assertNotIn('$defs', compact['ue_find'].outputSchema)
+        self.assertTrue(all(tool.outputSchema is None for tool in off.values()))
+        size = lambda tools: sum(len(json.dumps(t.model_dump(exclude_none=True))) for t in tools.values())
+        self.assertLess(size(compact), size(full) * 0.6)          # The point of the profile.
+        self.assertLess(size(off), size(compact))
+
+    def test_every_profile_returns_the_console_result(self):
+        for profile in reagentlive_mcp.OUTPUT_SCHEMAS:
+            async def body(client):
+                return await client.call_tool('ue_find', {'text': 'A'})
+            found = self.run_client(body, output_schemas=profile)
+            self.assertFalse(found.isError, f'{profile}: {found.content[0].text}')
+            self.assertEqual(found.structuredContent['rows'][0]['ref'], REF)
+
+    def test_families_and_read_only_narrow_the_list(self):
+        core = self.tool_list(families=['core'])
+        self.assertIn('read', core)
+        self.assertFalse(any(name.startswith(('ue_', 'host_')) for name in core))
+        reads = self.tool_list(read_only=True)
+        self.assertIn('ue_find', reads)
+        self.assertFalse(any(tool.annotations.destructiveHint for tool in reads.values()))
+        self.assertNotIn('write', reads)
+        with self.assertRaisesRegex(ValueError, 'unknown family'):
+            reagentlive_mcp.build(sys.executable, ['-I', FAKE], families=['nope'])
 
     def test_calls_return_the_console_result_and_errors_are_tool_errors(self):
         async def body(client):

@@ -8,6 +8,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/code/native.h"
+#include "reagentlive/frontends/cli/code/pe_names.h"
 #include "reagentlive/core/client.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
@@ -37,6 +38,22 @@ void RunRegion(Session& session, const Command& command, std::string_view jsonCo
                 }
     Emit(session, jsonCommand, MakeRegion(address, *info, native::region::Kind(*info, flags), section,
         LoadedModules(session)));
+}
+
+void RunRtti(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "rtti needs read-batch");
+    const Client::Hold hold(client);
+    const uint64_t address = command.request.address;
+    uint64_t table = address;
+    if (!command.table) {
+        auto bytes = client.Read(address + command.offset, 8);
+        if (!bytes) return CommandError(session, jsonCommand, bytes.error());
+        format_detail::Load(*bytes, table);
+    }
+    auto rtti = pe::ReadRtti(AgentRead(session), LoadedModules(session), table);
+    if (!rtti) return JsonError(session, jsonCommand, "rtti", rtti.error());
+    Emit(session, jsonCommand, MakeRtti(address, command.table ? 0 : command.offset, table, *rtti, LoadedModules(session)));
 }
 
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand) {
