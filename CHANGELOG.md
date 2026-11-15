@@ -5,7 +5,13 @@ layout can change in any minor release; agent and client are always built
 from the same revision, and the handshake's layout check refuses a
 mismatched pair. The version lives in `src/reagentlive/version.h`.
 
-## Unreleased
+## 0.3.0
+
+Sessions that cost less and reach further: a tool list half the size,
+engine calls that survive a fault, class lookups without a table scan,
+bulk layout checks after a patch, and names and narrowing for native
+code with no engine pack. The Unreal pack finds its globals after a game
+patch, and a console can be built without it.
 
 Cheaper agent sessions: fewer wrong-looking answers, less output, fewer
 turns ([design](docs/design.md#output-weight-and-dead-ends)). Every caller
