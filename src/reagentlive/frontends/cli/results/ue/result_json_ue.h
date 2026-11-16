@@ -587,6 +587,39 @@ struct Get {
         v("tick_accurate", &Get::tickAccurate);
     }
 };
+// trace: the first blocking hit on the line, decoded by the engine
+// (GameplayStatics.BreakHitResult). Absent fields: nothing was hit, or the hit has none.
+struct Trace {
+    std::vector<double> start, end;
+    std::string channel;
+    bool complex = true;
+    std::optional<RefId> ignored;
+    bool hit = false;
+    std::optional<bool> initialOverlap;
+    std::optional<double> distance;
+    std::optional<std::vector<double>> impact, normal;
+    std::optional<Object> actor, component, material;
+    std::optional<std::string> bone;
+    std::optional<int32_t> face, item;
+    template<class V> static void Describe(V& v) {
+        v("start", &Trace::start);
+        v("end", &Trace::end);
+        v("channel", &Trace::channel);
+        v("complex", &Trace::complex);
+        v("ignored", &Trace::ignored);
+        v("hit", &Trace::hit);
+        v("initial_overlap", &Trace::initialOverlap);
+        v("distance", &Trace::distance);
+        v("impact", &Trace::impact);
+        v("normal", &Trace::normal);
+        v("actor", &Trace::actor);
+        v("component", &Trace::component);
+        v("material", &Trace::material);
+        v("bone", &Trace::bone);
+        v("face", &Trace::face);
+        v("item", &Trace::item);
+    }
+};
 struct Snap {
     RefId ref;
     uint64_t size = 0;

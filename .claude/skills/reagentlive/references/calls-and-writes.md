@@ -115,3 +115,12 @@ first (see the skill's rules).
 - `pin` writes the same bytes every tick; `$N+off` targets stop when the
   object dies. A pinned value that holds is integrated state; one the game
   still overrides each frame is recomputed from scratch.
+
+## What blocks a line
+
+- Ask the engine with `trace <start> <end>` before guessing from geometry or
+  rebuilding a host: it names the actor, component and physical material the
+  line stops at, and the distance. Ends are points, objects or
+  `mesh@Socket`; `--ignore <your pawn>` keeps your own body out of a
+  camera line. A collision shell or a material the game treats specially
+  (glass, foliage) shows up here at once.

@@ -101,6 +101,7 @@ set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${
     "${reagentlive_cli_dir}/console/snapshot.cpp")
 set(reagentlive_console_ue_sources "${reagentlive_cli_dir}/console/ue/pack.cpp" "${reagentlive_cli_dir}/console/ue/dump.cpp"
     "${reagentlive_cli_dir}/console/ue/capture.cpp" "${reagentlive_cli_dir}/console/ue/calls.cpp"
+    "${reagentlive_cli_dir}/console/ue/trace.cpp"
     "${reagentlive_cli_dir}/console/ue/query.cpp" "${reagentlive_cli_dir}/console/ue/labels.cpp"
     "${reagentlive_cli_dir}/console/ue/members.cpp" "${reagentlive_cli_dir}/console/ue/layout.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")

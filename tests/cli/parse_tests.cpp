@@ -743,6 +743,35 @@ TEST_CASE("batch keeps its command lines and refuses what cannot be held") {
     CHECK_FALSE(Parse(many + " }", NoRefs).has_value());
 }
 
+TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
+    auto parsed = Parse("trace $1@Head 100.5,-2,3e2 --channel camera --simple --ignore $2", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::Trace);
+    CHECK(parsed->traceEnds[0].object == TwoRefs[0]);
+    CHECK(parsed->traceEnds[0].socket == "Head");
+    CHECK_FALSE(parsed->traceEnds[0].literal);
+    CHECK(parsed->traceEnds[1].literal);
+    CHECK(parsed->traceEnds[1].point[0] == 100.5);
+    CHECK(parsed->traceEnds[1].point[1] == -2);
+    CHECK(parsed->traceEnds[1].point[2] == 300);
+    CHECK(parsed->traceChannel == 1);
+    CHECK(parsed->traceSimple);
+    CHECK(parsed->traceIgnore == TwoRefs[1]);
+    auto plain = Parse("trace (0,0,0) $2 --channel 5", TwoRefs);
+    REQUIRE(plain.has_value());
+    CHECK(plain->traceEnds[0].literal);
+    CHECK(plain->traceEnds[1].object == TwoRefs[1]);
+    CHECK(plain->traceChannel == 5);
+    CHECK_FALSE(plain->traceSimple);
+    CHECK_FALSE(Parse("trace $1", TwoRefs).has_value());
+    CHECK_FALSE(Parse("trace 1,2 $1", TwoRefs).has_value());
+    CHECK_FALSE(Parse("trace 1,2,3,4 $1", TwoRefs).has_value());
+    CHECK_FALSE(Parse("trace 1,2,nan $1", TwoRefs).has_value());
+    CHECK_FALSE(Parse("trace $1@ $2", TwoRefs).has_value());
+    CHECK_FALSE(Parse("trace $1 $2 --channel 32", TwoRefs).has_value());
+    CHECK_FALSE(Parse("trace $1 $2 --ignore 7", TwoRefs).has_value());
+}
+
 TEST_CASE("get takes an object and dotted field paths") {
     auto parsed = Parse("get $1 Mesh.AnimInstance.AimAlpha Owner:Health", TwoRefs);
     REQUIRE(parsed.has_value());

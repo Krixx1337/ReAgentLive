@@ -117,6 +117,17 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "object", One, "ref", object}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
             {}, Of<shape::Get>, parse::Get,
             "Owner:Field where a name is ambiguous. The values are read back to back; same_tick says whether in one tick."},
+        {"trace", "ue", "the first thing a line hits: actor, component, physical material, distance (read-only)",
+            {{"start", "x,y,z|object[@Socket]", One, "str",
+              "the start: a world point in cm, an object's location (actor, component, camera manager), or a socket on a mesh component"},
+             {"end", "x,y,z|object[@Socket]", One, "str", "the end, as start takes"}},
+            {{"--channel", Takes::One, "str", "visibility|camera|N", "the trace type query (default visibility; N: TraceTypeQuery N+1)"},
+             {"--simple", Takes::Nothing, "bool", "", "simple collision instead of complex"},
+             {"--ignore", Takes::One, "ref", "actor", "an actor the line passes through; also the world it runs in"}},
+            Of<shape::Trace>, parse::Trace,
+            "KismetSystemLibrary.LineTraceSingle on the game thread, decoded by GameplayStatics.BreakHitResult; it "
+            "changes no state. The world comes from --ignore, else from an end's object: two points need --ignore. "
+            "Distance and points are in cm; distance counts from start. A socket needs a mesh component (get <actor> Mesh)."},
         {"describe", "ue", "an object's name, class and reusable ref",
             {{"object", "address|$N|#index:serial", One, "ref", "the object: an address, $N, a literal ref, or a table slot and serial"}},
             {}, Of<shape::Object>, parse::Describe},

@@ -1,5 +1,7 @@
 // reagentlive CLI: parsing the Unreal pack verbs (find, call, dump, get, each, ...).
 #include <algorithm>
+#include <charconv>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include "reagentlive/frontends/cli/syntax/layout.h"
@@ -314,6 +316,52 @@ Parsed Get(const Args& args, const ParseContext& context) {
     }
     command.kind = Kind::Get;
     command.request.op = ue::op::Fields;
+    return command;
+}
+
+namespace {
+// One end of a trace: "x,y,z" (cm, optionally in parentheses), an object, or object@Socket.
+bool TraceEnd(std::string_view token, std::span<const Ref> refs, Command::TracePoint& end) {
+    end = {};
+    if (const auto at = token.find('@'); at != std::string_view::npos) {
+        end.socket = std::string(token.substr(at + 1));
+        token = token.substr(0, at);
+        if (end.socket.empty() || end.socket.size() >= MaxText) return false;
+        return Reference(token, refs, end.object);
+    }
+    if (Reference(token, refs, end.object)) return true;
+    if (token.starts_with('(') && token.ends_with(')')) token = token.substr(1, token.size() - 2);
+    for (int axis = 0; axis < 3; ++axis) {
+        const size_t comma = token.find(',');
+        if ((axis < 2) == (comma == std::string_view::npos)) return false;
+        const auto part = token.substr(0, comma);
+        const auto [last, error] = std::from_chars(part.data(), part.data() + part.size(), end.point[axis]);
+        if (error != std::errc{} || last != part.data() + part.size() || !std::isfinite(end.point[axis])) return false;
+        token = axis < 2 ? token.substr(comma + 1) : std::string_view{};
+    }
+    end.literal = true;
+    return true;
+}
+}
+
+// trace <start> <end> [--channel visibility|camera|N] [--simple] [--ignore <actor>]
+Parsed Trace(const Args& args, const ParseContext& context) {
+    Command command;
+    for (int i = 0; i < 2; ++i)
+        if (!TraceEnd(args.At(i), context.refs, command.traceEnds[i]))
+            return Fail("an end is x,y,z (cm), an object ($N or a literal ref) or object@Socket: " + std::string(args.At(i)));
+    if (args.Has("--channel")) {
+        const auto channel = args.Value("--channel");
+        uint64_t number = 0;
+        if (channel == "visibility") command.traceChannel = 0;
+        else if (channel == "camera") command.traceChannel = 1;
+        else if (Number(channel, number) && number < 32) command.traceChannel = static_cast<uint8_t>(number);
+        else return Fail("--channel is visibility, camera or a trace type query 0..31");
+    }
+    command.traceSimple = args.Has("--simple");
+    if (args.Has("--ignore") && !Reference(args.Value("--ignore"), context.refs, command.traceIgnore))
+        return Fail("--ignore is an actor: $N or a literal ref");
+    command.kind = Kind::Trace;
     return command;
 }
 

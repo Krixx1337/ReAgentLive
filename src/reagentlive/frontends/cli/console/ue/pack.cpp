@@ -277,7 +277,7 @@ bool PackCommand(const Command& command) {
     switch (command.kind) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Record: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
-    case Kind::Layout:
+    case Kind::Layout: case Kind::Trace:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -290,7 +290,8 @@ bool PackCommand(const Command& command) {
 bool PackHeld(const Command& command) {
     switch (command.kind) {
     case Kind::Dump: case Kind::Snap: case Kind::Get: case Kind::TypedCall: case Kind::Release:
-    case Kind::Script: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: case Kind::Layout: return true;
+    case Kind::Script: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: case Kind::Layout:
+    case Kind::Trace: return true;
     case Kind::Each: return !command.seconds;
     case Kind::Remote: break;
     default: return false;
@@ -315,6 +316,10 @@ void RunPackCommand(Session& session, const Command& command, std::string_view j
     }
     if (command.kind == Kind::Layout) {
         RunLayout(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::Trace) {
+        RunTrace(session, command, jsonCommand);
         return;
     }
     if (command.kind == Kind::Entries) {

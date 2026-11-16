@@ -89,6 +89,14 @@ bool PackInput(Session& session, const ue::Field& parameter, std::string_view va
         memcpy(bytes.data() + sizeof(id), &instance, sizeof(instance));
         return true;
     }
+    // A name as text: its pooled comparison index, instance 0.
+    if (parameter.type == "NameProperty" && bytes.size() == 8 && !value.empty()) {
+        const auto index = NameIndex(session, value);
+        if (!index) return false;
+        memset(bytes.data(), 0, bytes.size());
+        memcpy(bytes.data(), &*index, sizeof(int32_t));
+        return true;
+    }
     // Bools, integers, floats, enums and plain structs ("(X=1,Y=2,Z=3)" or "(1,2,3)").
     return pack_input::PackValue(parameter, value, bytes, [&](const Ref& type) { return structs(type); });
 }

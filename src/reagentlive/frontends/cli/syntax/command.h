@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label, Stats, Layout,
-    Rtti, MemSnap, MemDiff };
+    Rtti, MemSnap, MemDiff, Trace };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -87,6 +87,14 @@ struct Command {
     uint64_t range = 0;
     // call --dry: resolve the function and build the block, call nothing.
     bool dry = false;
+    // trace: its two ends (a world point in cm, or an object's location or a
+    // socket on it), the trace type query, simple collision, and an actor the
+    // line passes through (also the world it runs in; else an end's object).
+    struct TracePoint { bool literal = false; double point[3]{}; Ref object{}; std::string socket; };
+    TracePoint traceEnds[2];
+    uint8_t traceChannel = 0;
+    bool traceSimple = false;
+    Ref traceIgnore{};
 };
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).

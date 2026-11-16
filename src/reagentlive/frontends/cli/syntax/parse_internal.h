@@ -66,6 +66,7 @@ Parsed LayoutExport(const Args& args, const ParseContext& context);
 Parsed LayoutCheck(const Args& args, const ParseContext& context);
 Parsed Entries(const Args& args, const ParseContext& context);
 Parsed Get(const Args& args, const ParseContext& context);
+Parsed Trace(const Args& args, const ParseContext& context);
 Parsed Census(const Args& args, const ParseContext& context);
 Parsed CensusDiff(const Args& args, const ParseContext& context);
 Parsed Refs(const Args& args, const ParseContext& context);

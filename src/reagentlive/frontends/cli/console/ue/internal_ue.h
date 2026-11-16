@@ -67,6 +67,8 @@ struct PackState {
     std::vector<ClassRef> classRefs;
     std::optional<CensusBaseline> census;   // The last census: census --changed's baseline, census --start's rows.
     std::optional<CensusBaseline> censusBefore; // The census before it, for census --changed --start.
+    std::vector<ClassRef> defaultObjects;  // trace: Default__ objects by exact name, for the session.
+    std::unordered_map<std::string, int32_t> nameIndices; // Pooled names looked up by text, for the session.
 
     explicit PackState(Session& session) : structs(session) {}
 };
@@ -122,4 +124,7 @@ uint32_t ExeTimestamp(Session& session);
 struct NativeShown { std::vector<NativeCheck> shown, refused; };
 NativeShown NativeMembers(Session& session, const Ref& object, std::span<const ue::Field> reflected, bool instance);
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand);
+// A pooled name's comparison index by its text (FNames compare without case), for the session.
+Result<int32_t> NameIndex(Session& session, std::string_view text);
+void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
 }
