@@ -518,6 +518,15 @@ TEST_CASE("the interface stub's vtable slot comes from mov rax, [reg] then call 
     const uint8_t cut[] = {0x48, 0x8B, 0x06, 0xFF, 0x90, 0xA8};
     CHECK(ue::StubVtableSlot(cut, sizeof(cut)) == -1);
 }
+TEST_CASE("a stub is scanned to its function's end from the exception directory") {
+    // A live stub of 0xDD bytes whose call sits at 0xC3, past a 160-byte window.
+    const uint32_t entries[] = {0x1000, 0x1040, 0, 0x6c68b50, 0x6c68c2d, 0, 0x6c68c30, 0x6c68d00, 0};
+    CHECK(ue::FunctionSpan(entries, 3, 0x6c68b50) == 0xDD);
+    CHECK(ue::FunctionSpan(entries, 3, 0x6c68b60) == 0); // Inside a function, not its start.
+    CHECK(ue::FunctionSpan(entries, 3, 0x2000) == 0);
+    CHECK(ue::FunctionSpan(entries, 0, 0x1000) == 0);
+    CHECK(ue::MaxStubScan >= 0xDD);
+}
 
 TEST_CASE("pack handlers need the host's engine-thread check") {
     ue::Context missing{nullptr, nullptr};

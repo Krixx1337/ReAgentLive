@@ -126,7 +126,23 @@ struct FunctionEntry {
 // entry makes the array implausible and Function refuses (another engine
 // layout) instead of trusting any of it.
 constexpr uint32_t InterfacesOffset = 0x1E0, InterfaceEntrySize = 16, MaxInterfaces = 64;
-constexpr uint32_t MaxStubScan = 160;
+// The stub is scanned to its own end from its module's exception directory,
+// never into the next function: a stub's call can sit past 160 bytes.
+constexpr uint32_t MaxStubScan = 512;
+// Length of the function that starts exactly at `rva`, from sorted
+// RUNTIME_FUNCTION triples (begin, end, unwind); 0 when no entry starts
+// there. Pure; tested.
+inline uint32_t FunctionSpan(const uint32_t* entries, size_t count, uint32_t rva) {
+    size_t low = 0, high = count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        const uint32_t begin = entries[middle * 3], end = entries[middle * 3 + 1];
+        if (rva < begin) high = middle;
+        else if (rva >= end) low = middle + 1;
+        else return begin == rva && end > begin ? end - begin : 0;
+    }
+    return 0;
+}
 // Byte offset of the vtable slot a stub calls: the first `mov rax, [reg]`
 // directly followed by `call [rax + disp8|disp32]`; -1 when none. Pure; tested.
 inline int64_t StubVtableSlot(const uint8_t* code, size_t size) {

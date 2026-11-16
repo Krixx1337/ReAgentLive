@@ -170,6 +170,28 @@ InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_
     return found;
 }
 
+// Bytes of the function starting at `exec`, from its module's exception
+// directory (the module is the allocation holding `exec`); 0 when unknown.
+uint32_t StubSpan(uint64_t exec, const Host& host) {
+    MEMORY_BASIC_INFORMATION page{};
+    if (!exec || !VirtualQuery(reinterpret_cast<const void*>(exec), &page, sizeof(page)) || !page.AllocationBase) return 0;
+    const auto base = reinterpret_cast<uintptr_t>(page.AllocationBase);
+    IMAGE_DOS_HEADER dos{};
+    if (!host.readable(page.AllocationBase, sizeof(dos)) || !GuardedCopy(&dos, page.AllocationBase, sizeof(dos)) ||
+        dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew <= 0 || dos.e_lfanew > 0x100000) return 0;
+    IMAGE_NT_HEADERS64 nt{};
+    const auto* where = reinterpret_cast<const void*>(base + static_cast<uintptr_t>(dos.e_lfanew));
+    if (!host.readable(where, sizeof(nt)) || !GuardedCopy(&nt, where, sizeof(nt)) || nt.Signature != IMAGE_NT_SIGNATURE ||
+        nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return 0;
+    const auto& directory = nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+    if (!directory.VirtualAddress || !directory.Size || directory.Size % 12 ||
+        directory.VirtualAddress > nt.OptionalHeader.SizeOfImage ||
+        directory.Size > nt.OptionalHeader.SizeOfImage - directory.VirtualAddress || exec - base > UINT32_MAX) return 0;
+    const auto* entries = reinterpret_cast<const uint32_t*>(base + directory.VirtualAddress);
+    if (!host.readable(entries, directory.Size)) return 0;
+    return FunctionSpan(entries, directory.Size / 12, static_cast<uint32_t>(exec - base));
+}
+
 KeptResults g_kept; // Owned call results (protocol_ue.h); constant-initialised.
 constexpr size_t MaxCallSlots = 64;
 
@@ -328,9 +350,11 @@ Progress Function(const Request& request, Response& response, bool, const Host& 
         entry.interface = 1;
         entry.interfaceOffset = static_cast<uint32_t>(viaInterface.offset);
         uint8_t stub[MaxStubScan];
-        if (entry.executable && host.readable(reinterpret_cast<const void*>(entry.exec), sizeof(stub)) &&
-            GuardedCopy(stub, reinterpret_cast<const void*>(entry.exec), sizeof(stub)))
-            entry.slot = StubVtableSlot(stub, sizeof(stub));
+        const uint32_t span = StubSpan(entry.exec, host);
+        const uint32_t scan = span < MaxStubScan ? span : MaxStubScan;
+        if (entry.executable && scan && host.readable(reinterpret_cast<const void*>(entry.exec), scan) &&
+            GuardedCopy(stub, reinterpret_cast<const void*>(entry.exec), scan))
+            entry.slot = StubVtableSlot(stub, scan);
         const auto* part = reinterpret_cast<const uint8_t*>(object) + viaInterface.offset;
         uint64_t vtable = 0, implementation = 0;
         if (entry.slot >= 0 && host.readable(part, sizeof(vtable)) && GuardedCopy(&vtable, part, sizeof(vtable)) &&
