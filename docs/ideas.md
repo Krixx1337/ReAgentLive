@@ -16,49 +16,6 @@ when an investigation needs a larger read budget across ticks.
 `each` reads up to 16 fields or one getter across a class. Whole-object
 snapshots across instances (every reflected field) remain open.
 
-### 15 · Call probe (caution)
-
-Log who calls one function, and with what arguments, for a few seconds: the
-one question `xrefs` (static callers) and `watch` (what changed) cannot
-answer. Parked: no investigation has been blocked on it yet. A neighbour
-having the feature is not a case; wait for a real one the neighbours
-([positioning](positioning.md#pairings)) cannot cover.
-
-**Try a host op first.** A host that already owns a hook on the engine's
-event dispatch can record the calls passing through it and expose them as
-a host op, beside its other game-specific ops. No new hook anywhere, a
-correct parameter block for every call, and ReAgentLive itself stays
-hook-free.
-
-**If ReAgentLive ever builds one, these rules hold:**
-
-- The core stays hook-free. A probe lives in its own optional part, built
-  only when a host asks for it and off unless the host opts in, with its
-  own op range.
-- Every probe is a guarded write: shown by a dry run first (address,
-  current value, new value), under the host's approval rule, with a
-  deadline, a target identity it stops with, and an exact restore, as
-  trial writes have. A newer agent restores an older one's probes.
-- Never another owner's slot: refused when the slot does not hold the
-  value the engine pack or the image says is original.
-- Record only. No argument edits, skipped calls or changed returns.
-
-**What a design must settle first (Unreal; from reading, not verified
-live):** a considered approach was swapping a reflected function's native
-entry pointer for a recording thunk. That pointer is data, so no code
-bytes change, but it is still a hook, and it sees less than it seems:
-
-- calls through event dispatch and script calling a native function go
-  through the pointer;
-- script calling a script function may bypass the per-function pointer;
-- native code calling native code never touches it;
-- the arguments sit in a parameter block only on the event-dispatch path.
-  When script calls a native function they are still unevaluated bytecode,
-  so copying "the parameter block" there records the caller's locals:
-  wrong data that looks right.
-
-Confirm each path live before choosing where to record.
-
 ### 17 · `call-native` (caution)
 
 Call a native function by address: `call-native <addr> [arg ...]`, or

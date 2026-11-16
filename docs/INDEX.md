@@ -33,7 +33,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
 | [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable`, pointer chains, `region`, strings |
-| [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, `each`, `census`, `dump`, labels, readable names, native members |
+| [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `dump`, labels, readable names, native members |
 | [commands/capture.md](commands/capture.md) | which command for which question about change; `snap`, `record`, replay |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
 | [hosting.md](hosting.md) | own-thread example, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
@@ -62,10 +62,14 @@ and `status` lists the packs a host offers (`packs`).
 | `search` | core | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
 | `read --type "<layout>"` | core | [memory](commands/memory.md#typed-layouts) |
 | `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `region` | core | [native objects](commands/native-objects.md) |
+| `rtti` | core | [native objects](commands/native-objects.md#rtti) |
+| `mem-snap`, `mem-diff` | core | [memory](commands/memory.md#mem-snap-and-mem-diff) |
 | `disasm`, `xrefs`, `touches` | core | [fast lane](commands/fast-lane.md) |
 | `sig-check`, `sig-file`, `sig-bytes` | core | [fast lane](commands/fast-lane.md#signatures) |
 | `find`, `describe`, `name`, `name-find`, `fields`, `entries`, `refs` | Unreal pack | [Unreal pack](commands/unreal.md) |
-| `call`, `release`, `func`, `funcs`, `params`, `script` | Unreal pack | [Unreal pack](commands/unreal.md) |
+| `call`, `call-pure`, `release`, `func`, `funcs`, `params`, `script`, `trace` | Unreal pack | [Unreal pack](commands/unreal.md) |
+| `calls-start`, `calls-read`, `calls-stop` | Unreal pack; the host lists the ops | [Unreal pack](commands/unreal.md#call-recorder) |
+| `layout-export`, `layout-check` | Unreal pack | [Unreal pack](commands/unreal.md#layouts-in-bulk) |
 | `each` | Unreal pack | [Unreal pack](commands/unreal.md#each) |
 | `census`, `census-diff` | Unreal pack | [Unreal pack](commands/unreal.md#census) |
 | `dump` | Unreal pack | [Unreal pack](commands/unreal.md#dump), filters: [console](commands/console.md#fewer-round-trips) |

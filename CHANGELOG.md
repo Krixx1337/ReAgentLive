@@ -29,6 +29,48 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   and `target_module` only for another module. `--meta` adds each row's
   `module` and `fields`, as before. Callers that read `fields` or a row's
   `module` change once. One session's `disasm` output was half its total.
+- **Call recorder** ([unreal](docs/commands/unreal.md#call-recorder)):
+  `calls-start <object|Class> <[Owner:]Function> <duration>` records a
+  reflected function's calls with their parameters, decoded by name;
+  `calls-read` pages them, `calls-stop` ends it early. It swaps the
+  function's native pointer (`UFunction::Func`, heap data) for a fixed
+  thunk by compare-and-swap, and restores it only if it still holds the
+  thunk (`state: replaced` otherwise). No code, vtable or import is
+  written. Up to 8 recordings of at most 60 s, 256 rows each; `--dry`
+  writes nothing; `--object` keeps one object's calls. A host offers it by
+  listing the ops, and each start is a write it approves. Calls made
+  directly from C++ are not seen; a Blueprint calling native code gives
+  the object only (`via: vm`). Wire: `CallsStart`, `CallsRead`,
+  `CallsStop`. Design: [principles](docs/design.md#principles).
+- **`trace <start> <end>`**: a line trace through
+  `KismetSystemLibrary.LineTraceSingle`, its hit decoded by
+  `GameplayStatics.BreakHitResult`, both signatures checked by parameter
+  type and order first (UE4 and UE5). Ends are points, objects or
+  `object@Socket`; `--ignore`, `--channel`, `--simple`. Read-only: no agent
+  op and no `writes` mark.
+- **FName inputs as text** in typed calls (`Name=Head`), looked up once
+  per session through `name-find`; `#index[:number]` still works.
+- **`watch` returns changes** ([memory](docs/commands/memory.md#watch)):
+  `watch`, `watch-read` and `watch-stop` give the first sample, each one
+  that differs from the one before (with its time) and the last, the
+  middle past 200 rows dropped and counted; the summary still covers every
+  sample and adds changes per value. `--all` returns every sample. A range
+  may be `<object>.<Field[.Field]>`, resolved once through `get`'s path
+  walk and typed from reflection. Callers that read every sample pass
+  `--all`.
+- **`funcs` lists interface functions** (`via: interface`) after the
+  class's own chain; `call` refuses them and `func` gives the
+  implementation. Wire: `FunctionNameEntry` gains `interface`.
+- **Typed call inputs** for `call` and `call-pure`: bools (a bitfield bool
+  sets only its bit), every integer width with range checks, finite floats
+  and doubles, and plain structs as `(Member=value, ...)` or positional,
+  nested. A const reference counts as an input. Wire: `ParameterFlag`
+  gains `Const`; rebuild the agent with the console.
+- Fixed: `func` found no slot or implementation for an interface stub
+  whose call sits past 160 bytes; it now scans the stub's whole function
+  from its module's exception directory, up to 512 bytes.
+- Fixed: typed calls refused a function returning a const reference
+  (`GetWindVector`); only a non-const in/out reference is refused.
 
 ## 0.3.0
 

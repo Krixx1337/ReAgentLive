@@ -85,8 +85,9 @@ this list.
   about protected software; see "What it is not".
 
 A minimal narrowing scan over one range (`mem-snap`, `mem-diff`) is built:
-an AI agent cannot drive a scanner's window. A log-only call probe remains
-a candidate, not planned; it waits for a case the neighbours cannot cover.
+an AI agent cannot drive a scanner's window. So is a record-only call
+probe for reflected functions (`calls-start`): it swaps one `UFunction`
+pointer, never code, and leaves native calls to an instrumentation tool.
 
 ## Ways to host it
 
