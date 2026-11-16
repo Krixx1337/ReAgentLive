@@ -105,8 +105,10 @@ string.
 
 ## Agent and console
 
-- One console per agent: a second client is refused as `busy` instead of
-  overwriting the first one's request. Waits longer than a second print a
+- One console per agent: a second client never overwrites the first one's
+  request. A console that finds the agent taken asks again for up to 2 s,
+  so it runs as soon as a short call ends, then gives up: every verb but
+  `help` and `stats` is refused with an error of kind `busy`. Waits longer than a second print a
   line to stderr each second saying whether the agent is ticking (the request
   is running) or not.
 - The console checks the agent's op list first and refuses ops the agent does
@@ -217,7 +219,7 @@ know whether the console changed.
 **No target.** When the target is not running or the agent cannot be
 attached, the console answers `help` and `stats` from its table and its
 log; any other verb is refused with an error of kind `startup` (why there
-is no target) and the console ends, so a client starts it again once the
+is no target), or `busy` while another client holds the agent, and the console ends, so a client starts it again once the
 target runs. `-c` lines that are all `help` or `stats` never attach.
 
 ## Usage log and stats
@@ -278,7 +280,7 @@ either `result` or `error` ([envelopes](results.md#envelopes)). A result is
 checked against its verb's row before it is printed: one that does not match
 is an `internal` error, so what `help <verb>` shows is what arrives. Records are flushed immediately. Startup failures
 emit a `startup` error, and so does every verb but `help` and `stats` with
-no target. Exit status is 1 if any command failed. Capture
+no target (`busy` when another client holds the agent). Exit status is 1 if any command failed. Capture
 countdowns and start markers go to stderr.
 
 ```powershell

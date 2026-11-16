@@ -7,6 +7,23 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **MCP tools made from the table's rows** ([clients](docs/client.md#mcp-tools)):
+  the adapter runs on the SDK's low-level server and builds each tool's
+  input and output schema from its row, with nothing private from the SDK
+  and no generated code. Arguments are checked against the row before a
+  console starts, and a null argument counts as left out.
+  `--output-schemas full` is gone (`compact` and `off` remain).
+- **The Python session names no verb but `batch` and `watch`'s rows:**
+  `read_bytes`, `read_struct`, `read_batch_bytes`, `get_values`,
+  `name_map`, `call_bytes` and `Session.ok` are gone. Use the generated
+  functions with `unhex` and `f32`...; `s.send` stays as the raw exchange.
+- **A busy agent is waited for:** a console asks again for up to 2 s
+  before refusing, and the refusal's kind is `busy`, not `startup`.
+- **Stricter generator:** a type the generator or the adapter does not
+  know stops it, in place of a silent `Any` or `str`.
+- The console reads each input line once (main loop, `batch` items and
+  the no-target mode alike). Design: the self-describing console and the
+  tool interface moved to [tool interface](docs/tool-interface.md).
 - **Compact `disasm` rows:** the listing names its module once; rows keep
   `rva`, `bytes`, `text`, `target`, `target_rva`, `string` and `import`,
   and `target_module` only for another module. `--meta` adds each row's
@@ -76,7 +93,7 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   (`console/no_pack.cpp`). Its table, `help`, generated functions and MCP
   tools hold no pack verbs and no core verb marked `needsPack` (`trial`).
   The default console's table and hash are unchanged.
-- **MCP tools that follow a rebuilt console** ([design](docs/design.md#tool-interface)):
+- **MCP tools that follow a rebuilt console** ([design](docs/tool-interface.md#tool-interface)):
   the adapter starts a console per tool call (one at a time) instead of
   keeping one open, so a rebuild links and the next call runs it. Tools
   are made in memory from the console's `help --json`; `--module` is
@@ -131,7 +148,7 @@ caller of the console breaks once: verbs, result keys and the Python client
 changed (below).
 
 - **Typed calls and MCP tools, generated from the verb table**
-  ([design](docs/design.md#tool-interface), [clients](docs/client.md)):
+  ([design](docs/tool-interface.md#tool-interface), [clients](docs/client.md)):
   - JSON calls: a line starting with `{` is `{verb, args}` with named
     arguments, checked against the row like a typed line; literal refs
     only (`$N` is refused). `batch` takes a list of calls.
@@ -156,7 +173,7 @@ changed (below).
 
 - **The console describes itself; every caller breaks once.** One verb
   table says what each command takes and returns
-  ([design](docs/design.md#self-describing-console)):
+  ([design](docs/tool-interface.md#self-describing-console)):
   - `help` lists the verbs, `help <verb>` shows flags, arguments and the
     result's keys, `help --json` prints the table (no target needed);
     `status` carries `table_hash`. A usage error ends with the verb's

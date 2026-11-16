@@ -12,15 +12,14 @@ typed result, a host's verbs included.
 
     python reagentlive_gen.py --console <console.exe> -o my_console.py
 
-    from reagentlive_session import Session, samples
+    from reagentlive_session import Session, f32, unhex
     from my_console import Console
     with Session(r'path\\to\\console.exe') as s:
         c = Console(s)                       # Refuses a module generated from another table.
-        pawn = c.ue.find('Pawn', cls='Pawn')['rows'][0]['ref']
         region = c.region(0x7ff600001000)    # A Record: region['kind'], region['module'] (None outside a module)
         region['protection']                 # ResultKeyError: region has no key 'protection'; keys: ..., protect, ...
-        tick, items = s.read_batch_bytes([(0x1000, 8), (0x2000, 4)])
-        alpha = s.get_values(pawn, 'Mesh.AnimInstance.AimAlpha')
+        speed = f32(unhex(c.read(0x7ff600001000, 4)['hex']))
+        items, same_tick = s.batch_results([('read', {'addr': 0x1000, 'len': 8}), ('base', {})])
 
 Results are strict. At start the session reads the console's verb table
 (`help --json`) and wraps every result in a Record typed by its verb's row:
@@ -31,9 +30,11 @@ on the line that guessed it, never as a quiet None or a caught KeyError.
 tells a generated module or cached script its table is stale.
 
 `s.call(verb, args)` sends any verb by name; a generated function does the
-same with checked argument names. The helpers here convert a result and
-say so in their name (`read_bytes`, `get_values`, `name_map`, ...); paging,
-filtering and retrying are the console's (flags and cursors), not Python's.
+same with checked argument names. Two helpers do what a generated function
+cannot: `s.batch_results` (a strict result per batch item) and `samples`
+(a watch's rows as bytes). Nothing else here names a verb; the converters
+(`unhex`, `addr`, `pack`, `f32`...) name none. Paging, filtering and
+retrying are the console's (flags and cursors), not Python's.
 
 Standard library only.
 """
@@ -263,31 +264,9 @@ class Session:
             raise ReAgentLiveError(verb, envelope.get('error'))
         return self.wrap(verb, envelope.get('result', {}))
 
-    def ok(self, line):
-        """A typed line's result as a strict Record; raises ReAgentLiveError on failure."""
-        envelope = self.send(line)
-        if not envelope.get('ok'):
-            raise ReAgentLiveError(line, envelope.get('error'))
-        return self.wrap(line.split(None, 1)[0], envelope.get('result', {}))
-
     def help(self, verb=None):
         """Every verb in one line each, or one verb's arguments, result notation, named types and notes."""
         return self.call('help', {'verb': verb})
-
-    # Helpers that convert a result; each says so in its name.
-    def read_bytes(self, address, length):
-        return unhex(self.call('read', {'addr': address, 'len': length})['hex'])
-
-    def read_struct(self, address, fmt):
-        """struct.unpack of `fmt` (little-endian unless it says otherwise) read from address."""
-        if fmt[:1] not in '<>!=@':
-            fmt = '<' + fmt
-        return struct.unpack(fmt, self.read_bytes(address, struct.calcsize(fmt)))
-
-    def read_batch_bytes(self, spans):
-        """(tick, [bytes or None]) for up to 8 (address, length) spans read in one host tick."""
-        result = self.call('read-batch', {'spans': [list(span) for span in spans]})
-        return result['tick'], [unhex(row['hex']) if row['ok'] else None for row in result['rows']]
 
     def batch_results(self, calls):
         """(items, same_tick) of a batch: calls are {'verb', 'args'} dicts or (verb, args) pairs.
@@ -300,23 +279,3 @@ class Session:
         items = [self.wrap(row.get('command', '?'), row.get('result', {})) if row.get('ok')
                  else ReAgentLiveError(row.get('command', '?'), row.get('error')) for row in result['rows']]
         return items, result['same_tick']
-
-    def get_values(self, ref, *paths):
-        """The decoded values of get: one path returns its value, several a list. Raises if a path fails."""
-        values = []
-        # Rows come in the order asked; a failed path keeps its place with `error`.
-        for path, row in zip(paths, self.call('get', {'object': ref, 'paths': list(paths)})['rows']):
-            if row.get('error') is not None:
-                raise ReAgentLiveError(f'get {path}', {'message': row['error']})
-            values.append(row['value'])
-        return values[0] if len(paths) == 1 else values
-
-    def name_map(self, indices):
-        """{index: text or None} of name."""
-        indices = list(indices)
-        return {row['index']: row['name'] for row in self.call('name', {'indices': indices})['rows']} if indices else {}
-
-    def call_bytes(self, ref, function, params=b''):
-        """The parameter block after a raw call (outputs included), as bytes."""
-        args = {'object': ref, 'function': function, 'params': [bytes(params).hex()] if params else None}
-        return unhex(self.call('call', args)['hex'])

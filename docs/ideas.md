@@ -202,6 +202,46 @@ a container is the question again.
 console-variable name; a prefix worked. Raise the limit or name the
 workaround in the refusal when the request block allows it.
 
+### 27 · Triggered capture
+
+A timed capture can expire before the user does the step it is for.
+Shape: `watch-start --when <range> changes`, with a short ring buffer of
+rows from before the trigger, and stop reasons that name the limit to
+raise. Pull forward when a capture misses its moment again.
+
+### 28 · Function facts in one call
+
+Bounds, callers, callees, strings, imports and the member offsets one
+function uses, in one console verb built from existing pieces (`disasm
+--function`, `xrefs`, `touches`). Inside the [fast-lane](design.md#fast-lane)
+fence: facts about one address, no summary of what it does. Pull forward
+when sessions keep making four to six calls for one function.
+
+### 29 · CI and a fake-engine target
+
+No CI runs the tests, and the Unreal agent handlers have no automated
+tests. Shape: a Windows build and `ctest` on every push; a small test
+process with a synthetic object table and name pool so `find`, `fields`,
+`dump` and `each` run end to end; prebuilt console and own-thread
+binaries. Comes before #30.
+
+### 30 · An Unreal pack that needs no SDK
+
+The pack names SDK types about 150 times, so it is compiled per game.
+Replacing them with a layout table found and checked at start (as the
+object table and name pool already are) gives `find`, `fields`, `dump`,
+`get` and `entries` in any Unreal game from one prebuilt DLL, with no
+dump and no mod; calls still need a host on the engine's thread
+([outside programs](outside-programs.md)). Needs #18 measured clean and
+#29 for tests. Weeks of work.
+
+### 31 · Finding a function again after a patch
+
+Match a function across builds by body hash, then by a hash of its calls
+and strings. It sweeps over functions, which the fast lane excludes:
+build it as a script over the Python client, not a verb. Pull forward
+when a patch moves many hand-made signatures at once.
+
 ## Not ideas
 
 Deliberately out of scope, see [design](design.md#not-now): other transports,

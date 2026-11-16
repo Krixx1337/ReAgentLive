@@ -35,6 +35,20 @@ ARGUMENTS = {'addr': 'int | str', 'ref': 'str', 'int': 'int', 'dur': 'float | st
 JOINED = ('bytes', 'pattern', 'text')
 
 
+def known(vocabulary, kind, what):
+    """A type's annotation; a type the console added and this file lacks stops the generator."""
+    if kind not in vocabulary:
+        raise ValueError(f'unknown {what} type {kind!r}: add it to reagentlive_gen.py')
+    return vocabulary[kind]
+
+
+def argument_hint(kind):
+    """An argument type's annotation: an enum ('a|b') is a Literal."""
+    if '|' in kind:
+        return 'Literal[' + ', '.join(repr(word) for word in kind.split('|')) + ']'
+    return known(ARGUMENTS, kind, 'argument')
+
+
 def identifier(name):
     """A Python name for a key or verb: '-' and '.' become '_', a keyword gets a trailing '_'."""
     text = name.replace('-', '_').replace('.', '_')
@@ -65,7 +79,7 @@ class Types:
 
     def annotation(self, kind, owner):
         if isinstance(kind, str):
-            return SCALARS.get(kind, 'Any')
+            return known(SCALARS, kind, 'result')
         if 'named' in kind:
             name = class_name(kind['named'])
             if name not in self.done:
@@ -86,7 +100,7 @@ class Types:
             return f'dict[str, {self.annotation(kind["map"], owner)}]'
         if 'struct' in kind:
             return self.struct(kind, owner)
-        return 'Any'
+        raise ValueError(f'unknown result type {kind!r}: add it to reagentlive_gen.py')
 
     def struct(self, kind, name):
         fields = []
@@ -102,16 +116,14 @@ def parameters(row):
     params, names, keyword_only = ['self'], [], []
     for positional in row['positionals']:
         name, kind, arity = identifier(positional['key']), positional['type'], positional['arity']
-        hint = ARGUMENTS.get(kind, 'str') if '|' not in kind else \
-            'Literal[' + ', '.join(repr(word) for word in kind.split('|')) + ']'
+        hint = argument_hint(kind)
         if arity in ('some', 'any') and kind not in JOINED:
             hint = f'list[{hint}]'
         params.append(f'{name}: {hint}' + (' | None = None' if arity in ('optional', 'any') else ''))
         names.append((name, positional['key']))
     for flag in row['flags']:
         name, kind = identifier(flag['key']), flag['type']
-        hint = ARGUMENTS.get(kind, 'str') if '|' not in kind else \
-            'Literal[' + ', '.join(repr(word) for word in kind.split('|')) + ']'
+        hint = argument_hint(kind)
         if flag['takes'] == 'nothing':
             keyword_only.append(f'{name}: bool = False')
         elif flag['takes'] == 'maybe':

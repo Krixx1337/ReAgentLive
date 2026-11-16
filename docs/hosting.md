@@ -240,7 +240,7 @@ and type errors before the host sees the call, JSON calls, a generated
 Python method (`c.host.<verb>`) and an MCP tool (`host_<verb>`), strict
 results, and a check that the result matches its declared type (a
 mismatch is an `internal` error). Why rows:
-[design](design.md#self-describing-console).
+[design](tool-interface.md#self-describing-console).
 
 ## AI agents
 

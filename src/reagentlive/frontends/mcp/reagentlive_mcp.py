@@ -1,18 +1,18 @@
 """MCP tools for one ReAgentLive console, made from its own verb table.
 
-    python reagentlive_mcp.py --console <console.exe> [--output-schemas full|compact|off]
+    python reagentlive_mcp.py --console <console.exe> [--output-schemas compact|off]
                               [--families core,<pack>,host] [--read-only] [-- <console args>]
 
-One tool per verb, made in memory with the generator's code
-(reagentlive_gen.py) from the console's `help --json`: a core verb by its
-name (`read`), a pack's or the host's prefixed by its origin (`ue_find`,
-`host_world`). The argument and result schemas come from the functions'
-types, so no tool is written by hand and nothing here names a pack or a
-verb. The marks come from the table: a verb that writes the target's
-memory or calls into it is destructive, every other one read-only, so a
-client can allow the read-only tools and ask first for the rest. A verb
-that holds the console for seconds (`blocks`) is left out: a call would
-outlast the client's timeout; use `watch-start` and read it later.
+One tool per row of the console's `help --json`: a core verb by its name
+(`read`), a pack's or the host's prefixed by its origin (`ue_find`,
+`host_world`). Each tool's input schema is made here from its row (the
+argument types of syntax/verb.h), and a call goes to the console as a JSON
+call with the row's keys, so nothing here names a pack or a verb. The marks
+come from the table: a verb that writes the target's memory or calls into
+it is destructive, every other one read-only, so a client can allow the
+read-only tools and ask first for the rest. A verb that holds the console
+for seconds (`blocks`) is left out: a call would outlast the client's
+timeout; use `watch-start` and read it later.
 
 Arguments carry the literal refs results print; `$N` is refused (the
 console's JSON calls take no session state). `batch` takes a list of calls
@@ -21,47 +21,41 @@ ticks as possible.
 
 A console per call, never one kept open: nothing holds the executable
 between calls, so a rebuilt console links and the next call runs it.
-Calls run one at a time (a second console would be refused as busy).
-Each start reads the table's hash (`help --hash`, no target needed); when
-it changed, the tools are made again before the call runs, and the client
-is told the list changed. With no target the console answers `help` and
-`stats` and refuses the rest as `startup`. Every console of one server
-shares a usage-log session (`--session`) and is marked `--caller tool`:
-its results reach the agent's context. Transport: standard input and
-output; the protocol revision is whichever the installed SDK negotiates.
+Calls run one at a time (a second console would wait, then be refused as
+busy). Each start reads the table's hash (`help --hash`, no target
+needed); when it changed, the table is read again before the call runs,
+and the client is told the tool list changed. With no target the console
+answers `help` and `stats` and refuses the rest as `startup`. Every
+console of one server shares a usage-log session (`--session`) and is
+marked `--caller tool`: its results reach the agent's context.
 
 What a client loads up front is the tool list, so it is kept small: output
 schemas are `compact` by default (each result's top-level keys and their
-JSON types, widened so every console result still validates; the console
-checks results strictly either way), `full` keeps every nested type, `off`
-advertises none. `--families` serves only the verbs of the origins named
-(`help --json` lists them under `origins`) and `--read-only` leaves out every
-verb that writes the target or calls into it.
+JSON types, from the row; the console checks every result against its
+whole type either way), `off` advertises none. `--families` serves only the
+verbs of the origins named (`help --json` lists them under `origins`) and
+`--read-only` leaves out every verb that writes the target or calls into it.
 
-Needs the MCP Python SDK (its FastMCP, mcp.server.fastmcp); the session
-client and the generator need only the standard library.
+Needs the MCP Python SDK (its low-level server, mcp.server.lowlevel); the
+session client needs only the standard library. Transport: standard input
+and output; the protocol revision is whichever the installed SDK negotiates.
 """
 import argparse
-import inspect
 import json
 import os
 import sys
 import threading
 import time
-import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'python'))
-import reagentlive_gen  # noqa: E402
 from reagentlive_session import ReAgentLiveError, Record, Session  # noqa: E402
 
-from typing import Annotated  # noqa: E402
-
 import anyio  # noqa: E402
-from mcp.server.fastmcp import FastMCP  # noqa: E402
-from mcp.server.fastmcp.utilities.func_metadata import func_metadata  # noqa: E402
-from mcp.server.lowlevel.server import NotificationOptions  # noqa: E402
-from mcp.types import CallToolResult, TextContent, ToolAnnotations  # noqa: E402
+import jsonschema  # noqa: E402
+from mcp import types  # noqa: E402
+from mcp.server.lowlevel import NotificationOptions, Server  # noqa: E402
+from mcp.server.stdio import stdio_server  # noqa: E402
 
 INSTRUCTIONS = (
     'Tools for a live process through a ReAgentLive console. Each tool is one console verb; its description '
@@ -72,22 +66,122 @@ INSTRUCTIONS = (
     'carries `next_cursor` (pass it as `start`), a key that does not apply is absent. `stats` shows what this '
     'session has cost so far, also with no target.')
 
+OUTPUT_SCHEMAS = ('compact', 'off')
 
-def module_from(table):
-    """The generated functions for a `help --json` result, as a module in memory."""
-    module = types.ModuleType(f'reagentlive_tools_{table.get("table_hash")}')
-    sys.modules[module.__name__] = module  # Its TypedDicts name it as their module; schema builders look it up.
-    exec(compile(reagentlive_gen.generate(table, 'console'), module.__name__, 'exec'), module.__dict__)
-    return module
+# Argument types (syntax/verb.h) as JSON Schema. An enum ('a|b') is made from its words.
+CALL = {'type': 'object', 'properties': {'verb': {'type': 'string'}, 'args': {'type': 'object'}},
+        'required': ['verb'], 'additionalProperties': False}
+ARGUMENTS = {'addr': {'type': ['integer', 'string']}, 'ref': {'type': 'string'}, 'int': {'type': 'integer'},
+             'dur': {'type': ['number', 'string']}, 'bytes': {'type': 'string'}, 'pattern': {'type': 'string'},
+             'text': {'type': 'string'}, 'str': {'type': 'string'}, 'path': {'type': 'string'},
+             'layout': {'type': 'string'}, 'range': {'type': 'string'}, 'line': {'type': 'string'},
+             'span': {'type': 'array', 'prefixItems': [{'type': ['integer', 'string']}, {'type': 'integer'}],
+                      'minItems': 2, 'maxItems': 2},
+             'calls': {'type': 'array', 'items': CALL}, 'bool': {'type': 'boolean'}}
+# One value however many tokens it spans: a positional that takes several takes one of these, not a list.
+JOINED = ('bytes', 'pattern', 'text')
+# Result scalars (results/schema.h) as JSON types; `value` is game data and stays untyped.
+RESULTS = {'bool': 'boolean', 'u32': 'integer', 'u64': 'integer', 'i32': 'integer', 'i64': 'integer',
+           'f64': 'number', 'str': 'string', 'addr': 'string', 'hex': 'string', 'bytes': 'string', 'ref': 'string',
+           'value': None}
 
 
-def tool_name(verb):
-    name = verb['method'] if verb['origin'] == 'core' else f'{verb["attribute"]}_{verb["method"]}'
+def argument(kind):
+    """An argument type's schema; a type the console added and this file lacks stops the server."""
+    if '|' in kind:
+        return {'type': 'string', 'enum': kind.split('|')}
+    if kind not in ARGUMENTS:
+        raise ValueError(f'unknown argument type {kind!r}: add it to reagentlive_mcp.py')
+    return dict(ARGUMENTS[kind])
+
+
+def described(schema, item):
+    """The schema with the row's help line and default."""
+    text = item.get('help', '') + (f' (default {item["default"]})' if 'default' in item else '')
+    return dict(schema, description=text) if text else schema
+
+
+def input_schema(row):
+    """A verb's arguments as JSON Schema, keyed as the console's JSON calls take them."""
+    properties, required = {}, []
+    for positional in row['positionals']:
+        schema, arity = argument(positional['type']), positional['arity']
+        if arity in ('some', 'any') and positional['type'] not in JOINED:
+            schema = {'type': 'array', 'items': schema}
+        properties[positional['key']] = described(schema, positional)
+        if arity in ('one', 'some', 'rest'):
+            required.append(positional['key'])
+    for flag in row['flags']:
+        schema, takes = argument(flag['type']), flag['takes']
+        if takes == 'nothing':
+            schema = {'type': 'boolean'}
+        elif takes == 'maybe':
+            schema = {'anyOf': [{'type': 'boolean'}, schema]}
+        elif takes == 'some' and flag['type'] not in JOINED:
+            schema = {'anyOf': [schema, {'type': 'array', 'items': schema}]}
+        properties[flag['key']] = described(schema, flag)
+        if flag.get('required'):
+            required.append(flag['key'])
+    out = {'type': 'object', 'properties': properties, 'additionalProperties': False}
+    if required:
+        out['required'] = required
+    return out
+
+
+def result_type(kind, named):
+    """The JSON type of a result type, None for any (named types resolved)."""
+    while isinstance(kind, dict) and 'named' in kind:
+        kind = named[kind['named']]['type']
+    if isinstance(kind, str):
+        if kind not in RESULTS:
+            raise ValueError(f'unknown result type {kind!r}: add it to reagentlive_mcp.py')
+        return RESULTS[kind]
+    for key, json_type in (('enum', 'string'), ('list', 'array'), ('map', 'object'), ('struct', 'object')):
+        if key in kind:
+            return json_type
+    raise ValueError(f'unknown result type {kind!r}: add it to reagentlive_mcp.py')
+
+
+def output_schema(row, named):
+    """A result's top-level keys and their JSON types: never narrower than its whole type."""
+    kind = row['type']
+    while isinstance(kind, dict) and 'named' in kind:
+        kind = named[kind['named']]['type']
+    fields = kind.get('struct', {}) if isinstance(kind, dict) else {}
+    properties = {}
+    for key, spec in fields.items():
+        json_type = result_type(spec['type'], named)
+        properties[key] = {'type': json_type} if json_type else {}
+    out = {'type': 'object', 'properties': properties}
+    if required := [key for key, spec in fields.items() if not spec.get('optional')]:
+        out['required'] = required
+    return out
+
+
+def description(row):
+    """What a tool's caller reads: the summary, the usage line, the notes and the marks."""
+    lines = [row['summary'] + '.', '', row['usage']]
+    if row.get('notes'):
+        lines += ['', row['notes']]
+    if row.get('writes'):
+        lines += ['', 'Marked: writes.']
+    return '\n'.join(lines)
+
+
+def tool_name(row):
+    name = row['verb'] if row['origin'] == 'core' else f'{row["origin"]}_{row["verb"]}'
     return name.replace('-', '_')
 
 
+def served(row, families, read_only):
+    """Whether the server offers a tool for this verb."""
+    if row['verb'] == 'quit' or row.get('blocks') or (read_only and row.get('writes')):
+        return False
+    return families is None or row['origin'] in families
+
+
 class Live:
-    """Starts a console for each call, and keeps the tools made from its table."""
+    """Starts a console for each call, and keeps the table it read last."""
 
     def __init__(self, console, args=()):
         self.console, self.args = os.path.abspath(console), list(args)
@@ -95,30 +189,30 @@ class Live:
         self.lock = threading.Lock()
         with Session(self.console, self.args, caller='tool') as session:
             self.table = session.table
-        self.module = module_from(self.table)
 
-    def run(self, name, kwargs):
-        """One tool call on a fresh console: (its result, True when the table changed and the tools were made again)."""
+    def row(self, name):
+        return next((row for row in self.table['rows'] if tool_name(row) == name), None)
+
+    def run(self, name, arguments):
+        """One tool call on a fresh console: (its result, True when the table changed since the last call)."""
         with self.lock:
             session = Session(self.console, [*self.args, '--session', self.session_id], caller='tool', table=self.table)
             try:
                 changed = session.table_hash != self.table.get('table_hash')
                 if changed:
-                    self.table, self.module = session.table, module_from(session.table)
-                verb = next((v for v in self.module.VERBS if tool_name(v) == name), None)
-                if verb is None:
+                    self.table = session.table
+                row = self.row(name)
+                if row is None:
                     raise RuntimeError(f'the console has no verb for {name} any more; reconnect for its tool list')
-                target = self.module.Console(session)
-                if verb['attribute']:
-                    target = getattr(target, verb['attribute'])
-                method = getattr(target, verb['method'])
+                # Absent and null are the same to a call; the row's schema checks the rest.
+                arguments = {key: value for key, value in arguments.items() if value is not None}
                 try:
-                    inspect.signature(method).bind(**kwargs)
-                except TypeError as error:
-                    raise RuntimeError(f'{name} takes other arguments since the console was rebuilt ({error}); '
-                                       'reconnect for its tool list') from None
+                    jsonschema.validate(arguments, input_schema(row))
+                except jsonschema.ValidationError as error:
+                    stale = ' (the console was rebuilt: reconnect for its tool list)' if changed else ''
+                    raise RuntimeError(f'{name}: {error.message}{stale}; usage: {row["usage"]}') from None
                 try:
-                    result = method(**kwargs)
+                    result = session.call(row['verb'], arguments)
                 except ReAgentLiveError as error:
                     # The whole error object, not only its message: a refused --expect carries `found`, every error its kind.
                     raise RuntimeError(f'{error}; error: {json.dumps(error.error)}') from None
@@ -127,82 +221,12 @@ class Live:
         return (result.raw if isinstance(result, Record) else result), changed
 
 
-OUTPUT_SCHEMAS = ('full', 'compact', 'off')
-SCALARS = {'string', 'integer', 'number', 'boolean', 'array', 'object'}
+class ReAgentLiveServer(Server):
+    """The low-level server, saying that its tool list can change so a client asks again on the notice."""
 
-
-def compact_schema(schema):
-    """A result's schema cut to its top-level keys and their JSON types: never narrower than the full one."""
-    properties = {}
-    for key, value in schema.get('properties', {}).items():
-        kind = value.get('type')
-        properties[key] = {'type': kind} if isinstance(kind, str) and kind in SCALARS else {}
-    out = {'type': 'object', 'properties': properties}
-    if schema.get('required'):
-        out['required'] = list(schema['required'])
-    return out
-
-
-def served(verb, families, read_only):
-    """Whether the server offers a tool for this verb."""
-    if verb['blocks'] or (read_only and verb['writes']):
-        return False
-    return families is None or verb['origin'] in families
-
-
-def make_tool(live, server, verb, method):
-    """A function FastMCP reads: the method's parameters (without self) and result type; returns the plain result."""
-    signature = inspect.signature(method)
-    parameters = list(signature.parameters.values())[1:]
-    name = tool_name(verb)
-    full = server.output_schemas == 'full'
-
-    async def tool(**kwargs):
-        raw, changed = await anyio.to_thread.run_sync(live.run, name, kwargs)
-        if changed:
-            register(server, live)
-            await server.get_context().session.send_tool_list_changed()
-        # The console's result as it is: FastMCP would dump the TypedDict with every absent key as null,
-        # which its own output schema then refuses. The schema still comes from the annotation.
-        return CallToolResult(content=[TextContent(type='text', text=json.dumps(raw))], structuredContent=raw)
-
-    # Full: the schema from the result's type. Otherwise none from the type; compact sets its own after.
-    returns = Annotated[CallToolResult, signature.return_annotation] if full else CallToolResult
-    tool.__signature__ = signature.replace(parameters=parameters, return_annotation=returns)
-    tool.__annotations__ = {p.name: p.annotation for p in parameters} | {'return': returns}
-    tool.__name__ = name
-    tool.__doc__ = method.__doc__
-    return tool
-
-
-def register(server, live):
-    """The tools for the live table, in place of any made before."""
-    for name in getattr(server, 'tool_names', ()):
-        server.remove_tool(name)
-    server.tool_names = []
-    module = live.module
-    for verb in module.VERBS:
-        if not served(verb, server.families, server.read_only):
-            continue
-        method = getattr(getattr(module, verb['cls']), verb['method'])
-        writes = verb['writes']
-        server.add_tool(make_tool(live, server, verb, method), name=tool_name(verb), description=method.__doc__,
-                        annotations=ToolAnnotations(readOnlyHint=not writes, destructiveHint=writes,
-                                                    idempotentHint=False, openWorldHint=False))
-        if server.output_schemas == 'compact':
-            full = full_schema(method)
-            if full is not None:
-                # Tool.output_schema is a cached property: setting it here is what the list and the check read.
-                server._tool_manager.get_tool(tool_name(verb)).__dict__['output_schema'] = compact_schema(full)
-        server.tool_names.append(tool_name(verb))
-
-
-def full_schema(method):
-    """The full output schema FastMCP makes from the method's result type."""
-    def probe():
-        ...
-    probe.__annotations__ = {'return': Annotated[CallToolResult, inspect.signature(method).return_annotation]}
-    return func_metadata(probe, structured_output=True).output_schema
+    def create_initialization_options(self, notification_options=None, experimental_capabilities=None):
+        return super().create_initialization_options(notification_options or NotificationOptions(tools_changed=True),
+                                                     experimental_capabilities)
 
 
 def instructions(families, read_only):
@@ -218,7 +242,7 @@ def instructions(families, read_only):
 def build(console, args=(), name='reagentlive', output_schemas='compact', families=None, read_only=False):
     """The server for a console: its tools from the console's table, which needs no target.
 
-    output_schemas: full, compact or off. families: the origins to serve (None: all). read_only: no writing verbs.
+    output_schemas: compact or off. families: the origins to serve (None: all). read_only: no writing verbs.
     """
     if output_schemas not in OUTPUT_SCHEMAS:
         raise ValueError(f'output_schemas is one of {", ".join(OUTPUT_SCHEMAS)}, not {output_schemas!r}')
@@ -229,16 +253,47 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
         if unknown := families - known:
             raise ValueError(f'unknown famil{"ies" if len(unknown) > 1 else "y"} {", ".join(sorted(unknown))}; '
                              f'this console has {", ".join(sorted(known))}')
-    server = FastMCP(name, instructions=instructions(families, read_only))
-    server.output_schemas, server.families, server.read_only = output_schemas, families, read_only
-    # Say the tool list can change, so a client asks again on the notice.
-    lowlevel = server._mcp_server
-    options = lowlevel.create_initialization_options
-    lowlevel.create_initialization_options = lambda notification_options=None, experimental_capabilities=None: \
-        options(notification_options or NotificationOptions(tools_changed=True), experimental_capabilities)
+    server = ReAgentLiveServer(name, instructions=instructions(families, read_only))
+
+    def tools():
+        named = live.table.get('types', {})
+        return [types.Tool(name=tool_name(row), description=description(row), inputSchema=input_schema(row),
+                           outputSchema=output_schema(row, named) if output_schemas == 'compact' else None,
+                           annotations=types.ToolAnnotations(readOnlyHint=not row.get('writes'),
+                                                             destructiveHint=bool(row.get('writes')),
+                                                             idempotentHint=False, openWorldHint=False))
+                for row in live.table['rows'] if served(row, families, read_only)]
+
+    tools()  # A type this file lacks stops the server at start, not at the client's first list.
+
+    @server.list_tools()
+    async def list_tools():
+        return tools()
+
+    @server.call_tool(validate_input=False)  # Live.run checks against the row of the console it started.
+    async def call_tool(name, arguments):
+        row = live.row(name)
+        if row is None or not served(row, families, read_only):
+            return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=f'no tool {name}')])
+        try:
+            raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments or {})
+        except RuntimeError as error:
+            raw, changed = None, False
+            result = types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=str(error))])
+        else:
+            result = types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(raw))],
+                                          structuredContent=raw)
+        if changed:
+            await server.request_context.session.send_tool_list_changed()
+        return result
+
     server.live = live
-    register(server, server.live)
     return server
+
+
+async def serve(server):
+    async with stdio_server() as (read, write):
+        await server.run(read, write, server.create_initialization_options())
 
 
 def main(argv=None):
@@ -246,7 +301,7 @@ def main(argv=None):
     parser.add_argument('--console', required=True, help='the console executable')
     parser.add_argument('--name', default='reagentlive', help='the server name clients show')
     parser.add_argument('--output-schemas', choices=OUTPUT_SCHEMAS, default='compact',
-                        help='result schemas in the tool list: every nested type, top-level keys only, or none')
+                        help='result schemas in the tool list: top-level keys only, or none')
     parser.add_argument('--families', help='serve only these origins, comma-separated (help --json lists them)')
     parser.add_argument('--read-only', action='store_true', help='leave out every verb that writes or calls')
     parser.add_argument('console_args', nargs='*', help='after --: arguments for the console (a pid, --names <file>)')
@@ -256,7 +311,7 @@ def main(argv=None):
         server = build(args.console, args.console_args, args.name, args.output_schemas, families, args.read_only)
     except ValueError as error:
         parser.error(str(error))
-    server.run()
+    anyio.run(serve, server)
 
 
 if __name__ == '__main__':

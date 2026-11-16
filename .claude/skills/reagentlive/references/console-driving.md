@@ -35,7 +35,7 @@
   - **One method per verb, named by origin:** core on `c` (`c.read`,
     `c.sig_check`, `c.watch_start`), the pack's and the host's under
     their origin (`c.ue.find`, `c.ue.census_diff`, `c.host.<verb>`).
-    Flags are keyword arguments; a Python keyword gets `_` (`cls`,
+    Flags are keyword arguments named by the console's keys (`cls`,
     `start`, `type`). A wrong argument name is a `TypeError` at once.
   - **Literal refs, never `$N`:** calls go as JSON, which refuses `$1`.
     Take `rows[0]['ref']` from the result and pass it on.
@@ -50,10 +50,10 @@
     paper over a key: a check that cannot run must fail, not pass.
   - **Before writing a script, look the keys up:** `s.help('<verb>')`, or
     `<console> -c "help <verb>"` (no game needed).
-  - Helpers that convert say so in their name (on `s`): `read_bytes`,
-    `read_struct`, `read_batch_bytes`, `get_values`, `name_map`,
-    `call_bytes`, `batch_results` (`(items, same_tick)`), and
-    `samples(result)` for a watch's rows as bytes. Paging is yours:
+  - Two helpers: `s.batch_results(calls)` (`(items, same_tick)`, a strict
+    result per item) and `samples(result)` for a watch's rows as bytes.
+    Bytes from a read: `unhex(c.read(a, 4)['hex'])`, then `f32`, `u64`...
+    Paging is yours:
     follow `next_cursor` with `start` in a loop, or a limit flag
     (`census --limit 0`).
   - `addr` and `hex` values are the text the console prints (`"0x7ff6..."`):
@@ -66,7 +66,8 @@
   stderr in stdout).
 - If you must parse raw lines, read only `result`, check `ok` first, and take
   key names from `help <verb>`, never from memory.
-- One console per agent; a second is refused as `busy`. Stderr lines during
+- One console per agent; a second waits up to 2 s for the first to end,
+  then is refused as `busy`. Stderr lines during
   long waits say whether the agent is ticking (request running) or not.
 
 ## Reading output

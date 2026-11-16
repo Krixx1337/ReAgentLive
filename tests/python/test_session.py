@@ -138,7 +138,6 @@ CALLS = [
     [C('help', {'verb': 'region'}), ok({'rows': [{'verb': 'region', 'origin': 'core', 'usage': 'region <addr>', 'summary': 's',
                                                   'flags': [], 'result': '{address: addr}'}]})],
 ]
-LINES = {'region base+0x10': CALLS[1][1]}
 
 
 def conforms(value, kind, where, named):
@@ -194,7 +193,7 @@ class SessionTests(unittest.TestCase):
         self.work = tempfile.TemporaryDirectory()
         replies = os.path.join(self.work.name, 'replies.json')
         with open(replies, 'w') as f:
-            json.dump({'table': self.table, 'calls': CALLS, 'lines': LINES}, f)
+            json.dump({'table': self.table, 'calls': CALLS, 'lines': {}}, f)
         self.log = os.path.join(self.work.name, 'lines.txt')
         os.environ['REAGENTLIVE_FAKE_LOG'] = self.log
         os.environ['REAGENTLIVE_FAKE_REPLIES'] = replies
@@ -246,6 +245,15 @@ class SessionTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.c.read(16, type='cstr', length=4)                                  # A guessed argument fails at once.
 
+    def test_a_type_the_generator_lacks_stops_it(self):
+        # The real table generated in setUpClass, so every type it uses is known. A new one fails, never degrades.
+        row = dict(self.rows['read'], positionals=[dict(self.rows['read']['positionals'][0], type='newtype')])
+        with self.assertRaisesRegex(ValueError, "unknown argument type 'newtype'"):
+            reagentlive_gen.generate(dict(self.table, rows=[row]), 'planted')
+        row = dict(self.rows['read'], type={'struct': {'a': {'type': 'newscalar'}}})
+        with self.assertRaisesRegex(ValueError, "unknown result type 'newscalar'"):
+            reagentlive_gen.generate(dict(self.table, rows=[row]), 'planted')
+
     def test_a_stale_module_is_refused(self):
         hash_was = self.session.table_hash
         self.session.table_hash = 'different'
@@ -269,7 +277,6 @@ class SessionTests(unittest.TestCase):
         self.assertIn('kind', region)
         self.assertNotIn('module', region)
         self.assertEqual(self.session.table_hash, self.table['table_hash'])
-        self.assertEqual(self.session.ok('region base+0x10')['kind'], 'code')   # A typed line, as strict.
 
     def test_nested_and_named_rows_are_strict_too(self):
         chained = self.c.read('0x10#1:1->0x30->0x8', 2)
@@ -312,16 +319,10 @@ class SessionTests(unittest.TestCase):
             C('touches', {'addr': 'Game.exe+0x10', 'offsets': [0x538, 0x540], 'range': 0x1000}),
             C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24})])
 
-    def test_helpers_convert_and_say_so(self):
-        self.assertEqual(dl.f32(self.session.read_bytes(0x1000, 4)), 1.0)
-        self.assertEqual(self.session.read_struct(0x1000, 'f'), (1.0,))
-        tick, items = self.session.read_batch_bytes([(0x1000, 2), ('base+0x10', 4)])
-        self.assertEqual((tick, items), (7, [b'\x01\x02', None]))
-        self.assertEqual(self.session.get_values(REF, 'A.B'), 1.5)
-        with self.assertRaises(dl.ReAgentLiveError):
-            self.session.get_values(REF, 'A.B', 'C')
-        self.assertEqual(self.session.name_map([5, 6]), {5: 'Five', 6: None})
-        self.assertEqual(self.session.call_bytes(REF, 'Pawn:Fn', b'\x01'), b'\x01\x02')
+    def test_converters_and_the_batch_helper(self):
+        # The helpers read their results as strict Records, so a key they spell that the table lacks fails here.
+        self.assertEqual(dl.f32(dl.unhex(self.c.read(0x1000, 4)['hex'])), 1.0)
+        self.assertEqual(dl.addr(self.c.read(0x1000, 4)['address']), 0x1000)
         items, same_tick = self.session.batch_results([('read', {'addr': 16, 'len': 1}),
                                                        {'verb': 'get', 'args': {'object': REF, 'paths': ['X']}}])
         self.assertTrue(same_tick)
@@ -364,8 +365,6 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(caught.exception.error['kind'], 'validation')
 
     def test_errors_raise(self):
-        with self.assertRaises(dl.ReAgentLiveError):
-            self.session.ok('bogus')
         with self.assertRaises(dl.ReAgentLiveError):
             self.session.call('bogus')
         self.assertEqual(self.c.status()['packs'], ['ue'])

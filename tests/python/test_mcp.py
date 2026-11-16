@@ -1,7 +1,7 @@
-"""reagentlive_mcp: the tools made from a generated module, through an in-memory MCP client (no agent or game).
+"""reagentlive_mcp: the tools made from the console's table, through an in-memory MCP client (no agent or game).
 
-The module is generated from the real verb table (--table <reagentlive-table.exe>
-or REAGENTLIVE_TABLE); the console is the scripted fake from fake_console.py.
+The table is the real one (--table <reagentlive-table.exe> or REAGENTLIVE_TABLE);
+the console is the scripted fake from fake_console.py.
 Skipped without the MCP Python SDK.
 """
 import asyncio
@@ -79,7 +79,7 @@ class McpTests(unittest.TestCase):
     def test_the_tool_list_is_the_table(self):
         async def body(client):
             return {tool.name: tool for tool in (await client.list_tools()).tools}
-        tools = self.run_client(body, output_schemas='full')
+        tools = self.run_client(body)
         rows = [row for row in self.table['rows'] if row['verb'] != 'quit' and not row.get('blocks')]
         expected = {(row['verb'] if row['origin'] == 'core' else f'{row["origin"]}_{row["verb"]}').replace('-', '_')
                     for row in rows}
@@ -92,9 +92,13 @@ class McpTests(unittest.TestCase):
         schema = tools['read'].inputSchema
         self.assertEqual(schema['required'], ['addr'])
         self.assertEqual(set(schema['properties']), {'addr', 'len', 'type'})
+        self.assertFalse(schema['additionalProperties'])          # A guessed argument is refused.
+        self.assertEqual(schema['properties']['type']['type'], 'string')
         self.assertIn('rows', tools['ue_find'].outputSchema['properties'])
-        self.assertIn('Object', tools['ue_find'].outputSchema['$defs'])   # Named types stay named.
-        self.assertIn('calls', tools['batch'].inputSchema['properties'])
+        self.assertEqual(tools['batch'].inputSchema['properties']['calls']['type'], 'array')
+        trial = tools['trial'].inputSchema
+        self.assertIn('owner', trial['required'])                 # A required flag.
+        self.assertEqual(tools['search'].inputSchema['properties']['type']['enum'][:2], ['hex', 'u32'])
         self.assertIn('read <addr> [len] [--type type]', tools['read'].description)
 
     def tool_list(self, **options):
@@ -103,16 +107,26 @@ class McpTests(unittest.TestCase):
         return self.run_client(body, **options)
 
     def test_compact_output_schemas_keep_the_top_level_keys_only(self):
-        full, compact, off = (self.tool_list(output_schemas=p) for p in ('full', 'compact', 'off'))
-        self.assertEqual(set(full), set(compact))
-        self.assertEqual(set(compact['ue_find'].outputSchema['properties']),
-                         set(full['ue_find'].outputSchema['properties']))
+        compact, off = (self.tool_list(output_schemas=p) for p in ('compact', 'off'))
+        self.assertEqual(set(off), set(compact))
+        find = next(row for row in self.table['rows'] if row['verb'] == 'find')
+        self.assertEqual(set(compact['ue_find'].outputSchema['properties']), set(find['type']['struct']))
         self.assertEqual(compact['ue_find'].outputSchema['properties']['rows'], {'type': 'array'})
         self.assertNotIn('$defs', compact['ue_find'].outputSchema)
         self.assertTrue(all(tool.outputSchema is None for tool in off.values()))
         size = lambda tools: sum(len(json.dumps(t.model_dump(exclude_none=True))) for t in tools.values())
-        self.assertLess(size(compact), size(full) * 0.6)          # The point of the profile.
         self.assertLess(size(off), size(compact))
+
+    def test_a_type_the_adapter_lacks_stops_it(self):
+        with self.assertRaisesRegex(ValueError, "unknown argument type 'newtype'"):
+            reagentlive_mcp.argument('newtype')
+        with self.assertRaisesRegex(ValueError, "unknown result type 'newscalar'"):
+            reagentlive_mcp.result_type('newscalar', {})
+        # Every type the real table uses is known (the generator's map is checked in test_session.py).
+        named = self.table['types']
+        for row in self.table['rows']:
+            reagentlive_mcp.input_schema(row)
+            reagentlive_mcp.output_schema(row, named)
 
     def test_every_profile_returns_the_console_result(self):
         for profile in reagentlive_mcp.OUTPUT_SCHEMAS:
@@ -138,8 +152,13 @@ class McpTests(unittest.TestCase):
             found = await client.call_tool('ue_find', {'text': 'A'})
             batched = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'base'}]})
             refused = await client.call_tool('read', {'addr': '$1'})
-            return found, batched, refused
-        found, batched, refused = self.run_client(body)
+            guessed = await client.call_tool('read', {'addr': 16, 'length': 4})
+            nulls = await client.call_tool('ue_find', {'text': 'A', 'cls': None})
+            return found, batched, refused, guessed, nulls
+        found, batched, refused, guessed, nulls = self.run_client(body)
+        self.assertTrue(guessed.isError)                              # Checked against the row before a console runs.
+        self.assertIn("'length' was unexpected", guessed.content[0].text)
+        self.assertFalse(nulls.isError, nulls.content[0].text)       # A null argument is a left-out one.
         self.assertFalse(found.isError, found.content[0].text)
         self.assertEqual(found.structuredContent['rows'][0]['ref'], REF)
         self.assertFalse(batched.isError, batched.content[0].text)

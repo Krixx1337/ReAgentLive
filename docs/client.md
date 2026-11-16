@@ -55,8 +55,8 @@ with Session(r'path\to\console.exe') as s:
 - **One method per verb, named by origin:** core verbs on `Console`
   (`c.read`, `c.sig_check`), a pack's and the host's under their origin
   (`c.ue.find`, `c.host.world`). Positionals in order, flags as
-  keyword-only arguments; a Python keyword or `self` gets a trailing `_`
-  (`cls`, `start`, `type`). A positional that takes several values takes
+  keyword-only arguments, named by the console's keys (the table refuses
+  a Python keyword: `cls`, `start`, `type`). A positional that takes several values takes
   a list, except bytes, patterns and text, which are one string (or
   `bytes`). Each docstring is the verb's usage, arguments and notes.
 - **Typed:** argument types from the row (`addr` is `int | str`, an int
@@ -87,18 +87,17 @@ module calls through it; scripts use it for the rest.
   fails on the line that guessed it, never as a quiet `None` or a caught
   `KeyError`. `record.raw` is the plain dict.
 - `s.call(verb, args)` sends one JSON call with arguments named as
-  `help <verb>` shows them (None and False left out, bytes as hex);
-  `s.ok(line)` sends a typed line. Both return the strict result.
-  `s.help('<verb>')` shows a verb's arguments and result keys.
-- **Helpers convert and say so in their name:** `read_bytes`,
-  `read_struct` (a `struct` format), `read_batch_bytes` (`(tick, [bytes
-  or None])`), `get_values` (decoded values; raises when a path fails),
-  `name_map` (`{index: text or None}`), `call_bytes` (the block after a raw
-  call), `batch_results` (`(items, same_tick)`, each item a strict result
-  or a `ReAgentLiveError`), and the module's `samples(result)` (a watch's
-  rows with values as bytes). Paging, filtering and retrying are the
-  console's: follow `next_cursor` with `start`, or use the verb's limit
-  flag (`census --limit 0`).
+  `help <verb>` shows them (None and False left out, bytes as hex) and
+  returns the strict result. `s.help('<verb>')` shows a verb's arguments
+  and result keys; `s.send(line)` is the raw exchange (the envelope as
+  plain dicts).
+- **Two helpers, for what a generated function cannot do:**
+  `s.batch_results(calls)` (`(items, same_tick)`, each item a strict
+  result or a `ReAgentLiveError`) and the module's `samples(result)` (a
+  watch's rows with values as bytes). Nothing else in the session names a
+  verb. Paging, filtering and retrying are the console's: follow
+  `next_cursor` with `start`, or use the verb's limit flag
+  (`census --limit 0`).
 - `s.table_hash` is the console's `table_hash`.
 - `Session(console, args, caller='script')` starts the console with
   `--caller`: its [usage log](commands/console.md#usage-log-and-stats)
@@ -107,7 +106,8 @@ module calls through it; scripts use it for the rest.
   `help --json` result read before: the session then asks only for the
   hash (`help --hash`) and reads the table again only when it changed.
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
-  value into bytes; `f32`/`u64`/... decoders and `pack` go the other way.
+  value into bytes, `f32`/`u64`/... decode those bytes, and `pack` goes
+  the other way: `f32(unhex(c.read(a, 4)['hex']))`.
 
 Errors raise `ReAgentLiveError` with the console's error object. Use it
 instead of hand-written session loops or parsing console JSON. Separate
@@ -123,16 +123,21 @@ tools over standard input and output, so an agent picks a tool and fills
 in checked, named arguments instead of writing a command line:
 
 ```
-python reagentlive_mcp.py --console <console.exe> [--output-schemas full|compact|off]
+python reagentlive_mcp.py --console <console.exe> [--output-schemas compact|off]
                           [--families core,ue,host] [--read-only] [-- <pid>]
 ```
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
   host's with its origin (`ue_find`, `host_world`). The adapter reads the
-  console's `help --json` (no target needed) and makes the functions in
-  memory with the generator's code; argument and result schemas come
-  from their types, descriptions from their docstrings. Nothing is
-  written per tool and no module file is involved.
+  console's `help --json` (no target needed) and makes each tool from its
+  row: the argument schema from the row's arguments (named by the row's
+  keys, so a call goes on as the console's JSON call), the result schema
+  from its result's top-level keys, the description from its summary,
+  usage and notes. Nothing is written per tool and no module file is
+  involved.
+- **Arguments are checked before a console starts,** against the row of
+  the console's current table: a guessed argument name is refused with the
+  verb's usage. A null argument counts as left out.
 - **Marks:** a verb that writes the target's memory or calls into it is
   `destructiveHint`, every other one `readOnlyHint`, so a client can
   allow the read-only tools and ask first for the rest. The host's own
@@ -148,42 +153,40 @@ python reagentlive_mcp.py --console <console.exe> [--output-schemas full|compact
 - **State in arguments:** tools take the literal refs results carry and
   the ids of pins, trials and captures; `$N` is refused.
 - **A console per call:** each tool call starts the console and ends it,
-  one call at a time. Nothing holds the executable between calls, so the
+  one call at a time. Another client on the same agent (a script, a second
+  server) makes the console wait up to 2 s, then refuse as `busy`.
+  Nothing holds the executable between calls, so the
   console can be rebuilt while the server runs and the next call runs the
   new build. With no target the console answers `help` and `stats` and
   refuses the rest as `startup`.
 - **A rebuilt console's tools:** each start reads the table's hash
-  (`help --hash`). When it changed, the adapter makes the tools again
-  before the call runs and tells the client the list changed (the server
-  says it sends that notice). A client that asks again gets the new list
+  (`help --hash`). When it changed, the adapter reads the new table before
+  the call runs and tells the client the list changed (the server says it
+  sends that notice). A client that asks again gets the new list
   with no reconnect; one that ignores the notice keeps working for verbs
   whose arguments and result did not change, and needs a reconnect for
-  the rest ([design](design.md#tool-interface)).
+  the rest ([design](tool-interface.md#tool-interface)).
 - **Usage:** every console runs with `--caller tool` and one `--session`
   per server, so `stats` counts every tool result as context and groups
   the server's calls. Each result goes to the client twice, as text and
   as structured content.
 - **Cost, and how to cut it:** a client that loads every tool up front
   pays for the whole list before any work. Result schemas were most of
-  it, so they are `compact` by default: each result's top-level keys and
-  their JSON types, never narrower than the full schema, so every console
-  result still validates (the console checks results strictly either
-  way). Measured once, on one host's console (core, pack and two host
-  verbs), as the serialized tool list:
-
-  | Option | Tool list |
-  |---|---|
-  | `--output-schemas full` | about 126 KB |
-  | default (`compact`) | about 63 KB |
-  | `--output-schemas off` | about 45 KB |
-  | `--families core --read-only` | about 30 KB |
+  it, so they are `compact`: each result's top-level keys and their JSON
+  types, never narrower than the whole type, so every console result
+  still validates (the console checks results strictly either way).
+  `--output-schemas off` advertises none. Measured once, as the serialized
+  tool list: about 58 KB for the own-thread example's console (core and
+  pack verbs) by default; on one host's console with two host verbs,
+  before the adapter made schemas from the rows, about 45 KB with `off`
+  and 30 KB with `--families core --read-only`.
 
   `--families` serves only the verbs of the origins named (`help --json`
   lists them; an unknown one stops the server with the list) and
   `--read-only` leaves out every verb marked `writes`; the server's
   instructions then say what it leaves out. `help <verb>` still shows any
   verb's full result in notation.
-- Needs the MCP Python SDK (`pip install mcp`; its FastMCP). Check a
+- Needs the MCP Python SDK (`pip install mcp`; its low-level server). Check a
   build with the MCP Inspector: it lists the tools and calls one with no
   AI client.
 

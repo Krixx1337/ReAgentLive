@@ -18,7 +18,7 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | Write a client or change the wire format | [clients](client.md), [protocol](protocol.md) |
 | Keep a mod's logic or a tool outside the game, with a lean DLL inside | [outside programs](outside-programs.md) |
 | Add a command or change the code | [contributing](contributing.md) |
-| Know why something is built this way, or was rejected | [design](design.md) |
+| Know why something is built this way, or was rejected | [design](design.md); for `help`, scripts and tools: [tool interface](tool-interface.md) |
 | Pick the next feature, or check it is not ruled out | [ideas](ideas.md) |
 | Describe the project | [positioning](positioning.md) |
 | Let an AI agent investigate a live game | the [`reagentlive` skill](../.claude/skills/reagentlive/SKILL.md) (method, pitfalls, references by question) |
@@ -40,10 +40,10 @@ in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
 | [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
 | [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |
 | [protocol.md](protocol.md) | shared section, exchange and hold, handshake, ops, statuses, limits |
-| [design.md](design.md) | principles, decisions (the self-describing console among them), rejected alternatives, not now |
+| [design.md](design.md) | principles, decisions, rejected alternatives, not now |
+| [tool-interface.md](tool-interface.md) | the self-describing console and the tool interface: verb table, `help --json`, generated functions, MCP tools, their decisions |
 | [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
 | [ideas.md](ideas.md) | backlog with triggers; what is out |
-| [improvement-plan.md](improvement-plan.md) | proposal: prioritized improvements with their evidence; nothing in it is built |
 | [positioning.md](positioning.md) | the pitch, role among other tools, low footprint, safety model, what it is not |
 
 ## Commands
@@ -95,7 +95,7 @@ and `status` lists the packs a host offers (`packs`).
 | Pin | bytes rewritten every tick until it expires ([memory](commands/memory.md#pin)) |
 | Trial | one guarded write that restores itself on expiry or clear ([memory](commands/memory.md)) |
 | Root | an object the host can always find again, for `watch-start --follow` |
-| Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](design.md#self-describing-console)) |
+| Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](tool-interface.md#self-describing-console)) |
 | JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the typed line is shorthand for it ([console](commands/console.md#json-calls)) |
 | Cache file | `%TEMP%\reagentlive-<pid>.cache`: state kept between console runs ([console](commands/console.md#fewer-round-trips)) |
 | Usage log | `<console>.usage.jsonl`: one line of facts per console call, read by `stats` ([console](commands/console.md#usage-log-and-stats)) |

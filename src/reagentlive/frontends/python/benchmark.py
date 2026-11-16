@@ -14,10 +14,10 @@ import time
 from reagentlive_session import Session
 
 
-def timed(session, line):
-    """(seconds, timing dict, envelope) for one command with --timing."""
+def timed(session, verb, args):
+    """(seconds, timing dict, envelope) for one JSON call with timing."""
     started = time.perf_counter()
-    envelope = session.send(line + ' --timing')
+    envelope = session.send(json.dumps({'verb': verb, 'args': args, 'timing': True}))
     return time.perf_counter() - started, envelope.get('timing', {}), envelope
 
 
@@ -38,7 +38,7 @@ def main():
         rate = tick_rate(s)
         time.sleep(1)
         out['idle_ticks_per_second'] = rate()
-        base = s.ok('base')['base']
+        base = s.call('base')['base']
         rate = tick_rate(s)
         started = time.perf_counter()
         for _ in range(200):
@@ -46,16 +46,16 @@ def main():
         out['read_ms'] = (time.perf_counter() - started) / 200 * 1000
         out['read_ticks_per_second'] = rate()
         rate = tick_rate(s)
-        seconds, timing, envelope = timed(s, f'dump {args.object}')
+        seconds, timing, envelope = timed(s, 'dump', {'target': args.object})
         out['dump'] = {'ms': seconds * 1000, **timing, 'bytes': len(json.dumps(envelope)),
                        'ticks_per_second': rate()}
-        _, timing, envelope = timed(s, f'dump {args.object} --nonzero')
+        _, timing, envelope = timed(s, 'dump', {'target': args.object, 'nonzero': True})
         out['dump_nonzero_bytes'] = len(json.dumps(envelope))
-        seconds, snap, _ = timed(s, f'snap {args.object}')
-        seconds2, diff, _ = timed(s, f'diff {args.object}')
+        seconds, snap, _ = timed(s, 'snap', {'object': args.object})
+        seconds2, diff, _ = timed(s, 'dump', {'target': args.object, 'changed': True})
         out['snap_diff'] = {'ms': (seconds + seconds2) * 1000, 'trips': snap.get('trips', 0) + diff.get('trips', 0)}
         if args.path:
-            seconds, timing, envelope = timed(s, f'get {args.object} {args.path}')
+            seconds, timing, envelope = timed(s, 'get', {'object': args.object, 'paths': [args.path]})
             out['get'] = {'ms': seconds * 1000, **timing, 'same_tick': envelope.get('result', {}).get('same_tick')}
     if args.class_name:
         runs = []
