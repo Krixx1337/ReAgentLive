@@ -193,11 +193,12 @@ Result<FunctionList> Functions(Client& client, const Ref& ref, std::string_view 
     if (response->length % sizeof(FunctionNameEntry) || count > MaxFunctionsPerPage ||
         (response->detail && (count != MaxFunctionsPerPage || response->detail != from + count)))
         return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid function list"});
-    FunctionList result{{}, static_cast<uint32_t>(response->detail)};
+    FunctionList result{{}, {}, static_cast<uint32_t>(response->detail)};
     for (size_t i = 0; i < count; ++i) {
         FunctionNameEntry entry;
         memcpy(&entry, response->data + i * sizeof(entry), sizeof(entry));
         result.names.push_back(Text(entry.owner) + ":" + Text(entry.name));
+        result.interfaces.push_back(entry.interface != 0);
     }
     return result;
 }

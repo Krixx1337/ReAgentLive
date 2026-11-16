@@ -175,6 +175,33 @@ list; a later `each` of the same class could read over it, at the price of
 missing instances spawned since. Pull forward when a session repeats
 `each` on one class: an explicit flag, never a silent reuse.
 
+### 24 · `watch-call`: a pure getter sampled every tick
+
+`watch` samples fixed address ranges, so state that lives briefly inside a
+manager object (a projectile in a subsystem, reached through a getter that
+takes a handle) cannot be followed: the value has no stable address, and a
+console round trip per sample is slower than the object's lifetime. A
+session had to infer a projectile's first frames from disassembly instead
+of measuring them. Shape: `watch-call <dur> <object> <Fn> [Name=value...]`,
+const or pure functions with plain outputs only (the `each` guard),
+sampled inside the agent like `watch`, with the same summary. Pull forward
+when a second session needs a short-lived value behind a getter.
+
+### 25 · `entries` over an unreflected engine container
+
+Native members such as a curve table's row map are a `TMap` with no
+reflected property, so `entries` cannot page them and a session walked the
+sparse array with `peek`. Shape: `entries <addr> --set <stride>` or
+`--map <key>:<value>`, reusing the existing layout checks
+(`ContainerLayoutValid`) on caller-given sizes. Pull forward with #22 when
+a container is the question again.
+
+### 26 · Longer `search text`
+
+`search text` takes at most 32 UTF-16 characters, which refused a whole
+console-variable name; a prefix worked. Raise the limit or name the
+workaround in the refusal when the request block allows it.
+
 ## Not ideas
 
 Deliberately out of scope, see [design](design.md#not-now): other transports,

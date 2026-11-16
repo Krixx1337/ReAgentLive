@@ -92,14 +92,16 @@ void DescribeContainer(const SDK::FField* field, bool map, FieldEntry& entry, co
     entry.valueOffset = map ? static_cast<uint32_t>(layout.valueOffset) : 0;
 }
 
-// A function declared on an interface that the object's class (or a parent)
-// implements, with the interface part's offset in the object.
-// `implausible`: some class's array at InterfacesOffset does not look like
-// implemented interfaces (another engine layout); nothing is trusted then.
-struct InterfaceFunction { SDK::UFunction* function; const SDK::UStruct* declaring; int32_t offset; bool implausible; };
-InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_view owner, std::string_view name,
-                                        const Context& pack, const Host& host) {
-    if (owner.empty()) return {};
+// Each native interface `start` or a parent implements, from the class's
+// TArray at InterfacesOffset of {UClass*, int32 PointerOffset, bool}. Every
+// class's array is checked before any entry is used: an interface class (a
+// UInterface subclass) whose part lies inside the implementing class's size.
+// `visit(interface, offset)` returns false to stop. Returns false when some
+// array does not look like implemented interfaces (another engine layout);
+// nothing is trusted then.
+constexpr unsigned MaxSeenInterfaces = 64;
+template<class Visit>
+bool ForEachInterface(const SDK::UStruct* start, const Context& pack, const Host& host, Visit&& visit) {
     struct Header { const uint8_t* data; int32_t count, capacity; };
     struct Entry { const SDK::UStruct* type; int32_t offset; };
     // An interface class derives from CoreUObject's "Interface" (the SDK has no UInterface type).
@@ -111,20 +113,20 @@ InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_
         }
         return false;
     };
+    // A parent's interfaces can repeat in a child's array: visit each once.
+    const SDK::UStruct* seen[MaxSeenInterfaces]{};
+    unsigned seenCount = 0;
     unsigned depth = 0;
-    for (const SDK::UStruct* type = object->Class; type && depth < MaxClassDepth && pack.object(type);
+    for (const SDK::UStruct* type = start; type && depth < MaxClassDepth && pack.object(type);
          type = type->SuperStruct, ++depth) {
         const auto* where = reinterpret_cast<const uint8_t*>(type) + InterfacesOffset;
         Header header{};
-        if (!host.readable(where, sizeof(header)) || !GuardedCopy(&header, where, sizeof(header)))
-            return {nullptr, nullptr, 0, true};
+        if (!host.readable(where, sizeof(header)) || !GuardedCopy(&header, where, sizeof(header))) return false;
         if (!header.count && header.capacity >= 0 && header.capacity <= static_cast<int32_t>(MaxInterfaces))
             continue; // Implements nothing itself.
         if (header.count <= 0 || header.count > static_cast<int32_t>(MaxInterfaces) || header.capacity < header.count ||
             !header.data || !host.readable(header.data, static_cast<size_t>(header.count) * InterfaceEntrySize))
-            return {nullptr, nullptr, 0, true};
-        // Every entry must be an interface class with its part inside this
-        // class's size before any is used.
+            return false;
         Entry entries[MaxInterfaces];
         for (int32_t i = 0; i < header.count; ++i) {
             const uint8_t* at = header.data + static_cast<size_t>(i) * InterfaceEntrySize;
@@ -134,15 +136,38 @@ InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_
                 HeaderReadable(entry.type) && entry.type->IsA(SDK::EClassCastFlags::Class) &&
                 isInterface(entry.type) && entry.offset > 0 && type->Size > 0 &&
                 static_cast<int64_t>(entry.offset) + static_cast<int64_t>(sizeof(void*)) <= type->Size;
-            if (!plausible) return {nullptr, nullptr, 0, true};
+            if (!plausible) return false;
         }
         for (int32_t i = 0; i < header.count; ++i) {
-            const SDK::UStruct* declaring = nullptr;
-            if (auto* function = FindFunction(entries[i].type, owner, name, pack, &declaring))
-                return {function, declaring, entries[i].offset, false};
+            bool repeated = false;
+            for (unsigned j = 0; j < seenCount; ++j) repeated |= seen[j] == entries[i].type;
+            if (repeated) continue;
+            if (seenCount < MaxSeenInterfaces) seen[seenCount++] = entries[i].type;
+            if (!visit(entries[i].type, entries[i].offset)) return true;
         }
     }
-    return {};
+    return true;
+}
+
+// A function declared on an interface that the object's class (or a parent)
+// implements, with the interface part's offset in the object.
+// `implausible`: some class's array at InterfacesOffset does not look like
+// implemented interfaces (another engine layout); nothing is trusted then.
+struct InterfaceFunction { SDK::UFunction* function; const SDK::UStruct* declaring; int32_t offset; bool implausible; };
+InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_view owner, std::string_view name,
+                                        const Context& pack, const Host& host) {
+    if (owner.empty()) return {};
+    InterfaceFunction found{};
+    const bool plausible = ForEachInterface(object->Class, pack, host, [&](const SDK::UStruct* type, int32_t offset) {
+        const SDK::UStruct* declaring = nullptr;
+        if (auto* function = FindFunction(type, owner, name, pack, &declaring)) {
+            found = {function, declaring, offset, false};
+            return false;
+        }
+        return true;
+    });
+    if (!plausible) return {nullptr, nullptr, 0, true};
+    return found;
 }
 
 KeptResults g_kept; // Owned call results (protocol_ue.h); constant-initialised.
@@ -345,10 +370,38 @@ Progress Functions(const Request& request, Response& response, bool, const Host&
                 response.detail = matched - 1;
                 break;
             }
+            entries[count] = {};
             CopyText(entries[count].owner, View(owner));
             CopyText(entries[count++].name, View(name));
         }
         if (response.detail) break;
+    }
+    // Then the functions of each native interface a class implements: only on
+    // the interface class, so absent from the chain above. An unreadable
+    // interface array lists nothing more (func and call explain it).
+    const SDK::UStruct* start = object->IsA(SDK::EClassCastFlags::Class)
+        ? static_cast<const SDK::UClass*>(object) : object->Class;
+    if (!response.detail && start->IsA(SDK::EClassCastFlags::Class)) {
+        ForEachInterface(start, pack, host, [&](const SDK::UStruct* type, int32_t) {
+            const auto owner = NameOf(type->Name);
+            unsigned children = 0;
+            for (const auto* field = type->Children; field && children < MaxChildren && pack.object(field);
+                 field = field->Next, ++children) {
+                if (!field->HasTypeFlag(SDK::EClassCastFlags::Function)) continue;
+                const auto name = NameOf(field->Name);
+                if (request.text[0] && !NameMatches(View(name), request.text)) continue;
+                if (matched++ < request.length) continue;
+                if (count == MaxFunctionsPerPage) {
+                    response.detail = matched - 1;
+                    return false;
+                }
+                entries[count] = {};
+                entries[count].interface = 1;
+                CopyText(entries[count].owner, View(owner));
+                CopyText(entries[count++].name, View(name));
+            }
+            return true;
+        });
     }
     response.length = count * sizeof(FunctionNameEntry);
     return Progress::Done;
@@ -402,6 +455,7 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
                 if (has(Flags::OutParm)) entry.reserved[0] |= Output;
                 if (has(Flags::ReturnParm)) entry.reserved[0] |= Return;
                 if (has(Flags::ReferenceParm)) entry.reserved[0] |= Reference;
+                if (has(Flags::ConstParm)) entry.reserved[0] |= Const;
                 if (PlainData(property, host)) entry.reserved[0] |= Plain;
                 if (property->ArrayDim == 1) entry.reserved[0] |= Scalar;
             }

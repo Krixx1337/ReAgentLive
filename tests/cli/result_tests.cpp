@@ -8,6 +8,7 @@
 #include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
+#include "reagentlive/frontends/cli/values/ue/pack_input.h"
 #include "doctest.h"
 #include "verbs.h"
 #include <set>
@@ -339,12 +340,101 @@ TEST_CASE("find and describe results") {
 }
 
 TEST_CASE("funcs lists functions with owner and name") {
-    const ue::FunctionList list{{"Pawn:GetSpeed", "Actor:K2_GetActorLocation", "Bare"}, 0};
+    const ue::FunctionList list{{"Pawn:GetSpeed", "Actor:K2_GetActorLocation", "Bare", "Owner:GetData"},
+        {false, false, false, true}, 0};
     const auto result = Checked(MakeFuncs(Pawn, list, 0));
-    REQUIRE(result["rows"].size() == 3);
+    REQUIRE(result["rows"].size() == 4);
     CHECK(result["rows"][1] == Json{{"owner", "Actor"}, {"name", "K2_GetActorLocation"}});
     CHECK(result["rows"][2] == Json{{"name", "Bare"}});
+    // A native interface's function is marked: only on the interface class.
+    CHECK(result["rows"][3] == Json{{"owner", "Owner"}, {"name", "GetData"}, {"via", "interface"}});
     CHECK_FALSE(result.contains("next_cursor"));
+}
+
+namespace {
+ue::Field Member(std::string name, std::string type, uint32_t offset, uint32_t size) {
+    ue::Field f{};
+    f.name = std::move(name); f.type = std::move(type); f.offset = offset; f.size = size;
+    return f;
+}
+}
+TEST_CASE("typed call inputs pack scalars and plain structs") {
+    namespace pi = pack_input;
+    std::vector<uint8_t> b(8);
+    auto span = [&](size_t n) { std::fill(b.begin(), b.end(), 0xcc); return std::span(b).first(n); };
+    CHECK(pi::PackScalar(Member("F", "FloatProperty", 0, 4), "1.5", span(4)));
+    float f; memcpy(&f, b.data(), 4); CHECK(f == 1.5f);
+    CHECK(pi::PackScalar(Member("D", "DoubleProperty", 0, 8), "-2.25e3", span(8)));
+    double d; memcpy(&d, b.data(), 8); CHECK(d == -2250.0);
+    CHECK_FALSE(pi::PackScalar(Member("F", "FloatProperty", 0, 4), "1e39", span(4)));
+    CHECK_FALSE(pi::PackScalar(Member("F", "FloatProperty", 0, 4), "nan", span(4)));
+    CHECK(pi::PackScalar(Member("I", "IntProperty", 0, 4), "-7", span(4)));
+    int32_t i; memcpy(&i, b.data(), 4); CHECK(i == -7);
+    CHECK_FALSE(pi::PackScalar(Member("I", "Int8Property", 0, 1), "128", span(1)));
+    CHECK(pi::PackScalar(Member("I", "Int8Property", 0, 1), "-128", span(1)));
+    CHECK(pi::PackScalar(Member("U", "UInt16Property", 0, 2), "0xffff", span(2)));
+    CHECK_FALSE(pi::PackScalar(Member("U", "UInt16Property", 0, 2), "65536", span(2)));
+    CHECK_FALSE(pi::PackScalar(Member("U", "UInt32Property", 0, 4), "-1", span(4)));
+    CHECK(pi::PackScalar(Member("E", "EnumProperty", 0, 1), "3", span(1)));
+    CHECK(b[0] == 3);
+    // A bitfield bool sets only its mask; a native bool (mask 0xff) the byte.
+    auto flag = Member("B", "BoolProperty", 0, 1);
+    flag.boolMask = 0x04;
+    std::fill(b.begin(), b.end(), 0);
+    CHECK(pi::PackScalar(flag, "true", std::span(b).first(1)));
+    CHECK(b[0] == 0x04);
+    flag.boolMask = 0xff;
+    CHECK(pi::PackScalar(flag, "false", std::span(b).first(1)));
+    CHECK(b[0] == 0);
+    CHECK_FALSE(pi::PackScalar(flag, "yes", std::span(b).first(1)));
+    CHECK_FALSE(pi::PackScalar(Member("S", "StrProperty", 0, 16), "x", span(8)));
+
+    // FVector of doubles; a struct holding one nests.
+    const Ref vectorType{0x1000, 1, 0}, outerType{0x2000, 2, 0};
+    const std::vector<ue::Field> vector{Member("X", "DoubleProperty", 0, 8), Member("Y", "DoubleProperty", 8, 8),
+        Member("Z", "DoubleProperty", 16, 8)};
+    auto inner = Member("Where", "StructProperty", 8, 24);
+    inner.structType = vectorType;
+    const std::vector<ue::Field> outer{Member("Scale", "FloatProperty", 0, 4), inner};
+    const auto fieldsOf = [&](const Ref& type) -> const std::vector<ue::Field>* {
+        return type == vectorType ? &vector : type == outerType ? &outer : nullptr;
+    };
+    auto location = Member("Location", "StructProperty", 0, 24);
+    location.structType = vectorType;
+    std::vector<uint8_t> block(32, 0);
+    double xyz[3];
+    CHECK(pi::PackValue(location, "(X=1, Y=-2.5, Z=3)", std::span(block).first(24), fieldsOf));
+    memcpy(xyz, block.data(), 24);
+    CHECK((xyz[0] == 1 && xyz[1] == -2.5 && xyz[2] == 3));
+    CHECK(pi::PackValue(location, "(4,5,6)", std::span(block).first(24), fieldsOf));
+    memcpy(xyz, block.data(), 24);
+    CHECK((xyz[0] == 4 && xyz[1] == 5 && xyz[2] == 6));
+    CHECK(pi::PackValue(location, "(Z=9)", std::span(block).first(24), fieldsOf)); // Others keep their bytes.
+    memcpy(xyz, block.data(), 24);
+    CHECK((xyz[0] == 4 && xyz[2] == 9));
+    CHECK_FALSE(pi::PackValue(location, "(1,2,3,4)", std::span(block).first(24), fieldsOf));
+    CHECK_FALSE(pi::PackValue(location, "(W=1)", std::span(block).first(24), fieldsOf));
+    CHECK_FALSE(pi::PackValue(location, "(X=1, X=2)", std::span(block).first(24), fieldsOf));
+    CHECK_FALSE(pi::PackValue(location, "(1,2", std::span(block).first(24), fieldsOf));
+    CHECK_FALSE(pi::PackValue(location, "1,2,3", std::span(block).first(24), fieldsOf));
+    auto nested = Member("Box", "StructProperty", 0, 32);
+    nested.structType = outerType;
+    std::fill(block.begin(), block.end(), 0);
+    CHECK(pi::PackValue(nested, "(Scale=2, Where=(7, 8, 9))", std::span(block), fieldsOf));
+    float scale; memcpy(&scale, block.data(), 4); memcpy(xyz, block.data() + 8, 24);
+    CHECK((scale == 2 && xyz[0] == 7 && xyz[2] == 9));
+    CHECK(pi::PackValue(nested, "(3, (1, 1, 1))", std::span(block), fieldsOf));
+    auto unknown = Member("Other", "StructProperty", 0, 8);
+    unknown.structType = {0x3000, 3, 0};
+    CHECK_FALSE(pi::PackValue(unknown, "(1)", std::span(block).first(8), fieldsOf));
+}
+
+TEST_CASE("a const reference parameter is an input") {
+    CHECK(ue::InputParameter(ue::Param));
+    CHECK_FALSE(ue::InputParameter(ue::Param | ue::Output));
+    CHECK_FALSE(ue::InputParameter(ue::Param | ue::Output | ue::Reference)); // in/out ref: filled by the call.
+    CHECK(ue::InputParameter(ue::Param | ue::Output | ue::Reference | ue::Const)); // const FVector&
+    CHECK_FALSE(ue::InputParameter(ue::Param | ue::Output | ue::Return | ue::Reference | ue::Const));
 }
 
 TEST_CASE("a typed watch range is summarised per value") {

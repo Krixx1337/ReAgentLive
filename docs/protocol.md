@@ -117,11 +117,14 @@ length and contain zero bytes.
 
 `funcs` takes an object or class ref, an optional substring in `text`, and
 the match offset in `length`. It returns `FunctionNameEntry` rows and a
-next-page cursor in `detail` (zero on the last page).
+next-page cursor in `detail` (zero on the last page). Rows from the class
+chain come first, then rows from implemented native interfaces with
+`interface` 1 and the interface as `owner`.
 
 Function parameters takes the UFunction address from `func` and a page
 offset in `length`. It returns `FieldEntry` rows for parameters only.
-`reserved[0]` carries `ParameterFlag` bits. `detail` packs the total parameter
+`reserved[0]` carries `ParameterFlag` bits (`Const` for `ConstParm`; a const
+reference is an input, `ue::InputParameter`). `detail` packs the total parameter
 count in the low 32 bits and the block size in the high 32 bits (`fields`
 puts the listed type's object-table index there, so a client cache knows whose
 table a page belongs to: an instance lists its class's). Named calls

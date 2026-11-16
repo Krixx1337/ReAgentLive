@@ -31,9 +31,13 @@ struct Find {
 struct FunctionName {
     std::optional<std::string> owner;
     std::string name;
+    // "interface": declared on a native interface the class implements, so
+    // only on the interface class; func shows its implementation, call refuses it.
+    std::optional<std::string> via;
     template<class V> static void Describe(V& v) {
         v("owner", &FunctionName::owner);
         v("name", &FunctionName::name);
+        v("via", &FunctionName::via);
     }
 };
 struct Funcs {
@@ -695,10 +699,12 @@ inline shape::Find MakeFind(const ue::FindResult& found, uint32_t from) {
 inline shape::Funcs MakeFuncs(const Ref& ref, const ue::FunctionList& list, uint32_t from) {
     shape::Funcs out;
     out.ref = ReusableRef(ref);
-    for (const auto& text : list.names) {
+    for (size_t i = 0; i < list.names.size(); ++i) {
+        const auto& text = list.names[i];
         const auto colon = text.find(':');
-        if (colon == std::string::npos) out.rows.push_back({std::nullopt, text});
-        else out.rows.push_back({text.substr(0, colon), text.substr(colon + 1)});
+        if (colon == std::string::npos) out.rows.push_back({std::nullopt, text, std::nullopt});
+        else out.rows.push_back({text.substr(0, colon), text.substr(colon + 1), std::nullopt});
+        if (i < list.interfaces.size() && list.interfaces[i]) out.rows.back().via = "interface";
     }
     out.from = from;
     if (list.next) out.nextCursor = list.next;
@@ -798,7 +804,7 @@ inline shape::Func MakeFunc(const Ref& ref, const ue::FunctionInfo& function, st
 
 inline const char* ParameterDirection(uint64_t flags) {
     return flags & ue::Return ? "return" :
-        flags & ue::Reference ? (flags & ue::Output ? "in/out ref" : "in ref") :
+        flags & ue::Reference ? (flags & ue::Output && !(flags & ue::Const) ? "in/out ref" : "in ref") :
         flags & ue::Output ? "out" : "in";
 }
 

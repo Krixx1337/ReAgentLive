@@ -146,11 +146,24 @@ inline int64_t StubVtableSlot(const uint8_t* code, size_t size) {
 }
 struct FunctionNameEntry {
     char owner[64], name[64];
+    // 1: declared on a native interface the class implements; owner is the
+    // interface. Calling it through ProcessEvent on the object is refused (see
+    // InterfacesOffset); func reports its implementation.
+    uint32_t interface, reserved;
 };
 constexpr size_t MaxFunctionsPerPage = MaxRead / sizeof(FunctionNameEntry);
 enum ParameterFlag : uint8_t {
-    Param = 1, Output = 2, Return = 4, Reference = 8, Plain = 16, Scalar = 32
+    Param = 1, Output = 2, Return = 4, Reference = 8, Plain = 16, Scalar = 32,
+    // A const parameter. A const reference is an input whose value travels in
+    // the block although the engine also marks it OutParm.
+    Const = 64
 };
+// A parameter the caller supplies: not an output, or a const reference that
+// is not the return value. Pure; shared with tests.
+inline bool InputParameter(uint8_t flags) {
+    if (flags & Return) return false;
+    return !(flags & Output) || ((flags & Const) && (flags & Reference));
+}
 static_assert(sizeof(FunctionEntry) <= MaxRead);
 // One reflected property. size = element size x array dimension. Bool
 // properties: offset is the byte holding the bit and boolMask selects it

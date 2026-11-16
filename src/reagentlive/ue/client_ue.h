@@ -84,6 +84,7 @@ struct FunctionInfo {
 Result<FunctionInfo> Function(Client& client, const Ref& ref, std::string_view name);
 struct FunctionList {
     std::vector<std::string> names;
+    std::vector<bool> interfaces; // Per name: declared on a native interface the class implements.
     uint32_t next;
 };
 Result<FunctionList> Functions(Client& client, const Ref& ref, std::string_view filter, uint32_t from);

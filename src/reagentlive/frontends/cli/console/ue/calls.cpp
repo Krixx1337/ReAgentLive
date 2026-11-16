@@ -28,6 +28,7 @@
 #include "reagentlive/frontends/cli/syntax/parse.h"
 #include "reagentlive/frontends/cli/values/ue/format_ue.h"
 #include "reagentlive/frontends/cli/values/ue/json_output.h"
+#include "reagentlive/frontends/cli/values/ue/pack_input.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/ue/client_ue.h"
@@ -70,7 +71,8 @@ void PrintParameters(Session& session, const ue::FunctionInfo& function, const u
 }
 
 namespace {
-bool PackInput(Session& session, const ue::Field& parameter, std::string_view value, std::span<uint8_t> bytes) {
+bool PackInput(Session& session, const ue::Field& parameter, std::string_view value, std::span<uint8_t> bytes,
+               StructCache& structs) {
     Client& client = session.client;
     if (parameter.type == "NameProperty" && bytes.size() == 8 && value.starts_with('#')) {
         value.remove_prefix(1);
@@ -87,15 +89,8 @@ bool PackInput(Session& session, const ue::Field& parameter, std::string_view va
         memcpy(bytes.data() + sizeof(id), &instance, sizeof(instance));
         return true;
     }
-    if (parameter.type == "ByteProperty" || parameter.type == "EnumProperty") {
-        uint64_t number = 0;
-        if ((bytes.size() != 1 && bytes.size() != 2 && bytes.size() != 4 && bytes.size() != 8) ||
-            !text::Number(value, number) || (bytes.size() < 8 && number >> (bytes.size() * 8)))
-            return false;
-        memcpy(bytes.data(), &number, bytes.size());
-        return true;
-    }
-    return false;
+    // Bools, integers, floats, enums and plain structs ("(X=1,Y=2,Z=3)" or "(1,2,3)").
+    return pack_input::PackValue(parameter, value, bytes, [&](const Ref& type) { return structs(type); });
 }
 }
 
@@ -112,10 +107,12 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
     for (const auto& parameter : signature.parameters) {
         const auto flags = parameter.parameterFlags;
         constexpr uint8_t required = ue::Param | ue::Plain | ue::Scalar;
-        if ((flags & required) != required || (flags & ue::Reference) ||
+        // A const reference is an input whose value travels in the block.
+        const bool input = ue::InputParameter(flags);
+        if ((flags & required) != required || ((flags & ue::Reference) && !input) ||
             !parameter.size || size_t{parameter.offset} + parameter.size > bytes.size())
             return fail("unsupported typed parameter: " + parameter.name);
-        if (flags & (ue::Output | ue::Return)) continue;
+        if (!input) continue;
         ++inputs;
         const auto key = parameter.name + "=";
         const auto matches = [&](const std::string& argument) { return argument.starts_with(key); };
@@ -123,7 +120,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         if (argument == arguments.end()) return fail("missing parameter: " + parameter.name);
         if (std::count_if(argument, arguments.end(), matches) != 1) return fail("duplicate parameter: " + parameter.name);
         if (!PackInput(session, parameter, std::string_view(*argument).substr(key.size()),
-            std::span(bytes).subspan(parameter.offset, parameter.size)))
+            std::span(bytes).subspan(parameter.offset, parameter.size), structs))
             return fail("invalid or unsupported input: " + parameter.name);
     }
     if (inputs != arguments.size()) return fail("unexpected typed argument");
@@ -137,7 +134,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
     std::vector<shape::CallOutput> outputs;
     bool truncated = false;
     for (const auto& parameter : signature.parameters) {
-        if (!(parameter.parameterFlags & (ue::Output | ue::Return))) continue;
+        if (ue::InputParameter(parameter.parameterFlags)) continue;
         shape::CallOutput row;
         row.name = parameter.name;
         row.direction = parameter.parameterFlags & ue::Return ? "return" : "out";

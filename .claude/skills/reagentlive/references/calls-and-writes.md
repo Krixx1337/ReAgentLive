@@ -19,7 +19,16 @@ first (see the skill's rules).
   second read before trusting them.
 - Named getter calls: discover with `funcs` and copy exact input names from
   `params`. To pass an FName whose text appears in a dump, read its
-  reflected eight bytes to recover the index and instance number.
+  reflected eight bytes to recover the index and instance number. Vectors
+  and other plain structs go in as `Location=(X=1,Y=2,Z=3)`; a hex block is
+  only needed for strings, arrays and object pointers.
+- **A `funcs` row with `via: "interface"`** is declared only on a native
+  interface. Neither `call` nor a host's own ProcessEvent can run it on the
+  object: the stub calls a vtable slot without adjusting `this`, so it would
+  run another function. Read the data another way (a field, or a getter on
+  the class chain or on a manager object), or use `func` for the
+  implementation. Code that looks a function up by name on the object's
+  class misses it (a null lookup), which is the symptom to recognise.
 - Static library functions: `call` them on the library's `Default__` object.
 - To cross-check a typed getter against a raw call, compare the complete
   `result.hex` blocks on a stable target before relying on decoded output.

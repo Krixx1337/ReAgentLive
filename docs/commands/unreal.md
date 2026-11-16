@@ -11,7 +11,7 @@ Each command's flags and result keys: `help <verb>` or
 | `call-pure <object> <[Class:]Function> [hex\|Name=value]` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill says which to call freely |
 | `release <object> <[Class:]Function> [hex]` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
 | `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection on the game thread. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (UE5 `UClass+0x1E0`, `{UClass*, int32 PointerOffset}` entries, read live). The offset is not in the SDK, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
-| `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, with a case-insensitive substring filter and a next-page cursor |
+| `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, then those declared on each native interface the class (or a parent) implements, each interface once, marked `via: "interface"`, with a case-insensitive substring filter and a next-page cursor. Interface rows use the same plausibility check as `func`; an implausible interfaces array lists none. An interface row is never callable on the object (`call` refuses it); use `func Interface:Function` for its implementation |
 | `params <object\|class> <[Owner:]Function>` | resolves the function as for `func`, then reads its reflected parameters, directions and block size |
 | `fields <object>` | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
 | Object range read | used by `snap` and `record`; checks the game thread and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
@@ -104,11 +104,24 @@ it stays only if a live run under load is clean.
 ## Named calls
 
 Named calls take the exact reflected parameter names printed by `params`.
-Supported inputs are FNames as `#index[:number]` and byte or enum values
-as unsigned integers. Use `--typed` for a call with no inputs. The console
-validates the name index, requires plain single-value parameters and
-refuses references. It formats return and out values by name. Host
-approval rules still apply. Use the raw hex form for other layouts.
+Supported inputs:
+
+- FNames as `#index[:number]` (the console checks the index);
+- bools as `true`/`false`/`1`/`0` (a bitfield bool sets only its bit);
+- signed and unsigned integers of every width, decimal or `0x` hex,
+  range-checked; bytes and enums as unsigned integers;
+- floats and doubles in decimal or exponent form, finite only;
+- plain structs as `(Member=value, ...)` or `(value, ...)` in member order,
+  nesting up to four levels: `Location=(X=1,Y=2,Z=3)`. Members left out
+  stay zero.
+
+Use `--typed` for a call with no inputs. Parameters must be plain single
+values. A const reference (`const FVector&`) is an input: the engine also
+marks it `OutParm`, so the agent passes its `ConstParm` and the console
+counts it as an input, not an output. Other references are refused.
+Return and out values are formatted by name, structs member by member.
+Host approval rules still apply. Use the raw hex form for other layouts
+(strings, arrays, object pointers).
 
 ## Class names
 
