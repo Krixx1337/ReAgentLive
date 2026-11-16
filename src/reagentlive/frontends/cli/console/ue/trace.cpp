@@ -85,9 +85,10 @@ uint64_t GetPointer(std::span<const uint8_t> bytes) {
     return value;
 }
 
-// An object's world location: a scene component's, an actor's, or a camera manager's.
+// An object's world location: a camera manager's view point (it is an actor
+// too, whose own location is elsewhere), a scene component's, or an actor's.
 Result<std::vector<double>> Location(Client& client, const Ref& object) {
-    for (const char* name : {"K2_GetComponentLocation", "K2_GetActorLocation", "GetCameraLocation"}) {
+    for (const char* name : {"GetCameraLocation", "K2_GetComponentLocation", "K2_GetActorLocation"}) {
         auto prepared = Prepare(client, object, name);
         if (!prepared) continue;
         const auto result = Ordered(prepared->signature, true);
