@@ -107,9 +107,11 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
     for (const auto& parameter : signature.parameters) {
         const auto flags = parameter.parameterFlags;
         constexpr uint8_t required = ue::Param | ue::Plain | ue::Scalar;
-        // A const reference is an input whose value travels in the block.
+        // A const reference is an input whose value travels in the block, and
+        // a returned reference (const FVector) is the return value's own slot.
+        // Only a non-const in/out reference is refused.
         const bool input = ue::InputParameter(flags);
-        if ((flags & required) != required || ((flags & ue::Reference) && !input) ||
+        if ((flags & required) != required || ((flags & ue::Reference) && !input && !(flags & ue::Return)) ||
             !parameter.size || size_t{parameter.offset} + parameter.size > bytes.size())
             return fail("unsupported typed parameter: " + parameter.name);
         if (!input) continue;
