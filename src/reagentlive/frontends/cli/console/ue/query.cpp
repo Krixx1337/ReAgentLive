@@ -34,6 +34,8 @@
 #include "reagentlive/ue/client_ue.h"
 
 #include "reagentlive/frontends/cli/console/ue/internal_ue.h"
+#include "reagentlive/frontends/cli/console/pack.h"
+#include "reagentlive/frontends/cli/values/ue/watch_field.h"
 
 namespace reagentlive::cli::detail {
 
@@ -632,5 +634,18 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     result.truncated = partial;
     if (!TickAccurate(session)) result.tickAccurate = false;
     Emit(session, jsonCommand, std::move(result));
+}
+
+std::expected<WatchFieldRange, std::string> PackWatchField(Session& session, const Ref& object, std::string_view path) {
+    StructCache structs(session);
+    const auto target = ResolvePath(session, structs, object, path, false);
+    if (!target.error.empty()) return std::unexpected(target.error);
+    if (target.native) return std::unexpected(std::string(path) + " is a native member: watch it as <addr>:<type>");
+    if (!target.size || target.size > MaxWatchRange)
+        return std::unexpected(std::string(path) + " is " + std::to_string(target.size) + " bytes; a range is 1.." +
+            std::to_string(MaxWatchRange));
+    const auto* members = target.field.type == "StructProperty" && target.field.structType.address ?
+        structs(target.field.structType) : nullptr;
+    return WatchFieldRange{target.address, target.object.address, target.size, watch_field::FieldType(target.field, members)};
 }
 }

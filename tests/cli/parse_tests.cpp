@@ -832,6 +832,26 @@ TEST_CASE("watch-start takes an interval and a root; --read and --stop take noth
     CHECK_FALSE(Parse("watch 10s --every 1s 0x9000:4", refs).has_value());           // Options need --start.
 }
 
+TEST_CASE("a watch range may name a reflected field; --all on watch, watch-read and watch-stop") {
+    const std::vector<Ref> refs{{0x1000, 5, 2}};
+    auto parsed = Parse("watch-start 30s $1.Health 0x1000#5:2.Root.RelativeLocation 0x9000:f64", refs);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->reads.size() == 3);
+    REQUIRE(parsed->watchFields.size() == 2);
+    CHECK(parsed->watchFields[0].range == 0);
+    CHECK(parsed->watchFields[0].object == refs[0]);
+    CHECK(parsed->watchFields[0].path == "Health");
+    CHECK(parsed->watchFields[1].range == 1);
+    CHECK(parsed->watchFields[1].path == "Root.RelativeLocation");
+    CHECK(parsed->reads[2].address == 0x9000);
+    // Following a root, ranges stay offsets; a field path is refused there.
+    CHECK_FALSE(Parse("watch-start 10s --follow pawn $1.Health", refs).has_value());
+    CHECK_FALSE(parsed->all);
+    CHECK(Parse("watch-read --all", refs)->all);
+    CHECK(Parse("watch-stop --all", refs)->all);
+    CHECK(Parse("watch 2s 0x9000:4 --all", refs)->all);
+}
+
 TEST_CASE("a watch range may carry a read --type element, with a count") {
     const std::vector<Ref> refs{{0x1000, 5, 2}};
     auto parsed = Parse("watch-start 20s --every 1s 0x9000:f64 0x1000#5:2+0x40:i32[2] 0x9100:16", refs);

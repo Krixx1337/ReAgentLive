@@ -41,6 +41,11 @@ void RunPackCommand(Session& session, const Command& command, std::string_view j
 // pin, watch, write --trial on an object-relative address: the object's
 // identity bytes, read now, so the agent stops when the object is replaced.
 Result<Guard> ObjectGuard(Session& session, uint64_t object);
+// watch, watch-start: a range named <object>.<Field[.Field]>: the field's
+// address, size and watch element type (WatchTypeCode) from reflection, and
+// the object holding it (the range's guard), or why it cannot be watched.
+struct WatchFieldRange { uint64_t address, object; uint32_t length, type; };
+std::expected<WatchFieldRange, std::string> PackWatchField(Session& session, const Ref& object, std::string_view path);
 // write --trial: the owner's size, or why the object cannot own a trial.
 std::expected<uint32_t, std::string> TrialOwnerSize(Session& session, const Ref& owner);
 // watch --then: whether the command is a call the pack runs, and running it.

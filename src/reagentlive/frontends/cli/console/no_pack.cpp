@@ -38,6 +38,9 @@ void RunPackCommand(Session& session, const Command&, std::string_view jsonComma
 }
 
 // An object-relative pin or watch has no identity to guard on.
+std::expected<WatchFieldRange, std::string> PackWatchField(Session&, const Ref&, std::string_view) {
+    return std::unexpected("this console has no engine pack: give the range as <addr>:<type>");
+}
 Result<Guard> ObjectGuard(Session&, uint64_t object) {
     if (!object) return Guard{};
     return std::unexpected(Error{Error::Kind::Agent, Status::Unsupported, 0, {},

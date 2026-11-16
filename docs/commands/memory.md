@@ -18,7 +18,7 @@ keys: `help <verb>` or [result shapes](results.md).
 | `trial <addr> <hex> --owner <ref> --expect <hex> [--object <addr>] [--seconds N\|--ms N]` | up to 8 trials of 1..64 bytes, 1 ms..60 s (default 10 s). One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear trials before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so a trial needs a host with the Unreal pack; the agent does not check classes |
 | `trial-list` / `trial-clear [id]` | each trial's state (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned), `original` bytes, `changed_tick` and time left; finished trials stay listed until cleared. Clear restores active ones and returns every cleared row |
 | `watch <seconds\|Nms> <addr>:<len>... [--then call ...]` | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, up to 30 s; sampled at the start of every host tick into a 4 MB agent buffer |
-| `watch-start <duration> <addr\|offset>:<len>... [--every <duration>] [--follow <root>]` / `watch-read` / `watch-stop` | the same ranges, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
+| `watch-start <duration> <addr\|offset>:<len>\|<object>.<Field>... [--every <duration>] [--follow <root>]` / `watch-read [--all]` / `watch-stop [--all]` | the same ranges, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
 
 ## Faults
 
@@ -140,12 +140,36 @@ vocabulary in place of a length: `0x9000:f64`, `$1+0x40:i32[2]`. Its
 samples come back as numbers (a list for `[n]`), its `ranges` entry carries
 `type`, and the result adds `summary`: for each value (each element of an
 `[n]` range) `first`, `last`, `least`, `greatest`, the `samples` that held a
-number, and `per_second`, the change from first to last over the time
-between them (absent with one sample). The console keeps the type in the
+number, `changes`, how many of those differ from the one before, and
+`per_second`, the change from first to last over the time between them
+(absent with one sample). The console keeps the type in the
 agent's copy of the spec (`WatchRange::note`, [protocol](../protocol.md)),
 so `watch-read` and `watch-stop` from any later run decode the capture
 too. The arithmetic lives in the console, so a typed line, a script and a
 tool all get it.
+
+### Watching a reflected field
+
+With an engine pack, a range may be a field path instead of an address:
+`$1.Health`, `0x...#5:2.RootComponent.RelativeLocation`, the paths `get`
+takes. The console resolves it before the start through the same path
+walk as `get` (object pointers and structs followed then, not per sample),
+takes the place and size from reflection and the type from the property:
+a Blueprint float is a `DoubleProperty`, so it is watched as `f64`; a
+struct of one scalar type laid end to end (a vector) as that type with a
+count; anything else as raw bytes. The range is guarded on the object that
+holds the field. Not with `--follow`, whose ranges are offsets from the root.
+
+### Rows: the changes, not every sample
+
+`watch`, `watch-read` and `watch-stop` return the first sample, every
+sample that differs from the one before it (each with its `us`), and the
+last, so a transition keeps its time while a capture of a value that sits
+still for 30 s is a handful of rows. `lost` and `resumed` rows, and the row
+after a gap, always stay. `samples` is how many there were. Past 200 rows
+(a value that changes every tick) the middle is dropped, half the rows kept
+from each end, and `dropped` counts it. The summary is computed from every
+sample first. `--all` returns every sample.
 
 ### A capture that does not hold the console
 
@@ -156,8 +180,8 @@ minutes). The capture belongs to the agent instance: it survives the
 console exiting, `watch-read` from any later run returns the rows so far
 (with `running`, `stopped`, `capacity`, `ms`, `interval_ms`, `root`,
 `ranges`), `watch-stop` ends it and returns them. A new start replaces it;
-a newer agent taking over ends it. Only raw ranges, as `watch` always
-sampled: resolve reflected paths to addresses (`get` prints them) first.
+a newer agent taking over ends it. Reflected paths are resolved once, at
+the start ([above](#watching-a-reflected-field)).
 No file is written inside the target.
 
 ### Following a replaced object

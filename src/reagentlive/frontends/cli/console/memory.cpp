@@ -289,7 +289,18 @@ std::vector<shape::WatchSample> WatchSamples(const WatchSpec& spec, const WatchR
 }
 
 // watch-read and watch-stop: the agent's record of the capture, so any console run can read it.
-void PrintCapture(Session& session, std::string_view jsonCommand) {
+// Changes only unless `all` (shape::WatchChanges); the summary sees every sample.
+template<class Shape>
+void ReduceRows(Shape& result, bool all) {
+    if (auto summary = shape::SummariseWatch(result.ranges, result.rows); !summary.empty()) result.summary = std::move(summary);
+    if (all) return;
+    uint64_t dropped = 0;
+    result.samples = result.rows.size();
+    result.rows = shape::WatchChanges(result.rows, shape::MaxWatchChangeRows, dropped);
+    if (dropped) result.dropped = dropped;
+}
+
+void PrintCapture(Session& session, std::string_view jsonCommand, bool all) {
     Client& client = session.client;
     auto info = client.WatchStatus();
     if (!info) return CommandError(session, jsonCommand, info.error());
@@ -306,19 +317,29 @@ void PrintCapture(Session& session, std::string_view jsonCommand) {
     result.root = WatchRoot(info->spec);
     result.ranges = WatchRanges(info->spec);
     if (info->spec.root[0]) result.gaps = std::move(gaps);
-    if (auto summary = shape::SummariseWatch(result.ranges, result.rows); !summary.empty()) result.summary = std::move(summary);
+    ReduceRows(result, all);
     Emit(session, jsonCommand, std::move(result));
 }
 }
 
-void RunWatch(Session& session, const Command& command, std::span<const Ref> refs, std::span<const Module> modules,
+void RunWatch(Session& session, const Command& original, std::span<const Ref> refs, std::span<const Module> modules,
               std::string_view jsonCommand) {
     Client& client = session.client;
+    Command command = original;
+    // <object>.<Field> ranges: place, size and type from reflection; guarded on the field's object.
+    for (const auto& field : command.watchFields) {
+        auto range = PackWatchField(session, field.object, field.path);
+        if (!range) return JsonError(session, jsonCommand, "validation", range.error());
+        command.reads[field.range].address = range->address;
+        command.reads[field.range].length = range->length;
+        command.watchTypes[field.range] = range->type;
+        command.guardObjects[field.range] = range->object;
+    }
     if (!client.Supports(op::Watch)) return JsonError(session, jsonCommand, "unsupported", "agent does not support watch");
-    if (command.target == "read") return PrintCapture(session, jsonCommand);
+    if (command.target == "read") return PrintCapture(session, jsonCommand, command.all);
     if (command.target == "stop") {
         if (auto stopped = client.WatchStop(); !stopped) return CommandError(session, jsonCommand, stopped.error());
-        return PrintCapture(session, jsonCommand);
+        return PrintCapture(session, jsonCommand, command.all);
     }
     WatchSpec spec{};
     spec.count = static_cast<uint32_t>(command.reads.size());
@@ -370,7 +391,7 @@ void RunWatch(Session& session, const Command& command, std::span<const Ref> ref
     result.complete = !rows->running;
     if (info) result.stopped = WatchEndText(info->stop);
     result.ranges = WatchRanges(spec);
-    if (auto summary = shape::SummariseWatch(result.ranges, result.rows); !summary.empty()) result.summary = std::move(summary);
+    ReduceRows(result, command.all);
     Emit(session, jsonCommand, std::move(result));
 }
 }

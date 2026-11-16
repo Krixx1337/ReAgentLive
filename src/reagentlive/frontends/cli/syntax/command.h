@@ -28,6 +28,10 @@ struct Command {
     std::vector<std::string> fields;
     std::vector<ReadSpan> reads;
     std::vector<uint32_t> watchTypes; // watch: per range in `reads`, its element type (WatchTypeCode), 0 = raw.
+    // watch: ranges named as <object>.<Field[.Field]>, resolved through the pack
+    // before the start; `range` is the index into `reads` they fill.
+    struct WatchField { size_t range; Ref object; std::string path; };
+    std::vector<WatchField> watchFields;
     // A class or struct named instead of an object ref (fields, dump, func,
     // funcs, params; each's class): the console resolves it before the request.
     std::string className;
@@ -62,7 +66,7 @@ struct Command {
     // match lies; `target` names the module (empty: the exe). sig-file:
     // `file`. sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is --json, `hashOnly` is --hash.
-    // stats: `all` is --all.
+    // stats: `all` is --all. watch, watch-read, watch-stop: `all` is --all (every sample).
     bool hashOnly = false;
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     sig::Pattern pattern;

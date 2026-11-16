@@ -60,6 +60,18 @@ bool RangeSize(std::string_view text, uint64_t& length, uint32_t& type) {
 Parsed WatchRanges(const Args& args, const ParseContext& context, Command command) {
     for (size_t i = 1; i < args.positionals.size(); ++i) {
         const std::string_view item = args.positionals[i];
+        // <object>.<Field[.Field]>: a reflected field, its place and type from the pack.
+        if (const size_t dot = item.find('.'); command.root.empty() && dot != std::string_view::npos && dot + 1 < item.size()) {
+            Ref object{};
+            if (text::Reference(item.substr(0, dot), context.refs, object)) {
+                if (command.reads.size() == MaxWatchRanges) return Fail("at most " + std::to_string(MaxWatchRanges) + " ranges");
+                command.watchFields.push_back({command.reads.size(), object, std::string(item.substr(dot + 1))});
+                command.reads.push_back(ReadSpan{});
+                command.watchTypes.push_back(0);
+                command.guardObjects.push_back(0);
+                continue;
+            }
+        }
         const size_t colon = item.rfind(':');
         ReadSpan range{};
         uint32_t type = 0;
@@ -72,7 +84,8 @@ Parsed WatchRanges(const Args& args, const ParseContext& context, Command comman
         if (colon == std::string_view::npos || !placed || !RangeSize(item.substr(colon + 1), range.length, type) ||
             !range.length || range.length > MaxWatchRange)
             return Fail("a range is <addr>:<len> (1.." + std::to_string(MaxWatchRange) +
-                ") or <addr>:<type>[n] with a read --type element (i8..u64, f32, f64, ptr): " + std::string(item));
+                "), <addr>:<type>[n] with a read --type element (i8..u64, f32, f64, ptr), or <object>.<Field>: " +
+                std::string(item));
         if (command.reads.size() == MaxWatchRanges) return Fail("at most " + std::to_string(MaxWatchRanges) + " ranges");
         command.reads.push_back(range);
         command.watchTypes.push_back(type);
@@ -395,6 +408,7 @@ Parsed Watch(const Args& args, const ParseContext& context) {
     if (n > MaxWatchMilliseconds)
         return Fail("a watch sampling every tick lasts at most " + std::to_string(MaxWatchMilliseconds / 1000) + " s");
     command.milliseconds = static_cast<uint32_t>(n);
+    command.all = args.Has("--all");
     if (args.Has("--then")) {
         command.then = args.Value("--then");
         if (!command.then.starts_with("call ")) return Fail("--then takes a call line");
@@ -427,17 +441,19 @@ Parsed WatchStart(const Args& args, const ParseContext& context) {
     return WatchRanges(args, context, std::move(command));
 }
 
-Parsed WatchRead(const Args&, const ParseContext&) {
+Parsed WatchRead(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::Watch;
     command.target = "read";
+    command.all = args.Has("--all");
     return command;
 }
 
-Parsed WatchStop(const Args&, const ParseContext&) {
+Parsed WatchStop(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::Watch;
     command.target = "stop";
+    command.all = args.Has("--all");
     return command;
 }
 }

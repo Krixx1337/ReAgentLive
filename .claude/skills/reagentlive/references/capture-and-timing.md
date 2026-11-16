@@ -58,3 +58,8 @@
 - "Still moving after X ms": comparing the last change time flags every
   double (low bits jitter). Compare the value at X ms with the value before
   the action and the final value instead.
+- Watch a reflected value by its path (`watch-start 30s $1.Health`), not by an
+  address and a guessed type: Blueprint floats are doubles, and reading one as
+  `f32` returns the low half (0 for whole numbers) for the whole capture.
+- Results are the changes with their times: read the transitions directly.
+  Ask for `--all` only when the sample spacing itself is the question.

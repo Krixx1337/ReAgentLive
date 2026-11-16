@@ -9,6 +9,7 @@
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
 #include "reagentlive/frontends/cli/values/ue/pack_input.h"
+#include "reagentlive/frontends/cli/values/ue/watch_field.h"
 #include "doctest.h"
 #include "verbs.h"
 #include <set>
@@ -429,6 +430,26 @@ TEST_CASE("typed call inputs pack scalars and plain structs") {
     CHECK_FALSE(pi::PackValue(unknown, "(1)", std::span(block).first(8), fieldsOf));
 }
 
+TEST_CASE("a watched field takes its element type from reflection") {
+    using watch_field::FieldType;
+    CHECK(WatchTypeName(FieldType(Member("Health", "DoubleProperty", 0, 8), nullptr)) == "f64"); // A Blueprint float.
+    CHECK(WatchTypeName(FieldType(Member("Speed", "FloatProperty", 0, 4), nullptr)) == "f32");
+    CHECK(WatchTypeName(FieldType(Member("Count", "IntProperty", 0, 4), nullptr)) == "i32");
+    CHECK(WatchTypeName(FieldType(Member("Mode", "EnumProperty", 0, 1), nullptr)) == "u8");
+    CHECK(WatchTypeName(FieldType(Member("bOn", "BoolProperty", 0, 1), nullptr)) == "u8");
+    CHECK(WatchTypeName(FieldType(Member("Owner", "ObjectProperty", 0, 8), nullptr)) == "ptr");
+    CHECK(FieldType(Member("Name", "NameProperty", 0, 8), nullptr) == 0);     // Raw bytes.
+    CHECK(FieldType(Member("Odd", "FloatProperty", 0, 8), nullptr) == 0);     // Size disagrees with the type.
+    const std::vector<ue::Field> vector{Member("X", "DoubleProperty", 0, 8), Member("Y", "DoubleProperty", 8, 8),
+        Member("Z", "DoubleProperty", 16, 8)};
+    CHECK(WatchTypeName(FieldType(Member("Location", "StructProperty", 0, 24), &vector)) == "f64");
+    const std::vector<ue::Field> mixed{Member("A", "FloatProperty", 0, 4), Member("B", "IntProperty", 4, 4)};
+    CHECK(FieldType(Member("Pair", "StructProperty", 0, 8), &mixed) == 0);
+    const std::vector<ue::Field> gapped{Member("A", "FloatProperty", 0, 4), Member("B", "FloatProperty", 8, 4)};
+    CHECK(FieldType(Member("Gap", "StructProperty", 0, 12), &gapped) == 0);
+    CHECK(FieldType(Member("Unknown", "StructProperty", 0, 24), nullptr) == 0);
+}
+
 TEST_CASE("a const reference parameter is an input") {
     CHECK(ue::InputParameter(ue::Param));
     CHECK_FALSE(ue::InputParameter(ue::Param | ue::Output));
@@ -460,8 +481,46 @@ TEST_CASE("a typed watch range is summarised per value") {
     CHECK(summary[2].element == 1u);
     CHECK(summary[2].greatest == 30650);
     CHECK(*summary[2].perSecond == doctest::Approx(50.5));
+    CHECK(summary[0].changes == 1);  // 41.9 -> 41.8 (the unreadable sample does not count).
+    CHECK(summary[1].changes == 1);
     CHECK(Checked(shape::WatchCapture{false, std::nullopt, 9, 2000, 1000, std::nullopt, ranges, rows, std::nullopt,
-        summary})["summary"][0]["per_second"].is_number());
+        std::nullopt, std::nullopt, summary})["summary"][0]["per_second"].is_number());
+}
+
+TEST_CASE("watch rows keep the first sample, each change with its time and the last") {
+    const auto row = [](uint64_t us, Json value) {
+        shape::WatchSample sample;
+        sample.us = us;
+        sample.values = std::vector<Json>{std::move(value)};
+        return sample;
+    };
+    // A bullet list: 0, then 1 for 63 ms, then 0 again, sampled every 10 ms.
+    std::vector<shape::WatchSample> rows;
+    for (uint64_t t = 0; t < 1000; t += 10) rows.push_back(row(t * 1000, t >= 300 && t < 363 ? 1 : 0));
+    uint64_t dropped = 9;
+    const auto kept = shape::WatchChanges(rows, shape::MaxWatchChangeRows, dropped);
+    CHECK(dropped == 0);
+    REQUIRE(kept.size() == 4);
+    CHECK(kept[0].us == 0);
+    CHECK((kept[1].us == 300000 && (*kept[1].values)[0] == 1));
+    CHECK((kept[2].us == 370000 && (*kept[2].values)[0] == 0));
+    CHECK(kept[3].us == 990000);  // The last sample, unchanged, ends the capture.
+    // A gap's lost and resumed rows always stay, and so does the row after a gap.
+    std::vector<shape::WatchSample> gap{row(0, 5), row(10, 5), shape::WatchSample{}, row(30, 5), row(40, 5)};
+    gap[2].us = 20;
+    gap[2].lost = true;
+    gap[3].resumed = true;
+    CHECK(shape::WatchChanges(gap, 200, dropped).size() == 4);
+    // A value that changes every sample is cut to the limit, half from each end.
+    std::vector<shape::WatchSample> moving;
+    for (uint64_t i = 0; i < 1000; ++i) moving.push_back(row(i, static_cast<double>(i)));
+    const auto cut = shape::WatchChanges(moving, 200, dropped);
+    CHECK(cut.size() == 200);
+    CHECK(dropped == 800);
+    CHECK(cut[99].us == 99);
+    CHECK(cut[100].us == 900);
+    CHECK(cut.back().us == 999);
+    CHECK(shape::WatchChanges({}, 200, dropped).empty());
 }
 
 TEST_CASE("each groups its columns' spans into passes of at most 64 bytes") {

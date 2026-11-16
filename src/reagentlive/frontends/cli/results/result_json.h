@@ -339,13 +339,14 @@ struct WatchSummary {
     static constexpr std::string_view TypeName = "WatchSummary";
     uint32_t range = 0;
     std::optional<uint32_t> element;
-    uint64_t samples = 0;
+    uint64_t samples = 0, changes = 0; // changes: samples whose value differs from the one before.
     double first = 0, last = 0, least = 0, greatest = 0;
     std::optional<double> perSecond;
     template<class V> static void Describe(V& v) {
         v("range", &WatchSummary::range);
         v("element", &WatchSummary::element);
         v("samples", &WatchSummary::samples);
+        v("changes", &WatchSummary::changes);
         v("first", &WatchSummary::first);
         v("last", &WatchSummary::last);
         v("least", &WatchSummary::least);
@@ -372,6 +373,7 @@ struct Watch {
     std::vector<WatchRange> ranges;
     std::optional<WatchThen> then;
     std::vector<WatchSample> rows;
+    std::optional<uint64_t> samples, dropped; // See WatchChanges.
     std::optional<std::vector<WatchSummary>> summary;
     template<class V> static void Describe(V& v) {
         v("capacity", &Watch::capacity);
@@ -380,6 +382,8 @@ struct Watch {
         v("ranges", &Watch::ranges);
         v("then", &Watch::then);
         v("rows", &Watch::rows);
+        v("samples", &Watch::samples);
+        v("dropped", &Watch::dropped);
         v("summary", &Watch::summary);
     }
 };
@@ -403,6 +407,7 @@ struct WatchCapture {
     std::optional<std::string> root;
     std::vector<WatchRange> ranges;
     std::vector<WatchSample> rows;
+    std::optional<uint64_t> samples, dropped; // See WatchChanges.
     std::optional<std::vector<WatchGap>> gaps;
     std::optional<std::vector<WatchSummary>> summary;
     template<class V> static void Describe(V& v) {
@@ -414,10 +419,35 @@ struct WatchCapture {
         v("root", &WatchCapture::root);
         v("ranges", &WatchCapture::ranges);
         v("rows", &WatchCapture::rows);
+        v("samples", &WatchCapture::samples);
+        v("dropped", &WatchCapture::dropped);
         v("gaps", &WatchCapture::gaps);
         v("summary", &WatchCapture::summary);
     }
 };
+
+// The rows a reader needs from a capture: the first sample, each sample that
+// differs from the one before it (a value, or lost, resumed or a new root),
+// and the last. Every transition keeps its time. Past `limit` rows the middle
+// is dropped, half the limit kept from each end, and `dropped` counts it; the
+// summary still covers every sample. `--all` skips this. Pure; tested.
+constexpr size_t MaxWatchChangeRows = 200;
+inline std::vector<WatchSample> WatchChanges(std::span<const WatchSample> rows, size_t limit, uint64_t& dropped) {
+    dropped = 0;
+    std::vector<WatchSample> kept;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const auto& row = rows[i];
+        const bool marked = row.lost || row.resumed || row.root;
+        if (i == 0 || i + 1 == rows.size() || marked || rows[i - 1].lost || row.values != rows[i - 1].values)
+            kept.push_back(row);
+    }
+    if (limit < 2 || kept.size() <= limit) return kept;
+    const size_t head = limit / 2, tail = limit - head;
+    dropped = kept.size() - limit;
+    std::vector<WatchSample> out(kept.begin(), kept.begin() + static_cast<std::ptrdiff_t>(head));
+    out.insert(out.end(), kept.end() - static_cast<std::ptrdiff_t>(tail), kept.end());
+    return out;
+}
 
 // The summary of each typed range's values, one entry per value (per element
 // of an [n] range), from the samples that held a number for it.
@@ -446,6 +476,7 @@ inline std::vector<WatchSummary> SummariseWatch(std::span<const WatchRange> rang
                     summary.first = summary.least = summary.greatest = number;
                     firstUs = row.us;
                 }
+                if (summary.samples && number != summary.last) ++summary.changes;
                 summary.last = number;
                 lastUs = row.us;
                 summary.least = std::min(summary.least, number);

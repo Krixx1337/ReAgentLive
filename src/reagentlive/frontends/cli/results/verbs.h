@@ -119,7 +119,8 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"watch", "core", "sample up to 8 ranges every tick (up to 30 s) and return the rows",
             {{"duration", "seconds|Nms", One, "dur", "how long: seconds, or Nms, Ns"},
              {"ranges", "addr:len|addr:type[n]", Some, "range", "a range to sample, per range: a length, or a read --type element (f64, i32[2]) to decode"}},
-            {{"--then", Takes::Rest, "line", "call line", "a raw call (a pack runs it) right after sampling starts"}},
+            {{"--then", Takes::Rest, "line", "call line", "a raw call (a pack runs it) right after sampling starts"},
+             {"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}},
             Of<shape::Watch>, parse::Watch, {}, {}, true, true},
         {"watch-start", "core", "a capture the agent keeps (up to 60 min with --every); returns at once",
             {{"duration", "duration", One, "dur", "how long: seconds, or Nms, Ns, Nm"},
@@ -131,8 +132,14 @@ inline const std::vector<Verb>& CoreVerbs() {
             "status lists the roots. The capture outlives the console, its types too. A typed range's samples are "
             "numbers (a list for [n]), and watch-read and watch-stop add its summary: first, last, least, greatest "
             "and the change per second, per value."},
-        {"watch-read", "core", "the capture's rows so far", {}, {}, Of<shape::WatchCapture>, parse::WatchRead},
-        {"watch-stop", "core", "end the capture and return its rows", {}, {}, Of<shape::WatchCapture>, parse::WatchStop},
+        {"watch-read", "core", "the capture so far: its first sample, each change and its last", {},
+            {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchRead,
+            "Rows are the first sample, every sample that differs from the one before (each with its time) and the last; "
+            "samples counts them all. Past 200 rows the middle is dropped (dropped). The summary covers every sample, "
+            "with changes per value. --all returns every sample."},
+        {"watch-stop", "core", "end the capture and return it: its first sample, each change and its last", {},
+            {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchStop,
+            "As watch-read."},
         {"sig-check", "core", "is a byte signature unique in a module, and does it land where expected",
             {{"pattern", "pattern", Some, "pattern", "the signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"},
