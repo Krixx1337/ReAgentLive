@@ -71,6 +71,7 @@ add_library(reagentlive::ue ALIAS reagentlive-ue)
 target_sources(reagentlive-ue INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_reflect.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_scan.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_script.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_calls.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_globals.cpp")
 target_link_libraries(reagentlive-ue INTERFACE reagentlive-core)
 
@@ -101,7 +102,7 @@ set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${
     "${reagentlive_cli_dir}/console/snapshot.cpp")
 set(reagentlive_console_ue_sources "${reagentlive_cli_dir}/console/ue/pack.cpp" "${reagentlive_cli_dir}/console/ue/dump.cpp"
     "${reagentlive_cli_dir}/console/ue/capture.cpp" "${reagentlive_cli_dir}/console/ue/calls.cpp"
-    "${reagentlive_cli_dir}/console/ue/trace.cpp"
+    "${reagentlive_cli_dir}/console/ue/trace.cpp" "${reagentlive_cli_dir}/console/ue/recorder.cpp"
     "${reagentlive_cli_dir}/console/ue/query.cpp" "${reagentlive_cli_dir}/console/ue/labels.cpp"
     "${reagentlive_cli_dir}/console/ue/members.cpp" "${reagentlive_cli_dir}/console/ue/layout.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")

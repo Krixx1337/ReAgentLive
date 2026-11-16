@@ -124,3 +124,15 @@ first (see the skill's rules).
   `mesh@Socket`; `--ignore <your pawn>` keeps your own body out of a
   camera line. A collision shell or a material the game treats specially
   (glass, foliage) shows up here at once.
+
+## What the game passed to a function
+
+- `calls-start <target> <Owner:Function> 10s` records each call with its
+  parameters (a write: one `UFunction` pointer, approved like any other).
+  Use it when the question is an event ("did the hit register, for how
+  much, on which bone?"); a watch only sees state afterwards.
+- Pick the function by `funcs` on the class that receives the event.
+  `via: vm` rows (a Blueprint calling native code) have no parameters; a
+  native call made directly from C++ is invisible, so zero rows can mean
+  the wrong function, not no event.
+- Read with `calls-read` while it runs; `calls-stop` restores at once.

@@ -772,6 +772,39 @@ TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
     CHECK_FALSE(Parse("trace $1 $2 --ignore 7", TwoRefs).has_value());
 }
 
+TEST_CASE("calls-start takes a target, a function and a duration; read and stop take a slot") {
+    auto parsed = Parse("calls-start $1 Owner:Damage 10s --object $2 --dry", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::Calls);
+    CHECK(parsed->target == "start");
+    CHECK(parsed->request.op == ue::op::CallsStart);
+    CHECK(ue::GetRef(parsed->request) == TwoRefs[0]); // The duration must not overwrite the ref.
+    CHECK(std::string(parsed->request.text) == "Owner:Damage");
+    CHECK(parsed->request.args[1] == 10000);
+    uint64_t filter = 0;
+    REQUIRE(parsed->request.length == sizeof(filter));
+    memcpy(&filter, parsed->request.data, sizeof(filter));
+    CHECK(filter == TwoRefs[1].address);
+    CHECK(parsed->request.flags == ue::CallsDry);
+    auto byClass = Parse("calls-start SomeClass Fire 500ms", TwoRefs);
+    REQUIRE(byClass.has_value());
+    CHECK(byClass->className == "SomeClass");
+    CHECK(byClass->request.args[1] == 500);
+    CHECK_FALSE(Parse("calls-start $1 Fire 61s", TwoRefs).has_value());
+    CHECK_FALSE(Parse("calls-start $1 Fire", TwoRefs).has_value());
+    CHECK_FALSE(Parse("calls-start $1 Fire 5s --object 7", TwoRefs).has_value());
+    auto read = Parse("calls-read --slot 3 --start 40", TwoRefs);
+    REQUIRE(read.has_value());
+    CHECK(read->target == "read");
+    CHECK(read->callsSlot == 3);
+    CHECK(read->callsAfter == 40);
+    auto latest = Parse("calls-stop", TwoRefs);
+    REQUIRE(latest.has_value());
+    CHECK(latest->target == "stop");
+    CHECK(latest->callsSlot == ue::CallsLatest);
+    CHECK_FALSE(Parse("calls-read --slot 8", TwoRefs).has_value());
+}
+
 TEST_CASE("get takes an object and dotted field paths") {
     auto parsed = Parse("get $1 Mesh.AnimInstance.AimAlpha Owner:Health", TwoRefs);
     REQUIRE(parsed.has_value());

@@ -67,6 +67,11 @@ Parsed LayoutCheck(const Args& args, const ParseContext& context);
 Parsed Entries(const Args& args, const ParseContext& context);
 Parsed Get(const Args& args, const ParseContext& context);
 Parsed Trace(const Args& args, const ParseContext& context);
+Parsed CallsStart(const Args& args, const ParseContext& context);
+Parsed CallsRead(const Args& args, const ParseContext& context);
+Parsed CallsStop(const Args& args, const ParseContext& context);
+// 10, 10s, 500ms, 10m: milliseconds; 0 when malformed.
+uint64_t DurationMilliseconds(std::string_view text);
 Parsed Census(const Args& args, const ParseContext& context);
 Parsed CensusDiff(const Args& args, const ParseContext& context);
 Parsed Refs(const Args& args, const ParseContext& context);

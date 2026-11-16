@@ -127,4 +127,6 @@ void RunLabel(Session& session, const Command& command, std::string_view jsonCom
 // A pooled name's comparison index by its text (FNames compare without case), for the session.
 Result<int32_t> NameIndex(Session& session, std::string_view text);
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
+// calls-start, calls-read, calls-stop (the agent's call recorder).
+void RunCalls(Session& session, const Command& command, std::string_view jsonCommand);
 }

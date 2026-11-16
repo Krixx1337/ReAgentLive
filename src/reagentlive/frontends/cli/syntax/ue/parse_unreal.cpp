@@ -365,6 +365,60 @@ Parsed Trace(const Args& args, const ParseContext& context) {
     return command;
 }
 
+namespace {
+// --slot N (default: the last started recording).
+bool CallsSlot(const Args& args, Command& command) {
+    command.callsSlot = ue::CallsLatest;
+    return !args.Has("--slot") || (Number(args.Value("--slot"), command.callsSlot) && command.callsSlot < ue::MaxCallsSlots);
+}
+}
+
+// calls-start <object|Class> <[Owner:]Function> <duration> [--object <ref>] [--dry]
+Parsed CallsStart(const Args& args, const ParseContext& context) {
+    Command command;
+    Request& request = command.request;
+    if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
+    if (args.At(1).empty() || args.At(1).size() >= MaxText) return Fail("function name too long");
+    CopyText(request.text, args.At(1));
+    const uint64_t milliseconds = DurationMilliseconds(args.At(2));
+    if (!milliseconds || milliseconds > ue::MaxCallsMilliseconds)
+        return Fail("duration is 1 ms .. " + std::to_string(ue::MaxCallsMilliseconds / 1000) + " s");
+    request.args[1] = milliseconds;
+    if (args.Has("--object")) {
+        Ref filter{};
+        if (!Reference(args.Value("--object"), context.refs, filter)) return Fail("--object is $N or a literal ref");
+        const uint64_t address = filter.address;
+        memcpy(request.data, &address, sizeof(address));
+        request.length = sizeof(address);
+    }
+    request.flags = args.Has("--dry") ? ue::CallsDry : 0;
+    request.op = ue::op::CallsStart;
+    command.kind = Kind::Calls;
+    command.target = "start";
+    return command;
+}
+
+// calls-read [--slot N] [--start N]
+Parsed CallsRead(const Args& args, const ParseContext&) {
+    Command command;
+    if (!CallsSlot(args, command)) return Fail("--slot is 0.." + std::to_string(ue::MaxCallsSlots - 1));
+    if (args.Has("--start") && !Number(args.Value("--start"), command.callsAfter)) return Fail("--start is a next_cursor");
+    command.request.op = ue::op::CallsRead;
+    command.kind = Kind::Calls;
+    command.target = "read";
+    return command;
+}
+
+// calls-stop [--slot N]
+Parsed CallsStop(const Args& args, const ParseContext&) {
+    Command command;
+    if (!CallsSlot(args, command)) return Fail("--slot is 0.." + std::to_string(ue::MaxCallsSlots - 1));
+    command.request.op = ue::op::CallsStop;
+    command.kind = Kind::Calls;
+    command.target = "stop";
+    return command;
+}
+
 Parsed Census(const Args& args, const ParseContext&) { return CensusOptions(args, false); }
 
 // census-diff: only the classes whose count differs from the last census of that --cls.

@@ -620,6 +620,76 @@ struct Trace {
         v("item", &Trace::item);
     }
 };
+// calls-start: the recording armed (or with --dry, what would be swapped).
+struct CallsStart {
+    std::string function;
+    uint32_t slot = 0;
+    Addr exec, thunk;
+    uint32_t blockSize = 0;
+    std::optional<Addr> object;
+    double seconds = 0;
+    bool dry = false;
+    template<class V> static void Describe(V& v) {
+        v("function", &CallsStart::function);
+        v("slot", &CallsStart::slot);
+        v("exec", &CallsStart::exec);
+        v("thunk", &CallsStart::thunk);
+        v("block_size", &CallsStart::blockSize);
+        v("object", &CallsStart::object);
+        v("seconds", &CallsStart::seconds);
+        v("dry", &CallsStart::dry);
+    }
+};
+// One parameter of a recorded call, decoded by reflection.
+struct CallsValue {
+    std::string name, direction;
+    Json value;
+    bool truncated = false;
+    template<class V> static void Describe(V& v) {
+        v("name", &CallsValue::name);
+        v("direction", &CallsValue::direction, "in|out|return");
+        v("value", &CallsValue::value);
+        v("truncated", &CallsValue::truncated);
+    }
+};
+struct CallsRow {
+    uint64_t sequence = 0;
+    double ms = 0;
+    uint32_t thread = 0;
+    RefId object;
+    std::optional<std::string> objectName, objectClass;
+    std::string via;
+    std::optional<std::vector<CallsValue>> values;
+    template<class V> static void Describe(V& v) {
+        v("sequence", &CallsRow::sequence);
+        v("ms", &CallsRow::ms);
+        v("thread", &CallsRow::thread);
+        v("object", &CallsRow::object);
+        v("object_name", &CallsRow::objectName);
+        v("object_class", &CallsRow::objectClass);
+        v("via", &CallsRow::via, "event|vm");
+        v("values", &CallsRow::values);
+    }
+};
+// calls-read and calls-stop: the recording's state and its rows.
+struct Calls {
+    std::string function, state;
+    uint32_t slot = 0;
+    uint64_t calls = 0, events = 0, vm = 0, dropped = 0;
+    std::vector<CallsRow> rows;
+    std::optional<uint64_t> nextCursor;
+    template<class V> static void Describe(V& v) {
+        v("function", &Calls::function);
+        v("state", &Calls::state, "recording|expired|finished|replaced");
+        v("slot", &Calls::slot);
+        v("calls", &Calls::calls);
+        v("events", &Calls::events);
+        v("vm", &Calls::vm);
+        v("dropped", &Calls::dropped);
+        v("rows", &Calls::rows);
+        v("next_cursor", &Calls::nextCursor);
+    }
+};
 struct Snap {
     RefId ref;
     uint64_t size = 0;

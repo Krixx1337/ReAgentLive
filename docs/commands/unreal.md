@@ -126,6 +126,40 @@ Return and out values are formatted by name, structs member by member.
 Host approval rules still apply. Use the raw hex form for other layouts
 (strings, arrays, object pointers).
 
+## Call recorder
+
+`calls-start <object|Class> <[Owner:]Function> <duration> [--object R] [--dry]`
+records a reflected function's calls; `calls-read` returns them so far,
+`calls-stop` ends it early. A host offers it by listing the three ops; the
+start is a write the host approves.
+
+- **What is written:** `UFunction::Func` (UE5 `+0xD8`), the function's
+  native pointer, swapped by compare-and-swap for one of 8 fixed thunks.
+  No code, vtable or import. At the end (time limit, at most 60 s;
+  `calls-stop`; host stop) the original goes back only if the pointer
+  still holds the thunk. Otherwise something else swapped it since: it is
+  left alone (`state: replaced`) and the thunk keeps forwarding, which is
+  safe because the host's image stays loaded. `--dry` shows the pointer
+  and thunk without writing.
+- **What is seen:** every call that goes through the engine's reflection.
+  Through `ProcessEvent` (C++ callers, RPCs received, Blueprint events,
+  delegates, `call`), the frame's `Node` is the function and its locals
+  are the parameter block: the row holds the parameters after the call
+  plus the return value (`ProcessEvent` writes that to the caller's block),
+  decoded by name as `in`, `out` and `return`. Inputs are as the function
+  left them. A Blueprint graph calling native code passes its own frame;
+  the row has the object only (`via: vm`). Direct C++ calls never reach
+  the pointer and are not seen. A Blueprint event with an event-graph
+  redirect runs the graph function, not the event's pointer.
+- **Layout:** `FFrame::Node` `+0x10`, `::Locals` `+0x28` and
+  `UFunction::ReturnValueOffset` `+0xB8` are UE5 values, not in the SDK;
+  confirmed in `UObject::ProcessEvent`, the `FFrame` constructor and
+  `UFunction::Invoke` of one build. Reads of them are fault-guarded.
+- **Bounds:** 8 recordings at once, 256 rows each (older ones are dropped
+  and counted), parameter blocks up to 1 KiB. Rows carry the sequence,
+  milliseconds since the start, thread id and the calling object (named
+  while it lives). `--object` keeps only calls on one object.
+
 ## Class names
 
 `fields`, `dump`, `func`, `funcs` and `params` also take a bare class or

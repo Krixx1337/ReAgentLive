@@ -39,7 +39,7 @@ No single one of these is new. The combination is.
 
 | ReAgentLive | Typical alternatives |
 |---|---|
-| **Runs inside the process**, on a thread its host trusts, with no debugger attached and no hooks of its own | A debugger, a hooking framework, or reading from outside the process |
+| **Runs inside the process**, on a thread its host trusts, with no debugger attached and no code hooks | A debugger, a hooking framework, or reading from outside the process |
 | **Tick-accurate:** everything in one answer comes from the same moment | Torn reads from outside, or polling |
 | **Safe by construction:** references that go stale safely, guarded writes, trial writes that restore themselves | Raw write and code-injection tools handed to an agent |
 | **Shaped for an AI's costs:** few commands, whole answers, filtered output, state kept between runs | Large tool surfaces that fill an agent's context before doing anything |
@@ -67,7 +67,7 @@ The rule and its table are in
 |---|---|---|---|
 | A static tool (the main pairing) | whole-function logic, types, decompiling | live values, `module` and `rva`, exported labels, signature checks | names, what a function means |
 | An engine dumper | a full SDK and offsets | a live check that an offset is right | names for data the engine does not reflect |
-| An instrumentation tool | call tracing, hooks | exact addresses, live state before and after | who calls what, with which arguments |
+| An instrumentation tool | native call tracing, code hooks | exact addresses, live state before and after, reflected calls with their arguments (`calls-start`) | direct C++ callers and native arguments |
 | A memory scanner | narrowing scans, pointer scans | a consistent snapshot to confirm a find | candidate addresses |
 
 ### Gaps ReAgentLive fills
@@ -90,7 +90,7 @@ a candidate, not planned; it waits for a case the neighbours cannot cover.
 
 ## Ways to host it
 
-ReAgentLive never injects itself and never hooks. Something inside the process
+ReAgentLive never injects itself and never patches code. Something inside the process
 calls its tick; that something is the host, and it can be small.
 
 | Setup | Host | Notes |
@@ -115,7 +115,7 @@ author's to write ([hosting](hosting.md), [clients](client.md)).
 
 | Layer | What it is | Who uses it |
 |---|---|---|
-| **The core** (agent, transport, client library, engine pack) with a host | a lean in-process proxy: read, write, same-tick batches, guarded and expiring writes, engine calls. No hooks, no drawing, no feature logic | any outside program that links the client: a tool, a mod that keeps its logic outside the game, or ReAgentLive's own frontends |
+| **The core** (agent, transport, client library, engine pack) with a host | a lean in-process proxy: read, write, same-tick batches, guarded and expiring writes, engine calls, an opt-in reflected-call recorder. No code hooks, no drawing, no feature logic | any outside program that links the client: a tool, a mod that keeps its logic outside the game, or ReAgentLive's own frontends |
 | **ReAgentLive the probe** (console, Python client, skill) | the development tools built on the core | an AI or a person investigating |
 
 The pitch on this page is about the probe. The core is deliberately
@@ -129,8 +129,10 @@ deferred until an investigation and an outside program must run together
 ReAgentLive answers when asked and otherwise stays out of the process's
 way:
 
-- **No hooks of its own.** The core never patches code or swaps a
-  pointer; where the tick comes from is the host's business.
+- **No code hooks.** The core never patches code or swaps a vtable or
+  import pointer; where the tick comes from is the host's business. The
+  one swap it can make is opt-in: the call recorder replaces a
+  `UFunction`'s native pointer, heap data, while a recording runs.
 - **No threads of its own.** It runs on a thread the host already has.
   The own-thread example adds exactly one, its tick; background search
   adds a worker only when the host allows it.

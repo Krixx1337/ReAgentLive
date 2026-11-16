@@ -128,6 +128,28 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "KismetSystemLibrary.LineTraceSingle on the game thread, decoded by GameplayStatics.BreakHitResult; it "
             "changes no state. The world comes from --ignore, else from an end's object: two points need --ignore. "
             "Distance and points are in cm; distance counts from start. A socket needs a mesh component (get <actor> Mesh)."},
+        {"calls-start", "ue", "record a reflected function's calls, with their arguments, for a while",
+            {{"target", "object|Class", One, "str", target}, {"function", "[Owner:]Function", One, "str", function},
+             {"duration", "duration", One, "dur", "how long: seconds, or Nms, Ns, Nm (at most 60 s)"}},
+            {{"--object", Takes::One, "ref", "ref", "only calls on this object"},
+             {"--dry", Takes::Nothing, "bool", "", "resolve and show the pointer that would be swapped; write nothing"}},
+            Of<shape::CallsStart>, parse::CallsStart,
+            "Swaps the function's native pointer (UFunction::Func, heap data; no code, vtable or import) for a "
+            "recording thunk that forwards every call, and puts it back at the end or on calls-stop (only while it "
+            "still holds the thunk). Calls through ProcessEvent (C++ callers, RPCs, Blueprint events, delegates) "
+            "carry their parameters after the call; Blueprint graphs calling native code show only the object "
+            "(via vm); direct C++ calls are not seen. 256 rows per recording; older ones are dropped.", {}, true},
+        {"calls-read", "ue", "a recording's calls so far, decoded by the function's parameters",
+            {},
+            {{"--slot", Takes::One, "int", "N", "the recording (default: the last started)"},
+             {"--start", Takes::One, "int", "N", "next_cursor: only calls after it"}},
+            Of<shape::Calls>, parse::CallsRead,
+            "values: in, out and return by name, read after the call (inputs as the function left them). Objects "
+            "are named while they live. A recording past its time is restored first."},
+        {"calls-stop", "ue", "end a recording now (restores the pointer) and return its calls",
+            {}, {{"--slot", Takes::One, "int", "N", "the recording (default: the last started)"}},
+            Of<shape::Calls>, parse::CallsStop,
+            "state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding."},
         {"describe", "ue", "an object's name, class and reusable ref",
             {{"object", "address|$N|#index:serial", One, "ref", "the object: an address, $N, a literal ref, or a table slot and serial"}},
             {}, Of<shape::Object>, parse::Describe},

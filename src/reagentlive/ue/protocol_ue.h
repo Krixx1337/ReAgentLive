@@ -37,6 +37,7 @@ constexpr uint32_t Refs = Find + 14;
 constexpr uint32_t DescribeMany = Find + 15;
 constexpr uint32_t ExecEntries = Find + 16;
 constexpr uint32_t Entries = Find + 17;
+constexpr uint32_t CallsStart = Find + 18, CallsRead = Find + 19, CallsStop = Find + 20;
 }
 
 // A UObject ref: core's Ref, with the object-table index and its serial.
@@ -490,13 +491,58 @@ struct ExecEntry {
 constexpr size_t MaxExecPerPage = MaxRead / sizeof(ExecEntry);
 constexpr uint32_t MaxExecEntries = 1u << 20;
 
+// The call recorder. A host opts in by listing these ops. CallsStart swaps
+// one UFunction's native pointer (UFunction::Func, a heap field: no code,
+// vtable or import is written) for one of MaxCallsSlots fixed thunks that
+// record each call and forward it to the original; the swap and the
+// restore are compare-and-swaps, and a pointer something else has replaced
+// since is left alone (the thunk then forwards forever).
+// CallsStart: object ref (an instance, a default object or a class), text =
+// "[Owner:]Function" (the ref holds args[0]), args[1] = milliseconds
+// (1..MaxCallsMilliseconds), data = an optional object address (length 8):
+// only calls on that object; flags CallsDry
+// resolves and reports without writing. Reply: CallsStarted.
+// CallsRead: args[0] = slot (CallsLatest: the last started), args[1] = the
+// last sequence already read. Reply: CallsState, then CallsRow headers each
+// followed by `size` block bytes, oldest first; detail = the last sequence
+// sent. A recording past its time is restored first.
+// CallsStop: args[0] = slot (or CallsLatest); restores; reply CallsState.
+// A row's block is the function's parameters after the call: on the
+// ProcessEvent path (the frame's Node is the function) the frame's locals
+// plus the return value; on the Blueprint VM path the arguments are
+// bytecode, so the row has no block (via CallsVm).
+constexpr uint32_t MaxCallsSlots = 8, MaxCallsRows = 256, MaxCallsBlock = 1024;
+constexpr uint64_t MaxCallsMilliseconds = 60000;
+constexpr uint32_t CallsDry = 1;
+constexpr uint64_t CallsLatest = MaxCallsSlots;
+// UE5 frame and function layout the thunk reads (UObject::ProcessEvent,
+// FFrame's constructor and UFunction::Invoke, CL-516586): FFrame::Node and
+// ::Locals, UFunction::ReturnValueOffset (0xFFFF: none). Not in the SDK.
+constexpr uint32_t FrameNodeOffset = 0x10, FrameLocalsOffset = 0x28, FunctionReturnOffset = 0xB8;
+enum class CallsSlotState : uint32_t { Free, Recording, Expired, Finished, Replaced };
+struct CallsStarted {
+    uint64_t function, original, thunk;
+    uint32_t slot, blockSize, returnOffset, returnSize;
+};
+struct CallsState {
+    uint64_t function, written;
+    uint32_t slot, state, events, vm, blockSize, reserved;
+};
+constexpr uint8_t CallsEvent = 1, CallsVm = 2;
+struct CallsRow {
+    uint64_t sequence, object;
+    int64_t microseconds;           // Since the start.
+    uint32_t thread, size;
+    uint8_t via, reserved[7];
+};
+
 // The pack's part of the layout check (added to reagentlive::LayoutCore by the host).
 // New ops need no change here: the section header lists the ops an agent handles.
 // Every struct the pack sends is in the sum (see reagentlive::LayoutCore).
 constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + sizeof(FieldEntry) * 11 +
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
-    sizeof(ExecEntry) * 83 +
+    sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + sizeof(CallsState) * 97 + sizeof(CallsRow) * 103 +
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);
 
 namespace detail {
@@ -549,6 +595,14 @@ inline Status Check(const Request& request) {
         return request.address && known && request.length && request.length <= MaxArrayElementBytes &&
             offset <= MaxObjectBytes - header && request.address <= UINT64_MAX - offset - header ? Status::Ok : Status::BadRequest;
     }
+    case op::CallsStart:
+        return request.address && Terminated(request.text) && detail::FunctionText(request.text) &&
+            (!request.length || request.length == sizeof(uint64_t)) && request.args[1] &&
+            request.args[1] <= MaxCallsMilliseconds && !(request.flags & ~CallsDry)
+            ? Status::Ok : Status::BadRequest;
+    case op::CallsRead:
+    case op::CallsStop:
+        return !request.address && !request.length && request.args[0] <= CallsLatest ? Status::Ok : Status::BadRequest;
     case op::ExecEntries:
         return !request.address && !request.length && request.args[1] <= MaxExecEntries ? Status::Ok : Status::BadRequest;
     case op::Refs:

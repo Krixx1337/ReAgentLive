@@ -448,4 +448,81 @@ Result<std::vector<uint8_t>> Call(Client& client, const Ref& object, std::string
     if (kept) *kept = (response->detail & CallKept) != 0;
     return std::vector<uint8_t>(response->data, response->data + response->length);
 }
+
+Result<CallsStarted> CallsStart(Client& client, const Ref& object, std::string_view function, uint64_t milliseconds,
+                                uint64_t filter, bool dry) {
+    if (function.empty() || function.size() >= MaxText) return std::unexpected(TooLong("function name"));
+    Request request{};
+    request.op = op::CallsStart;
+    request.flags = dry ? CallsDry : 0;
+    SetRef(request, object);
+    CopyText(request.text, function);
+    request.args[1] = milliseconds;
+    if (filter) {
+        memcpy(request.data, &filter, sizeof(filter));
+        request.length = sizeof(filter);
+    }
+    auto response = client.Send(request);
+    if (!response) return std::unexpected(response.error());
+    if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+    CallsStarted started{};
+    if (response->length != sizeof(started)) return std::unexpected(BadResponse("invalid calls-start reply"));
+    memcpy(&started, response->data, sizeof(started));
+    return started;
+}
+
+namespace {
+Result<CallsState> StateFrom(const Response& response) {
+    CallsState state{};
+    if (response.length < sizeof(state)) return std::unexpected(BadResponse("invalid calls reply"));
+    memcpy(&state, response.data, sizeof(state));
+    if (state.slot >= MaxCallsSlots || state.blockSize > MaxCallsBlock) return std::unexpected(BadResponse("invalid calls state"));
+    return state;
+}
+}
+
+Result<CallsResult> CallsRead(Client& client, uint64_t slot, uint64_t after) {
+    CallsResult result{{}, {}, after};
+    Request request{};
+    request.op = op::CallsRead;
+    request.args[0] = slot;
+    for (;;) {
+        request.args[1] = result.last;
+        auto response = client.Send(request);
+        if (!response) return std::unexpected(response.error());
+        if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+        auto state = StateFrom(*response);
+        if (!state) return std::unexpected(state.error());
+        result.state = *state;
+        request.args[0] = state->slot; // Later pages read the same recording.
+        size_t at = sizeof(CallsState);
+        uint64_t previous = result.last;
+        while (at < response->length) {
+            CallsCall call{};
+            if (response->length - at < sizeof(CallsRow)) return std::unexpected(BadResponse("truncated calls row"));
+            memcpy(&call.row, response->data + at, sizeof(CallsRow));
+            at += sizeof(CallsRow);
+            if (call.row.size > MaxCallsBlock || response->length - at < call.row.size || call.row.sequence <= previous)
+                return std::unexpected(BadResponse("invalid calls row"));
+            call.block.assign(response->data + at, response->data + at + call.row.size);
+            at += call.row.size;
+            previous = call.row.sequence;
+            result.calls.push_back(std::move(call));
+        }
+        if (response->detail != previous) return std::unexpected(BadResponse("calls cursor mismatch"));
+        const bool more = response->detail != result.last && response->detail < state->written;
+        result.last = response->detail;
+        if (!more) return result;
+    }
+}
+
+Result<CallsState> CallsStop(Client& client, uint64_t slot) {
+    Request request{};
+    request.op = op::CallsStop;
+    request.args[0] = slot;
+    auto response = client.Send(request);
+    if (!response) return std::unexpected(response.error());
+    if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+    return StateFrom(*response);
+}
 }

@@ -13,6 +13,15 @@ behaviour lives in the [command pages](INDEX.md#commands),
   `search --background`, allowed only by `Host::backgroundSearch`: a single
   worker thread that reads memory (no engine calls) while the host tick
   only polls.
+- **One opt-in data hook: the call recorder.** The Unreal pack's
+  `calls-start` swaps one `UFunction`'s native pointer (heap data) for a
+  fixed thunk that records and forwards each call, and puts it back with a
+  compare-and-swap; a pointer something else replaced since is left alone
+  and the thunk keeps forwarding. Code, vtables and imports are never
+  written. A host opts in by listing the ops; each recording is a write
+  the host approves. Taken because "what did the game pass to this
+  function" has no read-only route, a watch sees only state, and the swap
+  touches nothing the engine does not itself rewrite.
 - **Extensible by static tables, not plugins:** agent handlers and CLI verbs
   are constant arrays; op ranges separate core, packs and games.
 - **One command layer:** the console. It sits on the C++ client API,
@@ -224,7 +233,7 @@ borrowed from the tool that already does it:
 |---|---|---|
 | What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch` for the tick a value changes on, a trial write or `pin` to tell a value recomputed every tick from one set once, and `func --script` or `refs` for Blueprint readers |
 | Narrowing scans over the whole process, pointer scans | a memory scanner | large, and needs no tick or identity. A bounded one over one range (`mem-snap`, `mem-diff`, up to 1 MiB) is built: an AI agent cannot drive the scanner's window, and the range is usually an object it already found |
-| Function tracing and hooking | a dynamic instrumentation tool | hooks in the target; the core never hooks |
+| Tracing native code, direct C++ calls, code hooks | a dynamic instrumentation tool | code patches in the target; the core writes none. Reflected calls are covered by the call recorder (`calls-start`), one `UFunction` pointer |
 | What is at one address, what points at it, whether a signature holds there | nothing: the [fast lane](#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |
 | Call graphs, whole-function logic, decompiling, types, naming | a static analysis tool | it has the whole image, names and types |
 
@@ -540,8 +549,9 @@ answers what a native object is from live bytes, without a type system.
   crash the target) waits for a live case a read cannot replace, or an
   outside program on a game with no engine pack
   ([backlog](ideas.md#17--call-native-caution)); a host will enable it only where engine
-  calls are safe, and approval stays the host's rule. Out for good: hooks,
-  tracing and breakpoints; calling by symbol name (shipping images have
+  calls are safe, and approval stays the host's rule. Out for good: code
+  hooks, native tracing and breakpoints (the call recorder swaps a
+  `UFunction` pointer, never code); calling by symbol name (shipping images have
   none); floating-point arguments and callbacks until a case needs them.
 - **`rtti`: class names where the image has them.** Declined while the
   one host checked (an engine game) had none for its game classes; built

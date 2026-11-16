@@ -5,7 +5,8 @@
 #include <span>
 #include "reagentlive/core/protocol.h"
 
-// The agent never hooks and never starts threads: the host calls Tick() from a
+// The core never hooks and never starts threads (the Unreal pack's call
+// recorder, an op a host opts into, swaps one UFunction pointer, never code): the host calls Tick() from a
 // thread it trusts (for engines, usually the game thread). Constant-initialised
 // state and fixed buffers only, so it works in mapped images without static TLS
 // or dynamic initialisation.

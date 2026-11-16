@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label, Stats, Layout,
-    Rtti, MemSnap, MemDiff, Trace };
+    Rtti, MemSnap, MemDiff, Trace, Calls };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -95,6 +95,11 @@ struct Command {
     uint8_t traceChannel = 0;
     bool traceSimple = false;
     Ref traceIgnore{};
+    // calls-start, calls-read, calls-stop: `target` is "start", "read" or
+    // "stop"; the recording's slot (ue::CallsLatest: the last started) and
+    // calls-read's cursor; calls-start's request carries the object, the
+    // function, the milliseconds (args[0]) and the object filter (args[1]).
+    uint64_t callsSlot = 0, callsAfter = 0;
 };
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).

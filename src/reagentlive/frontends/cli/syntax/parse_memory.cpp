@@ -456,4 +456,5 @@ Parsed WatchStop(const Args& args, const ParseContext&) {
     command.all = args.Has("--all");
     return command;
 }
+uint64_t DurationMilliseconds(std::string_view text) { return Milliseconds(text); }
 }

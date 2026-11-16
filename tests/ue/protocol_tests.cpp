@@ -472,6 +472,47 @@ TEST_CASE("set headers are checked before any element read") {
     CHECK(ue::SparseHeaderValid(bad));
 }
 
+TEST_CASE("the call recorder's requests are bounded") {
+    Request request{};
+    request.op = ue::op::CallsStart;
+    request.address = 0x1000;
+    CopyText(request.text, "Owner:Function");
+    request.args[0] = 0x0000000700000005; // The ref's index and serial.
+    request.args[1] = 1000;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.length = 8; // An object filter.
+    CHECK(ue::Check(request) == Status::Ok);
+    request.length = 4;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.length = 0;
+    request.flags = ue::CallsDry;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.flags = 2;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.flags = 0;
+    request.args[1] = 0;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.args[1] = ue::MaxCallsMilliseconds + 1;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.args[1] = ue::MaxCallsMilliseconds;
+    request.address = 0;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request = {};
+    request.op = ue::op::CallsRead;
+    request.args[0] = ue::CallsLatest;
+    request.args[1] = 12345;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.args[0] = ue::CallsLatest + 1;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request = {};
+    request.op = ue::op::CallsStop;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.address = 0x1000;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    // A full row fits a reply beside the state, so every row can be read.
+    CHECK(sizeof(ue::CallsState) + sizeof(ue::CallsRow) + ue::MaxCallsBlock <= MaxRead);
+}
+
 TEST_CASE("exec entries take only a row cursor") {
     Request request{};
     request.op = ue::op::ExecEntries;
