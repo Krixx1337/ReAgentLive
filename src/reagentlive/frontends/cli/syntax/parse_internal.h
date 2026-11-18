@@ -1,5 +1,5 @@
 // reagentlive CLI: one parser per verb, named in the verb table's rows
-// (results/verbs.h, results/ue/verbs_ue.h). Each turns a line's sorted
+// (results/verbs.h, packs/ue/cli/results/verbs_ue.h). Each turns a line's sorted
 // arguments into a Command; an empty error means "show the usage line".
 #pragma once
 #include <span>
@@ -45,7 +45,7 @@ Parsed SigCheck(const Args& args, const ParseContext& context);
 Parsed SigFile(const Args& args, const ParseContext& context);
 Parsed SigBytes(const Args& args, const ParseContext& context);
 
-// Unreal pack (ue/parse_unreal.cpp).
+// Unreal pack (packs/ue/cli/syntax/parse_unreal.cpp).
 Parsed Find(const Args& args, const ParseContext& context);
 Parsed Call(const Args& args, const ParseContext& context);
 Parsed CallPure(const Args& args, const ParseContext& context);

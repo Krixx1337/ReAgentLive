@@ -1,9 +1,9 @@
 // reagentlive request bounds (core and Unreal pack), detail packing, page sizes and
 // the name-pool walk. No CLI headers: the pack is checked without the console.
 #include "reagentlive/core/protocol.h"
-#include "reagentlive/ue/agent_ue.h"
-#include "reagentlive/ue/name_pool.h"
-#include "reagentlive/ue/protocol_ue.h"
+#include "reagentlive/packs/ue/agent_ue.h"
+#include "reagentlive/packs/ue/name_pool.h"
+#include "reagentlive/packs/ue/protocol_ue.h"
 #include "doctest.h"
 #include <algorithm>
 #include <cstring>

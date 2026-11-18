@@ -2,7 +2,7 @@
 // takes (positionals and flags) and returns (a result type); parsing, help,
 // the docs table and the Python client's strictness all read it. Rows are
 // plain data in constant lists: the core's in results/verbs.h, the Unreal
-// pack's in results/ue/verbs_ue.h, a host's own in ConsoleConfig::verbs.
+// pack's in packs/ue/cli/results/verbs_ue.h, a host's own in ConsoleConfig::verbs.
 // No JSON here; results/schema.h builds types from C++ structs.
 #pragma once
 #include <algorithm>

@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 #include "reagentlive/frontends/cli/results/docs.h"
-#include "reagentlive/frontends/cli/results/ue/verbs_ue.h"
+#include "reagentlive/packs/ue/cli/results/verbs_ue.h"
 #include "reagentlive/frontends/cli/results/verbs.h"
 
 int main(int argc, char** argv) {

@@ -2,14 +2,14 @@
 // values their builders give and the verb table that names them. Builders take
 // canned client results, so no agent or object table is needed. Every result
 // built here is also checked against its own described type.
-#include "reagentlive/frontends/cli/results/ue/call_text.h"
-#include "reagentlive/frontends/cli/results/ue/census.h"
-#include "reagentlive/frontends/cli/results/ue/layout.h"
+#include "reagentlive/packs/ue/cli/results/call_text.h"
+#include "reagentlive/packs/ue/cli/results/census.h"
+#include "reagentlive/packs/ue/cli/results/layout.h"
 #include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
-#include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
-#include "reagentlive/frontends/cli/values/ue/pack_input.h"
-#include "reagentlive/frontends/cli/values/ue/watch_field.h"
+#include "reagentlive/packs/ue/cli/results/result_json_ue.h"
+#include "reagentlive/packs/ue/cli/values/pack_input.h"
+#include "reagentlive/packs/ue/cli/values/watch_field.h"
 #include "doctest.h"
 #include "verbs.h"
 #include <set>

@@ -103,8 +103,8 @@ release, or ReAgentLive wanted in a second Unreal game.
 
 ### 21 · Other engine packs (Unity, Source 2)
 
-The core is engine-agnostic; engine knowledge lives in a pack (op range
-256-4095, its own agent handlers and client calls), as the Unreal pack
+The core is engine-agnostic; engine knowledge lives in a pack (its own op
+slot in 256-4095, its own agent handlers and client calls), as the Unreal pack
 does. Natural candidates: Unity (Mono and IL2CPP) and Source 2, each with
 its own object and type system to walk. Build one only for a real project
 in that engine ([design](design.md#not-now)); no pack is promised.

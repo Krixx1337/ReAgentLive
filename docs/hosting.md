@@ -33,7 +33,7 @@ reagentlive -c "status; modules; region <module>+0x1000"
   host on the engine's thread. The console refuses them with a message
   saying the host has no Unreal pack. `status` says `host_thread: own` and
   `packs: []`; reads can be torn and a write can race the game. Configure
-  with `-DREAGENTLIVE_CONSOLE_UE=OFF` for a console (and tools) without the
+  with `-DREAGENTLIVE_PACKS=` for a console (and tools) without the
   pack's verbs.
 - Its own section prefix keeps it apart from another host's agent in the
   same process. It is never unloaded. It is a starting point for a real
@@ -97,7 +97,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | Option or variable | Default | Effect |
 |---|---|---|
 | `REAGENTLIVE_CONSOLE` | `ON` | Defines `reagentlive::console`, which needs nlohmann/json and Zydis. Off: an agent-only host configures with no downloads |
-| `REAGENTLIVE_CONSOLE_UE` | `ON` | Compiles the Unreal pack into the console and `reagentlive::cli`. Off: the console's verb table, and so `help`, the generated functions and the MCP tools, hold core and host rows only; core verbs that need a pack (`trial`) are left out, an object-relative pin or watch is refused, `peek` names no objects. For a target that is not Unreal |
+| `REAGENTLIVE_PACKS` | `ue` | The engine packs to define, by folder under `src/reagentlive/packs/`; each defines its targets, and the console and `reagentlive::cli` carry the listed one (one at most: configure fails on two, or on an unknown id). Empty: no pack targets, and the console's verb table, and so `help`, the generated functions and the MCP tools, hold core and host rows only; core verbs that need a pack (`trial`) are left out, an object-relative pin or watch is refused, `peek` names no objects. For a target that is not Unreal |
 | `REAGENTLIVE_BUILD_TESTS` | on when top-level | Builds the library's tests (label `reagentlive`); needs the console with the pack (they build the pack-less one beside it) |
 | `REAGENTLIVE_HOST_SOURCES` | empty | The host's files that include the console; the layout test checks them |
 | `REAGENTLIVE_FORBIDDEN_NAMES` | empty | Words the docs test refuses anywhere in the library (a host's and its game's names) |
@@ -108,7 +108,8 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
   `Zydis` target is used as is; otherwise Zydis v4.1.1 is fetched and
   built static. Nothing touches the parent's cache.
 - **Includes:** only `src/` is on the include path, as
-  `"reagentlive/<layer>/<file>.h"`, whatever the folder is called. The
+  `"reagentlive/<layer>/<file>.h"` and a pack's as
+  `"reagentlive/packs/<id>/<file>.h"`, whatever the folder is called. The
   `reagentlive.consumer` test builds an agent-only host this way.
 - **Not supported:** `install()` and `find_package(reagentlive)`. The targets
   carry their sources so each consumer compiles them with its own flags
@@ -121,11 +122,11 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | Target | Carries |
 |---|---|
 | `reagentlive::core` | `core/agent.cpp`, include root, C++23 |
-| `reagentlive::ue` | `ue/agent_ue*.cpp`, links `core`; the consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
+| `reagentlive::ue` | `packs/ue/agent_ue*.cpp` (defined with `ue` in `REAGENTLIVE_PACKS`, as is `ue-client`), links `core`; the consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
 | `reagentlive::client` | `core/client.cpp` |
-| `reagentlive::ue-client` | `ue/client_ue.cpp`, links `client`; no SDK needed |
+| `reagentlive::ue-client` | `packs/ue/client_ue.cpp`, links `client`; no SDK needed |
 | `reagentlive::cli` | `frontends/cli/syntax/`: the parser, without nlohmann/json |
-| `reagentlive::console` | `frontends/cli/console/*.cpp` with `console/ue/` (or `console/no_pack.cpp` with `REAGENTLIVE_CONSOLE_UE` off), links `ue-client` (or `client`), `cli`, nlohmann/json and the Zydis decoder (console only: a configure check fails if an agent target in `REAGENTLIVE_AGENT_TARGETS` links it; hosts add theirs) |
+| `reagentlive::console` | `frontends/cli/console/*.cpp` with `packs/ue/cli/console/` (or `console/no_pack.cpp` with `REAGENTLIVE_PACKS` empty), links `ue-client` (or `client`), `cli`, nlohmann/json and the Zydis decoder (console only: a configure check fails if an agent target in `REAGENTLIVE_AGENT_TARGETS` links it; hosts add theirs) |
 
 All targets are INTERFACE libraries that carry their sources, so each consumer
 compiles them with its own flags. Injected images often need special ones
@@ -140,7 +141,7 @@ A host's console includes only `frontends/cli/console/console.h` and
 
 ```cpp
 #include "reagentlive/core/agent.h"
-#include "reagentlive/ue/agent_ue.h"
+#include "reagentlive/packs/ue/agent_ue.h"
 
 constexpr reagentlive::Command Commands[] = {
     {reagentlive::op::Read, "read", &reagentlive::Read},

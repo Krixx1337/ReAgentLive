@@ -4,7 +4,7 @@ ReAgentLive is an in-process agent for live game memory and runtime
 inspection on Windows x64. A host inside the target calls its `Tick`; a
 client outside (console, Python, C++) sends it requests over shared memory.
 Start here: find your task, read that page, follow its links. Code paths
-in the docs (`core/`, `ue/`, `frontends/`) are under `src/reagentlive/`.
+in the docs (`core/`, `packs/ue/`, `frontends/`) are under `src/reagentlive/`.
 
 ## By task
 

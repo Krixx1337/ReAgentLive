@@ -52,7 +52,7 @@ cd <dir>
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
 Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
-cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_CONSOLE_UE=OFF
+cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_PACKS=
 cmake --build build/own-thread
 ```
 
@@ -61,7 +61,7 @@ environment does not carry over to a new shell. The build writes
 `build/own-thread/reagentlive.exe` and
 `build/own-thread/reagentlive-own-thread.dll`.
 
-`REAGENTLIVE_CONSOLE_UE=OFF` leaves out the Unreal pack's tools. The
+`REAGENTLIVE_PACKS` empty leaves out the Unreal pack's tools. The
 own-thread host cannot run them, and leaving them out keeps the tool list
 small. Unreal support needs a host built into the user's own mod
 ([hosting](hosting.md)).

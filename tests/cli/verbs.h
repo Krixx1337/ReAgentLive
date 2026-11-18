@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 #include "doctest.h"
-#include "reagentlive/frontends/cli/results/ue/verbs_ue.h"
+#include "reagentlive/packs/ue/cli/results/verbs_ue.h"
 #include "reagentlive/frontends/cli/results/verbs.h"
 
 inline const std::vector<reagentlive::cli::Verb>& AllVerbs() {

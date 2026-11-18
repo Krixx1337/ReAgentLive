@@ -18,7 +18,7 @@ result), so type safety belongs in the scripting layer and discovery in
 the console.
 
 - **The console executable is the source of truth.** One C++ verb table
-  (`syntax/verb.h`; rows in `results/verbs.h` and `results/ue/verbs_ue.h`)
+  (`syntax/verb.h`; rows in `results/verbs.h` and `packs/ue/cli/results/verbs_ue.h`)
   describes each command's positionals, flags and result type. Parsing,
   usage errors, `help`, `help <verb>`, `help --json`, the generated
   [result shapes](commands/results.md) page and the Python client's
@@ -200,7 +200,7 @@ defines what the table did not.
 | A null argument refused | clients send null for a left-out argument; the adapter drops nulls and checks the rest against the row's schema itself |
 - **The generator and the adapter name no pack**; the layout test checks
   that they never spell a pack's id, that no core console file does, and
-  that nothing in `core/` includes `ue/`.
+  that nothing in `core/` includes `packs/`.
 - **The SDK's low-level server** (`mcp.server.lowlevel.Server`): a list
   handler that reads the live table and a call handler, nothing private.
   The adapter returns the console's result as it is, as text and as

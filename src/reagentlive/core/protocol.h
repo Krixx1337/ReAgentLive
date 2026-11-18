@@ -18,9 +18,13 @@ constexpr size_t MaxText = 128;
 constexpr size_t MaxReason = 64;
 constexpr size_t MaxOps = 64;
 
-// Op ranges: core 1-255, engine packs 256-4095, games 4096 and up.
+// Op ranges: core 1-255, engine packs 256-4095, games 4096 and up. Each pack
+// owns one slot of PackSlotSize ops, PackSlot(n) up to PackSlot(n + 1); the
+// slots are listed in docs/protocol.md#ops.
 namespace op {
 constexpr uint32_t CoreFirst = 1, PackFirst = 256, GameFirst = 4096;
+constexpr uint32_t PackSlotSize = 256, PackSlots = (GameFirst - PackFirst) / PackSlotSize;
+constexpr uint32_t PackSlot(uint32_t slot) { return PackFirst + slot * PackSlotSize; }
 constexpr uint32_t Read = 1, Write = 2, Modules = 3, ReadBatch = 4, Search = 5, Pin = 6, Watch = 7, Trial = 8, Xrefs = 9, Region = 10;
 }
 

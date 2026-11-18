@@ -15,7 +15,7 @@
 // every injection), so a restarted game that reuses the pid or a re-injected
 // agent never matches. It holds what costs round trips to rebuild: the loaded
 // modules and their headers, the last $N list, and a block per engine pack
-// (state/ue/cache_ue.h) that the core keeps without reading it. Refs carry
+// (packs/ue/cli/state/cache_ue.h) that the core keeps without reading it. Refs carry
 // index and serial, so the agent refuses stale ones. It also names the usage
 // log's session (state/usage.h), which one-shot runs share.
 namespace reagentlive::cli {

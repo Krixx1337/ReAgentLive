@@ -1,7 +1,7 @@
 // reagentlive CLI console: what the core console asks of an engine pack. The
-// core files reach the pack only through these; console/ue/pack.cpp
+// core files reach the pack only through these; packs/ue/cli/console/pack.cpp
 // implements them for the Unreal pack, console/no_pack.cpp for a console
-// built without one (REAGENTLIVE_CONSOLE_UE off). With one pack they are
+// built without one (REAGENTLIVE_PACKS empty). With one pack they are
 // plain functions; a second pack would turn them into a table (docs/design.md).
 // A pack's verbs are rows of the verb table like the core's (PackVerbs).
 #pragma once

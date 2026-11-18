@@ -1,12 +1,12 @@
 // reagentlive CLI state files: readable names files and the console cache file.
 #include "reagentlive/frontends/cli/state/cache.h"
-#include "reagentlive/frontends/cli/state/ue/cache_ue.h"
+#include "reagentlive/packs/ue/cli/state/cache_ue.h"
 #include "reagentlive/frontends/cli/state/mem_snapshot.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/frontends/cli/state/usage.h"
-#include "reagentlive/frontends/cli/state/ue/native_names.h"
+#include "reagentlive/packs/ue/cli/state/native_names.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
-#include "reagentlive/frontends/cli/results/ue/result_json_ue.h"
+#include "reagentlive/packs/ue/cli/results/result_json_ue.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>

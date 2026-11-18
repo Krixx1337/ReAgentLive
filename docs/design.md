@@ -291,9 +291,11 @@ core/              no engine, no game, no UI
   protocol.h       wire layout, op ranges, statuses                 exists
   agent.h/.cpp     Tick, dispatch, core handlers, the agent's end of the section
   client.h/.cpp    C++ API: attach, read, write, modules, Send; the client's end
-ue/                Unreal over a Dumper-7 SDK
-  protocol_ue.h, agent_ue.h/.cpp
-  client_ue.h/.cpp Find, Fields (paging hidden), Call
+packs/<id>/        one engine pack each, with its pack.cmake
+  ue/              Unreal over a Dumper-7 SDK
+    protocol_ue.h, agent_ue.h/.cpp
+    client_ue.h/.cpp Find, Fields (paging hidden), Call
+    cli/<layer>/   the pack's part of each CLI layer
 frontends/
   cli/             syntax, formatting, the console on the client API
   python/, mcp/    on the console's JSON calls
@@ -576,8 +578,10 @@ The layout itself and its rules are in
   logic and console). Commands cross areas (`dump` uses value formatting,
   state files and results), and the two CMake targets and the no-JSON rule
   would be split across every folder.
-- **The pack's part of each layer is its `ue/` folder**, and nothing
-  outside one names the pack. A reader sees at a glance what works in any
+- **Each pack is one folder, `packs/<id>/`**: its agent and client files,
+  its `pack.cmake` (targets and CLI source lists) and `cli/<layer>/`, its
+  part of each layer under that layer's rule. Nothing outside it names
+  the pack, and no pack includes another. A reader sees at a glance what works in any
   process, and a core change cannot lean on Unreal types by accident: the
   layout test fails. Object identity (`Ref`) is core, since `$N`, pins and
   watches carry it whatever the engine.
@@ -585,8 +589,8 @@ The layout itself and its rules are in
   its state, cache block, its rows of the [verb table](tool-interface.md#self-describing-console),
   `status` line, its commands, and what core commands borrow. With one pack
   they need no interface.
-- **A console without the pack is a build of it** (`REAGENTLIVE_CONSOLE_UE`
-  off, [hosting](hosting.md#using-it-in-your-project)). `console/no_pack.cpp` answers the seams
+- **A console without the pack is a build of it** (`REAGENTLIVE_PACKS`
+  empty, [hosting](hosting.md#using-it-in-your-project)). `console/no_pack.cpp` answers the seams
   for "no pack" (no rows, no state, no cache block, nothing offered); the
   core files take no `#if`. Its table holds core and host rows only, less
   the core rows marked `needsPack`, and `help`, the generated functions and
@@ -606,9 +610,22 @@ The layout itself and its rules are in
   each registering verbs, help and hooks). Designed around one pack it would
   guess the shape a second one needs; the seams list exactly what that
   table must hold, so a second pack (Unity, Source 2) turns them into one.
-- **Rejected:** one `frontends/cli/ue/` tree beside the layers. The layer
-  rules (no JSON in syntax, no I/O outside console) would need restating
-  for it, and the pack's syntax would join the JSON-carrying target.
+- **Adding a pack is mechanical; supporting several in one console is not
+  built.** A new folder, its `pack.cmake`, the next op slot
+  ([protocol](protocol.md#ops)) and an entry in `REAGENTLIVE_PACKS`
+  give its targets. A console still carries one pack: configure fails on
+  two. The second pack turns the `console/pack.h` seams into a table of
+  packs and moves Unreal-shaped fields out of core types (the parsed
+  command's class name); both wait for it, for the reason above.
+- **Rejected:** the pack's part as a `ue/` folder in each layer (the
+  earlier layout): a pack spread over six folders has no single home, and
+  a second pack would double the spread. The layer rules hold in
+  `packs/<id>/cli/<layer>/` because the layout test applies them by layer
+  name, and the pack's syntax still joins `reagentlive::cli` without JSON.
+- **Rejected:** `add_subdirectory` per pack (its variables, the CLI
+  source lists the tests build from, would stay in the pack's scope; the
+  root `include`s `pack.cmake`), and renaming the pack `unreal` (the
+  namespace, targets and `status` id are `ue`; one name everywhere).
 
 ## Not now
 

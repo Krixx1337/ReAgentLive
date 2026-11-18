@@ -12,7 +12,7 @@
 #include <cstring>
 #include <string>
 #include "reagentlive/core/client.h"
-#include "reagentlive/ue/protocol_ue.h"
+#include "reagentlive/packs/ue/protocol_ue.h"
 #include "doctest.h"
 
 using namespace reagentlive;

@@ -14,7 +14,7 @@ refuses a mismatched pair ([handshake](protocol.md#handshake)).
 
 ```cpp
 #include "reagentlive/core/client.h"
-#include "reagentlive/ue/client_ue.h"
+#include "reagentlive/packs/ue/client_ue.h"
 
 auto client = reagentlive::Client::Attach(L"Local\mygame-dev-1234", reagentlive::LayoutCore + reagentlive::ue::LayoutPart);
 if (!client) return report(client.error().message);

@@ -1,7 +1,7 @@
 # Protocol
 
 The wire format between the agent (inside the target process) and a client.
-Definitions: `core/protocol.h`, Unreal additions `ue/protocol_ue.h`.
+Definitions: `core/protocol.h`, Unreal additions `packs/ue/protocol_ue.h`.
 
 ## Section
 
@@ -73,6 +73,14 @@ agent has, so frontends can refuse the rest locally.
 | 1-255 | core |
 | 256-4095 | engine packs |
 | 4096 and up | games (the host's own ops) |
+
+Each pack owns one slot of 256 ops (`op::PackSlot(n)`, 15 slots), so packs
+never collide in one host; a pack's protocol header asserts its last op
+stays inside its slot.
+
+| Slot | Ops | Pack |
+|---|---|---|
+| 0 | 256-511 | Unreal (`ue`) |
 
 | Op | Value | Defined in |
 |---|---|---|

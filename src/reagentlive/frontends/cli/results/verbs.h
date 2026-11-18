@@ -2,7 +2,7 @@
 // verb takes and returns. Parsing, `help`, `help --json`, the generated
 // docs/commands/results.md and the Python client's strict results all read
 // these rows, and a JSON call's arguments are read by them (CallArgs). The
-// Unreal pack's rows are in results/ue/verbs_ue.h.
+// Unreal pack's rows are in packs/ue/cli/results/verbs_ue.h.
 #pragma once
 #include <algorithm>
 #include <expected>

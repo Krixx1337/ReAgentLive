@@ -1,5 +1,5 @@
 // reagentlive CLI console: declarations the console's core files share.
-// Internal; frontends use console.h. The Unreal pack's are in ue/internal_ue.h,
+// Internal; frontends use console.h. The Unreal pack's are in packs/ue/cli/console/internal_ue.h,
 // and what the core asks of a pack is in pack.h.
 #pragma once
 #include <algorithm>
@@ -54,7 +54,7 @@ struct LineUsage {
     std::string refused;
 };
 
-// The engine pack's state for one console run (ue/internal_ue.h).
+// The engine pack's state for one console run (packs/ue/cli/console/internal_ue.h).
 struct PackState;
 
 // Everything one console run keeps between commands.

@@ -7,19 +7,20 @@
 #
 #   In the target process:
 #   reagentlive::core       protocol, agent (read/write/base, tick, dispatch)
-#   reagentlive::ue         Unreal pack (find/fields/call); the consumer must provide
-#                       its Dumper-7 SDK on the include path as SDK/...
+#   reagentlive::ue         Unreal pack's agent side (src/reagentlive/packs/ue/pack.cmake)
 #   In clients:
 #   reagentlive::client     C++ client API (attach, read, write, base, raw Send)
-#   reagentlive::ue-client  Unreal client calls (Find, Fields, Call); no SDK needed
+#   reagentlive::ue-client  Unreal pack's client calls
 #   reagentlive::cli        console syntax (frontends/cli/syntax/), no JSON
 #   reagentlive::console    interactive console over the client API
 #                       (frontends/cli/console/ and the pure headers); links the
 #                       x64 decoder (Zydis) for disasm and sig. No agent
 #                       target may link it: a configure check fails if one does.
-#                       REAGENTLIVE_CONSOLE_UE off leaves the Unreal pack out.
+#                       It carries the one pack REAGENTLIVE_PACKS names, or none.
 #
-# Headers are included as "reagentlive/<layer>/<file>.h".
+# Engine packs live in src/reagentlive/packs/<id>/, each with a pack.cmake
+# that defines its targets. Headers are included as
+# "reagentlive/<layer>/<file>.h" and "reagentlive/packs/<id>/<file>.h".
 cmake_minimum_required(VERSION 3.25)
 # The version is written once, in src/reagentlive/version.h.
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/src/reagentlive/version.h" reagentlive_version_lines
@@ -45,15 +46,16 @@ option(REAGENTLIVE_BUILD_TESTS "Build reagentlive's tests" ${PROJECT_IS_TOP_LEVE
 # configure unless the parent project already provides them. A host that
 # links only the agent turns this off and downloads nothing.
 option(REAGENTLIVE_CONSOLE "Define the console targets (reagentlive::console, ::cli needs nothing)" ON)
-# The Unreal pack in the console: off, the console compiles none of the
-# pack's files and its verb table (help, the generated functions, the MCP
-# tools) holds core and host rows only. For a target that is not Unreal.
-option(REAGENTLIVE_CONSOLE_UE "Compile the Unreal pack into the console and the CLI syntax" ON)
+# The engine packs to define, by folder name under src/reagentlive/packs/.
+# The console and the CLI syntax carry the one listed pack; empty, they
+# compile no pack file and the verb table (help, the generated functions, the
+# MCP tools) holds core and host rows only. For a target that is not Unreal.
+set(REAGENTLIVE_PACKS "ue" CACHE STRING "Engine packs to define (folders under src/reagentlive/packs/); empty for none")
 if(REAGENTLIVE_BUILD_TESTS AND NOT REAGENTLIVE_CONSOLE)
     message(FATAL_ERROR "reagentlive: REAGENTLIVE_BUILD_TESTS needs REAGENTLIVE_CONSOLE.")
 endif()
-if(REAGENTLIVE_BUILD_TESTS AND NOT REAGENTLIVE_CONSOLE_UE)
-    message(FATAL_ERROR "reagentlive: REAGENTLIVE_BUILD_TESTS needs REAGENTLIVE_CONSOLE_UE (the tests build both consoles).")
+if(REAGENTLIVE_BUILD_TESTS AND NOT "ue" IN_LIST REAGENTLIVE_PACKS)
+    message(FATAL_ERROR "reagentlive: REAGENTLIVE_BUILD_TESTS needs ue in REAGENTLIVE_PACKS (the tests build both consoles).")
 endif()
 
 # Only src/ is on the include path: headers are "reagentlive/<layer>/<file>.h",
@@ -66,15 +68,6 @@ target_sources(reagentlive-core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reage
 target_include_directories(reagentlive-core INTERFACE "${reagentlive_include_root}")
 target_compile_features(reagentlive-core INTERFACE cxx_std_23)
 
-add_library(reagentlive-ue INTERFACE)
-add_library(reagentlive::ue ALIAS reagentlive-ue)
-target_sources(reagentlive-ue INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_reflect.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_scan.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_script.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_calls.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/agent_ue_globals.cpp")
-target_link_libraries(reagentlive-ue INTERFACE reagentlive-core)
-
 add_library(reagentlive-client INTERFACE)
 add_library(reagentlive::client ALIAS reagentlive-client)
 target_sources(reagentlive-client INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/client.cpp")
@@ -82,33 +75,43 @@ target_include_directories(reagentlive-client INTERFACE "${reagentlive_include_r
 target_compile_features(reagentlive-client INTERFACE cxx_std_23)
 target_link_libraries(reagentlive-client INTERFACE winmm) # timeBeginPeriod: 1 ms waits.
 
-add_library(reagentlive-ue-client INTERFACE)
-add_library(reagentlive::ue-client ALIAS reagentlive-ue-client)
-target_sources(reagentlive-ue-client INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/ue/client_ue.cpp")
-target_link_libraries(reagentlive-ue-client INTERFACE reagentlive-client)
+# The packs. Each pack.cmake defines its targets and sets its CLI parts:
+# reagentlive_pack_syntax_sources, reagentlive_pack_console_sources and
+# reagentlive_pack_console_link. One console carries one pack until
+# console/pack.h becomes a table of packs (docs/design.md#source-layout).
+set(reagentlive_packs_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/packs")
+set(reagentlive_packs_seen)
+foreach(pack IN LISTS REAGENTLIVE_PACKS)
+    if(pack IN_LIST reagentlive_packs_seen)
+        message(FATAL_ERROR "reagentlive: REAGENTLIVE_PACKS lists ${pack} twice.")
+    endif()
+    if(NOT EXISTS "${reagentlive_packs_dir}/${pack}/pack.cmake")
+        message(FATAL_ERROR "reagentlive: no engine pack ${pack} (no src/reagentlive/packs/${pack}/pack.cmake).")
+    endif()
+    list(APPEND reagentlive_packs_seen ${pack})
+    include("${reagentlive_packs_dir}/${pack}/pack.cmake")
+endforeach()
+list(LENGTH REAGENTLIVE_PACKS reagentlive_pack_count)
+if(reagentlive_pack_count GREATER 1)
+    message(FATAL_ERROR "reagentlive: REAGENTLIVE_PACKS names ${reagentlive_pack_count} packs; one console carries one pack until console/pack.h becomes a table (docs/design.md#source-layout).")
+endif()
 
 add_library(reagentlive-cli INTERFACE)
 add_library(reagentlive::cli ALIAS reagentlive-cli)
 target_include_directories(reagentlive-cli INTERFACE "${reagentlive_include_root}")
 target_compile_features(reagentlive-cli INTERFACE cxx_std_23)
-# Each part of the CLI as a core list and an Unreal pack list.
+# Each part of the CLI as a core list; the pack's lists come from its pack.cmake.
 set(reagentlive_cli_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli")
 set(reagentlive_syntax_sources "${reagentlive_cli_dir}/syntax/parse.cpp"
     "${reagentlive_cli_dir}/syntax/parse_memory.cpp" "${reagentlive_cli_dir}/syntax/parse_code.cpp")
-set(reagentlive_syntax_ue_sources "${reagentlive_cli_dir}/syntax/ue/parse_unreal.cpp")
 set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
     "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp"
     "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp"
     "${reagentlive_cli_dir}/console/snapshot.cpp")
-set(reagentlive_console_ue_sources "${reagentlive_cli_dir}/console/ue/pack.cpp" "${reagentlive_cli_dir}/console/ue/dump.cpp"
-    "${reagentlive_cli_dir}/console/ue/capture.cpp" "${reagentlive_cli_dir}/console/ue/calls.cpp"
-    "${reagentlive_cli_dir}/console/ue/trace.cpp" "${reagentlive_cli_dir}/console/ue/recorder.cpp"
-    "${reagentlive_cli_dir}/console/ue/query.cpp" "${reagentlive_cli_dir}/console/ue/labels.cpp"
-    "${reagentlive_cli_dir}/console/ue/members.cpp" "${reagentlive_cli_dir}/console/ue/layout.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")
 target_sources(reagentlive-cli INTERFACE ${reagentlive_syntax_sources})
-if(REAGENTLIVE_CONSOLE_UE)
-    target_sources(reagentlive-cli INTERFACE ${reagentlive_syntax_ue_sources})
+if(reagentlive_pack_count EQUAL 1)
+    target_sources(reagentlive-cli INTERFACE ${reagentlive_pack_syntax_sources})
 endif()
 
 if(REAGENTLIVE_CONSOLE)
@@ -141,9 +144,9 @@ if(REAGENTLIVE_CONSOLE)
             GIT_TAG a2278f1d254e492f6a6b39f6cb5d1f5d515659dc) # v4.1.1
         FetchContent_MakeAvailable(zydis)
     endif()
-    if(REAGENTLIVE_CONSOLE_UE)
-        target_sources(reagentlive-console INTERFACE ${reagentlive_console_sources} ${reagentlive_console_ue_sources})
-        target_link_libraries(reagentlive-console INTERFACE reagentlive-ue-client)
+    if(reagentlive_pack_count EQUAL 1)
+        target_sources(reagentlive-console INTERFACE ${reagentlive_console_sources} ${reagentlive_pack_console_sources})
+        target_link_libraries(reagentlive-console INTERFACE ${reagentlive_pack_console_link})
     else()
         target_sources(reagentlive-console INTERFACE ${reagentlive_console_sources} ${reagentlive_console_no_pack_sources})
         target_link_libraries(reagentlive-console INTERFACE reagentlive-client)
@@ -153,7 +156,8 @@ endif()
 
 # The agent never decodes: fail the configure when Zydis reaches an agent
 # target. Hosts add their agent-carrying targets to REAGENTLIVE_AGENT_TARGETS.
-set_property(GLOBAL APPEND PROPERTY REAGENTLIVE_AGENT_TARGETS reagentlive-core reagentlive-ue)
+# Each pack's pack.cmake adds its own agent target.
+set_property(GLOBAL APPEND PROPERTY REAGENTLIVE_AGENT_TARGETS reagentlive-core)
 function(reagentlive_check_no_decoder)
     get_property(targets GLOBAL PROPERTY REAGENTLIVE_AGENT_TARGETS)
     foreach(target IN LISTS targets)

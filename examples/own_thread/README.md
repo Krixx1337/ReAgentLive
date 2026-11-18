@@ -17,11 +17,11 @@ real host. What it can and cannot do, and why:
 From a Visual Studio x64 developer shell, in the ReAgentLive folder:
 
 ```powershell
-cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_CONSOLE_UE=OFF
+cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_PACKS=
 cmake --build build/own-thread
 ```
 
-`-DREAGENTLIVE_CONSOLE_UE=OFF` leaves out the Unreal pack's verbs, which
+`-DREAGENTLIVE_PACKS=` leaves out the Unreal pack's verbs, which
 this host cannot run.
 
 ## Try it

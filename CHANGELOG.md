@@ -7,6 +7,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Engine packs live in `src/reagentlive/packs/<id>/`** ([contributing](docs/contributing.md#source-layout)),
+  breaking for hosts: the Unreal pack's headers are
+  `reagentlive/packs/ue/...` (was `reagentlive/ue/...`) and its CLI parts
+  moved from `frontends/cli/<layer>/ue/` to `packs/ue/cli/<layer>/`. Each
+  pack defines its targets in its `pack.cmake`; `REAGENTLIVE_PACKS`
+  (default `ue`, empty for none) replaces `REAGENTLIVE_CONSOLE_UE`. Each
+  pack owns an op slot of 256 (`op::PackSlot`); the Unreal ops keep their
+  values. Target names (`reagentlive::ue`, `::ue-client`) are unchanged.
 - **MCP tools made from the table's rows** ([clients](docs/client.md#mcp-tools)):
   the adapter runs on the SDK's low-level server and builds each tool's
   input and output schema from its row, with nothing private from the SDK
