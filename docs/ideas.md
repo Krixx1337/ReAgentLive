@@ -180,20 +180,7 @@ No CI runs the tests, and the Unreal agent handlers have no automated
 tests. Shape: a Windows build and `ctest` on every push; a small test
 process with a synthetic object table and name pool so `find`, `fields`,
 `dump` and `each` run end to end; prebuilt console and own-thread
-binaries. Comes before #30.
-
-### 30 · An Unreal pack that needs no SDK
-
-Partly done: `reagentlive::ue-base` reads the table, object header,
-`SuperStruct` and `UStruct::Size` from a layout found at start
-([without an SDK](commands/unreal.md#without-an-sdk)), which gives `find`,
-`describe`, `name`, `name-find`, `census` and object range reads with no
-dump. Open: fields. Finding `Children`, `ChildProperties` and the
-`FField`/`FProperty` offsets the same way (anchored on known CoreUObject
-structs, e.g. `Vector`'s `X`, `Y`, `Z`) would add `fields`, `dump`, `get`
-and `entries`; calls still need a host on the engine's thread
-([outside programs](outside-programs.md)). Needs #18 measured clean and
-#29 for tests.
+binaries.
 
 ### 31 · Finding a function again after a patch
 
@@ -235,3 +222,12 @@ Also renaming result keys so they can be guessed: the keys are documented
 and the Python client hides them; a rename moves the problem.
 Also reloading the host without restarting the game: the image stays loaded
 by the host's rule, not a ReAgentLive matter.
+Also fields without an SDK (was #30): `reagentlive::ue-base` stays the
+lookup tier ([without an SDK](commands/unreal.md#without-an-sdk)): `find`,
+`census`, names and raw object reads, enough to tell what a game holds and
+whether it is worth a dump. Fields, containers and calls stay with the SDK.
+Probing `Children`, `ChildProperties` and the `FField`/`FProperty` layout
+(types, inner types, bool masks, enums) is where engines differ most: more
+code to keep right across versions, for what a Dumper-7 dump already gives,
+checked against the engine's own reflection. The lookup tier needs only the
+object header and two class offsets, the engine's most stable parts.
