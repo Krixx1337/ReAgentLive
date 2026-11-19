@@ -1,4 +1,6 @@
-// reagentlive Unreal pack handlers.
+// reagentlive Unreal pack: object lookup (find, describe, raw object reads,
+// names) and the shared helpers with their caches. SDK-free (reagentlive::ue-base):
+// objects are read at the located layout's offsets.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -18,8 +20,7 @@
 #include <vector>
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/name_pool.h"
-#include "SDK/CoreUObject_classes.hpp"
-#include "reagentlive/packs/ue/agent_ue_internal.h"
+#include "reagentlive/packs/ue/agent_ue_base.h"
 
 namespace reagentlive::ue {
 namespace {
@@ -43,9 +44,9 @@ bool g_namesDisabled;
 
 Region g_region;
 
-bool HeaderReadable(const SDK::UObject* object) {
+bool HeaderReadable(const Object* object) {
     const auto address = reinterpret_cast<uintptr_t>(object);
-    constexpr size_t size = sizeof(SDK::UObject);
+    const size_t size = globals::ObjectHeaderBytes(Layout().shape);
     if (address >= g_region.begin && address + size <= g_region.end) return true;
     MEMORY_BASIC_INFORMATION info{};
     if (!VirtualQuery(object, &info, sizeof(info)) || info.State != MEM_COMMIT ||
@@ -103,14 +104,18 @@ bool SameText(std::string_view a, std::string_view b) {
 // headers live outside the objects' allocator regions. Cleared per search.
 std::unordered_map<const void*, bool>* g_classes;
 
-bool ClassChainMatches(const SDK::UStruct* type, std::string_view wanted, std::string& scratch) {
+// Without a known SuperStruct only the exact class matches.
+bool ClassChainMatches(const Object* type, std::string_view wanted, std::string& scratch) {
     MEMORY_BASIC_INFORMATION info{};
-    for (unsigned depth = 0; type && depth < MaxClassDepth; type = type->SuperStruct, ++depth) {
+    const auto& layout = Layout();
+    const size_t bytes = std::max<size_t>(globals::ObjectHeaderBytes(layout.shape),
+                                          layout.superStruct < 0 ? 0 : static_cast<size_t>(layout.superStruct) + sizeof(void*));
+    for (unsigned depth = 0; type && depth < MaxClassDepth; type = SuperOf(type), ++depth) {
         if (!VirtualQuery(type, &info, sizeof(info)) || info.State != MEM_COMMIT ||
             (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
-            reinterpret_cast<uintptr_t>(type) + sizeof(SDK::UStruct) >
+            reinterpret_cast<uintptr_t>(type) + bytes >
                 reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize) return false;
-        if (SameText(BaseName(type->Name.ComparisonIndex, scratch), wanted)) return true;
+        if (SameText(BaseName(ObjectName(type).index, scratch), wanted)) return true;
     }
     return false;
 }
@@ -118,8 +123,8 @@ bool ClassChainMatches(const SDK::UStruct* type, std::string_view wanted, std::s
 
 // Whether the object's class or a parent class is named `wanted`. Headers only:
 // full validation stays for matches.
-bool ClassMatches(const SDK::UObject* object, std::string_view wanted, std::string& scratch) {
-    const SDK::UStruct* type = object->Class;
+bool ClassMatches(const Object* object, std::string_view wanted, std::string& scratch) {
+    const Object* type = ObjectClass(object);
     if (!type) return false;
     if (g_classes) {
         if (const auto found = g_classes->find(type); found != g_classes->end()) return found->second;
@@ -140,20 +145,20 @@ std::string_view ClassArgument(const Request& request) {
     return request.length ? std::string_view(reinterpret_cast<const char*>(request.data)) : std::string_view{};
 }
 
-// Live instances only: class default and archetype objects are templates.
-bool Template(const SDK::UObject* object) {
-    constexpr uint32_t templates = static_cast<uint32_t>(SDK::EObjectFlags::ClassDefaultObject) |
-        static_cast<uint32_t>(SDK::EObjectFlags::ArchetypeObject);
-    return (static_cast<uint32_t>(object->Flags) & templates) != 0;
+// Live instances only: class default (RF_ClassDefaultObject, 0x10) and
+// archetype (RF_ArchetypeObject, 0x20) objects are templates.
+bool Template(const Object* object) {
+    constexpr uint32_t templates = 0x10 | 0x20;
+    return (ObjectFlags(object) & templates) != 0;
 }
 
 // Full name as the engine prints it: base, then _<number - 1> when numbered.
-std::string_view FullName(const SDK::FName& name, std::string& out) {
+std::string_view FullName(NameId name, std::string& out) {
     std::string scratch;
-    const auto base = BaseName(name.ComparisonIndex, scratch);
-    if (!name.Number) return out.assign(base);
+    const auto base = BaseName(name.index, scratch);
+    if (!name.number) return out.assign(base);
     char digits[12];
-    const auto end = std::to_chars(digits, digits + sizeof(digits), name.Number - 1).ptr;
+    const auto end = std::to_chars(digits, digits + sizeof(digits), name.number - 1).ptr;
     out.assign(base).append(1, '_').append(digits, end);
     return out;
 }
@@ -162,52 +167,31 @@ const Context& Pack(const Host& host) { return *static_cast<const Context*>(host
 
 // Object-table identity: slot index plus serial (0 = not assigned yet, which
 // agrees with any later serial for the same slot and address).
-Ref Identify(const SDK::UObject* object, const Context& pack) {
-    if (!object || !pack.object(object) || object->Index < 0) return {};
-    const auto* item = Table()->GetItemByIndex(object->Index);
-    if (!item || item->Object != object || item->SerialNumber < 0) return {};
-    return {reinterpret_cast<uintptr_t>(object), object->Index, item->SerialNumber};
+// Without a known serial (no SDK) every serial is 0.
+Ref Identify(const Object* object, const Context& pack) {
+    if (!object || !pack.object(object)) return {};
+    const int32_t index = ObjectIndex(object);
+    Object* slot = nullptr;
+    int32_t serial = 0;
+    if (index < 0 || !TableItem(index, slot, serial) || slot != object || serial < 0) return {};
+    return {reinterpret_cast<uintptr_t>(object), index, serial};
 }
 
-SDK::UObject* Resolve(const Ref& ref, const Context& pack) {
+Object* Resolve(const Ref& ref, const Context& pack) {
     if (!ref.address || ref.index < 0 || ref.serial < 0) return nullptr;
-    const auto* item = Table()->GetItemByIndex(ref.index);
-    if (!item || reinterpret_cast<uintptr_t>(item->Object) != ref.address || item->SerialNumber < 0 ||
-        (ref.serial && ref.serial != item->SerialNumber)) return nullptr;
-    SDK::UObject* object = item->Object;
+    Object* object = nullptr;
+    int32_t serial = 0;
+    if (!TableItem(ref.index, object, serial) || reinterpret_cast<uintptr_t>(object) != ref.address || serial < 0 ||
+        (ref.serial && ref.serial != serial)) return nullptr;
     if (!pack.object(object)) return nullptr;
-    return object->Index == ref.index ? object : nullptr;
+    return ObjectIndex(object) == ref.index ? object : nullptr;
 }
 
 // Index < 0: address only, identified now. Refs from find keep their serial.
-SDK::UObject* ResolveRequestObject(const Request& request, const Context& pack) {
+Object* ResolveRequestObject(const Request& request, const Context& pack) {
     Ref ref = GetRef(request);
-    if (ref.index < 0) ref = Identify(reinterpret_cast<const SDK::UObject*>(ref.address), pack);
+    if (ref.index < 0) ref = Identify(reinterpret_cast<const Object*>(ref.address), pack);
     return Resolve(ref, pack);
-}
-
-namespace {
-bool SameName(const SDK::UObject* object, std::string_view expected) {
-    std::string name;
-    return FullName(object->Name, name) == expected;
-}
-}
-
-SDK::UFunction* FindFunction(const SDK::UStruct* start, std::string_view owner, std::string_view name,
-                             const Context& pack, const SDK::UStruct** declaring) {
-    unsigned depth = 0;
-    for (const SDK::UStruct* type = start; type && depth < MaxClassDepth && pack.object(type);
-         type = type->SuperStruct, ++depth) {
-        if (!owner.empty() && !SameName(type, owner)) continue;
-        unsigned children = 0;
-        for (SDK::UField* field = type->Children; field && children < MaxChildren && pack.object(field);
-             field = field->Next, ++children)
-            if (field->HasTypeFlag(SDK::EClassCastFlags::Function) && SameName(field, name)) {
-                if (declaring) *declaring = type;
-                return static_cast<SDK::UFunction*>(field);
-            }
-    }
-    return nullptr;
 }
 
 namespace {
@@ -248,19 +232,19 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
     const std::string_view wantedClass = ClassArgument(request);
     auto* entries = reinterpret_cast<FindEntry*>(response.data);
     Budget budget;
-    const int32_t count = Table()->Num();
+    const int32_t count = TableNum();
     g_region = {};
     std::string name, scratch;
     for (unsigned checked = 0; g_find.cursor < count; ++g_find.cursor, ++checked) {
         if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
         // Cheap header check while scanning; full validation only for matches.
-        SDK::UObject* object = Table()->GetByIndex(g_find.cursor);
-        if (!object || !HeaderReadable(object) || object->Index != g_find.cursor) continue;
-        if (!query.empty() && (exact ? FullName(object->Name, name) != query : !NameMatches(FullName(object->Name, name), query)))
+        Object* object = TableObject(g_find.cursor);
+        if (!object || !HeaderReadable(object) || ObjectIndex(object) != g_find.cursor) continue;
+        if (!query.empty() && (exact ? FullName(ObjectName(object), name) != query : !NameMatches(FullName(ObjectName(object), name), query)))
             continue;
         if (!wantedClass.empty() && !ClassMatches(object, wantedClass, scratch)) continue;
         if (!pack.object(object)) continue;
-        if (query.empty()) FullName(object->Name, name);
+        if (query.empty()) FullName(ObjectName(object), name);
         ++g_find.total;
         if (g_find.count >= MaxFindResults) {
             if (!g_find.next) g_find.next = static_cast<uint32_t>(g_find.cursor);
@@ -270,8 +254,8 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
         FindEntry& entry = entries[g_find.count++];
         entry.object = Identify(object, pack);
         CopyText(entry.name, name);
-        if (pack.object(object->Class)) {
-            CopyText(entry.className, FullName(object->Class->Name, scratch));
+        if (const Object* type = ObjectClass(object); pack.object(type)) {
+            CopyText(entry.className, FullName(ObjectName(type), scratch));
         } else {
             CopyText(entry.className, "?");
         }
@@ -285,8 +269,9 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
     return Progress::Done;
 }
 
-static_assert(offsetof(SDK::UObject, Index) == ObjectIdentityOffset &&
-              offsetof(SDK::UObject, Class) == ObjectIdentityOffset + 4 && ObjectIdentityLength == 4 + sizeof(void*));
+// The identity a client guards with (protocol_ue.h) is the header's index and class.
+static_assert(globals::StockShapes[0].objectIndexOffset == ObjectIdentityOffset &&
+              globals::StockShapes[0].objectClassOffset == ObjectIdentityOffset + 4 && ObjectIdentityLength == 4 + sizeof(void*));
 
 namespace {
 // One ref (address-only, full, or weak slot and serial) to its entry; false when gone or not an object.
@@ -295,20 +280,23 @@ namespace {
 bool DescribeRef(Ref ref, const Context& pack, FindEntry& entry, uint32_t* classSize = nullptr) {
     if (!ref.address) {
         if (ref.index < 0 || ref.serial <= 0) return false;
-        const auto* item = Table()->GetItemByIndex(ref.index);
-        if (item && item->SerialNumber == ref.serial) ref.address = reinterpret_cast<uintptr_t>(item->Object);
+        Object* object = nullptr;
+        int32_t serial = 0;
+        if (TableItem(ref.index, object, serial) && serial == ref.serial) ref.address = reinterpret_cast<uintptr_t>(object);
     } else if (ref.index < 0) {
-        ref = Identify(reinterpret_cast<const SDK::UObject*>(ref.address), pack);
+        ref = Identify(reinterpret_cast<const Object*>(ref.address), pack);
     }
     const auto* object = Resolve(ref, pack);
     if (!object) return false;
     entry = {};
     entry.object = Identify(object, pack);
     std::string name;
-    CopyText(entry.name, FullName(object->Name, name));
-    if (pack.object(object->Class)) {
-        CopyText(entry.className, FullName(object->Class->Name, name));
-        if (classSize && object->Class->Size > 0) *classSize = static_cast<uint32_t>(object->Class->Size);
+    CopyText(entry.name, FullName(ObjectName(object), name));
+    if (const Object* type = ObjectClass(object); pack.object(type)) {
+        CopyText(entry.className, FullName(ObjectName(type), name));
+        if (const int32_t sizeAt = Layout().structSize; classSize && sizeAt >= 0) {
+            if (const auto size = Field<int32_t>(type, static_cast<uint32_t>(sizeAt)); size > 0) *classSize = static_cast<uint32_t>(size);
+        }
     } else {
         CopyText(entry.className, "?");
     }
@@ -371,124 +359,6 @@ Progress ReadObjectBody(const Request& request, Response& response, bool first, 
     return progress;
 }
 
-Progress PreviewArrayBody(const Request& request, Response& response, bool first, const Host& host) {
-    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
-    const auto* object = ResolveRequestObject(request, pack);
-    if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
-        Refuse(response, Status::NotFound, "array preview requires a live instance");
-        return Progress::Done;
-    }
-    const Ref before = Identify(object, pack);
-    Request read{};
-    read.op = reagentlive::op::Read;
-    read.address = request.address + request.args[1];
-    read.length = sizeof(ArrayHeader);
-    reagentlive::Read(read, response, first, host);
-    if (response.status != Status::Ok) return Progress::Done;
-    ArrayHeader header{};
-    memcpy(&header, response.data, sizeof(header));
-    response.length = 0;
-    if (!header.count && header.capacity >= 0) return Progress::Done;
-    read.address = header.data;
-    read.length = ArrayPreviewBytes(header, request.length);
-    if (!read.length) {
-        Refuse(response, Status::Refused, "invalid array header");
-        return Progress::Done;
-    }
-    reagentlive::Read(read, response, first, host);
-    if (response.status == Status::Ok && StillSame(before, pack, response)) response.detail = static_cast<uint32_t>(header.count);
-    return Progress::Done;
-}
-
-Progress EntriesBody(const Request& request, Response& response, bool, const Host& host) {
-    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
-    const auto* object = ResolveRequestObject(request, pack);
-    if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
-        Refuse(response, Status::NotFound, "entries require a live instance");
-        return Progress::Done;
-    }
-    const Ref before = Identify(object, pack);
-    const uint32_t stride = request.length, first = EntriesFirst(request.args[1]);
-    const uint32_t fit = static_cast<uint32_t>(MaxRead / stride);
-    const auto* at = reinterpret_cast<const uint8_t*>(request.address) + EntriesOffset(request.args[1]);
-    const auto kind = static_cast<ContainerKind>(request.flags);
-    response.length = 0;
-    if (kind == ContainerKind::Array) {
-        ArrayHeader header{};
-        if (!host.readable(at, sizeof(header)) || !GuardedCopy(&header, at, sizeof(header))) {
-            Refuse(response, Status::NotReadable, "container header unreadable");
-            return Progress::Done;
-        }
-        if (header.count < 0 || header.capacity < header.count || (header.count && !header.data) ||
-            static_cast<uint64_t>(header.count) * stride > UINT32_MAX) {
-            Refuse(response, Status::Refused, "invalid array header");
-            return Progress::Done;
-        }
-        const uint32_t count = static_cast<uint32_t>(header.count);
-        const uint32_t shown = first < count ? std::min(count - first, fit) : 0;
-        const auto* data = reinterpret_cast<const uint8_t*>(header.data) + static_cast<uint64_t>(first) * stride;
-        // Checked, then copied under the fault guard: another thread can free
-        // the storage between the two.
-        if (shown && (!host.readable(data, static_cast<size_t>(shown) * stride) ||
-                      !GuardedCopy(response.data, data, static_cast<size_t>(shown) * stride))) {
-            Refuse(response, Status::NotReadable, "array elements unreadable");
-            return Progress::Done;
-        }
-        response.length = shown * stride;
-        response.detail = FindDetail(count, first + shown < count ? first + shown : 0);
-        StillSame(before, pack, response);
-        return Progress::Done;
-    }
-    SparseHeader header{};
-    if (!host.readable(at, sizeof(header)) || !GuardedCopy(&header, at, sizeof(header))) {
-        Refuse(response, Status::NotReadable, "container header unreadable");
-        return Progress::Done;
-    }
-    if (!SparseHeaderValid(header)) { Refuse(response, Status::Refused, "invalid set header"); return Progress::Done; }
-    const uint32_t num = static_cast<uint32_t>(header.num), words = (num + 31) / 32;
-    // The bits are walked from a guarded copy (the header's own for inline
-    // bits), never from live memory. A failed allocation is answered by the
-    // agent's dispatch as a refusal.
-    std::vector<uint32_t> bitsCopy;
-    const uint32_t* bits = header.inlineBits;
-    if (header.secondaryBits) {
-        const auto* live = reinterpret_cast<const uint32_t*>(header.secondaryBits);
-        bitsCopy.resize(words);
-        if (words && (!host.readable(live, words * sizeof(uint32_t)) ||
-                      !GuardedCopy(bitsCopy.data(), live, words * sizeof(uint32_t)))) {
-            Refuse(response, Status::NotReadable, "allocation bits unreadable");
-            return Progress::Done;
-        }
-        bits = bitsCopy.data();
-    }
-    uint32_t occupied = 0;
-    for (uint32_t slot = 0; slot < num; ++slot) occupied += SlotAllocated(bits, slot);
-    if (occupied != num - static_cast<uint32_t>(header.numFree)) {
-        Refuse(response, Status::Refused, "allocation bits disagree with the free count");
-        return Progress::Done;
-    }
-    const auto* data = reinterpret_cast<const uint8_t*>(header.data);
-    bool unreadable = false;
-    const uint32_t next = WalkSlots(bits, num, first, fit, [&](uint32_t slot) {
-        const auto* element = data + static_cast<uint64_t>(slot) * stride;
-        if (unreadable || !host.readable(element, stride) ||
-            !GuardedCopy(response.data + response.length, element, stride)) { unreadable = true; return; }
-        response.length += stride;
-    });
-    if (unreadable) {
-        response.length = 0;
-        Refuse(response, Status::NotReadable, "set elements unreadable");
-        return Progress::Done;
-    }
-    response.detail = FindDetail(occupied, next);
-    StillSame(before, pack, response);
-    return Progress::Done;
-}
-
 Progress NamesBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
@@ -524,12 +394,6 @@ Progress DescribeMany(const Request& request, Response& response, bool first, co
 }
 Progress ReadObject(const Request& request, Response& response, bool first, const Host& host) {
     return GuardedRead(&ReadObjectBody, request, response, first, host);
-}
-Progress PreviewArray(const Request& request, Response& response, bool first, const Host& host) {
-    return GuardedRead(&PreviewArrayBody, request, response, first, host);
-}
-Progress Entries(const Request& request, Response& response, bool first, const Host& host) {
-    return GuardedRead(&EntriesBody, request, response, first, host);
 }
 Progress Names(const Request& request, Response& response, bool first, const Host& host) {
     return GuardedRead(&NamesBody, request, response, first, host);

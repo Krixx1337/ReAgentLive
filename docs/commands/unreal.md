@@ -1,8 +1,10 @@
 # Unreal pack
 
-Requires a Dumper-7 SDK and a host that calls `Tick` on the game thread.
-Each command's flags and result keys: `help <verb>` or
-[result shapes](results.md).
+Requires a host that calls `Tick` on the game thread, and for most
+commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
+`census` and object range reads also work without one
+([without an SDK](#without-an-sdk)). Each command's flags and result keys:
+`help <verb>` or [result shapes](results.md).
 
 | Command | Guard |
 |---|---|
@@ -19,7 +21,7 @@ Each command's flags and result keys: `help <verb>` or
 | `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the game thread; an undecodable index returns empty |
 | Array preview | used by `dump`; resolves the instance on the game thread, reads the array header and a bounded prefix of its backing storage on the same tick |
 | `census [--cls C]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
-| `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor; checks the game thread. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)) |
+| `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)) |
 | `each <Class> <Path\|[Owner:]Function>...` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
 | `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
 | `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
@@ -75,10 +77,44 @@ and a warning line; it is tried again on a command at least 2 s later,
 since an early injection can run before the engine has built its globals.
 Core commands work either way.
 
+Built without an SDK, the pack also finds the layout the globals are read
+with ([without an SDK](#without-an-sdk)); the log line then says
+`layout probed` with the item size and the two UStruct offsets.
+
 Names come from the located pool, not the SDK's `FName::ToString` (which
 calls into the engine at an address the patch may have moved): base name,
 the path before the last `/` dropped, `_<number - 1>` added for a numbered
 name; wide characters above 0x7f read `?`.
+
+## Without an SDK
+
+`reagentlive::ue-base` is the part of the pack that compiles with no SDK
+([hosting](../hosting.md#cmake-targets)): one prebuilt agent for any UE5
+game, with no dump. Its ops are `find`, `describe` (and its batch form),
+object range reads, `name`, `census` and `name-find`; a host lists only
+those, so the rest answer `unsupported op`. Fields, calls, containers and
+bytecode need the SDK's types.
+
+The layout comes from the engine, checked like the globals:
+
+- **Table and object header:** UE5's chunked table (64K items per chunk)
+  and header (flags `+0x08`, index `+0x0C`, class `+0x10`, name `+0x18`,
+  outer `+0x20`), with the item in one of three shapes (24 bytes with the
+  object first or after an 8-byte field, or 16 bytes). Each is tried at
+  every candidate address; the table check above decides, so a wrong shape
+  is refused, never used. An engine that moved the header turns the pack
+  off with `table: no layout fits`.
+- **`UStruct::SuperStruct`:** the first pointer field after the header of
+  the class of classes whose chain reads `Struct`, `Field`, `Object`, then
+  null. Unknown, `find --cls` and `census --cls` match the exact class only.
+- **`UStruct::Size`:** the int32 after `SuperStruct` that holds the header
+  size (0x28) in `Object` and one pointer more in `Field`. Unknown,
+  `describe` reports no class size.
+- **Serials** are not known: every ref carries serial 0, which agrees with
+  any serial, so a ref is checked by slot and address only.
+- **The first command scans:** there are no address guesses without an
+  SDK, so the first pack command scans the image's writable sections for
+  both globals, a stall of up to seconds on the ticking thread.
 
 ## Off the engine's thread
 
@@ -89,10 +125,11 @@ it stays only if a live run under load is clean.
 
 - **Answered:** `find`, `describe` (and its batch form), `fields`, object
   range reads (`read` of an object ref, `dump`, `get`), array previews,
-  `entries` and `names`. Locating the globals also runs there.
+  `entries`, `names`, `census` and `name-find` (the same header and pool
+  reads as `find`). Locating the globals also runs there.
 - **Still refused** (`not on the game thread`): `call`, `each`, `script`,
-  `refs`, `census`, `name-find`, `exec-entries`, `funcs`, `func`,
-  `params`: they run engine code or walk tables this has not measured.
+  `refs`, `exec-entries`, `funcs`, `func`, `params`: they run engine code
+  or walk tables this has not measured.
 - **Guards:** each answered handler runs under a fault guard, so memory
   freed mid-read is the refusal `fault during an off-thread read` (also a
   log warning), never a crash. The object's identity (slot and serial) is

@@ -184,13 +184,16 @@ binaries. Comes before #30.
 
 ### 30 · An Unreal pack that needs no SDK
 
-The pack names SDK types about 150 times, so it is compiled per game.
-Replacing them with a layout table found and checked at start (as the
-object table and name pool already are) gives `find`, `fields`, `dump`,
-`get` and `entries` in any Unreal game from one prebuilt DLL, with no
-dump and no mod; calls still need a host on the engine's thread
+Partly done: `reagentlive::ue-base` reads the table, object header,
+`SuperStruct` and `UStruct::Size` from a layout found at start
+([without an SDK](commands/unreal.md#without-an-sdk)), which gives `find`,
+`describe`, `name`, `name-find`, `census` and object range reads with no
+dump. Open: fields. Finding `Children`, `ChildProperties` and the
+`FField`/`FProperty` offsets the same way (anchored on known CoreUObject
+structs, e.g. `Vector`'s `X`, `Y`, `Z`) would add `fields`, `dump`, `get`
+and `entries`; calls still need a host on the engine's thread
 ([outside programs](outside-programs.md)). Needs #18 measured clean and
-#29 for tests. Weeks of work.
+#29 for tests.
 
 ### 31 · Finding a function again after a patch
 

@@ -14,7 +14,7 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 |---|---|---|---|
 | Core agent | wire protocol, shared section, tick and dispatch, `read`/`write`/`modules`/`search`/`xrefs`/`region`/`pin`/`watch` | `core/agent.*`, `core/protocol.h` | Windows, standard library |
 | Core client | typed C++ API: attach, read, write, modules, search, xrefs, region, pointer chains, supported ops, raw `Send` | `core/client.*` | protocol |
-| Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls over a Dumper-7 SDK | `packs/ue/` | core; agent side also the host's `SDK/` headers |
+| Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls over a Dumper-7 SDK; lookups, names and census also without one (`ue-base`) | `packs/ue/` | core; agent side (except `ue-base`) also the host's `SDK/` headers |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |
 | Python, MCP, IDA | session client, the generator of typed functions, the MCP adapter (tools from the table's rows); label importer | `frontends/python/`, `frontends/mcp/`, `frontends/ida/` | the console's JSON calls and `help --json` (MCP: the MCP Python SDK), its label file |
 | Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch --follow` | the host's code ([hosting](hosting.md)) | core, packs |
@@ -149,14 +149,19 @@ one file:
 | `syntax/command.h`, `syntax/text.h` | the parsed `Command` and its limits; token, number, ref and address parsing |
 | `syntax/parse.cpp` | `Parse` (declared in `parse.h`): help, status, quit, `batch`, then the areas below |
 | `syntax/parse_memory.cpp`, `parse_code.cpp`, `packs/ue/cli/syntax/parse_unreal.cpp` | the verbs of each area; each answers nothing for a verb not its own |
-| `packs/ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, array previews, `name`) and the shared helpers with their caches |
-| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, `fields` and parameters |
-| `agent_ue_scan.cpp` | the cached table and pool scans: `census`, `name-find`, `each` |
+| `packs/ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, `name`) and the shared helpers with their caches; SDK-free (`agent_ue_base.h`) |
+| `agent_ue_globals.cpp` | locating the globals and the object layout (the SDK's, or stock shapes and probes without one); SDK-free |
+| `agent_ue_census.cpp` | the cached table and pool scans that need no SDK: `census`, `name-find` |
+| `agent_ue_entries.cpp` | array previews and `entries` |
+| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, `fields`, parameters and the function lookup |
+| `agent_ue_scan.cpp` | the cached SDK scans: `each`, `exec-entries` |
 
 - Shared helpers live in a `detail` namespace (console) or the pack's
   namespace, declared in an internal header (`console/internal.h`,
-  `packs/ue/cli/console/internal_ue.h`, `agent_ue_internal.h`); a helper used by one
-  file stays anonymous there.
+  `packs/ue/cli/console/internal_ue.h`, `agent_ue_base.h` for the SDK-free
+  files, `agent_ue_internal.h` for the SDK ones); a helper used by one
+  file stays anonymous there. The SDK-free files never include `SDK/`:
+  they read objects at the located layout's offsets.
 - Agent files keep the mapped-image limits: constant-initialised globals,
   each defined in one file and declared `extern` in the internal header.
 - New files join `target_sources`; hosts need no change.

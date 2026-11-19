@@ -22,7 +22,8 @@ struct Memory {
 // User-mode, 8-byte aligned and not null: anything else is not a heap or image pointer.
 constexpr bool Pointer(uint64_t value) { return value && !(value & 7) && value < 0x0000800000000000ull; }
 
-// Where the object table keeps its fields, from the host's SDK.
+// Where the object table and an object's header keep their fields: from the
+// host's SDK, or one of StockShapes when the pack is built without one.
 struct TableShape {
     uint32_t headerSize;                    // Bytes of the table header (at most MaxHeader).
     uint32_t objectsOffset, maxOffset, numOffset;
@@ -30,6 +31,21 @@ struct TableShape {
     uint32_t perChunk;                      // Items per chunk; 0 for a flat table.
     uint32_t itemSize, itemObjectOffset;
     uint32_t objectIndexOffset, objectClassOffset, objectNameOffset;
+    int32_t itemSerialOffset = -1;          // -1: unknown; every serial reads 0 ("not assigned yet").
+    uint32_t objectFlagsOffset = 8;
+    uint32_t nameNumberOffset = 4;          // The instance number inside an FName.
+};
+// Bytes of an object header (flags, index, class, name, outer).
+constexpr uint32_t ObjectHeaderBytes(const TableShape& shape) { return shape.objectNameOffset + 16; }
+
+// UE5's chunked table (64K items per chunk) and object header. Engines
+// differ in the item: the object pointer first, or after an 8-byte field,
+// and 24- or 16-byte items. CheckTable tells them apart (every sampled
+// object must carry its own slot), so a wrong one is refused, never used.
+constexpr TableShape StockShapes[] = {
+    {0x20, 0, 0x10, 0x14, 0x1c, 0x18, 0x10000, 0x18, 0, 0xc, 0x10, 0x18},
+    {0x20, 0, 0x10, 0x14, 0x1c, 0x18, 0x10000, 0x18, 8, 0xc, 0x10, 0x18},
+    {0x20, 0, 0x10, 0x14, 0x1c, 0x18, 0x10000, 0x10, 0, 0xc, 0x10, 0x18},
 };
 constexpr uint32_t MaxHeader = 64;
 constexpr int32_t MaxObjects = 1 << 26, MaxChunks = 4096;
@@ -169,6 +185,53 @@ inline const char* CheckPool(const Memory& memory, uint64_t pool, int32_t classN
         }
     }
     return "pool: no layout fits";
+}
+
+// Whether the object at `object` is named `expected` in the located pool.
+inline bool ObjectNamed(const Memory& memory, uint64_t pool, const names::Layout& layout, const TableShape& shape,
+                        uint64_t object, std::string_view expected) {
+    int32_t index = -1;
+    return Pointer(object) && memory.Get(object + shape.objectNameOffset, index) &&
+        NameIs(memory, pool, layout, index, expected);
+}
+
+// The engine's own class tree, read without an SDK. `chain` gets the
+// classes named Struct, Field and Object.
+constexpr uint32_t ProbeSpan = 0x60; // Bytes after the object header searched.
+// UStruct::SuperStruct's offset, or -1: the first pointer field after the
+// object header of the class of classes ("Class") that leads Struct, Field,
+// Object, then null.
+inline int32_t ProbeSuperStruct(const Memory& memory, uint64_t pool, const names::Layout& layout, const TableShape& shape,
+                                uint64_t classOfClasses, uint64_t chain[3]) {
+    constexpr std::string_view Names[] = {"Struct", "Field", "Object"};
+    const uint32_t first = ObjectHeaderBytes(shape);
+    for (uint32_t offset = first; offset < first + ProbeSpan; offset += 8) {
+        uint64_t type = classOfClasses;
+        int step = 0;
+        for (; step < 3; ++step) {
+            if (!memory.Get(type + offset, type) || !ObjectNamed(memory, pool, layout, shape, type, Names[step])) break;
+            chain[step] = type;
+        }
+        uint64_t end = 1;
+        if (step == 3 && memory.Get(type + offset, end) && !end) return static_cast<int32_t>(offset);
+    }
+    return -1;
+}
+
+// UStruct::Size's offset, or -1: the int32 after SuperStruct that holds the
+// object header's size in class Object and one pointer more (UField::Next)
+// in class Field.
+inline int32_t ProbeStructSize(const Memory& memory, const TableShape& shape, int32_t superStruct,
+                               uint64_t fieldClass, uint64_t objectClass) {
+    if (superStruct < 0) return -1;
+    const uint32_t header = ObjectHeaderBytes(shape);
+    for (uint32_t offset = static_cast<uint32_t>(superStruct) + 8; offset < static_cast<uint32_t>(superStruct) + 0x40; offset += 4) {
+        int32_t object = 0, field = 0;
+        if (memory.Get(objectClass + offset, object) && memory.Get(fieldClass + offset, field) &&
+            object == static_cast<int32_t>(header) && field == static_cast<int32_t>(header + 8))
+            return static_cast<int32_t>(offset);
+    }
+    return -1;
 }
 
 // Writable sections of a loaded image, from its PE headers.

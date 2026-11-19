@@ -362,6 +362,14 @@ tools, with their decisions and rejected alternatives:
   name decoder (it carries the host's stale address with it). An engine
   version change that moves the types fails the check and turns the pack
   off rather than reading garbage.
+- **Lookups without an SDK.** The table, the object header and two
+  UStruct offsets are all `find`, `census` and names need, and UE5 keeps
+  them in a few known shapes, so `ue-base` tries those and probes the
+  rest from the engine's own class tree, under the same checks
+  ([without an SDK](commands/unreal.md#without-an-sdk)). The same files
+  build with an SDK, which then is the layout's only source. Rejected:
+  copying a dumper's offset finder for every type (most of the work is
+  fields and properties, which this part does not need).
 - **String type:** the pack only uses `.c_str()` and `.size()` on SDK strings,
   so stock `std::string` dumps and adapted string types both compile.
 - **Three thread kinds, stated by the host.** `Host::thread` is `engine`,

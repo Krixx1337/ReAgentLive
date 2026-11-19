@@ -179,10 +179,10 @@ Progress Refs(const Request& request, Response& response, bool first, const Host
     g_region = {};
     std::string scratch;
     try {
-        const int32_t count = Table()->Num();
+        const int32_t count = TableNum();
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
             if ((checked & 15) == 15 && budget.Spent()) return Progress::Continue;
-            SDK::UObject* object = Table()->GetByIndex(state.cursor);
+            SDK::UObject* object = TableObject(state.cursor);
             if (!object || !HeaderReadable(object) || object->Index != state.cursor ||
                 !object->IsA(SDK::EClassCastFlags::Function)) continue;
             if (!ReadScript(static_cast<const SDK::UStruct*>(object), host, state.scratch)) continue;

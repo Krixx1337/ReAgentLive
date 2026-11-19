@@ -1,5 +1,6 @@
-// reagentlive Unreal pack: helpers the agent_ue*.cpp files share. Internal; hosts
-// use agent_ue.h. Compiled in the host against its Dumper-7 SDK.
+// reagentlive Unreal pack: helpers the SDK files share (reflection, calls,
+// containers, script, each). Internal; hosts use agent_ue.h. Compiled in the
+// host against its Dumper-7 SDK, on top of the SDK-free helpers.
 #pragma once
 #include <algorithm>
 #include <charconv>
@@ -11,78 +12,18 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include "reagentlive/packs/ue/name_pool.h"
 #include "SDK/CoreUObject_classes.hpp"
-#include "reagentlive/packs/ue/agent_ue.h"
+#include "reagentlive/packs/ue/agent_ue_base.h"
 
 namespace reagentlive::ue {
-// A full object table takes many ticks; bound each tick (Context::scanMicroseconds).
-constexpr int64_t FindBudgetMicroseconds = 1000;
-constexpr unsigned MaxClassDepth = 64, MaxChildren = 8192;
-// The host's scan budget, set by PackReady before any handler runs.
-extern int64_t g_scanMicroseconds;
-
-// One tick's share of a long scan.
-class Budget {
-public:
-    Budget() {
-        QueryPerformanceFrequency(&frequency_);
-        QueryPerformanceCounter(&start_);
-    }
-    bool Spent() const {
-        LARGE_INTEGER now{};
-        QueryPerformanceCounter(&now);
-        return now.QuadPart - start_.QuadPart > frequency_.QuadPart * g_scanMicroseconds / 1000000;
-    }
-private:
-    LARGE_INTEGER frequency_{}, start_{};
-};
-
-template<class Text> std::string_view View(const Text& text) { return {text.c_str(), text.size()}; }
-
-// Objects of one allocator region share a VirtualQuery. Reset every tick, so
-// a cached region is never trusted beyond one budget slice.
-struct Region { uintptr_t begin, end; };
-extern Region g_region;
-
-bool HeaderReadable(const SDK::UObject* object);
-bool ClassMatches(const SDK::UObject* object, std::string_view wanted, std::string& scratch);
-void ResetClassCache();
-std::string_view ClassArgument(const Request& request);
-bool Template(const SDK::UObject* object);
-std::string_view FullName(const SDK::FName& name, std::string& out);
+// An SDK name as the SDK-free helpers take it.
+inline NameId Id(const SDK::FName& name) { return {name.ComparisonIndex, static_cast<uint32_t>(name.Number)}; }
+inline std::string_view FullName(const SDK::FName& name, std::string& out) { return FullName(Id(name), out); }
 // FullName as a new string (the SDK's GetName and ToString without its name lookup).
-inline std::string NameOf(const SDK::FName& name) {
-    std::string out;
-    FullName(name, out);
-    return out;
-}
-const Context& Pack(const Host& host);
-// False (and the response refused) when EngineThreadProblem names one or
-// the object table and name pool are not located and checked (globals.h);
-// the first call locates them.
-// Access::Read handlers also run off the engine's thread when the host
-// opted in (Context::offThreadReads).
-enum class Access { Engine, Read };
-bool PackReady(const Context& pack, const Host& host, Response& response, Access access = Access::Engine);
-// True on the engine's thread, or when `before` still names the same live
-// object; otherwise the response is cleared and refused.
-bool StillSame(const Ref& before, const Context& pack, Response& response);
-// Runs a read handler, under a fault guard when off the engine's thread
-// (a fault there is a refusal, not a crash).
-Progress GuardedRead(Handler body, const Request& request, Response& response, bool first, const Host& host);
-// The located object table: valid once PackReady said yes.
-const SDK::TUObjectArray* Table();
-// A name from the located pool, without its instance number.
-bool PoolName(int32_t index, char* out, size_t capacity, size_t& length);
-// The located pool and its entry layout, or 0.
-uint64_t NamePool(const names::Layout*& layout);
-Ref Identify(const SDK::UObject* object, const Context& pack);
-SDK::UObject* Resolve(const Ref& ref, const Context& pack);
-SDK::UObject* ResolveRequestObject(const Request& request, const Context& pack);
+inline std::string NameOf(const SDK::FName& name) { return NameOf(Id(name)); }
+
 SDK::UFunction* FindFunction(const SDK::UStruct* start, std::string_view owner, std::string_view name,
                              const Context& pack, const SDK::UStruct** declaring = nullptr);
-bool GuardedName(int32_t index, char* out, size_t capacity, size_t& length);
 // Plain data by the property's flags or, where it lacks one, by its struct's members (protocol_ue.h).
 bool PlainData(const SDK::FProperty* property, const Host& host);
 // ProcessEvent under a fault guard: false when the call raised an access

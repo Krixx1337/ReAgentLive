@@ -22,6 +22,31 @@
 #include "reagentlive/packs/ue/agent_ue_internal.h"
 
 namespace reagentlive::ue {
+namespace {
+bool SameName(const SDK::UObject* object, std::string_view expected) {
+    std::string name;
+    return FullName(object->Name, name) == expected;
+}
+}
+
+SDK::UFunction* FindFunction(const SDK::UStruct* start, std::string_view owner, std::string_view name,
+                             const Context& pack, const SDK::UStruct** declaring) {
+    unsigned depth = 0;
+    for (const SDK::UStruct* type = start; type && depth < MaxClassDepth && pack.object(type);
+         type = type->SuperStruct, ++depth) {
+        if (!owner.empty() && !SameName(type, owner)) continue;
+        unsigned children = 0;
+        for (SDK::UField* field = type->Children; field && children < MaxChildren && pack.object(field);
+             field = field->Next, ++children)
+            if (field->HasTypeFlag(SDK::EClassCastFlags::Function) && SameName(field, name)) {
+                if (declaring) *declaring = type;
+                return static_cast<SDK::UFunction*>(field);
+            }
+    }
+    return nullptr;
+}
+
+
 bool PlainData(const SDK::FProperty* property, const Host& host) {
     const auto flagsOf = [](const SDK::FProperty* p) { return static_cast<uint64_t>(p->PropertyFlags); };
     // A struct's members, its super structs' included; -1 for anything else.

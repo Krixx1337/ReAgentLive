@@ -7,6 +7,17 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **The Unreal pack without an SDK:** `reagentlive::ue-base`
+  ([without an SDK](docs/commands/unreal.md#without-an-sdk)) builds with no
+  Dumper-7 SDK and answers `find`, `describe`, object range reads, `name`,
+  `census` and `name-find` in any UE5 game: the object layout is one of
+  UE5's stock shapes, checked like the globals, and `SuperStruct` and
+  `UStruct::Size` are probed from the engine's class tree.
+  `reagentlive::ue` links it and builds it with the SDK as the layout's
+  source, so SDK hosts change nothing.
+- **`census` and `name-find` answer off the engine's thread** with
+  `Context::offThreadReads`, under the fault guard like `find`.
+
 - **Engine packs live in `src/reagentlive/packs/<id>/`** ([contributing](docs/contributing.md#source-layout)),
   breaking for hosts: the Unreal pack's headers are
   `reagentlive/packs/ue/...` (was `reagentlive/ue/...`) and its CLI parts

@@ -1,6 +1,8 @@
 // reagentlive Unreal pack: locating and checking the object table and the name
-// pool (globals.h) before the first pack command, and decoding names from
-// the located pool.
+// pool (globals.h) before the first pack command, the object layout they are
+// read with, and decoding names from the located pool. SDK-free: built with
+// REAGENTLIVE_UE_SDK (reagentlive::ue) the layout comes from the host's SDK,
+// without it (reagentlive::ue-base) from globals::StockShapes and the probes.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -15,8 +17,10 @@
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/globals.h"
 #include "reagentlive/packs/ue/name_pool.h"
+#ifdef REAGENTLIVE_UE_SDK
 #include "SDK/CoreUObject_classes.hpp"
-#include "reagentlive/packs/ue/agent_ue_internal.h"
+#endif
+#include "reagentlive/packs/ue/agent_ue_base.h"
 
 namespace reagentlive::ue {
 namespace {
@@ -26,7 +30,7 @@ constexpr uint64_t RetryMilliseconds = 2000;
 constexpr size_t ScanWindow = 64u << 10, MaxSections = 16;
 
 struct Located {
-    const SDK::TUObjectArray* table;
+    uint64_t table;
     uint64_t pool;
     int layout;
     bool ready, tried;
@@ -34,6 +38,7 @@ struct Located {
     char problem[MaxReason];
 };
 Located g_located;
+ObjectLayout g_layout;
 
 bool Readable(uint64_t address, size_t bytes) {
     uint64_t cursor = address;
@@ -58,8 +63,9 @@ bool Copy(const void*, uint64_t address, void* out, size_t bytes) {
 }
 constexpr globals::Memory g_memory{&Copy, nullptr};
 
-// The table's field positions, from the host's SDK: layouts, never addresses.
-globals::TableShape Shape() {
+#ifdef REAGENTLIVE_UE_SDK
+// The layout from the host's SDK: field positions, never addresses.
+ObjectLayout SdkLayout() {
     using Table = SDK::TUObjectArray;
     globals::TableShape shape{};
     shape.headerSize = static_cast<uint32_t>(sizeof(Table));
@@ -75,11 +81,34 @@ globals::TableShape Shape() {
     }
     shape.itemSize = static_cast<uint32_t>(sizeof(SDK::FUObjectItem));
     shape.itemObjectOffset = static_cast<uint32_t>(offsetof(SDK::FUObjectItem, Object));
+    shape.itemSerialOffset = static_cast<int32_t>(offsetof(SDK::FUObjectItem, SerialNumber));
     shape.objectIndexOffset = static_cast<uint32_t>(offsetof(SDK::UObject, Index));
     shape.objectClassOffset = static_cast<uint32_t>(offsetof(SDK::UObject, Class));
     shape.objectNameOffset = static_cast<uint32_t>(offsetof(SDK::UObject, Name));
-    return shape;
+    shape.objectFlagsOffset = static_cast<uint32_t>(offsetof(SDK::UObject, Flags));
+    shape.nameNumberOffset = static_cast<uint32_t>(offsetof(SDK::FName, Number));
+    return {shape, static_cast<int32_t>(offsetof(SDK::UStruct, SuperStruct)),
+            static_cast<int32_t>(offsetof(SDK::UStruct, Size)), true};
 }
+// Template() tests these flags by value.
+static_assert(static_cast<uint32_t>(SDK::EObjectFlags::ClassDefaultObject) == 0x10 &&
+              static_cast<uint32_t>(SDK::EObjectFlags::ArchetypeObject) == 0x20);
+#endif
+
+// The layouts to try, in order: the SDK's, or each stock shape.
+#ifdef REAGENTLIVE_UE_SDK
+ObjectLayout g_candidates[1];
+std::span<const ObjectLayout> Candidates() {
+    g_candidates[0] = SdkLayout();
+    return g_candidates;
+}
+#else
+ObjectLayout g_candidates[std::size(globals::StockShapes)];
+std::span<const ObjectLayout> Candidates() {
+    for (size_t i = 0; i < std::size(g_candidates); ++i) g_candidates[i] = {globals::StockShapes[i]};
+    return g_candidates;
+}
+#endif
 
 // The image's writable sections, scanned in windows of one heap buffer.
 struct Scan {
@@ -110,6 +139,10 @@ void AppendHex(std::string_view label, uint64_t value, const char* source, char*
     for (const char* c = source; *c; ++c) if (at < end) *at++ = *c;
 }
 
+void Append(const char* text, char*& at, char* end) {
+    for (const char* c = text; *c; ++c) if (at < end) *at++ = *c;
+}
+
 void Fail(const char* problem, const char* scan) {
     std::string_view text = problem;
     char* at = g_located.problem;
@@ -122,33 +155,50 @@ void Fail(const char* problem, const char* scan) {
 }
 
 // Guess first, then the image's writable sections. Both globals must pass.
+// Each candidate layout is tried at every address; the first that checks wins.
 void Locate(const Context& pack, const Host& host) {
     g_located.tried = true;
-    const auto shape = Shape();
+    const auto candidates = Candidates();
     Scan scan;
     bool scanned = false;
     uint64_t classOfClasses = 0, table = 0;
-    const char* problem = pack.objectsGuess ? globals::CheckTable(g_memory, pack.objectsGuess, shape, classOfClasses)
-                                            : "table: no guess";
+    const ObjectLayout* layoutFound = nullptr;
+    const auto check = [&](uint64_t address) -> const char* {
+        const char* problem = "table: no layout fits";
+        for (const auto& candidate : candidates) {
+            if (!(problem = globals::CheckTable(g_memory, address, candidate.shape, classOfClasses))) {
+                layoutFound = &candidate;
+                return nullptr;
+            }
+        }
+        return problem;
+    };
+    const char* problem = pack.objectsGuess ? check(pack.objectsGuess) : "table: no guess";
     const char* tableSource = " (guess)";
     if (!problem) {
         table = pack.objectsGuess;
     } else {
         scanned = scan.Open(pack.image);
         if (!scanned) return Fail(problem, "; no scan");
-        table = scan.Find(shape.headerSize, [&](uint64_t address, const uint8_t* bytes, size_t available) {
-            if (available < shape.headerSize ||
-                globals::HeaderProblem(globals::ParseHeader(bytes, shape), shape)) return false;
-            return !globals::CheckTable(g_memory, address, shape, classOfClasses);
+        uint32_t headerSize = 0;
+        for (const auto& candidate : candidates) headerSize = std::max(headerSize, candidate.shape.headerSize);
+        table = scan.Find(headerSize, [&](uint64_t address, const uint8_t* bytes, size_t available) {
+            bool plausible = false;
+            for (const auto& candidate : candidates)
+                plausible = plausible || (available >= candidate.shape.headerSize &&
+                    !globals::HeaderProblem(globals::ParseHeader(bytes, candidate.shape), candidate.shape));
+            return plausible && !check(address);
         });
         if (!table) return Fail(problem, "; scan: none");
         tableSource = " (scan)";
     }
+    ObjectLayout layout = *layoutFound;
+    const auto& shape = layout.shape;
     int32_t className = -1;
     if (!g_memory.Get(classOfClasses + shape.objectNameOffset, className)) return Fail("table: class name unreadable", "");
-    int layout = -1;
+    int poolLayout = -1;
     uint64_t pool = 0;
-    problem = pack.namesGuess ? globals::CheckPool(g_memory, pack.namesGuess, className, layout) : "pool: no guess";
+    problem = pack.namesGuess ? globals::CheckPool(g_memory, pack.namesGuess, className, poolLayout) : "pool: no guess";
     const char* poolSource = " (guess)";
     if (!problem) {
         pool = pack.namesGuess;
@@ -157,28 +207,84 @@ void Locate(const Context& pack, const Host& host) {
         constexpr size_t header = names::BlocksOffset + sizeof(uint64_t);
         pool = scan.Find(header, [&](uint64_t address, const uint8_t* bytes, size_t available) {
             if (available < header || !globals::PoolHeaderPlausible(bytes)) return false;
-            return !globals::CheckPool(g_memory, address, className, layout);
+            return !globals::CheckPool(g_memory, address, className, poolLayout);
         });
         if (!pool) return Fail(problem, "; scan: none");
         poolSource = " (scan)";
     }
-    g_located.table = reinterpret_cast<const SDK::TUObjectArray*>(table);
+    if (!layout.fromSdk) {
+        // No SDK: the engine's class tree gives SuperStruct and UStruct::Size.
+        uint64_t chain[3]{};
+        layout.superStruct = globals::ProbeSuperStruct(g_memory, pool, names::Layouts[poolLayout], shape, classOfClasses, chain);
+        layout.structSize = globals::ProbeStructSize(g_memory, shape, layout.superStruct, chain[1], chain[2]);
+    }
+    g_layout = layout;
+    g_located.table = table;
     g_located.pool = pool;
-    g_located.layout = layout;
+    g_located.layout = poolLayout;
     g_located.ready = true;
     if (host.log) {
-        char text[160];
+        char text[256];
         char* at = text;
         char* const end = text + sizeof(text) - 1;
         AppendHex("Unreal pack: object table ", table, tableSource, at, end);
         AppendHex(", name pool ", pool, poolSource, at, end);
+        AppendHex(layout.fromSdk ? ", layout from the SDK: item " : ", layout probed: item ", shape.itemSize, "", at, end);
+        AppendHex(", object at ", shape.itemObjectOffset, "", at, end);
+        if (layout.superStruct >= 0) AppendHex(", super ", static_cast<uint32_t>(layout.superStruct), "", at, end);
+        else Append(", super unknown", at, end);
+        if (layout.structSize >= 0) AppendHex(", size ", static_cast<uint32_t>(layout.structSize), "", at, end);
+        else Append(", size unknown", at, end);
         *at = 0;
         host.log(LogLevel::Info, 0, text);
     }
 }
 }
 
-const SDK::TUObjectArray* Table() { return g_located.table; }
+const ObjectLayout& Layout() { return g_layout; }
+
+namespace {
+// The item of a slot, or null: outside the table or an empty chunk.
+const uint8_t* ItemAt(int32_t index) {
+    const auto& shape = g_layout.shape;
+    const auto* table = reinterpret_cast<const uint8_t*>(g_located.table);
+    if (!table || index < 0) return nullptr;
+    int32_t num;
+    memcpy(&num, table + shape.numOffset, sizeof(num));
+    if (index >= num) return nullptr;
+    const uint8_t* items;
+    memcpy(&items, table + shape.objectsOffset, sizeof(items));
+    uint32_t slot = static_cast<uint32_t>(index);
+    if (shape.perChunk) {
+        memcpy(&items, items + uint64_t{slot / shape.perChunk} * sizeof(void*), sizeof(items));
+        slot %= shape.perChunk;
+    }
+    return items ? items + uint64_t{slot} * shape.itemSize : nullptr;
+}
+}
+
+int32_t TableNum() {
+    int32_t num = 0;
+    if (g_located.table) memcpy(&num, reinterpret_cast<const uint8_t*>(g_located.table) + g_layout.shape.numOffset, sizeof(num));
+    return num;
+}
+
+Object* TableObject(int32_t index) {
+    const uint8_t* item = ItemAt(index);
+    if (!item) return nullptr;
+    Object* object;
+    memcpy(&object, item + g_layout.shape.itemObjectOffset, sizeof(object));
+    return object;
+}
+
+bool TableItem(int32_t index, Object*& object, int32_t& serial) {
+    const uint8_t* item = ItemAt(index);
+    if (!item) return false;
+    memcpy(&object, item + g_layout.shape.itemObjectOffset, sizeof(object));
+    serial = 0;
+    if (g_layout.shape.itemSerialOffset >= 0) memcpy(&serial, item + g_layout.shape.itemSerialOffset, sizeof(serial));
+    return true;
+}
 
 int64_t g_scanMicroseconds = FindBudgetMicroseconds;
 
@@ -245,8 +351,8 @@ uint64_t NamePool(const names::Layout*& layout) {
 }
 
 bool ObjectInTable(const SDK::UObject* object) {
-    const auto* table = g_located.table;
-    if (!table || !Readable(reinterpret_cast<uint64_t>(object), sizeof(SDK::UObject)) || object->Index < 0 || !object->Class) return false;
-    return table->GetByIndex(object->Index) == object;
+    if (!g_located.ready || !Readable(reinterpret_cast<uint64_t>(object), globals::ObjectHeaderBytes(g_layout.shape))) return false;
+    const int32_t index = ObjectIndex(object);
+    return index >= 0 && ObjectClass(object) && TableObject(index) == object;
 }
 }

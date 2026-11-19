@@ -45,7 +45,7 @@ struct FakeEngine {
     std::vector<uint8_t> objects, table, items[3], pool, block;
     std::vector<uint64_t> chunkList;
     uint64_t tableAddress = 0, poolAddress = 0;
-    int32_t names[4]{};
+    int32_t names[6]{};
 
     uint64_t Object(int32_t slot) { return reinterpret_cast<uint64_t>(objects.data()) + slot * ObjectSize; }
     void Set(int32_t slot, int32_t index, uint64_t type, int32_t name) {
@@ -56,11 +56,12 @@ struct FakeEngine {
     }
 
     // Slot 0 the class of classes ("Class"), slot 1 a class ("Object") and
-    // the rest instances of it; names: None, Class, Object, Thing.
+    // the rest instances of it; names: None, Class, Object, Thing, Struct, Field.
     explicit FakeEngine(const names::Layout& layout, int32_t count = 10) {
         objects.resize(count * ObjectSize);
         memory.Add(objects);
-        for (const auto text : {std::string_view("None"), std::string_view("Class"), std::string_view("Object"), std::string_view("Thing")}) {
+        for (const auto text : {std::string_view("None"), std::string_view("Class"), std::string_view("Object"),
+                                std::string_view("Thing"), std::string_view("Struct"), std::string_view("Field")}) {
             const size_t at = block.size();
             block.resize(at + layout.textOffset + text.size());
             const auto header = static_cast<uint16_t>(text.size() << 6);
@@ -69,10 +70,10 @@ struct FakeEngine {
             block.resize((block.size() + layout.stride - 1) / layout.stride * layout.stride);
         }
         block.resize(block.size() + 16);
-        // Comparison indices of the four names: offsets over the stride.
+        // Comparison indices of the names: offsets over the stride.
         uint32_t offset = 0;
         names::Entry entry{};
-        for (int i = 0; i < 4 && names::EntryAt(block, offset, layout, entry); ++i) {
+        for (int i = 0; i < 6 && names::EntryAt(block, offset, layout, entry); ++i) {
             names[i] = names::Index(0, offset, layout);
             offset = static_cast<uint32_t>(names::NextOffset(entry, layout));
         }
@@ -216,4 +217,81 @@ TEST_CASE("writable sections come from a loaded image's headers") {
     const size_t count = globals::WritableSections(memory, image, sections, std::size(sections));
     REQUIRE(count >= 1);
     for (size_t i = 0; i < count; ++i) CHECK(sections[i].begin >= image);
+}
+
+TEST_CASE("a layout whose item differs from the engine's is refused") {
+    FakeEngine engine(names::Layouts[0]);
+    const auto memory = engine.memory.View();
+    uint64_t root = 0;
+    auto objectFirst = Shape;
+    objectFirst.itemObjectOffset = 0; // The fake keeps the object after an 8-byte field.
+    CHECK(globals::CheckTable(memory, engine.tableAddress, objectFirst, root) != nullptr);
+    auto shortItems = Shape;
+    shortItems.itemSize = 0x10;
+    CHECK(globals::CheckTable(memory, engine.tableAddress, shortItems, root) != nullptr);
+    CHECK(globals::CheckTable(memory, engine.tableAddress, Shape, root) == nullptr);
+}
+
+TEST_CASE("the stock shapes share the UE5 object header and differ only in the item") {
+    for (const auto& shape : globals::StockShapes) {
+        CHECK(shape.objectIndexOffset == 0xc);
+        CHECK(shape.objectClassOffset == 0x10);
+        CHECK(shape.objectNameOffset == 0x18);
+        CHECK(globals::ObjectHeaderBytes(shape) == 0x28);
+        CHECK(shape.perChunk == 0x10000);
+        CHECK(shape.itemSerialOffset == -1); // Unknown without an SDK: serials read 0.
+    }
+}
+
+namespace {
+// The engine's own class tree: Class -> Struct -> Field -> Object -> null at
+// SuperStruct (+0x40), with UStruct::Size at +0x58, after a decoy pointer to
+// Object at +0x28 (UField::Next) that the probe must pass over.
+struct FakeClassTree {
+    static constexpr uint32_t Super = 0x40, Size = 0x58;
+    FakeEngine& engine;
+    std::vector<uint8_t> classes[4]; // Class, Struct, Field, Object.
+    uint64_t At(int i) { return reinterpret_cast<uint64_t>(classes[i].data()); }
+    template<class T> void Put(int i, uint32_t offset, T value) { memcpy(classes[i].data() + offset, &value, sizeof(value)); }
+    explicit FakeClassTree(FakeEngine& owner) : engine(owner) {
+        const int32_t names[4] = {engine.names[1], engine.names[4], engine.names[5], engine.names[2]};
+        const int32_t sizes[4] = {0x230, 0xb0, 0x30, 0x28};
+        for (int i = 0; i < 4; ++i) {
+            classes[i].resize(0x100);
+            engine.memory.Add(classes[i]);
+        }
+        for (int i = 0; i < 4; ++i) {
+            Put(i, Shape.objectNameOffset, names[i]);
+            Put(i, Super, i < 3 ? At(i + 1) : uint64_t{0});
+            Put(i, Size, sizes[i]);
+            Put(i, 0x28, At(3)); // Decoy: a pointer to Object first.
+        }
+    }
+};
+}
+
+TEST_CASE("SuperStruct and UStruct::Size are found from the engine's class tree") {
+    FakeEngine engine(names::Layouts[0]);
+    FakeClassTree tree(engine);
+    const auto memory = engine.memory.View();
+    uint64_t chain[3]{};
+    const int32_t super = globals::ProbeSuperStruct(memory, engine.poolAddress, names::Layouts[0], Shape, tree.At(0), chain);
+    CHECK(super == FakeClassTree::Super);
+    CHECK(chain[0] == tree.At(1));
+    CHECK(chain[1] == tree.At(2));
+    CHECK(chain[2] == tree.At(3));
+    CHECK(globals::ProbeStructSize(memory, Shape, super, chain[1], chain[2]) == FakeClassTree::Size);
+}
+
+TEST_CASE("a class tree that does not end in Object, then null, gives no SuperStruct") {
+    FakeEngine engine(names::Layouts[0]);
+    FakeClassTree tree(engine);
+    const auto memory = engine.memory.View();
+    uint64_t chain[3]{};
+    tree.Put(3, FakeClassTree::Super, tree.At(0)); // Object's parent is not null.
+    CHECK(globals::ProbeSuperStruct(memory, engine.poolAddress, names::Layouts[0], Shape, tree.At(0), chain) == -1);
+    tree.Put(3, FakeClassTree::Super, uint64_t{0});
+    tree.Put(2, FakeClassTree::Super, tree.At(1)); // Field's parent named Struct, not Object.
+    CHECK(globals::ProbeSuperStruct(memory, engine.poolAddress, names::Layouts[0], Shape, tree.At(0), chain) == -1);
+    CHECK(globals::ProbeStructSize(memory, Shape, -1, tree.At(2), tree.At(3)) == -1);
 }

@@ -17,3 +17,8 @@ endif()
 
 add_library(consumer-host SHARED host.cpp)
 target_link_libraries(consumer-host PRIVATE reagentlive::core)
+
+# The Unreal pack with no SDK: ue-base builds alone.
+add_library(consumer-ue-base SHARED host_ue_base.cpp)
+target_link_libraries(consumer-ue-base PRIVATE reagentlive::ue-base)
+set_target_properties(consumer-ue-base PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
