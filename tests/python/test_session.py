@@ -115,9 +115,9 @@ CALLS = [
     [C('trial-clear', {'id': 1}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
-    [C('dump', {'target': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': 256, 'value': 4, 'before': 5}],
+    [C('dump', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
                                                       'truncated': False, 'capped': False, 'object_lookup_limited': False})],
-    [C('dump', {'target': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
+    [C('dump', {'object': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False, 'object_lookup_limited': False})],
     [C('census-diff', {'cls': 'Actor'}), ok({'classes': {'before': 3, 'after': 4}, 'instances': {'before': 9, 'after': 11},
                                                'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
@@ -238,7 +238,7 @@ class SessionTests(unittest.TestCase):
         self.assertIs(trial.parameters['owner'].default, inspect.Parameter.empty)   # A required flag.
         self.assertEqual(trial.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
         find = inspect.signature(self.gen.UeVerbs.find)
-        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'start'])
+        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'start'])
         self.assertIn('Literal', str(inspect.signature(self.gen.Console.search).parameters['type'].annotation))
         self.assertIn('class_size', self.gen.Object.__annotations__)              # Named types are classes.
         self.assertIn('Chain', str(self.gen.ReadResult.__annotations__['chain']))

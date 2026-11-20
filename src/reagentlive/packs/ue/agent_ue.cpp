@@ -227,6 +227,7 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
         ResetClassCache();
     }
     const bool exact = (request.flags & FindExact) != 0;
+    const bool live = (request.flags & FindLive) != 0;
     const bool counting = from == 0 && !exact; // Only the first page counts every match.
     const std::string_view query(request.text);
     const std::string_view wantedClass = ClassArgument(request);
@@ -243,6 +244,7 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
         if (!query.empty() && (exact ? FullName(ObjectName(object), name) != query : !NameMatches(FullName(ObjectName(object), name), query)))
             continue;
         if (!wantedClass.empty() && !ClassMatches(object, wantedClass, scratch)) continue;
+        if (live && Template(object)) continue;
         if (!pack.object(object)) continue;
         if (query.empty()) FullName(ObjectName(object), name);
         ++g_find.total;

@@ -246,8 +246,8 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     same("watch 1500ms 0x10:4 0x20:1 --then call 0x10#1:1 Fn 01",
         {{"duration", 1.5}, {"ranges", {"0x10:4", "0x20:1"}}, {"then", "call 0x10#1:1 Fn 01"}});
     same("watch-start 10s 0x10:4", {{"duration", 10}, {"ranges", "0x10:4"}});
-    same("dump 0x10#1:1 --changed", {{"target", "0x10#1:1"}, {"changed", true}});
-    same("dump 0x10#1:1 --changed f.snap --nonzero", {{"target", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
+    same("dump 0x10#1:1 --changed", {{"object", "0x10#1:1"}, {"changed", true}});
+    same("dump 0x10#1:1 --changed f.snap --nonzero", {{"object", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
     same("get 0x10#1:1 A.B C", {{"object", "0x10#1:1"}, {"paths", {"A.B", "C"}}});
     same("name 5 6", {{"indices", {5, 6}}});
     same("census --cls Actor --start 100", {{"cls", "Actor"}, {"start", 100}});
@@ -560,7 +560,7 @@ TEST_CASE("compact rows: dump is name, offset and value; get is value and addres
     row.meta = MakeFieldInfo(Field("Flags", 0x60, 1, "ByteProperty"));
     dump.rows.push_back(row);
     const auto json = Checked(dump);
-    CHECK(json["rows"][0] == Json{{"name", "MaxHealth"}, {"raw", "_aaabcd"}, {"offset", 308}, {"value", 100}});
+    CHECK(json["rows"][0] == Json{{"name", "MaxHealth"}, {"raw", "_aaabcd"}, {"offset", "0x134"}, {"value", 100}});
     CHECK(json["rows"][1]["truncated"] == true);    // Only when true, and the layout only with --meta.
     CHECK(json["rows"][1]["meta"]["type"] == "ByteProperty");
 
@@ -581,7 +581,7 @@ TEST_CASE("compact rows: dump is name, offset and value; get is value and addres
 TEST_CASE("fields, func and params results") {
     const std::vector<ue::Field> fields{Field("Health", 0x100, 4, "FloatProperty")};
     const auto table = Checked(MakeFields(Pawn, fields, [](const ue::Field&) { return std::string("Health"); }));
-    CHECK(table["rows"][0] == Json{{"name", "Health"}, {"owner", "Pawn"}, {"type", "FloatProperty"}, {"offset", 0x100},
+    CHECK(table["rows"][0] == Json{{"name", "Health"}, {"owner", "Pawn"}, {"type", "FloatProperty"}, {"offset", "0x100"},
         {"size", 4}, {"label", "Health"}});
     CHECK(table["capped"] == false);
 
@@ -824,7 +824,7 @@ TEST_CASE("script and refs results group entries by kind") {
     strcpy_s(local.text, "DoubleProperty PlayRate");
     script.entries = {name, call, local};
     const auto result = Checked(MakeScript(Pawn, "BP_Action_Reload_C:GetReloadSpeedMultiplier", script));
-    CHECK(result["names"][0] == Json{{"offset", 350}, {"count", 1}, {"index", 145935},
+    CHECK(result["names"][0] == Json{{"offset", "0x15e"}, {"count", 1}, {"index", 145935},
         {"name", "Attribute.Gameplay.Character.ReloadSpeedMultiplier"}});
     CHECK(result["functions"][0]["ref"] == "0x7ff4d87a0378#9:0");
     CHECK(result["properties"][0]["address"] == "0x1aac568d980");
@@ -837,7 +837,7 @@ TEST_CASE("script and refs results group entries by kind") {
     refs.rows = {row};
     const auto found = Checked(MakeRefs(145935, "Attribute.Gameplay.Character.ReloadSpeedMultiplier", refs));
     CHECK(found["rows"][0] == Json{{"ref", "0x2000#3:1"}, {"owner", "BP_Action_Reload_C"},
-        {"name", "GetReloadSpeedMultiplier"}, {"offset", 0}, {"count", 0}});
+        {"name", "GetReloadSpeedMultiplier"}, {"offset", "0x0"}, {"count", 0}});
     CHECK(found["capped"] == false);
     CHECK_FALSE(Checked(MakeRefs(7, "", refs)).contains("name"));
 }

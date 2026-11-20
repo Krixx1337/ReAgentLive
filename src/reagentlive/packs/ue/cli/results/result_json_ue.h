@@ -57,13 +57,15 @@ struct Funcs {
 struct FieldInfo {
     static constexpr std::string_view TypeName = "ue.FieldInfo";
     std::string name, owner, type;
-    uint32_t offset = 0, size = 0;
+    HexNum offset;
+    uint32_t size = 0;
     std::optional<std::string> structName;
     std::optional<uint32_t> boolMask;
     std::optional<std::string> elementType;
     std::optional<uint32_t> elementSize;
     std::optional<std::string> valueType;
-    std::optional<uint32_t> valueSize, valueOffset;
+    std::optional<uint32_t> valueSize;
+    std::optional<HexNum> valueOffset;
     std::optional<std::string> valueStruct;
     std::optional<uint32_t> stride;
     template<class V> static void Describe(V& v) {
@@ -100,7 +102,7 @@ struct FieldRow {
 struct NativeRefused {
     uint64_t line = 0;
     std::string name, owner;
-    uint32_t offset = 0;
+    HexNum offset;
     std::string reason;
     template<class V> static void Describe(V& v) {
         v("line", &NativeRefused::line);
@@ -153,7 +155,7 @@ struct Preview {
 struct DumpRow {
     std::string name;
     std::optional<std::string> raw;
-    uint32_t offset = 0;
+    HexNum offset;
     std::optional<bool> native, stale;
     Json value;
     std::optional<Json> before;
@@ -328,7 +330,8 @@ struct Entries {
 // script: a Blueprint function's confirmed anchored entries by kind.
 // `offset` is the first opcode's offset in the bytecode, `count` how often it occurs.
 struct ScriptName {
-    uint32_t offset = 0, count = 0;
+    HexNum offset;
+    uint32_t count = 0;
     int32_t index = 0;
     std::string name;
     template<class V> static void Describe(V& v) {
@@ -339,7 +342,8 @@ struct ScriptName {
     }
 };
 struct ScriptFunction {
-    uint32_t offset = 0, count = 0;
+    HexNum offset;
+    uint32_t count = 0;
     RefId ref;
     std::string function;
     template<class V> static void Describe(V& v) {
@@ -350,7 +354,8 @@ struct ScriptFunction {
     }
 };
 struct ScriptProperty {
-    uint32_t offset = 0, count = 0;
+    HexNum offset;
+    uint32_t count = 0;
     Addr address;
     std::string property;
     template<class V> static void Describe(V& v) {
@@ -379,7 +384,8 @@ struct Script {
 struct RefsRow {
     RefId ref;
     std::string owner, name;
-    uint32_t offset = 0, count = 0;
+    HexNum offset;
+    uint32_t count = 0;
     template<class V> static void Describe(V& v) {
         v("ref", &RefsRow::ref);
         v("owner", &RefsRow::owner);
@@ -531,7 +537,7 @@ struct NativeLabel {
     std::string path;
     uint64_t line = 0;
     std::string owner;
-    uint32_t offset = 0;
+    HexNum offset;
     std::string type, name;
     uint32_t size = 0, timestamp = 0;
     template<class V> static void Describe(V& v) {

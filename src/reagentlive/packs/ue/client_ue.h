@@ -27,6 +27,8 @@ struct FindOptions {
     // first match and counts nothing (FindExact). An agent built before it
     // treats text as a substring and counts: slower, same first exact match.
     bool exact = false;
+    // Live instances only: no class default or archetype objects (FindLive).
+    bool live = false;
 };
 struct Field {
     uint32_t offset, size;

@@ -164,7 +164,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     case ue::op::Find: {
         const std::string_view className = request.length ? reinterpret_cast<const char*>(request.data) : "";
         const auto from = static_cast<uint32_t>(request.args[1]);
-        auto found = ue::Find(client, request.text, {className, from});
+        auto found = ue::Find(client, request.text, {className, from, false, (request.flags & ue::FindLive) != 0});
         if (!found) return CommandError(session, jsonCommand, found.error());
         refs.clear();
         for (const auto& object : found->objects) refs.push_back(object.ref);

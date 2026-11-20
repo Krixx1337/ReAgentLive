@@ -605,6 +605,11 @@ TEST_CASE("find takes a class filter and a cursor") {
     REQUIRE(classOnly.has_value());
     CHECK(classOnly->request.text[0] == 0);
     CHECK(ue::Check(classOnly->request) == Status::Ok);
+    CHECK(classOnly->request.flags == 0);
+    const auto live = Parse("find --cls DataTable --live", NoRefs);
+    REQUIRE(live.has_value());
+    CHECK(live->request.flags == ue::FindLive);
+    CHECK(ue::Check(live->request) == Status::Ok);
     const auto spaced = Parse("find two words --start 1", NoRefs);
     REQUIRE(spaced.has_value());
     CHECK(std::string_view(spaced->request.text) == "two words");

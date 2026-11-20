@@ -134,7 +134,9 @@ TEST_CASE("find bounds and detail packing") {
     CHECK(ue::Check(request) == Status::BadRequest);
     CopyText(request.text, "Pawn");
     CHECK(ue::Check(request) == Status::Ok);
-    request.flags = 2;                                        // No other flag.
+    request.flags = ue::FindExact | ue::FindLive;             // Live instances combine with either form.
+    CHECK(ue::Check(request) == Status::Ok);
+    request.flags = 4;                                        // No other flag.
     CHECK(ue::Check(request) == Status::BadRequest);
     request.flags = 0;
     const auto detail = ue::FindDetail(2620, 331227);

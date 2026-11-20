@@ -1,4 +1,4 @@
-# Gameplay systems: tags, attributes, data, collision
+# Gameplay systems: tags, attributes, data, collision, replication
 
 ## Finding what exists
 
@@ -69,3 +69,15 @@
   the hit component's response to each channel with its getter. Object
   channels and trace-query indices are separate. A profile on a projectile
   actor only establishes that actor's configuration.
+
+## Replication on a client
+
+- "It exists on the server, so why not here?": on a client (`Role` 1 on the
+  actor, simulated proxy) an actor arrives only while it is net relevant.
+  Read the class default object: `bAlwaysRelevant`, `bOnlyRelevantToOwner`
+  and `NetCullDistanceSquared` (cm²; 1e10 is 1 km). A culled actor's slot in
+  an owner's array reads null, not stale.
+- Look for an always-relevant owner or proxy (a placement, plot or marker
+  actor) that carries position and side at any range.
+- Lists named `Auth_...` and server-only subsystem state are empty on a
+  client; an empty list there is not evidence of nothing.

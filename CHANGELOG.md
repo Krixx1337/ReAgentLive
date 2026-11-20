@@ -7,6 +7,17 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Member offsets print in hex** (`"offset": "0x2e0"`), as SDK dumps and
+  the other hex keys do: `dump`, `fields`, `label`, `script`, `refs` and
+  native-member refusals, plus `fields`' `value_offset`. Breaking for scripts
+  that read them as numbers; the table hash changes.
+- **One name for the object argument:** the positional of `dump`, `fields`,
+  `label`, `func`, `funcs`, `params` and `script` is `object` (was
+  `target`), as on `get`, `describe` and `entries`. `calls-start`'s is
+  `owner`, beside its `--object` filter. Breaking for JSON calls and
+  generated modules.
+- **`find --live`** leaves out class default and archetype objects
+  (`FindLive`), as `census` does. An agent built before it refuses the flag.
 - **The Unreal pack without an SDK:** `reagentlive::ue-base`
   ([without an SDK](docs/commands/unreal.md#without-an-sdk)) builds with no
   Dumper-7 SDK and answers `find`, `describe`, object range reads, `name`,

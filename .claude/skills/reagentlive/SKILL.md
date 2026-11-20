@@ -45,7 +45,7 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 
 | Command | For |
 |---|---|
-| `find [text] [--cls C]` | Objects by name and/or class; 24 per page |
+| `find [text] [--cls C] [--live]` | Objects by name and/or class (any case); 24 per page; `--live` drops `Default__` and archetype objects |
 | `census [--cls C] [--match T] [--limit N] [--start N]` / `census-diff` (same flags) | Live instances per class, with sample refs / only the classes whose count differs since the last census. Pages of 100: `--start <next_cursor>` for the next, no rescan; `--limit 0` for all |
 | `each <Class> <Path>... \| <Owner:Fn>` | A table over every instance: up to 16 field paths (structs, pointers) or one pure getter; `rows` of `{ref, values}`, failed cells in `errors`. One scan, so ask for every column at once |
 | `dump <obj> [--match T] [--nonzero] [--own] [--changed]` | Every reflected field: `name` (readable where recovered, `raw` beside it), `offset`, `value`; `--own` drops inherited fields, `--meta` adds the layout |
@@ -106,9 +106,10 @@ to cross to the static tool (native-code reference).
 6. **Cross-check.** Confirm data with a second, independent source (asset
    value vs measured behaviour, computed point vs bone transform). One source
    is a hypothesis.
-7. **Ship and verify.** When a finding changes code: pure logic with unit
-   tests, then a live capture that proves the new code path ran (a case
-   only the new logic explains), then the evidence record.
+7. **Ship and verify.** When a finding changes code: `layout-export` every
+   class it reads (the file backs its offset checks; `layout-check` after a
+   patch), pure logic with unit tests, then a live capture that proves the
+   new code path ran (a case only the new logic explains), then the evidence record.
 
 ## Efficiency
 
@@ -156,7 +157,7 @@ to cross to the static tool (native-code reference).
 | write a script or loop, compare or intersect results, parse output, or use PowerShell or Python | `references/console-driving.md` |
 | sample a value over time, or see what changes across an action (`watch`, `record`, `snap` then `dump --changed`) | `references/capture-and-timing.md` |
 | send any `call` (pure getters too: block layout, leaks), `write` or `pin` | `references/calls-and-writes.md` |
-| ask about tags, attributes, effects, "why can't I do X", data tables, maps or traces (Unreal) | `references/unreal/gameplay-systems.md` |
+| ask about tags, attributes, effects, "why can't I do X", data tables, maps, traces, or why an object is missing on a client (Unreal) | `references/unreal/gameplay-systems.md` |
 | ask about poses, anim layers or nodes, aiming down sights, lean, camera or bones (Unreal) | `references/unreal/animation-and-camera.md` |
 | follow a native getter, read a Blueprint function's bytecode, disassemble, find the code using an offset, or make or check a byte signature | `references/native-code.md` |
 | hunt unreflected state or padding, read an object with no reflection, or use `search` | `references/hidden-state.md` |

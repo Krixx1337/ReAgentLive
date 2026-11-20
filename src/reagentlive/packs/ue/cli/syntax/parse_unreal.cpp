@@ -76,7 +76,7 @@ Parsed CensusOptions(const Args& args, bool changed) {
 }
 }
 
-// find [text] [--cls Class] [--start cursor]; text keeps its inner spaces.
+// find [text] [--cls Class] [--live] [--start cursor]; text keeps its inner spaces.
 Parsed Find(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
@@ -88,6 +88,7 @@ Parsed Find(const Args& args, const ParseContext&) {
     if (text.empty() && !request.length) return Fail();
     if (text.size() >= MaxText) return Fail("search text too long");
     request.op = ue::op::Find;
+    if (args.Has("--live")) request.flags = ue::FindLive;
     CopyText(request.text, text);
     return command;
 }

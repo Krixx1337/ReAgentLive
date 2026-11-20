@@ -15,6 +15,8 @@
 // FindExact: the whole name equals text (case-sensitive) and the scan stops
 // at the first match, counting nothing (total 0; next = the slot after it),
 // so a lookup by name costs the slots up to the match, not the table.
+// FindLive: live instances only; class default and archetype objects (the
+// templates census also skips) are left out.
 // Call: object ref (see SetRef), text =
 // "Function" or "Class:Function", length and data = the parameter block.
 // Fields: object ref (a class or struct lists its own fields, anything else
@@ -55,7 +57,7 @@ constexpr size_t MaxFindResults = 24;
 constexpr uint32_t MaxClassName = 64;
 // Find's detail: total matches in the low 32 bits, the cursor for the next page
 // in the high 32 bits (0 when this page holds the last matches).
-constexpr uint32_t FindExact = 1;
+constexpr uint32_t FindExact = 1, FindLive = 2;
 inline uint64_t FindDetail(uint32_t total, uint32_t next) { return total | static_cast<uint64_t>(next) << 32; }
 inline uint32_t FindTotal(uint64_t detail) { return static_cast<uint32_t>(detail); }
 inline uint32_t FindNext(uint64_t detail) { return static_cast<uint32_t>(detail >> 32); }
@@ -563,7 +565,7 @@ inline Status Check(const Request& request) {
     switch (request.op) {
     case op::Find: {
         if (!Terminated(request.text) || request.args[1] > INT32_MAX || request.length > MaxClassName ||
-            (request.flags & ~FindExact) || ((request.flags & FindExact) && !request.text[0])) return Status::BadRequest;
+            (request.flags & ~(FindExact | FindLive)) || ((request.flags & FindExact) && !request.text[0])) return Status::BadRequest;
         const bool hasClass = detail::HasClass(request);
         if (request.length && !hasClass) return Status::BadRequest;
         return request.text[0] || hasClass ? Status::Ok : Status::BadRequest;

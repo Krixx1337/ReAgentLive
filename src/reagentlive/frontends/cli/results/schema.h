@@ -17,6 +17,7 @@
 // prefix: "ue.Name"): help --json then lists it once under `types`.
 #pragma once
 #include <cinttypes>
+#include <compare>
 #include <cstdint>
 #include <cstdio>
 #include <map>
@@ -47,6 +48,7 @@ struct HexNum {     // hex: a number shown in hex (rva, offset, size).
     uint64_t value = 0;
     HexNum() = default;
     HexNum(uint64_t number) : value(number) {}
+    auto operator<=>(const HexNum&) const = default;
 };
 struct HexBytes {   // bytes: "01 02 ff", in memory order.
     std::string text;
