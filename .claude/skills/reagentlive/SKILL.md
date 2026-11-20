@@ -17,10 +17,9 @@ rules. They win over this skill.
 
 ## Rules
 
-- Reads need no approval: `find`, `read`, `fields`, `dump`, `get`,
-  `describe`, `name`, `func`, `snap`, `record`, `watch`, `census`,
-  `name-find`, `each`, `mem-diff`, `rtti`, `layout-check`, and pure getters
-  such as `GetSocketTransform` through `call-pure` (say what you call).
+- Reads need no approval: every verb `help` does not mark `writes`, `each`
+  over field paths, and pure getters (`GetSocketTransform`) through `each` or
+  `call-pure` (say what you call).
 - Ask the user first for any `write`, `pin`, and any `call` that could change
   game state or crash: give the address, current bytes, new bytes and expected
   effect (for a call, its `call --dry` output). One approval covers one write.
@@ -53,7 +52,7 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 | `batch { cmd; cmd; ... }` | Many commands in as few ticks as possible |
 | `fields <obj\|class>` / `describe <ref>` | Field layout / an object's name, class and ref |
 | `name <index>...` / `name-find <text>` | FName index to text / text to index |
-| `read` / `read-batch` / `search` | Raw memory; same-tick ranges; addresses holding a value |
+| `read <addr>[->0x10->0x8] [n] [--type cstr\|wstr\|"<layout>"]` / `read-batch` / `search` | Raw memory, through a pointer chain (each `->off` but the last reads a pointer; one `->off` alone is refused), as strings or a mixed-type block; same-tick ranges; addresses holding a value |
 | `entries <obj> <Field> [--start N]` | Every element of an array, set or map field, paged; maps as key and value |
 | `peek <addr> [count]` | What qwords hold: object, `module`+`rva`, heap pointer or value (with a name hint) |
 | `disasm <addr> [n] [--function] [--follow]` | Instructions from live bytes: targets, string hints, address fields; `--function` uses the exception table's bounds |
@@ -61,20 +60,14 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 | `search text "<s>" [--wide]` | Where a string lives, quoted for spaces (then `xrefs` on it) |
 | `vtable <obj> [n] [--offset N] [--resolve]` / `rtti <obj>` | A native object's virtual table, slots until one is not code / its MSVC class and bases |
 | `region <addr>` | What memory is: `code`, `rodata`, `data` (with section), `mapped`, `private`, `free` |
-| `read <addr>->0x10->0x8 [n] [--type cstr\|wstr]` | Read through a pointer chain (each `->off` but the last reads a pointer, so `<addr>->0->0x30` reads through the pointer at `<addr>`; one `->off` alone is refused); C or UTF-16 strings |
 | `sig-check <pattern>` / `sig-file <file>` / `sig-bytes <addr>` | Is a byte signature unique and does it land there / several at once / live bytes with address fields masked |
 | `func` / `funcs <obj> [text]` / `params` / `script` | A UFunction's entry / functions matching text / its parameter block / a Blueprint function's bytecode names |
 | `call <obj> Owner:Fn <hex\|Name=value> [--dry]` / `call-pure` | ProcessEvent; the block after the call. `--dry` only builds it; `call-pure` refuses anything not const or pure |
 | `layout-export <file> <Class>...` / `layout-check <file>` | Fields to a file / only the lines that no longer hold (after a patch) |
-| `mem-snap <addr> <len>` / `mem-diff <test> <type> [--keep]` | Keep up to 1 MiB / which elements changed, stayed, rose or fell; `--keep` narrows |
 | `write` / `pin` / `trial` | Change memory once / every tick / once with an automatic undo (approval). `help` marks every verb that writes or calls into the game with `writes` |
-| `watch <s> <addr>:<len>... [--then call ...]` | Sample ranges every tick inside the agent |
-| `watch-start <dur> <ranges> [--every <dur>] [--follow root]` / `watch-read` / `watch-stop` | A capture the agent keeps while the console is free; a range `<addr>:f64` or `:i32[2]` comes back as numbers with a `summary` (first, last, least, greatest, `per_second`) |
-| `read <addr> --type "<layout>"` / `label <obj> <off> <type> <Name>` | Decode a block of mixed types / name an unreflected member for good |
-| `snap` / `dump --changed` / `record` | Baseline, changed fields, named fields over time |
+| `watch` / `watch-start` / `record` / `snap` then `dump --changed` / `mem-snap` and `mem-diff` | Values over time or across an action (capture reference) |
+| `label <obj> <off> <type> <Name>` | Name an unreflected member for good |
 | `status` / `base` / `modules` | Agent build and tick rate; exe and module ranges |
-
-Hosts add their own commands (see the host notes).
 
 ## Refs
 
@@ -90,9 +83,8 @@ to cross to the static tool (native-code reference).
 
 ## Workflow
 
-1. **Question first.** Write the runtime question and what would answer it
-   ("which field drops when I fire?", "what spread does the gun really have?").
-   Read what the project's docs already record about it.
+1. **Question first.** Write the runtime question ("which field drops when I
+   fire?") and what would answer it. Read what the project's docs record.
 2. **Locate.** `find --cls <Class>` lists instances; add name text to narrow.
    Name text is a substring match anywhere, so short text floods the page; use
    a distinctive suffix or a class.
@@ -120,18 +112,14 @@ to cross to the static tool (native-code reference).
   one `batch { ... }` or one `get` with several paths.
 - Filter `dump` (`--match`, `--nonzero`, `--changed`) instead of reading all
   of it.
-- Values read in separate commands come from different ticks; put what must
-  line up in one `batch`, `get` or `read-batch`. A batch with `each`,
-  `census`, `search`, `refs`, `xrefs` or `touches` spans ticks: read
-  `spans_ticks`.
+- Separate commands read separate ticks; what must line up goes in one
+  `get`, `read-batch` or `batch` (read its `spans_ticks`).
 - Add `--timing` to a line to see its round trips.
-- **Measure the session, don't recall it.** `stats` (a tool and a verb;
-  works after the target has gone) ranks this session's verbs by output
-  and marks `unfiltered`, `repeated` and `refused` calls. Call it before a
-  long step and change course on the marks (filter, batch, keep a result
-  instead of asking again, read `help <verb>` after a refusal). End the
-  final report with its totals (`out_by_caller.tool` is the context cost)
-  and the two or three costliest habits.
+- **Measure the session, don't recall it.** `stats` (also with no target)
+  ranks this session's verbs by output and marks `unfiltered`, `repeated`
+  and `refused` calls: check it before a long step and act on the marks.
+  End the final report with its totals (`out_by_caller.tool` is the context
+  cost) and the two or three costliest habits.
 - One console per agent: a second one is refused as `busy`.
 
 ## Pitfalls that bite any session
@@ -165,17 +153,14 @@ to cross to the static tool (native-code reference).
 
 ## When ReAgentLive hits a limit
 
-Add the missing piece instead of working around it twice; `name`,
-`find --cls`, larger array previews and `describe #index:serial` all came
-from real investigations. Keep ReAgentLive engine- and game-agnostic, test it,
-document it in ReAgentLive's docs, and re-rank its backlog (`docs/ideas.md`)
-with the evidence.
+Add the missing piece instead of working around it twice (`find --cls` and
+`find --live` came from real investigations): engine- and game-agnostic,
+tested, documented, and the backlog (`docs/ideas.md`) re-ranked with the evidence.
 
 ## Keeping this skill current
 
-At the end of every ReAgentLive session, read `stats` and ask what would
-have saved time; `stats --all` shows patterns across sessions and the
-verbs nobody uses:
+At the end of every session, read `stats` and ask what would have saved
+time (`stats --all`: patterns across sessions, verbs nobody uses):
 
 - **Scope first.** A lesson that would hold in another game goes here,
   worded without the game (an Unreal-only one under `references/unreal/`).

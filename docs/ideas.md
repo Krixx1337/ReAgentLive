@@ -189,6 +189,17 @@ and strings. It sweeps over functions, which the fast lane excludes:
 build it as a script over the Python client, not a verb. Pull forward
 when a patch moves many hand-made signatures at once.
 
+### 32 · `where <object>`: place and net relevance in one call
+
+"How far is this from me, and why is it missing on a client?" took four
+calls and hand arithmetic in one session (two root locations, the net
+role, the class default object's `bAlwaysRelevant` and
+`NetCullDistanceSquared`). Shape: an Unreal pack verb returning world
+location, distance from `--from` (default the host's `pawn` root), `Role`
+and `RemoteRole`, relevance and cull distance in metres; location from the
+root component's fields, no engine call. Pull forward when a second
+investigation asks the same.
+
 ## Not ideas
 
 Deliberately out of scope, see [design](design.md#not-now): other transports,
