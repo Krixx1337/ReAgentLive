@@ -304,6 +304,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     // Compact field values through the decoder (nested arrays, tag lists,
     // text at any depth); --meta and previews keep the plain formatter.
     RowReader reader(session, structs, RowReader::PreviewNested);
+    // A top-level array keeps its header: its preview already lists the elements.
+    const auto decoded = [&](const ue::Field& field) { return !session.meta && field.type != "ArrayProperty"; };
     if (client.Supports(ue::op::Names)) {
         const auto collectName = [&](int32_t index) -> std::string_view {
             if (index >= 0 && nameSlots.try_emplace(index, indices.size()).second)
@@ -314,7 +316,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             if (keep[i]) {
                 FormatField(sorted[i], FieldBytes(*bytes, sorted[i]), structs, 0, collectName);
                 bool ignored = false;
-                if (!session.meta) reader.Value(sorted[i], FieldBytes(*bytes, sorted[i]), {}, collectName, ignored);
+                if (decoded(sorted[i])) reader.Value(sorted[i], FieldBytes(*bytes, sorted[i]), {}, collectName, ignored);
             }
         for (const auto& preview : previews) {
             if (!preview.elements) continue;
@@ -334,7 +336,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     // Text values (fields and array elements), converted by the engine.
     TextBatch texts;
     for (size_t i = 0; i < sorted.size(); ++i)
-        if (keep[i] && session.meta) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i])); // Compact: the decoder.
+        if (keep[i] && !decoded(sorted[i])) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i])); // Else: the decoder.
     for (const auto& preview : previews) {
         if (!preview.elements) continue;
         const auto layout = ElementParts(sorted[preview.fieldIndex]);
@@ -343,7 +345,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             for (const auto& part : layout.parts) texts.Add(part.field, data.subspan(offset + part.offset, part.field.size));
     }
     texts.Resolve(session);
-    if (!session.meta) reader.ResolveTexts();
+    reader.ResolveTexts();
 
     // Every pointer the rows will name, in two requests: fields, then array elements.
     if (describeMany) {
@@ -384,8 +386,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         bool partial = false;
         shape::DumpRow row;
         placed(row, field);
-        row.value = !session.meta ? reader.Value(field, data, {}, lookupName, partial) :
-            texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)));
+        row.value = decoded(field) ? reader.Value(field, data, {}, lookupName, partial) :
+            texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)), session.meta);
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);
             row.before = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);
@@ -410,7 +412,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                         const auto element = elementBytes.subspan(offset + part.offset, part.field.size);
                         const bool key = std::string_view(part.name) == "key";
                         auto value = texts.Value(part.field, element,
-                            JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1));
+                            JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1), session.meta);
                         if (key) item.key = std::move(value);
                         else item.value = std::move(value);
                         if (const auto* named = describePointer(part.field.type, element, elementLookups)) {

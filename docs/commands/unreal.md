@@ -368,8 +368,8 @@ generated wrapper, so follow it separately when locating native game logic.
 ## Text values
 
 `get`, `each`, `dump` and decoded rows (returned arrays, `rows`) show a
-`TextProperty` as its display string, at any depth (top-level only with
-`--meta`):
+`TextProperty` as its display string, at any depth: `"Assault Rifle"`.
+With `--meta` (top-level only) it says how:
 `{"text": "Assault Rifle", "via": "KismetTextLibrary.Conv_TextToString"}`.
 An `FText` holds a pointer to engine-private text data whose layout
 changes between engine builds, and a localized text keeps no inline

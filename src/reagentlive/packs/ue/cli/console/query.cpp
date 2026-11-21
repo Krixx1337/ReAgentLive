@@ -479,7 +479,8 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     const auto value = [&](const Cell& cell) -> Json {
         if (cell.native) return layout::Value(cell.native->field, cell.bytes);
         if (!session.meta) return reader.Value(cell.field, cell.bytes, {}, names, truncated);
-        return texts.Value(cell.field, cell.bytes, JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)));
+        return texts.Value(cell.field, cell.bytes, JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)),
+            session.meta);
     };
     uint64_t matched = 0;
     for (size_t i = 0; i < cells.size(); ++i) {
@@ -589,7 +590,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         bool partial = false;
         row.value = !session.meta ? reader.Value(value.field, std::span(value.bytes), {}, lookupName, partial) :
             texts.Value(value.field, std::span(value.bytes),
-                JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session)));
+                JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session)), session.meta);
         if (partial) row.truncated = true;
         if (session.meta) row.type = value.field.type;
         const auto target = PointerRef(value.field.type, value.bytes);

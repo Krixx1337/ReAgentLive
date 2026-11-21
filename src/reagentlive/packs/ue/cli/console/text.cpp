@@ -93,13 +93,13 @@ void TextBatch::Resolve(Session& session) {
     }
 }
 
-Json TextBatch::Value(const ue::Field& field, std::span<const uint8_t> bytes, Json raw) const {
+Json TextBatch::Value(const ue::Field& field, std::span<const uint8_t> bytes, Json raw, bool meta) const {
     if (field.type != "TextProperty") return raw;
     const std::vector<uint8_t> value(bytes.begin(), bytes.end());
     const auto at = std::ranges::find(texts_, value);
     const auto slot = static_cast<size_t>(at - texts_.begin());
     if (at != texts_.end() && slot < strings_.size() && strings_[slot])
-        return {{"text", *strings_[slot]}, {"via", Converter}};
+        return meta ? Json{{"text", *strings_[slot]}, {"via", Converter}} : Json(*strings_[slot]);
     const std::string why = !why_.empty() ? why_ : at != texts_.end() && slot < errors_.size() ? errors_[slot] :
         "text not resolved";
     if (raw.is_object()) raw["text_error"] = why;

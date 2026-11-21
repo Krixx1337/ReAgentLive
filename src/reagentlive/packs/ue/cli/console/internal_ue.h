@@ -140,8 +140,9 @@ class TextBatch {
 public:
     void Add(const ue::Field& field, std::span<const uint8_t> bytes);
     void Resolve(Session& session);
-    // A TextProperty value: {"text", "via"}, or `raw` with "text_error". Others: `raw`.
-    Json Value(const ue::Field& field, std::span<const uint8_t> bytes, Json raw) const;
+    // A TextProperty value: its string ({"text", "via"} with `meta`), or `raw`
+    // with "text_error". Others: `raw`.
+    Json Value(const ue::Field& field, std::span<const uint8_t> bytes, Json raw, bool meta) const;
 private:
     std::vector<std::vector<uint8_t>> texts_;
     std::vector<std::optional<std::string>> strings_;

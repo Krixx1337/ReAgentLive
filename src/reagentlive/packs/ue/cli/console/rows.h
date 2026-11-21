@@ -154,7 +154,7 @@ public:
         const ValueStyle style{false, &session_.names};
         if (field.type == "TextProperty") {
             texts_.Add(field, bytes);
-            return texts_.Value(field, bytes, JsonFieldValue(field, bytes, structs_, names, truncated, style, 1));
+            return texts_.Value(field, bytes, JsonFieldValue(field, bytes, structs_, names, truncated, style, 1), false);
         }
         if (field.type == "ArrayProperty" && depth < MaxDepth && bytes.size() == sizeof(ue::ArrayHeader))
             return Array(field, bytes, 0, nested_, paths, names, truncated, depth + 1);
