@@ -27,6 +27,15 @@ class CoreConsoleTests(unittest.TestCase):
         cls.full_rows = {row['verb']: row for row in cls.full['rows']}
         cls.pack_verbs = [row['verb'] for row in cls.full['rows'] if row['origin'] not in ('core', 'host')]
 
+    def test_the_table_is_never_digested(self):
+        # A tool client reads it before any call (the MCP server at start), whatever the budget.
+        out = subprocess.run([CONSOLE, '--caller', 'tool', '--no-usage', '-c', 'help --json --budget 100'],
+                             capture_output=True, text=True, timeout=30).stdout
+        reply = json.loads(next(line for line in out.splitlines() if line.startswith('{')))
+        self.assertTrue(reply['ok'])
+        self.assertIn('rows', reply['result'])
+        self.assertNotIn('digest', reply)
+
     def test_only_core_rows_and_origin(self):
         self.assertEqual({row['origin'] for row in self.core['rows']}, {'core'})
         self.assertEqual([origin['origin'] for origin in self.core['origins']], ['core'])

@@ -587,6 +587,8 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     }
     session.current = parsed->verb;
     session.input.reads = !parsed->verb || !parsed->verb->writes;
+    // The table and the verbs' docs are what a client reads to call at all: never digested.
+    if (parsed->kind == Kind::Help) session.input.budget = 0;
     if (inBatch && parsed->kind == Kind::Each && parsed->seconds) {
         JsonError(session, jsonCommand, "syntax", "each --seconds is not allowed in a batch");
         return false;
