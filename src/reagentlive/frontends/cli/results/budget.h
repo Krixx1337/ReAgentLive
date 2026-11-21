@@ -96,9 +96,15 @@ public:
         // A table row's members sit under its `value` (rows); a call's rows are the members.
         for (size_t child : nodes_[base].children)
             if (nodes_[child].key == "value" && nodes_[child].object) { base = child; break; }
-        for (size_t i = 0; i < nodes_.size(); ++i) {
-            if (!nodes_[i].children.empty() || !Within(i, base) || i == base) continue;
-            if (Header(nodes_[i].parent)) continue;
+        std::set<size_t> whole; // Opaque values already counted.
+        for (size_t leaf = 0; leaf < nodes_.size(); ++leaf) {
+            if (!nodes_[leaf].children.empty() || !Within(leaf, base) || leaf == base) continue;
+            // A value printed as bytes is one field, never its keys.
+            size_t i = leaf;
+            for (size_t up = nodes_[leaf].parent; up != base && up != SIZE_MAX; up = nodes_[up].parent)
+                if (Opaque(up)) i = up;
+            if (i != leaf && !whole.insert(i).second) continue;
+            if (i == leaf && Header(nodes_[i].parent)) continue;
             std::vector<std::string_view> keys;
             for (size_t up = i; up != base; up = nodes_[up].parent) {
                 const auto& node = nodes_[up];
@@ -162,6 +168,17 @@ private:
         for (; node != SIZE_MAX; node = nodes_[node].parent)
             if (node == ancestor) return true;
         return false;
+    }
+    // A value the formatter could not decode: {byte_count, hex, truncated}, or a non-finite float.
+    bool Opaque(size_t node) const {
+        if (!nodes_[node].object) return false;
+        bool bytes = false, hex = false;
+        for (size_t child : nodes_[node].children) {
+            bytes |= nodes_[child].key == "byte_count";
+            hex |= nodes_[child].key == "hex";
+            if (nodes_[child].key == "non_finite") return true;
+        }
+        return bytes && hex;
     }
     // An array as RowReader prints it: {count, rows, ...}.
     bool Header(size_t node) const {

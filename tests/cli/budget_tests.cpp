@@ -102,6 +102,17 @@ TEST_CASE("profile: a table row's members sit under its value") {
     CHECK(fields.contains("Cost"));
     CHECK(fields.contains("Label"));
     CHECK_FALSE(fields.contains("name"));
+
+    // A value printed as bytes is one member, not its keys (--fields would refuse them).
+    Json opaque = Json::array();
+    for (int i = 0; i < 3; ++i)
+        opaque.push_back({{"name", "R"}, {"address", "0x10"}, {"value", {{"Tags", {{"byte_count", 80}, {"hex", "00"},
+            {"truncated", true}}}, {"Speed", {{"non_finite", "nan"}}}, {"Cost", i}}}});
+    const auto bytes = budget::Profile(Json{{"rows", opaque}}).Fields();
+    CHECK(bytes.contains("Tags"));
+    CHECK(bytes.contains("Speed"));
+    CHECK_FALSE(bytes.contains("Tags.byte_count"));
+    CHECK_FALSE(bytes.contains("Tags.hex"));
 }
 
 TEST_CASE("narrow: --fields keeps the members that fit, whole where they can, --limit when they do not fit") {
