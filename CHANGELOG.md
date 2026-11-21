@@ -7,6 +7,23 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Tags and names by text in typed calls:** a struct holding only a name
+  (a gameplay tag) takes the name alone, `ResourceTag=A.B.C`, also inside
+  structs; a name the pool lacks is refused naming it.
+- **Returned arrays as rows:** a typed `call` decodes an array output's
+  elements with their reflected struct, nested arrays and names included,
+  paged with `--start`/`--limit` and picked with `--fields a,b.c`
+  ([named calls](docs/commands/unreal.md#named-calls)).
+- **Text values:** `get`, `each` and `dump` show a `TextProperty` as its
+  string through `KismetTextLibrary.Conv_TextToString`, or say why not
+  ([text values](docs/commands/unreal.md#text-values)).
+- **`rows <data table>`:** a table's unreflected `RowMap`, each row decoded
+  with its `RowStruct` ([rows](docs/commands/unreal.md#rows)).
+- **`each --where Field~text` and `--limit`** (100 rows by default, then
+  `omitted`). Breaking for scripts that expected every row.
+- **A one-hop chain's refusal** (`read X->0x20`) spells both fixes with the
+  line's own address.
+
 - **Member offsets print in hex** (`"offset": "0x2e0"`), as SDK dumps and
   the other hex keys do: `dump`, `fields`, `label`, `script`, `refs` and
   native-member refusals, plus `fields`' `value_offset`. Breaking for scripts

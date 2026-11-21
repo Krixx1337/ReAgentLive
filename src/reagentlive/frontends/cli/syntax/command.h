@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, Label, Stats, Layout,
-    Rtti, MemSnap, MemDiff, Trace, Calls };
+    Rtti, MemSnap, MemDiff, Trace, Calls, Rows };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -37,8 +37,8 @@ struct Command {
     std::string className;
     std::string target;         // A name the verb acts on (a function, a member, a watch action).
     uint32_t seconds = 0;       // each: repeat for this long, printing changes.
-    uint32_t limit = 0;         // census: rows to print, 0 = all.
-    uint32_t from = 0;          // census: the first row printed (a later page of the stored census).
+    uint32_t limit = 0;         // census, call: rows to print, 0 = all.
+    uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
     std::string view;           // read --type: element type or layout for decoded values.
     // pin and watch: per target (watch: per range in `reads`), the object an
     // address was given relative to ($N+0x10), 0 for raw addresses. The
@@ -56,6 +56,8 @@ struct Command {
     // sets `changed`, comparing with the census baseline. batch: `fields` holds the command
     // lines. get: `fields` holds the paths.
     std::string match;
+    // each --where Field~text: the field path whose value must contain `match`.
+    std::string whereField;
     bool nonzero = false, changed = false, own = false; // dump filters; own: only the fields the class itself declares.
     // write --trial: the owning object (guarded on its identity) and an
     // optional native object base inside it whose vtable is guarded too.
@@ -87,6 +89,9 @@ struct Command {
     uint64_t range = 0;
     // call --dry: resolve the function and build the block, call nothing.
     bool dry = false;
+    // call and rows: the member paths kept in each row (--fields a,b.c);
+    // `from` and `limit` page the rows. rows: `match` filters row names.
+    std::vector<std::string> rowPaths;
     // trace: its two ends (a world point in cm, or an object's location or a
     // socket on it), the trace type query, simple collision, and an actor the
     // line passes through (also the world it runs in; else an end's object).
@@ -108,6 +113,8 @@ constexpr size_t MaxTypeName = 64;
 constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;
 constexpr uint32_t DefaultCensusLimit = 100;
+constexpr uint32_t DefaultCallRows = 100;   // call: rows of a returned array per page.
+constexpr uint32_t DefaultEachRows = 100;   // each: rows printed.
 // mem-snap: bytes kept; mem-diff: rows shown and the tests it takes.
 namespace memsnap {
 constexpr uint64_t MaxLength = uint64_t{1} << 20;

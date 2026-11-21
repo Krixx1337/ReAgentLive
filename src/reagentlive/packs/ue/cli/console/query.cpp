@@ -235,6 +235,15 @@ struct NameBatch {
         return at == indices.end() || slot >= names.size() ? std::string_view{} : std::string_view(names[slot]);
     }
 };
+
+// The text each --where matches: a string, a name's or a text's string, else the JSON.
+std::string MatchText(const Json& value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_object())
+        for (const char* key : {"text", "name"})
+            if (value.contains(key) && value[key].is_string()) return value[key].get<std::string>();
+    return value.dump();
+}
 }
 
 // each: one row per live instance, a value per column, the columns in the
@@ -250,7 +259,22 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, "validation", message); };
     auto type = ResolveClass(session, command.className);
     if (!type) return CommandError(session, jsonCommand, type.error());
-    const auto& paths = command.fields;
+    // --where's field is read as one more column, hidden unless asked for.
+    std::vector<std::string> paths = command.fields;
+    std::optional<size_t> whereColumn;
+    if (!command.whereField.empty()) {
+        const auto at = std::ranges::find_if(paths, [&](const std::string& p) { return text::SameText(p, command.whereField); });
+        if (at == paths.end()) paths.push_back(command.whereField);
+        whereColumn = static_cast<size_t>(std::ranges::find_if(paths, [&](const std::string& p) {
+            return text::SameText(p, command.whereField); }) - paths.begin());
+    }
+    const bool hiddenWhere = whereColumn && *whereColumn >= command.fields.size();
+    uint64_t shownRows = 0, omittedRows = 0;
+    const auto room = [&] {
+        if (command.limit && shownRows >= command.limit) { ++omittedRows; return false; }
+        ++shownRows;
+        return true;
+    };
     shape::Each record;
     record.className = command.className;
     record.classRef = FullRef(*type);
@@ -295,7 +319,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     };
 
     // A function: the only column, called on each instance.
-    if (paths.size() == 1) {
+    if (paths.size() == 1 && !whereColumn) {
         auto function = ue::Function(client, *type, paths[0]);
         if (function) {
             auto parameters = ue::Parameters(client, function->address);
@@ -315,13 +339,15 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             if (!result) return CommandError(session, jsonCommand, result.error());
             std::vector<std::pair<Ref, std::vector<uint8_t>>> last;
             for (const auto& row : result->rows) {
+                last.emplace_back(row.object, row.value);
+                if (!room()) continue;
                 refs.push_back(row.object);
                 shape::EachRow item{FullRef(row.object), {EachValue(std::nullopt, signature, row.value, structs,
                     Style(session), truncated)}, {}};
                 if (session.meta) item.hex = HexBytes(row.value);
                 record.rows.push_back(std::move(item));
-                last.emplace_back(row.object, row.value);
             }
+            if (omittedRows) record.omitted = omittedRows;
             record.columns = {target};
             record.mode = "call";
             record.capped = result->capped;
@@ -339,7 +365,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     for (const auto& path : paths) {
         auto column = ResolvePath(session, structs, *type, path, true);
         if (!column.error.empty())
-            return fail(paths.size() == 1 ? "neither a function nor a field of " + command.className + ": " + path +
+            return fail(paths.size() == 1 && !whereColumn ? "neither a function nor a field of " + command.className + ": " + path +
                 " (" + column.error + ")" : path + ": " + column.error + " (a function is each's only column)");
         if (column.size > ue::MaxEachValue)
             return fail(path + " is " + std::to_string(column.size) + " bytes; each reads 1.." +
@@ -427,27 +453,44 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         for (const auto& cell : row)
             if (cell.error.empty() && !cell.native) names.Add(cell.field, cell.bytes, structs);
     names.Resolve(client);
+    TextBatch texts;
+    for (const auto& row : cells)
+        for (const auto& cell : row)
+            if (cell.error.empty() && !cell.native) texts.Add(cell.field, cell.bytes);
+    texts.Resolve(session);
 
     std::vector<shape::EachError> errors;
+    const auto value = [&](const Cell& cell) -> Json {
+        if (cell.native) return layout::Value(cell.native->field, cell.bytes);
+        return texts.Value(cell.field, cell.bytes, JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)));
+    };
+    uint64_t matched = 0;
     for (size_t i = 0; i < cells.size(); ++i) {
         const Ref& object = passes.front().rows[i].first;
+        if (whereColumn) {
+            const Cell& cell = cells[i][*whereColumn];
+            if (!cell.error.empty() || !text::ContainsNoCase(MatchText(value(cell)), command.match)) continue;
+            ++matched;
+        }
+        if (!room()) continue;
         refs.push_back(object);
         shape::EachRow item{FullRef(object), {}, {}};
         for (size_t c = 0; c < cells[i].size(); ++c) {
+            if (hiddenWhere && c == *whereColumn) continue;
             const Cell& cell = cells[i][c];
             if (!cell.error.empty()) {
                 item.values.emplace_back(nullptr);
                 errors.push_back({FullRef(object), static_cast<uint32_t>(c), cell.error});
-            } else if (cell.native) {
-                item.values.push_back(layout::Value(cell.native->field, cell.bytes));
             } else {
-                item.values.push_back(JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)));
+                item.values.push_back(value(cell));
             }
         }
         if (session.meta && columns.size() == 1 && !columns.front().pointer) item.hex = HexBytes(cells[i].front().bytes);
         record.rows.push_back(std::move(item));
     }
-    record.columns = paths;
+    record.columns = command.fields;
+    if (whereColumn) record.matched = matched;
+    if (omittedRows) record.omitted = omittedRows;
     record.mode = "field";
     record.capped = capped;
     record.sameTick = passes.size() == 1 && !pointers;
@@ -491,6 +534,10 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     for (const auto& value : values)
         if (value.error.empty() && !value.native) lookupName.Add(value.field, std::span(value.bytes), structs);
     lookupName.Resolve(client);
+    TextBatch texts;
+    for (const auto& value : values)
+        if (value.error.empty() && !value.native) texts.Add(value.field, std::span(value.bytes));
+    texts.Resolve(session);
     const auto modules = LoadedModules(session);
     shape::Get result;
     bool failed = false;
@@ -516,7 +563,8 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             continue;
         }
         bool partial = false;
-        row.value = JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session));
+        row.value = texts.Value(value.field, std::span(value.bytes),
+            JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session)));
         if (partial) row.truncated = true;
         if (session.meta) row.type = value.field.type;
         const auto target = PointerRef(value.field.type, value.bytes);

@@ -50,7 +50,8 @@ offsets) in `read`, `peek`, `vtable`, `disasm` and `region`. Each `->off` but th
 reads a pointer: `X->a->b` is `*(X + a) + b`. A chain of one (`X->a`)
 follows no pointer, so it is refused rather than answered with the bytes at
 `X + a`: to read through the pointer at `X`, start with `->0`
-(`X->0->0x30` is `*X + 0x30`). The client library resolves
+(`X->0->0x30` is `*X + 0x30`); the refusal spells both fixes with the
+line's own address and offset. The client library resolves
 it (`Client::ResolveChain`, one held read per hop) and the command runs at
 the end; its result adds `chain`: `base`, `hops` (`hop`, `address` where
 the pointer was read, `value` it held, [`module`, `rva`]) and `address`. A

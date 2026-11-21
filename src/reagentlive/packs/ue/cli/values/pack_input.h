@@ -1,5 +1,5 @@
 // reagentlive CLI, Unreal pack: typed call inputs as parameter-block bytes.
-// Pure; shared with tests. Names (#index) need the client and stay in calls.cpp.
+// Pure; shared with tests. Name lookups need the client: the caller passes them in.
 #pragma once
 #include <charconv>
 #include <cmath>
@@ -114,21 +114,41 @@ inline bool PackScalar(const ue::Field& field, std::string_view value, std::span
     return true;
 }
 
-// A scalar, or a plain struct as "(Member=value, ...)" or "(value, ...)" in
-// member order; members left out stay zero, nested structs nest. `fieldsOf(ref)`
-// gives a struct's member fields (offsets inside the struct) or null.
-template<class FieldsOf>
+// A struct that holds one name and nothing else (a gameplay tag) takes the
+// name alone: `Tag=Some.Tag.Name`.
+inline const ue::Field* LoneName(const std::vector<ue::Field>& members) {
+    return members.size() == 1 && members.front().type == "NameProperty" ? &members.front() : nullptr;
+}
+
+// A scalar, a name, or a plain struct as "(Member=value, ...)" or "(value, ...)"
+// in member order; members left out keep their bytes, nested structs nest.
+// `fieldsOf(ref)` gives a struct's member fields (offsets inside the struct) or
+// null; `nameOf(text, index, number)` resolves a name's pooled index and
+// instance number, false when the pool has no such name.
+template<class FieldsOf, class NameOf>
 bool PackValue(const ue::Field& field, std::string_view value, std::span<uint8_t> bytes, const FieldsOf& fieldsOf,
-               unsigned depth = 0) {
+               const NameOf& nameOf, unsigned depth = 0) {
+    value = Trim(value);
+    if (field.type == "NameProperty") {
+        int32_t index = 0;
+        uint32_t number = 0;
+        if (bytes.size() != 8 || value.empty() || !nameOf(value, index, number)) return false;
+        memcpy(bytes.data(), &index, sizeof(index));
+        memcpy(bytes.data() + sizeof(index), &number, sizeof(number));
+        return true;
+    }
     if (field.type != "StructProperty") return PackScalar(field, value, bytes);
     if (depth >= MaxStructDepth || !field.structType.address) return false;
     const std::vector<ue::Field>* members = fieldsOf(field.structType);
-    std::vector<std::string_view> items;
-    if (!members || !SplitTuple(value, items) || items.size() > members->size()) return false;
+    if (!members) return false;
     const auto into = [&](const ue::Field& member, std::string_view text) {
         if (!member.size || size_t{member.offset} + member.size > bytes.size()) return false;
-        return PackValue(member, text, bytes.subspan(member.offset, member.size), fieldsOf, depth + 1);
+        return PackValue(member, text, bytes.subspan(member.offset, member.size), fieldsOf, nameOf, depth + 1);
     };
+    if (!value.starts_with('('))
+        if (const auto* name = LoneName(*members)) return into(*name, value);
+    std::vector<std::string_view> items;
+    if (!SplitTuple(value, items) || items.size() > members->size()) return false;
     const bool named = !items.empty() && items.front().find('=') != std::string_view::npos &&
         items.front().find('(') > items.front().find('=');
     std::vector<bool> used(members->size());

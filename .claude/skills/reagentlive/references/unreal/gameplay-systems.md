@@ -57,6 +57,9 @@
   against a second live instance when available. If `fields` shows no
   `stride` for it, the layout failed its check: decode the header by hand
   (sparse-array allocation bits and occupied count).
+- A data table's rows: `rows <table> --match <row> --fields <a,b.c>`; the
+  row struct comes from `RowStruct`. Text fields (`DisplayName`) show their
+  string in `get`, `each` and `dump`.
 - Obfuscated enum value names are missing from the name pool; read the enum
   in the SDK headers instead.
 

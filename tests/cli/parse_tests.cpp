@@ -505,6 +505,21 @@ TEST_CASE("function discovery, signatures and named calls preserve object refs")
     CHECK(call->request.op == ue::op::Call);
     CHECK(call->fields == std::vector<std::string>{"SocketName=#42", "TransformSpace=0"});
     CHECK(Parse("call $1 Controller:GetControlRotation --typed", TwoRefs)->kind == Kind::TypedCall);
+    CHECK(Parse("call $1 Controller:GetControlRotation --typed", TwoRefs)->limit == DefaultCallRows);
+}
+
+TEST_CASE("call --fields, --start and --limit page a typed call's returned arrays") {
+    auto rows = Parse("call $1 Vendor:GetEntries --fields ItemTag,Variations.Price --start 100 --limit 0", TwoRefs);
+    REQUIRE(rows.has_value());
+    CHECK(rows->kind == Kind::TypedCall); // Implied: no --typed needed.
+    CHECK(rows->rowPaths == std::vector<std::string>{"ItemTag", "Variations.Price"});
+    CHECK(rows->from == 100);
+    CHECK(rows->limit == 0);
+    CHECK(Parse("call $1 Vendor:GetEntries Count=2 --limit 5", TwoRefs)->fields == std::vector<std::string>{"Count=2"});
+    CHECK_FALSE(Parse("call $1 Vendor:GetEntries 00 --limit 5", TwoRefs).has_value()); // A raw block has no rows.
+    CHECK_FALSE(Parse("call $1 Vendor:GetEntries --fields a..b", TwoRefs).has_value());
+    CHECK_FALSE(Parse("call $1 Vendor:GetEntries --fields a,", TwoRefs).has_value());
+    CHECK_FALSE(Parse("call-pure $1 Vendor:GetEntries --fields a", TwoRefs).has_value()); // Arrays own memory: call only.
 }
 
 TEST_CASE("literal refs round-trip and work wherever $N does") {
@@ -972,4 +987,31 @@ TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an elemen
     CHECK_FALSE(Parse("mem-diff changed cstr", NoRefs).has_value());
     CHECK(Parse("rtti 0x10000 --offset 0x620", NoRefs)->kind == Kind::Rtti);
     CHECK_FALSE(Parse("rtti 0x10000 --offset 8 --table", NoRefs).has_value());
+}
+
+TEST_CASE("each --where filters on a field's value and --limit caps the rows") {
+    auto each = Parse("each ItemDefinition ItemId --where DisplayName~rifle --limit 5", NoRefs);
+    REQUIRE(each.has_value());
+    CHECK(each->whereField == "DisplayName");
+    CHECK(each->match == "rifle");
+    CHECK(each->limit == 5);
+    CHECK(Parse("each ItemDefinition ItemId", NoRefs)->limit == DefaultEachRows);
+    CHECK(Parse("each ItemDefinition ItemId --where Tag.TagName~A~B", NoRefs)->match == "A~B");
+    CHECK_FALSE(Parse("each ItemDefinition ItemId --where DisplayName", NoRefs).has_value());
+    CHECK_FALSE(Parse("each ItemDefinition ItemId --where ~rifle", NoRefs).has_value());
+    CHECK_FALSE(Parse("each ItemDefinition ItemId --where DisplayName~", NoRefs).has_value());
+    CHECK_FALSE(Parse("each ItemDefinition ItemId --where A~b --seconds 2", NoRefs).has_value());
+}
+
+TEST_CASE("rows pages a data table with call's row options") {
+    auto rows = Parse("rows $1 --match Rifle --fields Price,Item.TagName --start 10 --limit 0", TwoRefs);
+    REQUIRE(rows.has_value());
+    CHECK(rows->kind == Kind::Rows);
+    CHECK(ue::GetRef(rows->request) == TwoRefs[0]);
+    CHECK(rows->match == "Rifle");
+    CHECK(rows->rowPaths == std::vector<std::string>{"Price", "Item.TagName"});
+    CHECK((rows->from == 10 && rows->limit == 0));
+    CHECK(Parse("rows $1", TwoRefs)->limit == DefaultCallRows);
+    CHECK_FALSE(Parse("rows DataTable", TwoRefs).has_value());
+    CHECK_FALSE(Parse("rows $1 --fields .a", TwoRefs).has_value());
 }

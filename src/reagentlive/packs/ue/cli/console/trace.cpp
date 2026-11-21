@@ -16,10 +16,6 @@
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
 
 namespace reagentlive::cli::detail {
-namespace {
-Error Invalid(std::string message) { return Error{Error::Kind::Agent, Status::BadRequest, 0, {}, std::move(message)}; }
-
-// A default object by its exact name, kept for the session.
 Result<Ref> DefaultObject(Session& session, const std::string& name) {
     auto& known = Ue(session).defaultObjects;
     if (const auto found = std::ranges::find(known, name, &ClassRef::name); found != known.end()) return found->ref;
@@ -32,6 +28,9 @@ Result<Ref> DefaultObject(Session& session, const std::string& name) {
         }
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no object named " + name});
 }
+
+namespace {
+Error Invalid(std::string message) { return Error{Error::Kind::Agent, Status::BadRequest, 0, {}, std::move(message)}; }
 
 // A function, its parameters and a zeroed block of their size.
 struct Prepared {

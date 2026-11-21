@@ -94,6 +94,28 @@ Parsed Find(const Args& args, const ParseContext&) {
 }
 
 namespace {
+// --fields a,b.c, --start N and --limit N (call's returned arrays, rows); why not, or empty.
+std::string RowOptions(const Args& args, Command& command) {
+    if (args.Has("--fields"))
+        for (std::string_view list = args.Value("--fields");;) {
+            const auto comma = list.find(',');
+            const auto path = list.substr(0, comma);
+            if (path.empty() || path.front() == '.' || path.back() == '.' || path.find("..") != std::string_view::npos)
+                return "--fields is a comma list of member paths: a,b.c";
+            command.rowPaths.emplace_back(path);
+            if (comma == std::string_view::npos) break;
+            list = list.substr(comma + 1);
+        }
+    uint64_t number = 0;
+    if (args.Has("--limit")) {
+        if (!Number(args.Value("--limit"), number) || number > UINT32_MAX) return "--limit is a number (0: all)";
+        command.limit = static_cast<uint32_t>(number);
+    }
+    if (!Cursor(args, UINT32_MAX, number)) return "--start is a row number";
+    command.from = static_cast<uint32_t>(number);
+    return {};
+}
+
 // call and call-pure: <object> <[Class:]Function> [hex params] | Name=value ... | --typed
 Parsed CallLine(const Args& args, const ParseContext& context, uint32_t flags) {
     Command command;
@@ -101,7 +123,14 @@ Parsed CallLine(const Args& args, const ParseContext& context, uint32_t flags) {
     command.dry = args.Has("--dry");
     const bool named = std::ranges::any_of(args.positionals.begin() + 2, args.positionals.end(),
         [](const std::string& token) { return token.find('=') != std::string::npos; });
-    if (!named && !args.Has("--typed")) return CallBlock(args, context, 2, std::move(command));
+    // --fields, --start and --limit pick from a typed call's returned arrays.
+    const bool rows = args.Has("--fields") || args.Has("--start") || args.Has("--limit");
+    command.limit = DefaultCallRows;
+    if (rows) {
+        if (!named && args.positionals.size() > 2) return Fail("--fields, --start and --limit need a typed call, not a raw block");
+        if (auto why = RowOptions(args, command); !why.empty()) return Fail(std::move(why));
+    }
+    if (!named && !args.Has("--typed") && !rows) return CallBlock(args, context, 2, std::move(command));
     if (args.Has("--typed") && args.positionals.size() > 2) return Fail("--typed is a typed call with no inputs");
     if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
     if (args.At(1).size() >= MaxText) return Fail("function name too long");
@@ -302,6 +331,18 @@ Parsed Entries(const Args& args, const ParseContext& context) {
     return command;
 }
 
+// rows <object> [--match text] [--fields a,b.c] [--start N] [--limit N]: a data table's rows.
+Parsed Rows(const Args& args, const ParseContext& context) {
+    Command command;
+    if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
+    command.limit = DefaultCallRows;
+    if (auto why = RowOptions(args, command); !why.empty()) return Fail(std::move(why));
+    command.match = args.Value("--match");
+    command.kind = Kind::Rows;
+    command.request.op = ue::op::ReadObject;
+    return command;
+}
+
 // get <object> <Field[.Field...]>...: named fields, following object pointers.
 Parsed Get(const Args& args, const ParseContext& context) {
     Command command;
@@ -475,6 +516,23 @@ Parsed Each(const Args& args, const ParseContext&) {
         if (path.empty() || path.front() == '.' || path.back() == '.' || path.find("..") != std::string_view::npos ||
             depth > MaxGetDepth) return Fail("a path is Field[.Field...], up to " + std::to_string(MaxGetDepth) + " deep");
         command.fields.emplace_back(path);
+    }
+    if (args.Has("--where")) {
+        const std::string_view where = args.Value("--where");
+        const auto tilde = where.find('~');
+        const auto field = where.substr(0, tilde);
+        if (tilde == std::string_view::npos || field.empty() || tilde + 1 == where.size() || field.front() == '.' ||
+            field.back() == '.' || field.find("..") != std::string_view::npos || field.size() >= MaxText)
+            return Fail("--where is Field[.Field]~text");
+        command.whereField = field;
+        command.match = where.substr(tilde + 1);
+        if (command.seconds) return Fail("--where and --seconds do not mix");
+    }
+    command.limit = DefaultEachRows;
+    if (args.Has("--limit")) {
+        uint64_t number = 0;
+        if (!Number(args.Value("--limit"), number) || number > UINT32_MAX) return Fail("--limit is a number (0: all)");
+        command.limit = static_cast<uint32_t>(number);
     }
     command.kind = Kind::Each;
     command.className = args.At(0);

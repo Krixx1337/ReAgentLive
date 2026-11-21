@@ -323,6 +323,18 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         if (slot == nameSlots.end() || slot->second >= names.size()) return {};
         return names[slot->second];
     };
+    // Text values (fields and array elements), converted by the engine.
+    TextBatch texts;
+    for (size_t i = 0; i < sorted.size(); ++i)
+        if (keep[i]) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i]));
+    for (const auto& preview : previews) {
+        if (!preview.elements) continue;
+        const auto layout = ElementParts(sorted[preview.fieldIndex]);
+        const auto data = std::span(preview.elements->bytes);
+        for (size_t offset = 0; offset < data.size(); offset += layout.stride)
+            for (const auto& part : layout.parts) texts.Add(part.field, data.subspan(offset + part.offset, part.field.size));
+    }
+    texts.Resolve(session);
 
     // Every pointer the rows will name, in two requests: fields, then array elements.
     if (describeMany) {
@@ -363,7 +375,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         bool partial = false;
         shape::DumpRow row;
         placed(row, field);
-        row.value = JsonFieldValue(field, data, structs, lookupName, partial, Style(session));
+        row.value = texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)));
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);
             row.before = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);
@@ -387,7 +399,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                     for (const auto& part : layout.parts) {
                         const auto element = elementBytes.subspan(offset + part.offset, part.field.size);
                         const bool key = std::string_view(part.name) == "key";
-                        auto value = JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1);
+                        auto value = texts.Value(part.field, element,
+                            JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1));
                         if (key) item.key = std::move(value);
                         else item.value = std::move(value);
                         if (const auto* named = describePointer(part.field.type, element, elementLookups)) {

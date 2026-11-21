@@ -25,6 +25,7 @@ commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
 | `each <Class> <Path\|[Owner:]Function>...` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
 | `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
 | `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
+| `rows <object> [--match T] [--fields a,b.c] [--start N] [--limit N]` | console only, over object and range reads: a data table's rows ([rows](#rows)) |
 | `trace <start> <end> [--channel C] [--simple] [--ignore A]` | console only, no agent op of its own: `KismetSystemLibrary.LineTraceSingle` through `call` on `Default__KismetSystemLibrary`, its hit decoded by the pure `GameplayStatics.BreakHitResult` (`call-pure`). Both signatures are checked by parameter type and order before anything is written; a mismatch is refused. Parameters are matched by position, never by name (games obfuscate names). `BreakHitResult` has 18 outputs in UE5 and 16 in UE4 (no `BoneName`, `ElementIndex`); both are mapped. `bone` is `HitBoneName`, the bone hit. Ends are a point `x,y,z` in cm, an object's location (`GetCameraLocation`, `K2_GetComponentLocation` or `K2_GetActorLocation`, the first the object has; a camera manager is also an actor, whose own location is not the view point, all through `call-pure`) or `object@Socket` (`SceneComponent.GetSocketLocation`, the name looked up as text). The trace runs in `--ignore`'s world with `bIgnoreSelf` (that actor and its components are skipped), else in an end object's world, skipping nothing; two points need `--ignore`. Complex collision unless `--simple`; `--channel` is the trace type query (0 visibility, 1 camera in a stock project). No debug drawing. The row is not `writes`: a line trace changes no state |
 | `refs <name\|#index>` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). Text must match a pooled name exactly (the console resolves it through `name-find`) |
 
@@ -146,7 +147,11 @@ Supported inputs:
 
 - FNames as text (`Name=Head`: the pooled name, compared without case,
   instance 0, looked up once per session through `name-find`) or as
-  `#index[:number]` (the console checks the index);
+  `#index[:number]` (the console checks the index). A name the pool lacks
+  is refused with its text: "no pooled name is 'X' (parameter P)";
+- a struct whose only member is a name (a gameplay tag) as the name alone:
+  `ResourceTag=Some.Tag.Name`, also inside a struct
+  (`Entry=(Count=2, Tag=Some.Tag.Name)`); `(TagName=...)` works too;
 - bools as `true`/`false`/`1`/`0` (a bitfield bool sets only its bit);
 - signed and unsigned integers of every width, decimal or `0x` hex,
   range-checked; bytes and enums as unsigned integers;
@@ -155,13 +160,27 @@ Supported inputs:
   nesting up to four levels: `Location=(X=1,Y=2,Z=3)`. Members left out
   stay zero.
 
-Use `--typed` for a call with no inputs. Parameters must be plain single
-values. A const reference (`const FVector&`) is an input: the engine also
+Use `--typed` for a call with no inputs. Inputs must be plain single
+values; outputs may own memory (an array, a string): they start zeroed, as
+a raw call with no block sends them, and the agent keeps the block. A const reference (`const FVector&`) is an input: the engine also
 marks it `OutParm`, so the agent passes its `ConstParm` and the console
 counts it as an input, not an output. Other references are refused.
-Return and out values are formatted by name, structs member by member.
-Host approval rules still apply. Use the raw hex form for other layouts
-(strings, arrays, object pointers).
+Return and out values are formatted by name, structs member by member,
+FNames resolved. Host approval rules still apply. Use the raw hex form for
+other input layouts (strings, arrays, object pointers).
+
+**Returned arrays** (the return value or an out parameter) come as rows:
+`{count, capacity, address, rows, next_cursor}`, each element read from
+the engine's memory and decoded with its reflected struct, nested arrays
+included (up to 256 elements each, 3 deep, then `truncated`). The agent
+keeps the block that owns the array ([owned results](#unreal-pack)), so
+the memory stays valid until the next call of that function. `--limit N`
+rows per page (default 100, 0 for all), `--start N` from a page's
+`next_cursor`, and `--fields a,b.c` keeps only those members, a path
+going into structs and the elements of nested arrays
+(`--fields ItemTag,Variations.Price`); a path naming no member is refused
+with the members there. Any of the three makes the call typed. They are
+`call` flags only: an array owns memory, so `call-pure` refuses it.
 
 ## Call recorder
 
@@ -250,6 +269,14 @@ for one column, so the verb keeps one result type.
 - **`--seconds N`** (one field or function) repeats every 100 ms on the
   cached instance list and prints each changed row to stderr as it
   happens.
+- **`--where Field~text`** keeps the instances whose field's value
+  contains `text`, any case: a string, an FName's or a text's string, else
+  the value's JSON. The field is read as one more column and shown only
+  when it is one; `matched` counts the instances kept. Not with
+  `--seconds` or a function column.
+- **`--limit N`** caps the rows shown (default 100, 0 for all); `omitted`
+  counts the rest. Unfiltered output over a whole class is large: locate
+  the object first, or filter.
 
 ## census
 
@@ -334,6 +361,37 @@ generated wrapper, so follow it separately when locating native game logic.
   members outside the value's bytes fall back to hex. Struct layouts are
   cached for the console session. `dump --changed`, `record` and struct array elements
   use the same expansion.
+
+## Text values
+
+`get`, `each`, `dump` and decoded rows (returned arrays, `rows`) show a
+`TextProperty` as its display string:
+`{"text": "Assault Rifle", "via": "KismetTextLibrary.Conv_TextToString"}`.
+An `FText` holds a pointer to engine-private text data whose layout
+changes between engine builds, and a localized text keeps no inline
+source string, so no read-only decode is reliable. The console calls the
+engine's own converter instead, on `Default__KismetTextLibrary` through
+`call` (an engine call, read-only by contract), once per distinct value.
+Its `FString` result is kept by the agent and released by the next
+conversion, so a session holds at most one. Where the host cannot call
+(no `call` op, or a host off the engine's thread), the value keeps its
+bytes with `text_error` saying why.
+
+## rows
+
+`rows <data table>` lists a `DataTable`'s rows: `{name, address, value}`
+per row, `value` decoded with the table's `RowStruct` as returned arrays
+are ([named calls](#named-calls)), with the same `--fields`, `--start` and
+`--limit`; `--match` keeps row names containing text, any case, and
+`total` counts what it kept. `RowStruct` is found by its name, its
+readable name, or, where names are obfuscated, as the one object field
+the `DataTable` class declares. `RowMap` is unreflected (`dump` shows only
+`RowStruct`): the console reads it as the stock UE5
+`TMap<FName, uint8*>` right after `RowStruct`, 24-byte slots, and checks
+the sparse header (slot count against capacity, one allocation bit per
+slot, the free count against the bits) before trusting it; a table whose
+header fails is refused with "RowMap is not the stock UE5 ...". Row
+names keep their instance suffix (`Row_2`).
 
 ## Labels for a static tool
 

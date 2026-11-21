@@ -46,7 +46,7 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 |---|---|
 | `find [text] [--cls C] [--live]` | Objects by name and/or class (any case); 24 per page; `--live` drops `Default__` and archetype objects |
 | `census [--cls C] [--match T] [--limit N] [--start N]` / `census-diff` (same flags) | Live instances per class, with sample refs / only the classes whose count differs since the last census. Pages of 100: `--start <next_cursor>` for the next, no rescan; `--limit 0` for all |
-| `each <Class> <Path>... \| <Owner:Fn>` | A table over every instance: up to 16 field paths (structs, pointers) or one pure getter; `rows` of `{ref, values}`, failed cells in `errors`. One scan, so ask for every column at once |
+| `each <Class> <Path>... \| <Owner:Fn> [--where F~text] [--limit N]` | A table over every instance: up to 16 field paths (structs, pointers) or one pure getter; `rows` of `{ref, values}`, failed cells in `errors`. One scan, so ask for every column at once. 100 rows unless `--limit` |
 | `dump <obj> [--match T] [--nonzero] [--own] [--changed]` | Every reflected field: `name` (readable where recovered, `raw` beside it), `offset`, `value`; `--own` drops inherited fields, `--meta` adds the layout |
 | `get <obj> <Field.Path>...` | Typed values along pointer and struct paths: rows in the order asked, `value` and `address`, or `error` in place |
 | `batch { cmd; cmd; ... }` | Many commands in as few ticks as possible |
@@ -54,6 +54,7 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 | `name <index>...` / `name-find <text>` | FName index to text / text to index |
 | `read <addr>[->0x10->0x8] [n] [--type cstr\|wstr\|"<layout>"]` / `read-batch` / `search` | Raw memory, through a pointer chain (each `->off` but the last reads a pointer; one `->off` alone is refused), as strings or a mixed-type block; same-tick ranges; addresses holding a value |
 | `entries <obj> <Field> [--start N]` | Every element of an array, set or map field, paged; maps as key and value |
+| `rows <table> [--match T] [--fields a,b.c]` | A data table's rows (the unreflected `RowMap`), decoded with its row struct |
 | `peek <addr> [count]` | What qwords hold: object, `module`+`rva`, heap pointer or value (with a name hint) |
 | `disasm <addr> [n] [--function] [--follow]` | Instructions from live bytes: targets, string hints, address fields; `--function` uses the exception table's bounds |
 | `xrefs <addr> [--module M]` | What points here: calls, jumps, RIP-relative lea/load/store, stored pointers, each with its function |
@@ -62,7 +63,7 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 | `region <addr>` | What memory is: `code`, `rodata`, `data` (with section), `mapped`, `private`, `free` |
 | `sig-check <pattern>` / `sig-file <file>` / `sig-bytes <addr>` | Is a byte signature unique and does it land there / several at once / live bytes with address fields masked |
 | `func` / `funcs <obj> [text]` / `params` / `script` | A UFunction's entry / functions matching text / its parameter block / a Blueprint function's bytecode names |
-| `call <obj> Owner:Fn <hex\|Name=value> [--dry]` / `call-pure` | ProcessEvent; the block after the call. `--dry` only builds it; `call-pure` refuses anything not const or pure |
+| `call <obj> Owner:Fn <hex\|Name=value> [--dry] [--fields a,b.c]` / `call-pure` | ProcessEvent; the block after the call. Names and tags go by text (`Tag=A.B.C`); a returned array comes as decoded rows, paged. `--dry` only builds it; `call-pure` refuses anything not const or pure |
 | `layout-export <file> <Class>...` / `layout-check <file>` | Fields to a file / only the lines that no longer hold (after a patch) |
 | `write` / `pin` / `trial` | Change memory once / every tick / once with an automatic undo (approval). `help` marks every verb that writes or calls into the game with `writes` |
 | `watch` / `watch-start` / `record` / `snap` then `dump --changed` / `mem-snap` and `mem-diff` | Values over time or across an action (capture reference) |
@@ -111,7 +112,8 @@ to cross to the static tool (native-code reference).
 - Fewer tool calls beat faster ones: put everything for the next decision in
   one `batch { ... }` or one `get` with several paths.
 - Filter `dump` (`--match`, `--nonzero`, `--changed`) instead of reading all
-  of it.
+  of it. Never run `each` or `find` over a whole class unfiltered: locate the
+  object first (`find <name> --cls <Class>`), or `each --where`.
 - Separate commands read separate ticks; what must line up goes in one
   `get`, `read-batch` or `batch` (read its `spans_ticks`).
 - Add `--timing` to a line to see its round trips.
@@ -124,9 +126,10 @@ to cross to the static tool (native-code reference).
 
 ## Pitfalls that bite any session
 
-- **Refs go stale.** Respawns replace objects and ref commands refuse them.
+- **Refs go stale.** Respawns and asset reloads replace objects; look a ref
+  up again before reusing one from an earlier listing.
 - **Native members may be absent from reflection.** `dump` can show a
-  DataTable's row struct while omitting its native `RowMap`.
+  DataTable's row struct while omitting its native `RowMap` (`rows` reads it).
 - **UI names differ from internal names.** Map through item tags, not by
   guessing.
 - **Settings confound captures.** Ask the user to turn off host features that

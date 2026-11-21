@@ -170,7 +170,12 @@ inline bool ChainAddress(std::string_view s, std::span<const Ref> refs, std::spa
         at = next;
     }
     if (chain.size() == 1) {
-        if (why) *why = ChainNoHop;
+        // The exact fix, in the line's own spelling.
+        if (why) {
+            const auto base = std::string(s.substr(0, arrow)), offset = std::string(s.substr(arrow + 2));
+            *why = std::string(ChainNoHop) + ". Here: " + base + "->0->" + offset + " reads the pointer at " + base +
+                " and adds " + offset + "; " + base + "+" + offset + " is the address itself";
+        }
         return false;
     }
     return true;

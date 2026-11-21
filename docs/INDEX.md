@@ -67,6 +67,7 @@ and `status` lists the packs a host offers (`packs`).
 | `disasm`, `xrefs`, `touches` | core | [fast lane](commands/fast-lane.md) |
 | `sig-check`, `sig-file`, `sig-bytes` | core | [fast lane](commands/fast-lane.md#signatures) |
 | `find`, `describe`, `name`, `name-find`, `fields`, `entries`, `refs` | Unreal pack | [Unreal pack](commands/unreal.md) |
+| `rows` | Unreal pack | [Unreal pack](commands/unreal.md#rows) |
 | `call`, `call-pure`, `release`, `func`, `funcs`, `params`, `script`, `trace` | Unreal pack | [Unreal pack](commands/unreal.md) |
 | `calls-start`, `calls-read`, `calls-stop` | Unreal pack; the host lists the ops | [Unreal pack](commands/unreal.md#call-recorder) |
 | `layout-export`, `layout-check` | Unreal pack | [Unreal pack](commands/unreal.md#layouts-in-bulk) |

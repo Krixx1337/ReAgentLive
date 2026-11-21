@@ -18,10 +18,11 @@ first (see the skill's rules).
   game may now be unstable. Tell the user, and confirm later readings with a
   second read before trusting them.
 - Named getter calls: discover with `funcs` and copy exact input names from
-  `params`. To pass an FName whose text appears in a dump, read its
-  reflected eight bytes to recover the index and instance number. Vectors
-  and other plain structs go in as `Location=(X=1,Y=2,Z=3)`; a hex block is
-  only needed for strings, arrays and object pointers.
+  `params`. FNames and gameplay tags go in by text (`ResourceTag=A.B.C`; a
+  name the pool lacks is refused naming it), `#index:number` for an
+  instance number. Vectors and other plain structs go in as
+  `Location=(X=1,Y=2,Z=3)`; a hex block is only needed for strings, arrays
+  and object pointers.
 - **A `funcs` row with `via: "interface"`** is declared only on a native
   interface. Neither `call` nor a host's own ProcessEvent can run it on the
   object: the stub calls a vtable slot without adjusting `this`, so it would
@@ -32,8 +33,9 @@ first (see the skill's rules).
 - Static library functions: `call` them on the library's `Default__` object.
 - To cross-check a typed getter against a raw call, compare the complete
   `result.hex` blocks on a stable target before relying on decoded output.
-- A getter that returns a container leaves heap pointers in the result block;
-  read them in the next command and decode with `name`.
+- A typed call that returns an array decodes its rows (structs, nested
+  arrays, names); page with `--start`, keep columns with `--fields a,b.c`
+  instead of reading the elements yourself.
 - **Owned results (weak or shared handles, strings).** When a call's output
   owns memory, the result shows `kept: true` and `kept_reason` names the
   output. The agent reuses that block, so repeated calls of the same

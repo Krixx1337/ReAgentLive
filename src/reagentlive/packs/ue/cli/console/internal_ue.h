@@ -112,6 +112,8 @@ Result<Ref> ResolveClass(Session& session, const std::string& name);
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand);
 void RunEntries(Session& session, const Command& command, std::string_view jsonCommand);
+// rows: a data table's RowMap, each row decoded with its RowStruct.
+void RunRows(Session& session, const Command& command, StructCache& structs, std::string_view jsonCommand);
 void RunExportLabels(Session& session, const Command& command, std::string_view jsonCommand);
 // layout-export and layout-check (command.target "export" or "check").
 void RunLayout(Session& session, const Command& command, std::string_view jsonCommand);
@@ -126,6 +128,27 @@ NativeShown NativeMembers(Session& session, const Ref& object, std::span<const u
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand);
 // A pooled name's comparison index by its text (FNames compare without case), for the session.
 Result<int32_t> NameIndex(Session& session, std::string_view text);
+// A default object (Default__...) by its exact name, kept for the session.
+Result<Ref> DefaultObject(Session& session, const std::string& name);
+
+// FText display strings for get, each and dump: every TextProperty value
+// collected, then each converted by KismetTextLibrary.Conv_TextToString on
+// the game thread (an engine call, read-only by contract). When the host
+// cannot call (no call op, not on the game thread) every value keeps its
+// bytes and says why.
+class TextBatch {
+public:
+    void Add(const ue::Field& field, std::span<const uint8_t> bytes);
+    void Resolve(Session& session);
+    // A TextProperty value: {"text", "via"}, or `raw` with "text_error". Others: `raw`.
+    Json Value(const ue::Field& field, std::span<const uint8_t> bytes, Json raw) const;
+private:
+    std::vector<std::vector<uint8_t>> texts_;
+    std::vector<std::optional<std::string>> strings_;
+    std::vector<std::string> errors_;
+    std::string why_; // Why none was converted.
+};
+
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
 // calls-start, calls-read, calls-stop (the agent's call recorder).
 void RunCalls(Session& session, const Command& command, std::string_view jsonCommand);

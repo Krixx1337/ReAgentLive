@@ -39,10 +39,15 @@ auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 its `help --json` (no target needed), a host's verbs included:
 
 ```
-python reagentlive_gen.py --console <console.exe> -o my_console.py
+python src/reagentlive/frontends/python/reagentlive_gen.py --console <console.exe> -o <scratch>/my_console.py
 ```
 
+The generated module imports `reagentlive_session` from
+`frontends/python/`, so a script needs both folders on `sys.path`:
+
 ```python
+import sys
+sys.path[:0] = [r'path\to\reagentlive\src\reagentlive\frontends\python', r'path\to\scratch']
 from reagentlive_session import Session
 from my_console import Console
 with Session(r'path\to\console.exe') as s:

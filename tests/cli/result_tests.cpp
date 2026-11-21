@@ -266,7 +266,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     CHECK(Build(*read, *chain, {}).error().starts_with(text::ChainNoHop));
     // A misspelt key is named as unknown, never read as a left-out argument.
     CHECK(CallArgs(*FindVerb(AllVerbs(), "each"), Json{{"class_", "Pawn"}, {"paths", "Health"}}).error().starts_with(
-        "unknown argument 'class_' (it takes cls, paths, seconds)"));
+        "unknown argument 'class_' (it takes cls, paths, seconds, where, limit)"));
     CHECK(CallArgs(*read, Json::object()).error() == "too few arguments" + usage);
     CHECK(CallArgs(*read, Json{{"addr", {"0x10", "0x20"}}}).error() == "addr: one value, not a list" + usage);
     CHECK_FALSE(CallArgs(*FindVerb(AllVerbs(), "xrefs"), Json{{"addr", "0x10"}, {"all", "yes"}}).has_value());
@@ -400,34 +400,80 @@ TEST_CASE("typed call inputs pack scalars and plain structs") {
     const auto fieldsOf = [&](const Ref& type) -> const std::vector<ue::Field>* {
         return type == vectorType ? &vector : type == outerType ? &outer : nullptr;
     };
+    const auto noNames = [](std::string_view, int32_t&, uint32_t&) { return false; };
     auto location = Member("Location", "StructProperty", 0, 24);
     location.structType = vectorType;
     std::vector<uint8_t> block(32, 0);
     double xyz[3];
-    CHECK(pi::PackValue(location, "(X=1, Y=-2.5, Z=3)", std::span(block).first(24), fieldsOf));
+    CHECK(pi::PackValue(location, "(X=1, Y=-2.5, Z=3)", std::span(block).first(24), fieldsOf, noNames));
     memcpy(xyz, block.data(), 24);
     CHECK((xyz[0] == 1 && xyz[1] == -2.5 && xyz[2] == 3));
-    CHECK(pi::PackValue(location, "(4,5,6)", std::span(block).first(24), fieldsOf));
+    CHECK(pi::PackValue(location, "(4,5,6)", std::span(block).first(24), fieldsOf, noNames));
     memcpy(xyz, block.data(), 24);
     CHECK((xyz[0] == 4 && xyz[1] == 5 && xyz[2] == 6));
-    CHECK(pi::PackValue(location, "(Z=9)", std::span(block).first(24), fieldsOf)); // Others keep their bytes.
+    CHECK(pi::PackValue(location, "(Z=9)", std::span(block).first(24), fieldsOf, noNames)); // Others keep their bytes.
     memcpy(xyz, block.data(), 24);
     CHECK((xyz[0] == 4 && xyz[2] == 9));
-    CHECK_FALSE(pi::PackValue(location, "(1,2,3,4)", std::span(block).first(24), fieldsOf));
-    CHECK_FALSE(pi::PackValue(location, "(W=1)", std::span(block).first(24), fieldsOf));
-    CHECK_FALSE(pi::PackValue(location, "(X=1, X=2)", std::span(block).first(24), fieldsOf));
-    CHECK_FALSE(pi::PackValue(location, "(1,2", std::span(block).first(24), fieldsOf));
-    CHECK_FALSE(pi::PackValue(location, "1,2,3", std::span(block).first(24), fieldsOf));
+    CHECK_FALSE(pi::PackValue(location, "(1,2,3,4)", std::span(block).first(24), fieldsOf, noNames));
+    CHECK_FALSE(pi::PackValue(location, "(W=1)", std::span(block).first(24), fieldsOf, noNames));
+    CHECK_FALSE(pi::PackValue(location, "(X=1, X=2)", std::span(block).first(24), fieldsOf, noNames));
+    CHECK_FALSE(pi::PackValue(location, "(1,2", std::span(block).first(24), fieldsOf, noNames));
+    CHECK_FALSE(pi::PackValue(location, "1,2,3", std::span(block).first(24), fieldsOf, noNames));
     auto nested = Member("Box", "StructProperty", 0, 32);
     nested.structType = outerType;
     std::fill(block.begin(), block.end(), 0);
-    CHECK(pi::PackValue(nested, "(Scale=2, Where=(7, 8, 9))", std::span(block), fieldsOf));
+    CHECK(pi::PackValue(nested, "(Scale=2, Where=(7, 8, 9))", std::span(block), fieldsOf, noNames));
     float scale; memcpy(&scale, block.data(), 4); memcpy(xyz, block.data() + 8, 24);
     CHECK((scale == 2 && xyz[0] == 7 && xyz[2] == 9));
-    CHECK(pi::PackValue(nested, "(3, (1, 1, 1))", std::span(block), fieldsOf));
+    CHECK(pi::PackValue(nested, "(3, (1, 1, 1))", std::span(block), fieldsOf, noNames));
     auto unknown = Member("Other", "StructProperty", 0, 8);
     unknown.structType = {0x3000, 3, 0};
-    CHECK_FALSE(pi::PackValue(unknown, "(1)", std::span(block).first(8), fieldsOf));
+    CHECK_FALSE(pi::PackValue(unknown, "(1)", std::span(block).first(8), fieldsOf, noNames));
+}
+
+TEST_CASE("typed call inputs take names, and a tag as its name alone") {
+    namespace pi = pack_input;
+    std::string asked;
+    const auto pool = [&](std::string_view text, int32_t& index, uint32_t& number) {
+        asked = text;
+        if (text != "Some.Tag.Name") return false;
+        index = 0x1234;
+        number = 0;
+        return true;
+    };
+    const Ref tagType{0x4000, 4, 0}, holderType{0x5000, 5, 0};
+    const std::vector<ue::Field> tag{Member("TagName", "NameProperty", 0, 8)};
+    auto tagMember = Member("Tag", "StructProperty", 8, 8);
+    tagMember.structType = tagType;
+    const std::vector<ue::Field> holder{Member("Count", "IntProperty", 0, 4), tagMember};
+    const auto fieldsOf = [&](const Ref& type) -> const std::vector<ue::Field>* {
+        return type == tagType ? &tag : type == holderType ? &holder : nullptr;
+    };
+    std::vector<uint8_t> block(16, 0xcc);
+    const auto nameAt = [&](size_t at) { int32_t i; uint32_t n; memcpy(&i, &block[at], 4); memcpy(&n, &block[at + 4], 4);
+        return std::pair{i, n}; };
+    // A name parameter, a tag parameter by its name, and a tag inside a struct.
+    CHECK(pi::PackValue(Member("Name", "NameProperty", 0, 8), "Some.Tag.Name", std::span(block).first(8), fieldsOf, pool));
+    CHECK(nameAt(0) == std::pair{0x1234, 0u});
+    auto tagParam = Member("ResourceTag", "StructProperty", 0, 8);
+    tagParam.structType = tagType;
+    std::fill(block.begin(), block.end(), 0xcc);
+    CHECK(pi::PackValue(tagParam, " Some.Tag.Name ", std::span(block).first(8), fieldsOf, pool));
+    CHECK(nameAt(0) == std::pair{0x1234, 0u});
+    CHECK(pi::PackValue(tagParam, "(TagName=Some.Tag.Name)", std::span(block).first(8), fieldsOf, pool));
+    auto holderParam = Member("Entry", "StructProperty", 0, 16);
+    holderParam.structType = holderType;
+    std::fill(block.begin(), block.end(), 0);
+    CHECK(pi::PackValue(holderParam, "(Count=2, Tag=Some.Tag.Name)", std::span(block), fieldsOf, pool));
+    CHECK(nameAt(8) == std::pair{0x1234, 0u});
+    // A name the pool lacks is refused, and the resolver saw its exact text.
+    CHECK_FALSE(pi::PackValue(tagParam, "Missing.Tag", std::span(block).first(8), fieldsOf, pool));
+    CHECK(asked == "Missing.Tag");
+    CHECK_FALSE(pi::PackValue(tagParam, "", std::span(block).first(8), fieldsOf, pool));
+    // Only a struct of one name takes a bare value.
+    auto vectorish = Member("Holder", "StructProperty", 0, 16);
+    vectorish.structType = holderType;
+    CHECK_FALSE(pi::PackValue(vectorish, "Some.Tag.Name", std::span(block), fieldsOf, pool));
 }
 
 TEST_CASE("a watched field takes its element type from reflection") {

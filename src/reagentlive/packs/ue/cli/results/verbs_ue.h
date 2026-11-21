@@ -48,7 +48,10 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"cls", "Class", One, "str", "a class or struct name"},
              {"paths", "Field[.Field...]|[Owner:]Function", Some, "str",
               "a field path per column (structs and object pointers, as get takes), or one function to call"}},
-            {{"--seconds", Takes::One, "int", "N", "one column: repeat for 1..60 s and report changes"}},
+            {{"--seconds", Takes::One, "int", "N", "one column: repeat for 1..60 s and report changes"},
+             {"--where", Takes::One, "str", "Field~text", "only instances whose field's value contains text, any case "
+              "(a string, a name or text; else its JSON); the field need not be a column"},
+             {"--limit", Takes::One, "int", "N", "rows shown (0: all); omitted counts the rest", "100"}},
             Of<shape::Each>, parse::Each,
             "rows: {ref, values} in the columns' order; a failed cell is null with an errors entry. Spans inside the "
             "instance are read in passes of up to 64 bytes, the first in one tick; a path through a pointer is "
@@ -58,10 +61,15 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
             {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"},
-             {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"}},
+             {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"},
+             {"--fields", Takes::One, "str", "a,b.c", "a returned array's row members to keep (implies a typed call)"},
+             {"--start", Takes::One, "int", "N", "a returned array's first row: its next_cursor"},
+             {"--limit", Takes::One, "int", "N", "a returned array's rows per page (0: all)", "100"}},
             Of<shape::Call>, parse::Call,
             "A raw block must match the function's size (params shows it); none sends a zeroed block when every "
-            "parameter is an output. hex is the block after the call; a typed call adds outputs. kept: an output "
+            "parameter is an output. hex is the block after the call; a typed call adds outputs, a returned array "
+            "as {count, rows, next_cursor} with each element decoded from its struct (nested arrays up to 256 "
+            "elements, 3 deep; names resolved). kept: an output "
             "owns memory (a handle, a string), so the agent reuses the block and the next call releases the old values. "
             "--dry answers mode dry: hex is the block that would be sent, with exec and pure; show it when asking to call. "
             "A call that faults in the engine is refused as faulted: the target may be left in a bad state.", {}, true},
@@ -114,6 +122,16 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"field", "[Owner:]Field", One, "str", "the field, with its declaring class where the name is ambiguous"}},
             {{"--start", Takes::One, "int", "N", "a page's next_cursor"}},
             Of<shape::Entries>, parse::Entries, "Names and object pointers are resolved."},
+        {"rows", "ue", "a data table's rows: each row's name and its RowStruct members decoded",
+            {{"object", "object", One, "ref", object}},
+            {{"--match", Takes::One, "str", "text", "row names containing text, any case"},
+             {"--fields", Takes::One, "str", "a,b.c", "the row members to keep (paths into structs and arrays)"},
+             {"--start", Takes::One, "int", "N", "a page's next_cursor"},
+             {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"}},
+            Of<shape::Rows>, parse::Rows,
+            "RowMap is unreflected: read as the stock UE5 TMap<FName, uint8*> right after RowStruct, its slot "
+            "count checked against its allocation bits (refused when they disagree). Nested arrays up to 256 "
+            "elements, 3 deep; names resolved. total counts the rows --match kept."},
         {"get", "ue", "named fields, following object pointers and structs (up to 16 paths)",
             {{"object", "object", One, "ref", object}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
             {}, Of<shape::Get>, parse::Get,

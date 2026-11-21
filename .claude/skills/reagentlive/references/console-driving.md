@@ -61,6 +61,9 @@
   - Failures raise `ReAgentLiveError`. Check `capped` on `each`, `refs`,
     `xrefs` and `touches` yourself: the list was cut.
 
+  A script stops after three identical refusals and fixes the call; a loop
+  that retries the same refusal only spends output.
+
   Do not parse console JSON by hand or write session loops. Hand parsers
   crashed six times in one session (list shapes, errors without `result`,
   stderr in stdout).

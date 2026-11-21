@@ -327,6 +327,38 @@ struct Entries {
     }
 };
 
+// rows: a data table's rows, decoded with its RowStruct.
+struct TableRow {
+    std::string name;
+    Addr address;
+    Json value;
+    template<class V> static void Describe(V& v) {
+        v("name", &TableRow::name);
+        v("address", &TableRow::address);
+        v("value", &TableRow::value);
+    }
+};
+struct Rows {
+    RefId ref;
+    std::string rowStruct;
+    RefId rowStructRef;
+    uint64_t total = 0;
+    std::vector<TableRow> rows;
+    uint32_t from = 0;
+    std::optional<uint32_t> nextCursor;
+    bool truncated = false;
+    template<class V> static void Describe(V& v) {
+        v("ref", &Rows::ref);
+        v("row_struct", &Rows::rowStruct);
+        v("row_struct_ref", &Rows::rowStructRef);
+        v("total", &Rows::total);
+        v("rows", &Rows::rows);
+        v("from", &Rows::from);
+        v("next_cursor", &Rows::nextCursor);
+        v("truncated", &Rows::truncated);
+    }
+};
+
 // script: a Blueprint function's confirmed anchored entries by kind.
 // `offset` is the first opcode's offset in the bytecode, `count` how often it occurs.
 struct ScriptName {
@@ -473,6 +505,7 @@ struct Each {
     std::optional<uint64_t> polls;
     std::optional<std::vector<EachChange>> changes;
     std::optional<std::string> pollError;
+    std::optional<uint64_t> matched, omitted; // --where: instances that matched; past --limit: rows not shown.
     template<class V> static void Describe(V& v) {
         v("class", &Each::className);
         v("class_ref", &Each::classRef);
@@ -487,6 +520,8 @@ struct Each {
         v("polls", &Each::polls);
         v("changes", &Each::changes);
         v("poll_error", &Each::pollError);
+        v("matched", &Each::matched);
+        v("omitted", &Each::omitted);
     }
 };
 

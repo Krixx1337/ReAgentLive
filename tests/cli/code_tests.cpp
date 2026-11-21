@@ -575,6 +575,8 @@ TEST_CASE("pointer chains in read-only commands, refused for writes") {
     // One ->off reads no pointer: refused, never answered with the bytes at the base.
     for (const char* line : {"read 0x1000->0x0", "peek $1->0x30", "region 0x1000->0x8", "disasm 0x1000->0"})
         CHECK(Parse(line, refs).error().starts_with(text::ChainNoHop));
+    // The error spells the fix with the line's own address and offset.
+    CHECK(Parse("peek $1->0x30", refs).error().contains("$1->0->0x30 reads the pointer at $1 and adds 0x30; $1+0x30"));
     CHECK(Parse("read 0x1000", refs)->chain.empty());
     CHECK_FALSE(Parse("read 0x1000->", refs));
     CHECK_FALSE(Parse("read 0x1000->x", refs));
