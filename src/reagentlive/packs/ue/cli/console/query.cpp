@@ -34,6 +34,7 @@
 #include "reagentlive/packs/ue/client_ue.h"
 
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
+#include "reagentlive/packs/ue/cli/console/rows.h"
 #include "reagentlive/frontends/cli/console/pack.h"
 #include "reagentlive/packs/ue/cli/values/watch_field.h"
 
@@ -224,6 +225,13 @@ struct NameBatch {
             return {};
         };
         FormatField(field, bytes, structs, 0, collect);
+    }
+    // A name lookup that only collects: the decoder's first pass.
+    auto Collect() {
+        return [this](int32_t index) -> std::string_view {
+            if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
+            return {};
+        };
     }
     void Resolve(Client& client) {
         if (!indices.empty() && client.Supports(ue::op::Names))
@@ -452,16 +460,25 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     for (const auto& row : cells)
         for (const auto& cell : row)
             if (cell.error.empty() && !cell.native) names.Add(cell.field, cell.bytes, structs);
-    names.Resolve(client);
+    // Compact values through the decoder (nested arrays, tag lists, text at
+    // any depth); --meta keeps the reflected layout, top-level text only.
+    RowReader reader(session, structs, RowReader::PreviewNested);
     TextBatch texts;
     for (const auto& row : cells)
-        for (const auto& cell : row)
-            if (cell.error.empty() && !cell.native) texts.Add(cell.field, cell.bytes);
-    texts.Resolve(session);
+        for (const auto& cell : row) {
+            if (!cell.error.empty() || cell.native) continue;
+            bool ignored = false;
+            if (session.meta) texts.Add(cell.field, cell.bytes);
+            else reader.Value(cell.field, cell.bytes, {}, names.Collect(), ignored);
+        }
+    names.Resolve(client);
+    if (session.meta) texts.Resolve(session);
+    else reader.ResolveTexts();
 
     std::vector<shape::EachError> errors;
     const auto value = [&](const Cell& cell) -> Json {
         if (cell.native) return layout::Value(cell.native->field, cell.bytes);
+        if (!session.meta) return reader.Value(cell.field, cell.bytes, {}, names, truncated);
         return texts.Value(cell.field, cell.bytes, JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)));
     };
     uint64_t matched = 0;
@@ -533,11 +550,18 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     NameBatch lookupName;
     for (const auto& value : values)
         if (value.error.empty() && !value.native) lookupName.Add(value.field, std::span(value.bytes), structs);
-    lookupName.Resolve(client);
+    // Compact values through the decoder, as each does.
+    RowReader reader(session, structs, RowReader::PreviewNested);
     TextBatch texts;
-    for (const auto& value : values)
-        if (value.error.empty() && !value.native) texts.Add(value.field, std::span(value.bytes));
-    texts.Resolve(session);
+    for (const auto& value : values) {
+        if (!value.error.empty() || value.native) continue;
+        bool ignored = false;
+        if (session.meta) texts.Add(value.field, std::span(value.bytes));
+        else reader.Value(value.field, std::span(value.bytes), {}, lookupName.Collect(), ignored);
+    }
+    lookupName.Resolve(client);
+    if (session.meta) texts.Resolve(session);
+    else reader.ResolveTexts();
     const auto modules = LoadedModules(session);
     shape::Get result;
     bool failed = false;
@@ -563,8 +587,9 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             continue;
         }
         bool partial = false;
-        row.value = texts.Value(value.field, std::span(value.bytes),
-            JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session)));
+        row.value = !session.meta ? reader.Value(value.field, std::span(value.bytes), {}, lookupName, partial) :
+            texts.Value(value.field, std::span(value.bytes),
+                JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session)));
         if (partial) row.truncated = true;
         if (session.meta) row.type = value.field.type;
         const auto target = PointerRef(value.field.type, value.bytes);

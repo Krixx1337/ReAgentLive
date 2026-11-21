@@ -209,7 +209,8 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     case ue::op::Describe: {
         auto object = ue::Describe(client, ue::GetRef(request));
         if (!object) return CommandError(session, jsonCommand, object.error());
-        RememberRef(refs, object->ref);
+        // One object: it becomes $1, so `describe X; funcs $1` means X.
+        refs.assign(1, object->ref);
         return Emit(session, jsonCommand, MakeObject(*object));
     }
     }

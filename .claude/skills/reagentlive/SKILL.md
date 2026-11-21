@@ -91,7 +91,7 @@ to cross to the static tool (native-code reference).
    a distinctive suffix or a class.
 3. **Navigate.** `dump` an owner object and follow the printed refs instead of
    computing offsets.
-4. **Decode.** Run `name` on every `FName #N` that matters. Readable names for
+4. **Decode.** Names print as text; `name` resolves a leftover `#N`. Readable names for
    obfuscated fields are hints; trust offsets, sizes and types.
 5. **Observe change.** `snap`, the user acts, `dump --changed`; or `record`
    for sequences. Pick the object that owns the data: no changed rows usually means
@@ -112,11 +112,10 @@ to cross to the static tool (native-code reference).
 - Fewer tool calls beat faster ones: put everything for the next decision in
   one `batch { ... }` or one `get` with several paths.
 - Filter `dump` (`--match`, `--nonzero`, `--changed`) instead of reading all
-  of it. Never run `each` or `find` over a whole class unfiltered: locate the
-  object first (`find <name> --cls <Class>`), or `each --where`.
+  of it; never `each` or `find` a whole class unfiltered (`--where`, `--cls`).
 - Separate commands read separate ticks; what must line up goes in one
   `get`, `read-batch` or `batch` (read its `spans_ticks`).
-- Add `--timing` to a line to see its round trips.
+- `--timing` shows a line's round trips; a `hint` means narrow the next call.
 - **Measure the session, don't recall it.** `stats` (also with no target)
   ranks this session's verbs by output and marks `unfiltered`, `repeated`
   and `refused` calls: check it before a long step and act on the marks.
@@ -126,8 +125,7 @@ to cross to the static tool (native-code reference).
 
 ## Pitfalls that bite any session
 
-- **Refs go stale.** Respawns and asset reloads replace objects; look a ref
-  up again before reusing one from an earlier listing.
+- **Refs go stale.** Respawns and reloads replace objects: look refs up again.
 - **Native members may be absent from reflection.** `dump` can show a
   DataTable's row struct while omitting its native `RowMap` (`rows` reads it).
 - **UI names differ from internal names.** Map through item tags, not by

@@ -185,6 +185,7 @@ class Session:
         self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         self._types = {}
+        self.hint = None  # The last call's envelope hint (a large result), or None.
         try:
             if table is not None:
                 current = self.send('help --hash')
@@ -260,6 +261,7 @@ class Session:
         if timing:
             call['timing'] = True
         envelope = self.send(json.dumps(call, separators=(',', ':')))
+        self.hint = envelope.get('hint')  # A large result's advice on narrowing it, or None.
         if not envelope.get('ok'):
             raise ReAgentLiveError(verb, envelope.get('error'))
         return self.wrap(verb, envelope.get('result', {}))

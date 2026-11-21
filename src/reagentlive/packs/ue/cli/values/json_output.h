@@ -46,6 +46,14 @@ inline std::string MemberKey(const ue::Field& member, const ValueStyle& style, c
     return key;
 }
 
+// A pooled name as the engine prints it: Name, or Name_N for instance N+1.
+inline std::string NameText(std::string_view name, uint32_t number) {
+    return number ? std::string(name) + "_" + std::to_string(number - 1) : std::string(name);
+}
+
+// Compact values (no --meta): an FName is its text ("#index" when the pool
+// has none), and a struct holding only a name (a gameplay tag) is that name.
+// --meta keeps {index, number, name} and the struct's members.
 template<class StructLookup, class NameLookup>
 Json JsonFieldValue(const ue::Field& field, std::span<const uint8_t> bytes, StructLookup& structs,
                     const NameLookup& names, bool& truncated, const ValueStyle& style = {}, unsigned depth = 0) {
@@ -91,6 +99,7 @@ Json JsonFieldValue(const ue::Field& field, std::span<const uint8_t> bytes, Stru
         Load(bytes, index);
         Load(bytes, number, 4);
         const std::string_view name = names(index);
+        if (!style.meta) return name.empty() ? Json("#" + std::to_string(index)) : Json(NameText(name, number));
         return {{"index", index}, {"number", number}, {"name", name.empty() ? Json(nullptr) : Json(name)}};
     }
     if (type == "ArrayProperty" || type == "StrProperty") {
@@ -107,6 +116,10 @@ Json JsonFieldValue(const ue::Field& field, std::span<const uint8_t> bytes, Stru
     if (type == "StructProperty" && field.structType.address && depth < MaxStructDepth) {
         if (const auto* found = structs(field.structType); found && !found->empty()) {
             const auto members = std::span(*found);
+            if (!style.meta && members.size() == 1 && members.front().type == "NameProperty" &&
+                size_t{members.front().offset} + members.front().size <= bytes.size())
+                return JsonFieldValue(members.front(), bytes.subspan(members.front().offset, members.front().size),
+                    structs, names, truncated, style, depth + 1);
             const size_t shown = (std::min)(members.size(), MaxStructMembers);
             bool partial = members.size() > shown;
             Json rows = Json::array(), compact = Json::object();

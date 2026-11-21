@@ -64,9 +64,30 @@ TEST_CASE("JSON values preserve types and flag bounded previews") {
     CHECK(Json::parse(value.dump()).get<uint64_t>() == UINT64_MAX);
     field.type = "NameProperty";
     struct Name { int32_t index; uint32_t number; };
+    // Compact: the text with the instance suffix; unresolved: "#index"; --meta: the parts.
     value = JsonFieldValue(field, Bytes(Name{42, 1}), noStruct, names, truncated);
-    CHECK(Json::parse(value.dump())["name"] == "a\"b\n");
+    CHECK(Json::parse(value.dump()) == "a\"b\n_0");
+    CHECK(JsonFieldValue(field, Bytes(Name{42, 0}), noStruct, names, truncated) == "a\"b\n");
+    CHECK(JsonFieldValue(field, Bytes(Name{7, 0}), noStruct, names, truncated) == "#7");
+    const ValueStyle meta{true, nullptr};
+    value = JsonFieldValue(field, Bytes(Name{42, 1}), noStruct, names, truncated, meta);
+    CHECK(value["name"] == "a\"b\n");
     CHECK(value["number"] == 1);
+    CHECK(JsonFieldValue(field, Bytes(Name{7, 0}), noStruct, names, truncated, meta)["name"].is_null());
+    // A struct of one name (a gameplay tag) is the name; --meta keeps its member.
+    const Ref tagType{0x7000, 20, 1};
+    ue::Field tagName{};
+    tagName.name = "TagName";
+    tagName.type = "NameProperty";
+    tagName.size = 8;
+    const std::vector<ue::Field> tagMembers{tagName};
+    const auto tagStruct = [&](const Ref& type) -> const std::vector<ue::Field>* { return type == tagType ? &tagMembers : nullptr; };
+    ue::Field tag{};
+    tag.type = "StructProperty";
+    tag.size = 8;
+    tag.structType = tagType;
+    CHECK(JsonFieldValue(tag, Bytes(Name{42, 0}), tagStruct, names, truncated) == "a\"b\n");
+    CHECK(JsonFieldValue(tag, Bytes(Name{42, 0}), tagStruct, names, truncated, meta)["members"][0]["value"]["index"] == 42);
     CHECK_FALSE(truncated);
     field.type = "MapProperty";
     field.size = 32;

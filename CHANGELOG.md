@@ -7,6 +7,17 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Compact names and tags:** an FName prints as its text (`Name_N`,
+  `#index` when unresolved) and a gameplay tag as its name, not
+  `{index, number, name}` (kept under `--meta`). Breaking for scripts.
+- **One decoder for compact values:** `get`, `each` and `dump` read arrays
+  inside structs (8 elements, 3 deep), show tag containers as lists of tags
+  and convert text at any depth, as returned arrays and `rows` do.
+- **Large results carry `hint`** on the envelope past 25,000 characters,
+  naming the verb's narrowing flags; the MCP tools pass it on.
+- **`describe` makes its object `$1`.** A typed call's `function` is
+  owner-qualified, as `--dry` prints it.
+
 - **Tags and names by text in typed calls:** a struct holding only a name
   (a gameplay tag) takes the name alone, `ResourceTag=A.B.C`, also inside
   structs; a name the pool lacks is refused naming it.

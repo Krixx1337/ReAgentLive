@@ -194,7 +194,7 @@ class Live:
         return next((row for row in self.table['rows'] if tool_name(row) == name), None)
 
     def run(self, name, arguments):
-        """One tool call on a fresh console: (its result, True when the table changed since the last call)."""
+        """One tool call on a fresh console: (its result, True when the table changed since the last call, its hint)."""
         with self.lock:
             session = Session(self.console, [*self.args, '--session', self.session_id], caller='tool', table=self.table)
             try:
@@ -218,7 +218,7 @@ class Live:
                     raise RuntimeError(f'{error}; error: {json.dumps(error.error)}') from None
             finally:
                 session.close()
-        return (result.raw if isinstance(result, Record) else result), changed
+        return (result.raw if isinstance(result, Record) else result), changed, getattr(session, 'hint', None)
 
 
 class ReAgentLiveServer(Server):
@@ -276,13 +276,15 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
         if row is None or not served(row, families, read_only):
             return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=f'no tool {name}')])
         try:
-            raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments or {})
+            raw, changed, hint = await anyio.to_thread.run_sync(live.run, name, arguments or {})
         except RuntimeError as error:
             raw, changed = None, False
             result = types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=str(error))])
         else:
-            result = types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(raw))],
-                                          structuredContent=raw)
+            content = [types.TextContent(type='text', text=json.dumps(raw))]
+            if hint:  # A large result: the envelope's advice, beside the result.
+                content.append(types.TextContent(type='text', text=f'hint: {hint}'))
+            result = types.CallToolResult(content=content, structuredContent=raw)
         if changed:
             await server.request_context.session.send_tool_list_changed()
         return result

@@ -144,6 +144,8 @@ one file:
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
 | `packs/ue/cli/console/capture.cpp` | snapshots, `snap`, `record`, replay |
 | `packs/ue/cli/console/calls.cpp` | `func`, `params`, typed calls |
+| `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each`/`dump` values) and `--fields`; `rows` |
+| `packs/ue/cli/console/text.cpp` | text values through the engine's converter |
 | `packs/ue/cli/console/query.cpp` | class lookup, `each`, `get`, `entries` |
 | `packs/ue/cli/state/cache_ue.h`, `packs/ue/cli/values/format_ue.h`, `packs/ue/cli/values/json_output.h`, `packs/ue/cli/results/` | the pack's cache block, property values as text and JSON, its result builders |
 | `syntax/command.h`, `syntax/text.h` | the parsed `Command` and its limits; token, number, ref and address parsing |

@@ -33,6 +33,7 @@
 #include "reagentlive/packs/ue/client_ue.h"
 
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
+#include "reagentlive/packs/ue/cli/console/rows.h"
 
 namespace reagentlive::cli::detail {
 
@@ -300,6 +301,9 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     std::vector<int32_t> indices;
     std::unordered_map<int32_t, size_t> nameSlots;
     std::vector<std::string> names;
+    // Compact field values through the decoder (nested arrays, tag lists,
+    // text at any depth); --meta and previews keep the plain formatter.
+    RowReader reader(session, structs, RowReader::PreviewNested);
     if (client.Supports(ue::op::Names)) {
         const auto collectName = [&](int32_t index) -> std::string_view {
             if (index >= 0 && nameSlots.try_emplace(index, indices.size()).second)
@@ -307,7 +311,11 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             return {};
         };
         for (size_t i = 0; i < sorted.size(); ++i)
-            if (keep[i]) FormatField(sorted[i], FieldBytes(*bytes, sorted[i]), structs, 0, collectName);
+            if (keep[i]) {
+                FormatField(sorted[i], FieldBytes(*bytes, sorted[i]), structs, 0, collectName);
+                bool ignored = false;
+                if (!session.meta) reader.Value(sorted[i], FieldBytes(*bytes, sorted[i]), {}, collectName, ignored);
+            }
         for (const auto& preview : previews) {
             if (!preview.elements) continue;
             const auto layout = ElementParts(sorted[preview.fieldIndex]);
@@ -326,7 +334,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     // Text values (fields and array elements), converted by the engine.
     TextBatch texts;
     for (size_t i = 0; i < sorted.size(); ++i)
-        if (keep[i]) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i]));
+        if (keep[i] && session.meta) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i])); // Compact: the decoder.
     for (const auto& preview : previews) {
         if (!preview.elements) continue;
         const auto layout = ElementParts(sorted[preview.fieldIndex]);
@@ -335,6 +343,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             for (const auto& part : layout.parts) texts.Add(part.field, data.subspan(offset + part.offset, part.field.size));
     }
     texts.Resolve(session);
+    if (!session.meta) reader.ResolveTexts();
 
     // Every pointer the rows will name, in two requests: fields, then array elements.
     if (describeMany) {
@@ -375,7 +384,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         bool partial = false;
         shape::DumpRow row;
         placed(row, field);
-        row.value = texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)));
+        row.value = !session.meta ? reader.Value(field, data, {}, lookupName, partial) :
+            texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)));
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);
             row.before = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);

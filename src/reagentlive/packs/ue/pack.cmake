@@ -44,5 +44,6 @@ set(reagentlive_pack_console_sources "${reagentlive_ue_dir}/cli/console/pack.cpp
     "${reagentlive_ue_dir}/cli/console/calls.cpp" "${reagentlive_ue_dir}/cli/console/trace.cpp"
     "${reagentlive_ue_dir}/cli/console/recorder.cpp" "${reagentlive_ue_dir}/cli/console/query.cpp"
     "${reagentlive_ue_dir}/cli/console/labels.cpp" "${reagentlive_ue_dir}/cli/console/members.cpp"
-    "${reagentlive_ue_dir}/cli/console/layout.cpp" "${reagentlive_ue_dir}/cli/console/text.cpp")
+    "${reagentlive_ue_dir}/cli/console/layout.cpp" "${reagentlive_ue_dir}/cli/console/text.cpp"
+    "${reagentlive_ue_dir}/cli/console/rows.cpp")
 set(reagentlive_pack_console_link reagentlive-ue-client)

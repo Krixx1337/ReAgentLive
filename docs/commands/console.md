@@ -166,12 +166,24 @@ request costs up to a host tick. The console cuts both:
 - **`--timing`** at the end of any line adds `timing` to its envelope:
   `trips` (requests sent), `wait_ms` (time waiting for responses) and
   `total_ms`.
+- **Large results.** A result past 25,000 characters gets `hint` on its
+  envelope: its size and the verb's flags that narrow it (`--fields`,
+  `--where`, `--match`, `--limit`, `--nonzero`, `--own`, `--cls`), or "ask
+  for less". It warns before a tool result is spilled to a file. The MCP
+  tools return it as a second text block beside the result.
 - **Compact values.** A decoded struct prints as `{Name: value, ...}`,
   nested structs the same way: `{"X": 1.5, "Y": -2, "Z": 3}`, with a
   member's readable name where the [names file](unreal.md#readable-names) has one.
   Members past the 16 shown are counted under `"..."`; a name taken twice
-  gets `@<offset>`. This holds for every decoded value: `get`, `dump`
-  (values, `before`, previews), `entries`, `each`, typed `call` outputs.
+  gets `@<offset>`. An FName is its text (`Name_N` for an instance,
+  `#index` when the pool has none), and a struct holding only a name (a
+  gameplay tag) is that name. This holds for every decoded value: `get`,
+  `dump` (values, `before`, previews), `entries`, `each`, typed `call`
+  outputs. `get`, `each` and `dump` values go further, as returned arrays
+  do ([named calls](unreal.md#named-calls)): arrays inside them are read
+  (up to 8 elements each, 3 deep, then `truncated`), a tag container (every
+  member an array of tags) is the list of its own tags, and text converts
+  at any depth.
   **`--meta`** at the end of a line (with or without `--timing`; inside a
   `batch` per item, or on the batch for all) restores the layout: a struct
   as `members` (`name`, `owner`, `type`, `offset`, `size`, `value`) with

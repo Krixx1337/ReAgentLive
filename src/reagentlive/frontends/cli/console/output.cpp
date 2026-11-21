@@ -47,6 +47,19 @@ void Count(Session& session, const Json& record, size_t size) {
     }
 }
 std::string Text(const Json& record) { return record.dump(-1, ' ', true, Json::error_handler_t::replace); }
+
+// A result this large costs a reader's context: the envelope says so and
+// names the verb's flags that narrow it (before a tool spills it to a file).
+constexpr size_t LargeOutput = 25000;
+std::string LargeHint(const Verb* verb, size_t size) {
+    static constexpr std::string_view narrowing[] = {"--fields", "--where", "--match", "--limit", "--nonzero", "--own", "--cls"};
+    std::string flags;
+    if (verb)
+        for (const auto& flag : verb->flags)
+            if (std::ranges::find(narrowing, flag.name) != std::end(narrowing)) flags += (flags.empty() ? "" : ", ") + std::string(flag.name);
+    return std::to_string(size) + " characters: " + (flags.empty() ? std::string("ask for less (one object, fewer paths)") :
+        "narrow it with " + flags);
+}
 }
 
 void PrintJson(Session& session, Json record) {
@@ -62,7 +75,11 @@ void PrintJson(Session& session, Json record) {
             {"wait_ms", static_cast<double>(stats.waitMicroseconds - session.timing->start.waitMicroseconds) / 1000.0},
             {"total_ms", total}};
     }
-    const std::string text = Text(record);
+    std::string text = Text(record);
+    if (text.size() > LargeOutput && record.contains("result")) {
+        record["hint"] = LargeHint(session.current, text.size());
+        text = Text(record);
+    }
     Count(session, record, text.size() + 1);
     std::puts(text.c_str());
     std::fflush(stdout);

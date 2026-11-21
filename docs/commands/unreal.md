@@ -172,7 +172,8 @@ other input layouts (strings, arrays, object pointers).
 **Returned arrays** (the return value or an out parameter) come as rows:
 `{count, capacity, address, rows, next_cursor}`, each element read from
 the engine's memory and decoded with its reflected struct, nested arrays
-included (up to 256 elements each, 3 deep, then `truncated`). The agent
+included (up to 256 elements each, 3 deep, then `truncated`), tag
+containers as lists of tags. The agent
 keeps the block that owns the array ([owned results](#unreal-pack)), so
 the memory stays valid until the next call of that function. `--limit N`
 rows per page (default 100, 0 for all), `--start N` from a page's
@@ -337,13 +338,15 @@ generated wrapper, so follow it separately when locating native game logic.
 - With agent support for `name`, `dump` batches distinct FName indices across
   fields, expanded structs and array previews. Resolved names include the
   Unreal instance suffix where present. Unresolved names keep their index and
-  number. Arrays nested inside structs show their headers only.
+  number. Compact values read arrays nested inside structs (8 elements,
+  3 deep) and show a tag container as its tags ([compact values](console.md#fewer-round-trips));
+  with `--meta` they show their headers.
 - With agent support for `describe`, `dump` names single object, class and
   weak object pointers. It looks up at most 32 distinct pointers in field
   order, and 32 more among array elements: one describe-many request each
   (one `describe` per pointer on an agent without it). Unresolved pointers
-  keep their raw values. `describe` and `dump`
-  append reusable `$N` refs without renumbering existing refs. The next
+  keep their raw values. `dump` appends reusable `$N` refs without
+  renumbering existing refs; `describe` makes its object `$1`. The next
   successful `find` replaces the list.
 - Array previews show up to eight elements per array and up to 16 arrays
   per dump; sets and maps with a known layout get the same preview (the
@@ -365,7 +368,8 @@ generated wrapper, so follow it separately when locating native game logic.
 ## Text values
 
 `get`, `each`, `dump` and decoded rows (returned arrays, `rows`) show a
-`TextProperty` as its display string:
+`TextProperty` as its display string, at any depth (top-level only with
+`--meta`):
 `{"text": "Assault Rifle", "via": "KismetTextLibrary.Conv_TextToString"}`.
 An `FText` holds a pointer to engine-private text data whose layout
 changes between engine builds, and a localized text keeps no inline

@@ -129,15 +129,17 @@ Types that several results share, as `help --json` lists them under `types`.
 Every line is an envelope: `command`, `ok`, and `result` or `error`. Errors carry `kind` and
 `message`; client errors (`agent`, `timeout`, `attach`, `busy`) also carry `status`, `detail` and
 `reason`. A refused `write --expect` adds `found`; a broken pointer chain adds `chain` with
-`broken` and `reason`. Any envelope can carry `timing` when the line ended in `--timing`. A
+`broken` and `reason`. Any envelope can carry `timing` when the line ended in `--timing`, and
+`hint` when its result passed 25,000 characters (the verb's flags that narrow it). A
 usage error ends with the verb's usage line. A result that does not match its row's type is an
 `internal` error, never printed as a result.
 
 ## Game values
 
 A `value` holds what the game's data is. Addresses are hex strings, null for a null pointer.
-FNames carry `index`, `number` and `name`. Structs expand to `{Name: value}` (`members` with
-`--meta`). Arrays and strings show their header, and `dump` adds a `preview` for top-level
+An FName is its text (`Name_N` for an instance, `#index` when the pool has none), and a struct
+holding only a name (a gameplay tag) is that name; `--meta` gives `index`, `number` and `name`.
+Structs expand to `{Name: value}` (`members` with `--meta`). Arrays and strings show their header, and `dump` adds a `preview` for top-level
 containers. Unsupported layouts give a bounded `hex` prefix. A non-finite float is
 `{"non_finite": "nan"}`. Check `truncated` on the result and its rows before treating values as
 complete.
