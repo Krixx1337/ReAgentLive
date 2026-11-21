@@ -104,6 +104,9 @@ bool PackName(Session& session, std::string_view value, int32_t& index, uint32_t
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
                   const ue::Signature& signature, StructCache& structs, std::string_view jsonCommand) {
     Client& client = session.client;
+    // A const or pure function runs again to narrow a large result; any
+    // other keeps it in a file (output budgets).
+    session.input.reads = ue::EachFunctionAllowed(function.flags);
     const auto& arguments = command.fields;
     const auto fail = [&](std::string message) {
         JsonError(session, jsonCommand, "validation", message);
@@ -199,6 +202,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
             JsonFieldValue(parameter, FieldBytes(*result, parameter), structs, named, partial, Style(session));
         row.truncated = partial;
         truncated |= partial;
+        if (command.nonzero) DropZero(row.value);
         outputs.push_back(std::move(row));
     }
     auto record = MakeCall(command.request, *result, "typed", kept);

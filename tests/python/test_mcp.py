@@ -56,6 +56,12 @@ class McpTests(unittest.TestCase):
                         {'command': 'describe', 'ok': True, 'result': OBJECT, 'tick': 4},
                         {'command': 'base', 'ok': True, 'result': {'name': 'Game.exe', 'base': '0x140000000',
                                                                    'size': 4096}, 'tick': 4}]}}],
+                [call('rows', {'object': REF}), {'ok': True, 'digest': {
+                    'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
+                    'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['--match', '--fields', '--limit'],
+                    'next': json.dumps(call('rows', {'object': REF, 'fields': 'Cost', 'limit': 40}))}}],
+                [call('call', {'object': REF, 'function': 'Buy'}), {'ok': True, 'digest': {
+                    'chars': 40000, 'budget': 25000, 'largest': [], 'file': 'C:/temp/r.json'}}],
                 [call('read', {'addr': '$1'}), {'ok': False, 'error': {
                     'kind': 'syntax', 'message': "addr: '$1': a JSON call takes the literal ref a result carries, not $N"}}],
             ]}, file)
@@ -91,7 +97,7 @@ class McpTests(unittest.TestCase):
         self.assertTrue(tools['ue_call'].annotations.destructiveHint)
         schema = tools['read'].inputSchema
         self.assertEqual(schema['required'], ['addr'])
-        self.assertEqual(set(schema['properties']), {'addr', 'len', 'type'})
+        self.assertEqual(set(schema['properties']), {'addr', 'len', 'type', 'budget'})   # budget: every tool's.
         self.assertFalse(schema['additionalProperties'])          # A guessed argument is refused.
         self.assertEqual(schema['properties']['type']['type'], 'string')
         self.assertIn('rows', tools['ue_find'].outputSchema['properties'])
@@ -110,7 +116,7 @@ class McpTests(unittest.TestCase):
         compact, off = (self.tool_list(output_schemas=p) for p in ('compact', 'off'))
         self.assertEqual(set(off), set(compact))
         find = next(row for row in self.table['rows'] if row['verb'] == 'find')
-        self.assertEqual(set(compact['ue_find'].outputSchema['properties']), set(find['type']['struct']))
+        self.assertEqual(set(compact['ue_find'].outputSchema['properties']), set(find['type']['struct']) | {'digest'})
         self.assertEqual(compact['ue_find'].outputSchema['properties']['rows'], {'type': 'array'})
         self.assertNotIn('$defs', compact['ue_find'].outputSchema)
         self.assertTrue(all(tool.outputSchema is None for tool in off.values()))
@@ -166,6 +172,29 @@ class McpTests(unittest.TestCase):
         self.assertTrue(refused.isError)
         self.assertIn('literal ref', refused.content[0].text)
         self.assertIn('"kind": "syntax"', refused.content[0].text)   # The error object, not only its message.
+
+    def test_a_result_past_its_budget_is_a_digest_with_the_call_to_make(self):
+        open(self.log, 'w').close()
+
+        async def body(client):
+            narrowed = await client.call_tool('ue_rows', {'object': REF, 'budget': 0})
+            kept = await client.call_tool('ue_call', {'object': REF, 'function': 'Buy'})
+            return narrowed, kept
+        narrowed, kept = self.run_client(body)
+        self.assertFalse(narrowed.isError, narrowed.content[0].text)
+        self.assertEqual(narrowed.structuredContent['digest']['chars'], 90000)
+        text = narrowed.content[0].text
+        self.assertIn('past the budget of 25000', text)
+        self.assertIn('Call next: ue_rows {"object": "0x10#1:1", "fields": "Cost", "limit": 40}', text)
+        self.assertIn('rows[].value.Icon (60000)', text)
+        self.assertFalse(kept.isError, kept.content[0].text)
+        self.assertIn('must not run again', kept.content[0].text)
+        self.assertIn('C:/temp/r.json', kept.content[0].text)
+        self.assertNotIn('Call next', kept.content[0].text)
+        with open(self.log) as file:
+            sent = [json.loads(line) for line in file if line.startswith('{')]
+        self.assertEqual(sent[0]['budget'], 0)                   # The line flag, not one of the verb's args.
+        self.assertNotIn('budget', sent[0]['args'])
 
     def test_each_call_starts_a_console_that_shares_one_session(self):
         open(self.log, 'w').close()

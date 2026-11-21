@@ -264,6 +264,7 @@ std::string MatchText(const Json& value) {
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand) {
     Client& client = session.client;
+    session.input.reads = true; // Fields, or a function that must be const or pure: safe to run again.
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, "validation", message); };
     auto type = ResolveClass(session, command.className);
     if (!type) return CommandError(session, jsonCommand, type.error());
@@ -362,6 +363,9 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             record.sameTick = true;
             if (command.seconds) watch(query, std::nullopt, signature, std::move(last));
             record.truncated = truncated;
+            if (command.nonzero)
+                for (auto& row : record.rows)
+                    for (auto& value : row.values) DropZero(value);
             return Emit(session, jsonCommand, std::move(record));
         }
         if (function.error().kind != Error::Kind::Agent || function.error().status != Status::NotFound)
@@ -518,6 +522,9 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         watch(first, columns.front().field, {}, std::move(last));
     }
     record.truncated = truncated;
+    if (command.nonzero)
+        for (auto& row : record.rows)
+            for (auto& cell : row.values) DropZero(cell);
     Emit(session, jsonCommand, std::move(record));
 }
 
@@ -602,6 +609,9 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     result.ref = ReusableRef(root);
     result.sameTick = sameTick;
     if (!TickAccurate(session)) result.tickAccurate = false;
+    if (command.nonzero)
+        for (auto& row : result.rows)
+            if (row.value) DropZero(*row.value);
     Emit(session, jsonCommand, std::move(result));
 }
 

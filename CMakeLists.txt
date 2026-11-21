@@ -217,7 +217,8 @@ if(REAGENTLIVE_BUILD_TESTS)
 
     # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python (tests/table is a tool they use).
     add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/parse_tests.cpp tests/cli/format_tests.cpp
-        tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp)
+        tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp
+        tests/cli/budget_tests.cpp)
     target_link_libraries(reagentlive-cli-tests PRIVATE reagentlive-cli reagentlive-doctest nlohmann_json::nlohmann_json Zydis)
     # The verb table without a console: what `help --json` prints, and the docs page generated from it.
     add_executable(reagentlive-table tests/table/main.cpp)

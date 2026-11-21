@@ -33,6 +33,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/code/native.h"
 #include "reagentlive/frontends/cli/results/verbs.h"
+#include "reagentlive/frontends/cli/results/budget.h"
 #include "reagentlive/core/client.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
@@ -94,6 +95,25 @@ std::filesystem::path CachePath(uint32_t pid) {
     return std::filesystem::path(folder) / (L"reagentlive-" + std::to_wstring(pid) + L".cache");
 }
 
+// %TEMP%\reagentlive-<pid>-<owner>.results: the whole results of lines that
+// must not run again (output.cpp), per agent instance as the cache file is.
+// The first run against an instance removes the same pid's earlier folders.
+std::filesystem::path ResultsFolder(uint32_t pid, uint32_t owner) {
+    const auto cache = CachePath(pid);
+    if (cache.empty() || !owner) return {};
+    const auto folder = cache.parent_path();
+    const auto ascii = budget::ResultsPrefix(pid);
+    const std::wstring prefix(ascii.begin(), ascii.end()); // Temp may hold names a narrow string cannot.
+    const auto mine = folder / budget::ResultsName(pid, owner);
+    std::error_code error;
+    if (std::filesystem::exists(mine, error)) return mine;
+    for (const auto& entry : std::filesystem::directory_iterator(folder, error)) {
+        const auto name = entry.path().filename().wstring();
+        if (name.starts_with(prefix) && name.ends_with(L".results")) std::filesystem::remove_all(entry.path(), error);
+    }
+    return mine;
+}
+
 namespace {
 // help: the verbs, one verb in full, or the whole table for programs. It
 // reads the table only, so it also answers with no agent to attach to.
@@ -127,26 +147,45 @@ void RunHelp(Session& session, const Command& command, std::string_view jsonComm
 std::vector<Verb> AllVerbs(const ConsoleConfig& config) { return TableRows(PackVerbs(), PackOrigins(), config.verbs); }
 std::vector<Origin> AllOrigins() { return TableOrigins(PackOrigins()); }
 
-// A JSON call's own keys: the verb, its arguments, and the console's two line flags.
+// A JSON call's own keys: the verb, its arguments, and the console's line flags.
 std::string CallProblem(const Json& call) {
     if (!call.is_object() || !call.contains("verb") || !call["verb"].is_string())
         return "a JSON call is {\"verb\": \"<verb>\", \"args\": {...}}";
     for (const auto& [key, value] : call.items()) {
         if (key == "verb" || key == "args") continue;
-        if (key != "meta" && key != "timing") return "unknown key '" + key + "' (a call has verb, args, meta, timing)";
+        if (key == "budget") {
+            if (!value.is_number_unsigned()) return "budget is a number of characters (0: none)";
+            continue;
+        }
+        if (key != "meta" && key != "timing" && key != "big")
+            return "unknown key '" + key + "' (a call has verb, args, meta, timing, budget, big)";
         if (!value.is_boolean()) return key + " is true or false";
     }
     return {};
 }
 bool CallFlag(const Json& call, const char* key) { return call.contains(key) && call[key].is_boolean() && call[key].get<bool>(); }
 
-// A console flag (--timing, --meta) at the end of a line: strips it and says so.
+// A console flag (--timing, --meta, --big) at the end of a line: strips it and says so.
 bool TakeFlag(std::string& line, std::string_view flag) {
     const auto trimmed = text::Trim(line);
     if (!trimmed.ends_with(flag) || (trimmed.size() > flag.size() && trimmed[trimmed.size() - flag.size() - 1] != ' '))
         return false;
     line = std::string(text::Trim(trimmed.substr(0, trimmed.size() - flag.size())));
     return true;
+}
+
+// `--budget N` at the end of a line: strips it and gives N.
+std::optional<size_t> TakeBudget(std::string& line) {
+    const auto trimmed = text::Trim(line);
+    const size_t space = trimmed.rfind(' ');
+    uint64_t value = 0;
+    if (space == std::string_view::npos || !text::Number(trimmed.substr(space + 1), value)) return std::nullopt;
+    const auto before = text::Trim(trimmed.substr(0, space));
+    constexpr std::string_view flag = "--budget";
+    if (!before.ends_with(flag) || (before.size() > flag.size() && before[before.size() - flag.size() - 1] != ' '))
+        return std::nullopt;
+    line = std::string(text::Trim(before.substr(0, before.size() - flag.size())));
+    return static_cast<size_t>(value);
 }
 
 // One input line, read once: a JSON call or a typed line, and the console's
@@ -157,7 +196,8 @@ struct InputLine {
     std::optional<Json> call;   // A JSON call; the verb's row reads its args.
     std::string text;           // A typed line without its line flags.
     std::string name;           // The verb as given; empty for a blank line.
-    bool meta = false, timing = false;
+    bool meta = false, timing = false, big = false;
+    std::optional<size_t> budget;   // --budget N, a call's budget key.
     std::string problem;        // Not a JSON call after all: refused under the verb "call".
 
     // What follows the verb on a typed line.
@@ -181,6 +221,8 @@ InputLine ReadLine(std::string_view line) {
         if (!input.problem.empty()) return input;
         input.meta = CallFlag(call, "meta");
         input.timing = CallFlag(call, "timing");
+        input.big = CallFlag(call, "big");
+        if (call.contains("budget")) input.budget = call["budget"].get<size_t>();
         input.name = call["verb"].get<std::string>();
         input.call = std::move(call);
         return input;
@@ -190,6 +232,8 @@ InputLine ReadLine(std::string_view line) {
         more = false;
         if (TakeFlag(input.text, "--timing")) input.timing = more = true;
         if (TakeFlag(input.text, "--meta")) input.meta = more = true;
+        if (TakeFlag(input.text, "--big")) input.big = more = true;
+        if (auto budget = TakeBudget(input.text)) { input.budget = budget; more = true; }
     }
     std::string_view rest = input.text;
     input.name = std::string(text::Next(rest));
@@ -465,13 +509,34 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     Client& client = session.client;
     // --meta covers this line (a batch's covers its items); the previous state
     // returns after it, and so does the row a batch runs under.
+    // A batch item that may have changed state keeps the batch's result in a
+    // file too.
     struct LineScope {
         Session& session;
         bool meta;
         const Verb* row;
-        ~LineScope() { session.meta = meta; session.current = row; }
-    } lineScope{session, session.meta, session.current};
+        LineInput input;
+        ~LineScope() {
+            const bool reads = session.input.reads;
+            session.meta = meta;
+            session.current = row;
+            session.input = std::move(input);
+            session.input.reads &= reads;
+        }
+    } lineScope{session, session.meta, session.current, session.input};
     session.current = nullptr;
+    {
+        // The budget: the line's own, a batch's for its items, else the caller's default.
+        LineInput line;
+        line.text = input.text;
+        line.call = input.call;
+        line.refs = session.refs;
+        line.budget = input.big ? 0 : input.budget ? *input.budget : inBatch ? session.input.budget :
+            session.usage.caller == "tool" ? budget::ToolBudget : 0;
+        if (input.meta) line.flags = "--meta";
+        if (input.budget) line.flags += std::string(line.flags.empty() ? "" : " ") + "--budget " + std::to_string(*input.budget);
+        session.input = std::move(line);
+    }
     UsageScope usage(session, input.original, inBatch);
     if (!input.problem.empty()) {
         usage.Describe("call", nullptr, {});
@@ -488,6 +553,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     // A host's verb: its row checks the arguments and the result, the host does the rest.
     if (const Verb* host = FindVerb(session.config.verbs, jsonCommand); host && session.config.hostCommand) {
         session.current = host;
+        session.input.reads = !host->writes;
         auto args = call ? CallArgs(*host, callArgs) : Tokenise(*host, rest);
         if (!args) {
             JsonError(session, jsonCommand, "syntax", args.error());
@@ -520,6 +586,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
         return false;
     }
     session.current = parsed->verb;
+    session.input.reads = !parsed->verb || !parsed->verb->writes;
     if (inBatch && parsed->kind == Kind::Each && parsed->seconds) {
         JsonError(session, jsonCommand, "syntax", "each --seconds is not allowed in a batch");
         return false;
@@ -802,6 +869,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     session.names = std::move(names);
     session.lastBeat = {client->Heartbeat(), Clock::now()};
     const auto cachePath = CachePath(pid);
+    session.results = ResultsFolder(pid, client->AgentOwner());
     session.usage = {usagePath, record && !usagePath.empty(),
         std::format("{:%Y%m%dT%H%M%S}-{}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()),
             GetCurrentProcessId()), caller};

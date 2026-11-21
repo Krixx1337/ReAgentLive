@@ -106,6 +106,7 @@ std::string RowOptions(const Args& args, Command& command) {
             if (comma == std::string_view::npos) break;
             list = list.substr(comma + 1);
         }
+    command.nonzero = args.Has("--nonzero");
     uint64_t number = 0;
     if (args.Has("--limit")) {
         if (!Number(args.Value("--limit"), number) || number > UINT32_MAX) return "--limit is a number (0: all)";
@@ -123,11 +124,12 @@ Parsed CallLine(const Args& args, const ParseContext& context, uint32_t flags) {
     command.dry = args.Has("--dry");
     const bool named = std::ranges::any_of(args.positionals.begin() + 2, args.positionals.end(),
         [](const std::string& token) { return token.find('=') != std::string::npos; });
-    // --fields, --start and --limit pick from a typed call's returned arrays.
-    const bool rows = args.Has("--fields") || args.Has("--start") || args.Has("--limit");
+    // --fields, --start, --limit and --nonzero pick from a typed call's outputs.
+    const bool rows = args.Has("--fields") || args.Has("--start") || args.Has("--limit") || args.Has("--nonzero");
     command.limit = DefaultCallRows;
     if (rows) {
-        if (!named && args.positionals.size() > 2) return Fail("--fields, --start and --limit need a typed call, not a raw block");
+        if (!named && args.positionals.size() > 2)
+            return Fail("--fields, --start, --limit and --nonzero need a typed call, not a raw block");
         if (auto why = RowOptions(args, command); !why.empty()) return Fail(std::move(why));
     }
     if (!named && !args.Has("--typed") && !rows) return CallBlock(args, context, 2, std::move(command));
@@ -356,6 +358,7 @@ Parsed Get(const Args& args, const ParseContext& context) {
             depth > MaxGetDepth) return Fail("a path is Field[.Field...], up to " + std::to_string(MaxGetDepth) + " deep");
         command.fields.emplace_back(path);
     }
+    command.nonzero = args.Has("--nonzero");
     command.kind = Kind::Get;
     command.request.op = ue::op::Fields;
     return command;
@@ -534,6 +537,7 @@ Parsed Each(const Args& args, const ParseContext&) {
         if (!Number(args.Value("--limit"), number) || number > UINT32_MAX) return Fail("--limit is a number (0: all)");
         command.limit = static_cast<uint32_t>(number);
     }
+    command.nonzero = args.Has("--nonzero");
     command.kind = Kind::Each;
     command.className = args.At(0);
     command.request.op = ue::op::Each;

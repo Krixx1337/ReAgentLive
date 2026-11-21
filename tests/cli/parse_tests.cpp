@@ -522,6 +522,18 @@ TEST_CASE("call --fields, --start and --limit page a typed call's returned array
     CHECK_FALSE(Parse("call-pure $1 Vendor:GetEntries --fields a", TwoRefs).has_value()); // Arrays own memory: call only.
 }
 
+TEST_CASE("--nonzero: get, each, rows and a typed call") {
+    const auto call = Parse("call $1 Vendor:GetEntries --nonzero", TwoRefs);
+    REQUIRE(call.has_value());
+    CHECK(call->kind == Kind::TypedCall); // Implied, as --fields is.
+    CHECK(call->nonzero);
+    CHECK_FALSE(Parse("call $1 Vendor:GetEntries 00 --nonzero", TwoRefs).has_value());
+    CHECK(Parse("get $1 Health Stats --nonzero", TwoRefs)->nonzero);
+    CHECK_FALSE(Parse("get $1 Health", TwoRefs)->nonzero);
+    CHECK(Parse("each Pawn Health --nonzero", TwoRefs)->nonzero);
+    CHECK(Parse("rows $1 --nonzero --limit 0", TwoRefs)->nonzero);
+}
+
 TEST_CASE("literal refs round-trip and work wherever $N does") {
     const Ref ref{0x1b3eec26700, 185680, 9};
     CHECK(RefText(ref) == "0x1b3eec26700#185680:9");

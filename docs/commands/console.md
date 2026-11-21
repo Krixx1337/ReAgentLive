@@ -166,11 +166,33 @@ request costs up to a host tick. The console cuts both:
 - **`--timing`** at the end of any line adds `timing` to its envelope:
   `trips` (requests sent), `wait_ms` (time waiting for responses) and
   `total_ms`.
-- **Large results.** A result past 25,000 characters gets `hint` on its
-  envelope: its size and the verb's flags that narrow it (`--fields`,
-  `--where`, `--match`, `--limit`, `--nonzero`, `--own`, `--cls`), or "ask
-  for less". It warns before a tool result is spilled to a file. The MCP
-  tools return it as a second text block beside the result.
+- **Output budgets.** A console started with `--caller tool` prints at
+  most 25,000 characters a result; scripts and shells have no limit. A
+  line ending in `--budget N` sets its own (`0`: none), `--big` lifts it; a
+  JSON call takes `"budget": N` and `"big": true`, and a batch's covers its
+  items. A result past the budget is not printed: `digest` stands in for
+  `result` (`ok` stays true) with its size (`chars`, `budget`), the main
+  list (`rows`: its path and count), its `largest` parts (paths with
+  array elements folded, `rows[].Price`) and the verb's narrowing flags
+  (`narrow`). Then one of two:
+  - `next`: the line again, narrowed by what the result showed. A row
+    list's members that fit go in `--fields` (whole members where they
+    fit, else their own members), `--limit` shrinks to the rows that fit,
+    or `--nonzero` (then `--own`) is added; `$N` becomes the literal ref.
+    A line whose verb has no flag that would help gets none. It is for a
+    line that only reads: reads, `each`, `call-pure`, and a typed `call`
+    on a const or pure function.
+  - `file`: a line that may have changed state (a write, `trial`, `pin`,
+    a hook, a raw `call` or one on a function that is neither const nor
+    pure) never runs again to show its result: the whole envelope goes to
+    `%TEMP%\reagentlive-<pid>-<owner>.results\`, keyed like the cache
+    file (a new agent instance starts a new folder; the last 16 are kept).
+    When the file cannot be written, the result prints whole.
+
+  A batch item past the budget gets its own digest; the batch's result
+  goes to a file when any item may have changed state. The MCP tools pass
+  the digest as text naming the tool call to make next, and take `budget`
+  as an argument.
 - **Compact values.** A decoded struct prints as `{Name: value, ...}`,
   nested structs the same way: `{"X": 1.5, "Y": -2, "Z": 3}`, with a
   member's readable name where the [names file](unreal.md#readable-names) has one.

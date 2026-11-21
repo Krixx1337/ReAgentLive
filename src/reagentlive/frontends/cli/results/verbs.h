@@ -221,8 +221,12 @@ inline const std::vector<std::string>& GeneralNotes() {
         "pointer, so one ->off alone is refused (<addr>->0->0x30 reads the pointer at <addr>).",
         "A token in double quotes is taken exactly. A key that does not apply is omitted from a result.",
         "Any line ending in --timing adds trips, wait_ms and total_ms; --meta prints struct values with their layout.",
+        "A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with "
+        "its largest parts and next, the line narrowed (or file, for a line that must not run again). A line ending "
+        "in --budget N sets the limit, --big lifts it.",
         "A line starting with { is a JSON call: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}, "
-        "keys as help --json names them; \"meta\" and \"timing\" as true. It takes literal refs, never $N.",
+        "keys as help --json names them; \"meta\", \"timing\" and \"big\" as true, \"budget\" as a number. "
+        "It takes literal refs, never $N.",
         "One console per agent: a second one is refused as busy.",
         "The module list, $N and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
         "One-shot: <console> [pid] -c \"status; modules\" emits JSON Lines.",

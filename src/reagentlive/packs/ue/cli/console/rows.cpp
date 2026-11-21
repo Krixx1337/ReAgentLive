@@ -144,6 +144,7 @@ void RunRows(Session& session, const Command& command, StructCache& structs, std
         shape::TableRow item{rowName(row), Addr(row.row), nullptr};
         if (errors[i].empty()) item.value = reader.Value(type, bytes[i], paths, named, out.truncated);
         else { item.value = {{"error", errors[i]}}; out.truncated = true; }
+        if (command.nonzero) DropZero(item.value);
         out.rows.push_back(std::move(item));
     }
     Emit(session, jsonCommand, std::move(out));

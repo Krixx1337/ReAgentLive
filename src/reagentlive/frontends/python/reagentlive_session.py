@@ -29,6 +29,12 @@ on the line that guessed it, never as a quiet None or a caught KeyError.
 `s.help(verb)` shows a verb's arguments and result keys; `s.table_hash`
 tells a generated module or cached script its table is stale.
 
+A result past the call's output budget (`budget=N` characters; a session
+started with caller='tool' has one by default) comes back as a Digest
+instead: its size, its largest parts and `next`, the call narrowed, or
+`file`, where the console kept the whole result of a call that must not run
+again.
+
 `s.call(verb, args)` sends any verb by name; a generated function does the
 same with checked argument names. Two helpers do what a generated function
 cannot: `s.batch_results` (a strict result per batch item) and `samples`
@@ -43,7 +49,7 @@ import struct
 import subprocess
 from collections.abc import Mapping
 
-__all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'Session', 'samples', 'addr', 'unhex',
+__all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'Digest', 'Session', 'samples', 'addr', 'unhex',
            'f32', 'f64', 'u32', 'u64', 'i32', 'pack']
 
 
@@ -53,6 +59,15 @@ class ReAgentLiveError(RuntimeError):
     def __init__(self, command, error):
         self.command, self.error = command, error or {}
         super().__init__(f'{command}: {self.error.get("message", "failed")}')
+
+
+class Digest(dict):
+    """A result past its output budget, not printed: chars, budget, largest, maybe rows, narrow, and `next` (the
+    call narrowed: a JSON call's text) or `file` (the whole envelope, for a call that must not run again)."""
+
+    def next_call(self):
+        """`next` as {'verb', 'args'}, or None."""
+        return json.loads(self['next']) if 'next' in self else None
 
 
 class ResultKeyError(KeyError):
@@ -185,7 +200,7 @@ class Session:
         self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         self._types = {}
-        self.hint = None  # The last call's envelope hint (a large result), or None.
+        self.digest = None  # The last call's Digest (its result was past the budget), or None.
         try:
             if table is not None:
                 current = self.send('help --hash')
@@ -249,10 +264,12 @@ class Session:
         kind = self._types.get(verb)
         return _wrap(result, kind, verb, self._named) if kind else result
 
-    def call(self, verb, args=None, meta=False, timing=False):
-        """One verb by name with named arguments (keys as `help <verb>` shows them); its strict result.
+    def call(self, verb, args=None, meta=False, timing=False, budget=None):
+        """One verb by name with named arguments (keys as `help <verb>` shows them); its strict result, or a
+        Digest when it was past the output budget.
 
-        None and False arguments are left out; bytes go as hex pairs.
+        None and False arguments are left out; bytes go as hex pairs. budget: characters (0: none; None: the
+        caller's default).
         """
         call = {'verb': verb, 'args': {key: _value(value) for key, value in (args or {}).items()
                                        if value is not None and value is not False}}
@@ -260,11 +277,13 @@ class Session:
             call['meta'] = True
         if timing:
             call['timing'] = True
+        if budget is not None:
+            call['budget'] = budget
         envelope = self.send(json.dumps(call, separators=(',', ':')))
-        self.hint = envelope.get('hint')  # A large result's advice on narrowing it, or None.
+        self.digest = Digest(envelope['digest']) if 'digest' in envelope else None
         if not envelope.get('ok'):
             raise ReAgentLiveError(verb, envelope.get('error'))
-        return self.wrap(verb, envelope.get('result', {}))
+        return self.digest if self.digest is not None else self.wrap(verb, envelope.get('result', {}))
 
     def help(self, verb=None):
         """Every verb in one line each, or one verb's arguments, result notation, named types and notes."""
@@ -273,11 +292,12 @@ class Session:
     def batch_results(self, calls):
         """(items, same_tick) of a batch: calls are {'verb', 'args'} dicts or (verb, args) pairs.
 
-        Each item is that call's strict result, or a ReAgentLiveError (not raised).
+        Each item is that call's strict result, a Digest, or a ReAgentLiveError (not raised).
         """
         calls = [call if isinstance(call, Mapping) else {'verb': call[0], 'args': call[1] if len(call) > 1 else {}}
                  for call in calls]
         result = self.call('batch', {'calls': calls})
-        items = [self.wrap(row.get('command', '?'), row.get('result', {})) if row.get('ok')
+        items = [Digest(row['digest']) if row.get('ok') and 'digest' in row
+                 else self.wrap(row.get('command', '?'), row.get('result', {})) if row.get('ok')
                  else ReAgentLiveError(row.get('command', '?'), row.get('error')) for row in result['rows']]
         return items, result['same_tick']

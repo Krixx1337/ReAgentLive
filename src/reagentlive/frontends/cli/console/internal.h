@@ -54,6 +54,20 @@ struct LineUsage {
     std::string refused;
 };
 
+// The line being run, as its output budget needs it (output.cpp): what to
+// run again, narrowed, when the result is past the budget.
+struct LineInput {
+    std::string text;               // A typed line without its line flags.
+    std::optional<Json> call;       // Or a JSON call.
+    std::string flags;              // The line flags a rerun keeps (--meta, --budget N), typed.
+    std::vector<Ref> refs;          // $1..$N when the line began: a rerun names them literally.
+    size_t budget = 0;              // Characters; 0: none.
+    // Safe to run again: no write and no call that may change state. False
+    // keeps a result past the budget in a file instead. A pack sets it true
+    // for a call it knows is const or pure.
+    bool reads = true;
+};
+
 // The engine pack's state for one console run (packs/ue/cli/console/internal_ue.h).
 struct PackState;
 
@@ -83,6 +97,8 @@ struct Session {
     std::shared_ptr<PackState> pack;        // Made by the pack (pack.h).
     Usage usage;
     LineUsage* line = nullptr;              // The line being run, for the usage log.
+    LineInput input;                        // The line being run, for its budget.
+    std::filesystem::path results;          // Whole results of lines that must not run again; empty: none.
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}
 };
@@ -125,6 +141,8 @@ void RunVtable(Session& session, const Command& command, std::string_view jsonCo
 void RunRtti(Session& session, const Command& command, std::string_view jsonCommand);
 // %TEMP%\reagentlive-<pid>.cache: the cache file of the agent in that process.
 std::filesystem::path CachePath(uint32_t pid);
+// %TEMP%\reagentlive-<pid>-<owner>.results: whole results kept by the output budget.
+std::filesystem::path ResultsFolder(uint32_t pid, uint32_t owner);
 // mem-snap and mem-diff: a raw range kept in a file beside the cache, then compared.
 void RunMemSnap(Session& session, const Command& command, std::string_view jsonCommand);
 void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand);

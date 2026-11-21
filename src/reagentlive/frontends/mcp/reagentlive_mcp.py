@@ -49,7 +49,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'python'))
-from reagentlive_session import ReAgentLiveError, Record, Session  # noqa: E402
+from reagentlive_session import Digest, ReAgentLiveError, Record, Session  # noqa: E402
 
 import anyio  # noqa: E402
 import jsonschema  # noqa: E402
@@ -63,8 +63,13 @@ INSTRUCTIONS = (
     '(0x<address>#<index>:<serial>) to the next call; $N is refused. Use `batch` for reads that must come from '
     'one moment. Read-only tools may be allowed freely; tools marked destructive write the target\'s memory '
     'or call into it, so confirm each one first. Results keep the console\'s keys: a list is `rows`, a page '
-    'carries `next_cursor` (pass it as `start`), a key that does not apply is absent. `stats` shows what this '
-    'session has cost so far, also with no target.')
+    'carries `next_cursor` (pass it as `start`), a key that does not apply is absent. A result past 25,000 '
+    'characters is not shown: a digest stands for it, with its largest parts and the call narrowed to run '
+    'next (or the file holding the whole result of a call that must not run again); `budget` raises the '
+    'limit for one call (0: none). `stats` shows what this session has cost so far, also with no target.')
+# The output budget, one argument every tool takes: the console's line flag, not a verb's.
+BUDGET = {'type': 'integer', 'minimum': 0,
+          'description': 'characters this result may take (default 25000; 0: no limit); past it a digest stands for it'}
 
 OUTPUT_SCHEMAS = ('compact', 'off')
 
@@ -122,6 +127,7 @@ def input_schema(row):
         properties[flag['key']] = described(schema, flag)
         if flag.get('required'):
             required.append(flag['key'])
+    properties.setdefault('budget', BUDGET)
     out = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
         out['required'] = required
@@ -152,10 +158,29 @@ def output_schema(row, named):
     for key, spec in fields.items():
         json_type = result_type(spec['type'], named)
         properties[key] = {'type': json_type} if json_type else {}
+    # A digest stands for a result past the budget: one or the other.
+    properties['digest'] = {'type': 'object'}
     out = {'type': 'object', 'properties': properties}
-    if required := [key for key, spec in fields.items() if not spec.get('optional')]:
-        out['required'] = required
+    required = [key for key, spec in fields.items() if not spec.get('optional')]
+    out['anyOf'] = [{'required': required} if required else {'not': {'required': ['digest']}}, {'required': ['digest']}]
     return out
+
+
+def digest_text(digest, tool):
+    """What a tool's caller reads for a digest: why there is no result, and what to call instead."""
+    parts = ', '.join(f'{part["path"]} ({part["chars"]})' for part in digest.get('largest', []))
+    text = (f'Not shown: the result is {digest["chars"]} characters, past the budget of {digest["budget"]}. '
+            f'Largest parts: {parts or "none"}.')
+    if 'rows' in digest:
+        text += f' The list is {digest["rows"]["path"]}, {digest["rows"]["count"]} rows.'
+    if 'file' in digest:
+        text += f' The call must not run again: its whole result is in {digest["file"]}; read what you need from it.'
+    elif 'next' in digest:
+        call = Digest(digest).next_call()
+        text += f' Call next: {tool} {json.dumps(call.get("args", {}))}.'
+    if 'narrow' in digest:
+        text += f' This tool narrows with: {", ".join(flag.lstrip("-") for flag in digest["narrow"])}; budget 0 shows all.'
+    return text
 
 
 def description(row):
@@ -194,7 +219,7 @@ class Live:
         return next((row for row in self.table['rows'] if tool_name(row) == name), None)
 
     def run(self, name, arguments):
-        """One tool call on a fresh console: (its result, True when the table changed since the last call, its hint)."""
+        """One tool call on a fresh console: (its result or Digest, True when the table changed since the last call)."""
         with self.lock:
             session = Session(self.console, [*self.args, '--session', self.session_id], caller='tool', table=self.table)
             try:
@@ -206,19 +231,21 @@ class Live:
                     raise RuntimeError(f'the console has no verb for {name} any more; reconnect for its tool list')
                 # Absent and null are the same to a call; the row's schema checks the rest.
                 arguments = {key: value for key, value in arguments.items() if value is not None}
+                budget = None if any(flag['key'] == 'budget' for flag in row['flags']) else arguments.pop('budget', None)
                 try:
-                    jsonschema.validate(arguments, input_schema(row))
+                    jsonschema.validate(arguments if budget is None else dict(arguments, budget=budget),
+                                        input_schema(row))
                 except jsonschema.ValidationError as error:
                     stale = ' (the console was rebuilt: reconnect for its tool list)' if changed else ''
                     raise RuntimeError(f'{name}: {error.message}{stale}; usage: {row["usage"]}') from None
                 try:
-                    result = session.call(row['verb'], arguments)
+                    result = session.call(row['verb'], arguments, budget=budget)
                 except ReAgentLiveError as error:
                     # The whole error object, not only its message: a refused --expect carries `found`, every error its kind.
                     raise RuntimeError(f'{error}; error: {json.dumps(error.error)}') from None
             finally:
                 session.close()
-        return (result.raw if isinstance(result, Record) else result), changed, getattr(session, 'hint', None)
+        return (result.raw if isinstance(result, Record) else result), changed
 
 
 class ReAgentLiveServer(Server):
@@ -276,14 +303,16 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
         if row is None or not served(row, families, read_only):
             return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=f'no tool {name}')])
         try:
-            raw, changed, hint = await anyio.to_thread.run_sync(live.run, name, arguments or {})
+            raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments or {})
         except RuntimeError as error:
             raw, changed = None, False
             result = types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=str(error))])
         else:
-            content = [types.TextContent(type='text', text=json.dumps(raw))]
-            if hint:  # A large result: the envelope's advice, beside the result.
-                content.append(types.TextContent(type='text', text=f'hint: {hint}'))
+            if isinstance(raw, Digest):  # Past the budget: what to call instead, not the result.
+                raw = {'digest': dict(raw)}
+                content = [types.TextContent(type='text', text=digest_text(raw['digest'], name))]
+            else:
+                content = [types.TextContent(type='text', text=json.dumps(raw))]
             result = types.CallToolResult(content=content, structuredContent=raw)
         if changed:
             await server.request_context.session.send_tool_list_changed()

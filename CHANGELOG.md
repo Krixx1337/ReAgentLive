@@ -14,8 +14,15 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **One decoder for compact values:** `get`, `each` and `dump` read arrays
   inside structs (8 elements, 3 deep), show tag containers as lists of tags
   and convert text at any depth, as returned arrays and `rows` do.
-- **Large results carry `hint`** on the envelope past 25,000 characters,
-  naming the verb's narrowing flags; the MCP tools pass it on.
+- **Output budgets replace the large-result `hint`:** a `--caller tool`
+  console prints at most 25,000 characters a result (`--budget N`, `--big`;
+  a JSON call's `budget` and `big`). Past it, `digest` stands in for
+  `result`: size, main list, largest parts, and `next`, the line narrowed
+  (`--fields`, `--limit`, `--nonzero`), or `file`, the whole envelope of a
+  line that may have changed state. The MCP tools take `budget` and return
+  the digest; the Python session returns a `Digest`. Breaking for tools.
+- **`--nonzero` on `get`, `each`, `rows` and `call`:** leaves out the zero
+  members inside values (elements stay); on `call` it implies a typed call.
 - **`describe` makes its object `$1`.** A typed call's `function` is
   owner-qualified, as `--dry` prints it.
 

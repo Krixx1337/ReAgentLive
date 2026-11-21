@@ -49,8 +49,14 @@ def C(verb, args=None):
     return {'verb': verb, 'args': args or {}}
 
 
+# A result past its budget: the console's digest, with the call narrowed.
+DIGEST = {'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
+          'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['--match', '--fields', '--limit'],
+          'next': json.dumps({'verb': 'rows', 'args': {'object': '0x10#1:1', 'fields': 'Cost', 'limit': 40}})}
+
 # Replies by call: [call as the client sends it, reply].
 CALLS = [
+    [C('rows', {'object': '0x10#1:1'}), {'ok': True, 'digest': DIGEST}],
     [C('status'), ok({'pid': 4, 'build': 'b', 'version': '0.1.0', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
                       'interval_ms': 100, 'ticking': True, 'host_thread': 'engine', 'packs': ['ue'], 'table_hash': 'abc'})],
     [C('region', {'addr': 'base+0x10'}), ok({'address': '0x10', 'kind': 'code', 'section': '.text', 'base': '0x0',
@@ -213,9 +219,19 @@ class SessionTests(unittest.TestCase):
         problems = []
         for call, reply in CALLS:
             self.assertIn(call['verb'], self.rows, call)
-            if reply['ok']:
+            if reply['ok'] and 'result' in reply:
                 problems += conforms(reply['result'], self.rows[call['verb']]['type'], call['verb'], self.table['types'])
         self.assertEqual(problems, [])
+
+    def test_a_result_past_its_budget_is_a_digest(self):
+        digest = self.session.call('rows', {'object': REF}, budget=25000)
+        self.assertIsInstance(digest, dl.Digest)
+        self.assertIs(self.session.digest, digest)
+        self.assertEqual(digest['chars'], 90000)
+        self.assertEqual(digest.next_call()['args'], {'object': REF, 'fields': 'Cost', 'limit': 40})
+        self.assertEqual(self.sent()[-1]['budget'], 25000)        # The line flag, beside args.
+        self.c.read(4096, 4)
+        self.assertIsNone(self.session.digest)                    # Each call sets it again.
 
     def test_every_verb_has_a_generated_method_named_by_origin(self):
         for verb, row in self.rows.items():

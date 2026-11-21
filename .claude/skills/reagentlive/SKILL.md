@@ -115,7 +115,10 @@ to cross to the static tool (native-code reference).
   of it; never `each` or `find` a whole class unfiltered (`--where`, `--cls`).
 - Separate commands read separate ticks; what must line up goes in one
   `get`, `read-batch` or `batch` (read its `spans_ticks`).
-- `--timing` shows a line's round trips; a `hint` means narrow the next call.
+- `--timing` shows a line's round trips.
+- **A `digest` means run its `next`** (or read its `file`: that call may
+  have changed state, so never repeat it). Raise `budget` only for what
+  `next` cannot narrow.
 - **Measure the session, don't recall it.** `stats` (also with no target)
   ranks this session's verbs by output and marks `unfiltered`, `repeated`
   and `refused` calls: check it before a long step and act on the marks.

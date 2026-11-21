@@ -266,7 +266,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     CHECK(Build(*read, *chain, {}).error().starts_with(text::ChainNoHop));
     // A misspelt key is named as unknown, never read as a left-out argument.
     CHECK(CallArgs(*FindVerb(AllVerbs(), "each"), Json{{"class_", "Pawn"}, {"paths", "Health"}}).error().starts_with(
-        "unknown argument 'class_' (it takes cls, paths, seconds, where, limit)"));
+        "unknown argument 'class_' (it takes cls, paths, seconds, where, limit, nonzero)"));
     CHECK(CallArgs(*read, Json::object()).error() == "too few arguments" + usage);
     CHECK(CallArgs(*read, Json{{"addr", {"0x10", "0x20"}}}).error() == "addr: one value, not a list" + usage);
     CHECK_FALSE(CallArgs(*FindVerb(AllVerbs(), "xrefs"), Json{{"addr", "0x10"}, {"all", "yes"}}).has_value());

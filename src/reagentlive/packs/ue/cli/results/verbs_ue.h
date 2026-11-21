@@ -51,7 +51,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"--seconds", Takes::One, "int", "N", "one column: repeat for 1..60 s and report changes"},
              {"--where", Takes::One, "str", "Field~text", "only instances whose field's value contains text, any case "
               "(a string, a name or text; else its JSON); the field need not be a column"},
-             {"--limit", Takes::One, "int", "N", "rows shown (0: all); omitted counts the rest", "100"}},
+             {"--limit", Takes::One, "int", "N", "rows shown (0: all); omitted counts the rest", "100"},
+             {"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside values (0, false, empty, None)"}},
             Of<shape::Each>, parse::Each,
             "rows: {ref, values} in the columns' order; a failed cell is null with an errors entry. Spans inside the "
             "instance are read in passes of up to 64 bytes, the first in one tick; a path through a pointer is "
@@ -64,7 +65,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"},
              {"--fields", Takes::One, "str", "a,b.c", "a returned array's row members to keep (implies a typed call)"},
              {"--start", Takes::One, "int", "N", "a returned array's first row: its next_cursor"},
-             {"--limit", Takes::One, "int", "N", "a returned array's rows per page (0: all)", "100"}},
+             {"--limit", Takes::One, "int", "N", "a returned array's rows per page (0: all)", "100"},
+             {"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside outputs (implies a typed call) (0, false, empty, None)"}},
             Of<shape::Call>, parse::Call,
             "A raw block must match the function's size (params shows it); none sends a zeroed block when every "
             "parameter is an output. hex is the block after the call; a typed call adds outputs, a returned array "
@@ -127,14 +129,15 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"--match", Takes::One, "str", "text", "row names containing text, any case"},
              {"--fields", Takes::One, "str", "a,b.c", "the row members to keep (paths into structs and arrays)"},
              {"--start", Takes::One, "int", "N", "a page's next_cursor"},
-             {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"}},
+             {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
+             {"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside rows (0, false, empty, None)"}},
             Of<shape::Rows>, parse::Rows,
             "RowMap is unreflected: read as the stock UE5 TMap<FName, uint8*> right after RowStruct, its slot "
             "count checked against its allocation bits (refused when they disagree). Nested arrays up to 256 "
             "elements, 3 deep; names resolved. total counts the rows --match kept."},
         {"get", "ue", "named fields, following object pointers and structs (up to 16 paths)",
             {{"object", "object", One, "ref", object}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
-            {}, Of<shape::Get>, parse::Get,
+            {{"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside values (0, false, empty, None)"}}, Of<shape::Get>, parse::Get,
             "Owner:Field where a name is ambiguous. The values are read back to back; same_tick says whether in one tick."},
         {"trace", "ue", "the first thing a line hits: actor, component, physical material, distance (read-only)",
             {{"start", "x,y,z|object[@Socket]", One, "str",

@@ -277,3 +277,81 @@ TEST_CASE("layouts refuse bad types, counts, names and sizes") {
     CHECK(layout::Parse("f32 Speed?").has_value());
     CHECK_FALSE(layout::ParseField("f32", true).has_value());
 }
+
+namespace {
+// A wide row as a vendor list holds one: a transform, a tag, a name, a price
+// and an array, compact. Its printed size is held below, so a formatting
+// change that bloats every value fails here before it floods a reader.
+const Ref QuatType{0x8000, 30, 1}, TransformType{0x8001, 31, 1}, TagType{0x8002, 32, 1}, WideType{0x8003, 33, 1};
+const std::vector<ue::Field> WideQuat{Member(0, 8, "DoubleProperty", "X", "Quat"), Member(8, 8, "DoubleProperty", "Y", "Quat"),
+    Member(16, 8, "DoubleProperty", "Z", "Quat"), Member(24, 8, "DoubleProperty", "W", "Quat")};
+const std::vector<ue::Field> WideTransform{Member(0, 32, "StructProperty", "Rotation", "Transform", QuatType),
+    Member(32, 24, "StructProperty", "Translation", "Transform", VectorType),
+    Member(64, 24, "StructProperty", "Scale3D", "Transform", VectorType)};
+const std::vector<ue::Field> WideTag{Member(0, 8, "NameProperty", "TagName", "GameplayTag")};
+const std::vector<ue::Field> WideRow{Member(0, 96, "StructProperty", "SpawnTransform", "Row", TransformType),
+    Member(96, 8, "StructProperty", "Tag", "Row", TagType), Member(104, 8, "NameProperty", "RowName", "Row"),
+    Member(112, 4, "IntProperty", "Price", "Row"), Member(120, 16, "ArrayProperty", "Variations", "Row")};
+const std::vector<ue::Field>* WideLookup(const Ref& type) {
+    if (type == VectorType) return &JsonVector;
+    if (type == QuatType) return &WideQuat;
+    if (type == TransformType) return &WideTransform;
+    if (type == TagType) return &WideTag;
+    if (type == WideType) return &WideRow;
+    return nullptr;
+}
+std::vector<uint8_t> WideBytes() {
+    std::vector<uint8_t> bytes(136);
+    const double values[] = {0, 0, 0.7071, 0.7071, 1250.5, -310.25, 42, 1, 1, 1};
+    memcpy(bytes.data(), values, 32);           // Rotation.
+    memcpy(bytes.data() + 32, values + 4, 24);  // Translation.
+    memcpy(bytes.data() + 64, values + 7, 24);  // Scale3D.
+    const int32_t tag[2] = {42, 0}, name[2] = {43, 3}, price = 1500;
+    memcpy(bytes.data() + 96, tag, 8);
+    memcpy(bytes.data() + 104, name, 8);
+    memcpy(bytes.data() + 112, &price, 4);
+    const uint64_t data = 0x7ff612340000;
+    const int32_t counts[2] = {2, 4};
+    memcpy(bytes.data() + 120, &data, 8);
+    memcpy(bytes.data() + 128, counts, 8);
+    return bytes;
+}
+}
+
+TEST_CASE("a wide row prints compact: its size is held") {
+    const auto names = [](int32_t index) -> std::string_view {
+        return index == 42 ? "Item.Weapon.Rifle.Standard" : index == 43 ? "Row" : "";
+    };
+    bool truncated = false;
+    const auto row = Member(0, 136, "StructProperty", "Item", "Vendor", WideType);
+    const auto value = JsonFieldValue(row, WideBytes(), WideLookup, names, truncated);
+    CHECK(value["Tag"] == "Item.Weapon.Rifle.Standard");
+    CHECK(value["RowName"] == "Row_2");
+    CHECK(value["SpawnTransform"]["Scale3D"] == Json{{"X", 1.0}, {"Y", 1.0}, {"Z", 1.0}});
+    // Measured at 303 characters; the bound leaves room for a key, not for a
+    // new wrapper on every value.
+    const auto size = value.dump(-1, ' ', true).size();
+    MESSAGE("wide row: " << size << " characters");
+    CHECK(size <= 320);
+    // --meta is the layout, many times larger: the compact form is the default for a reason.
+    const auto meta = JsonFieldValue(row, WideBytes(), WideLookup, names, truncated, ValueStyle{true, nullptr});
+    CHECK(meta.dump().size() > 3 * size);
+
+    // --nonzero leaves out the zero members: the rotation's X and Y here.
+    Json pruned = value;
+    CHECK_FALSE(DropZero(pruned));
+    CHECK(pruned["SpawnTransform"]["Rotation"] == Json{{"Z", 0.7071}, {"W", 0.7071}});
+    CHECK(pruned.dump().size() < value.dump().size());
+}
+
+TEST_CASE("--nonzero: zero members go, elements and non-zero values stay") {
+    Json value = {{"A", 0}, {"B", false}, {"C", ""}, {"D", "None"}, {"E", nullptr}, {"F", Json::array()},
+        {"G", {{"X", 0.0}}}, {"H", 1}, {"I", Json::array({0, 2})}, {"J", {{"count", 0}, {"rows", Json::array()}}},
+        {"K", {{"count", 1}, {"rows", Json::array({{{"P", 0}, {"Q", 3}}})}}}, {"L", "x"}};
+    CHECK_FALSE(DropZero(value));
+    CHECK(value == Json{{"H", 1}, {"I", Json::array({0, 2})}, {"K", {{"count", 1}, {"rows", Json::array({{{"Q", 3}}})}}},
+        {"L", "x"}});
+    Json zero = {{"A", 0}, {"B", {{"C", false}}}};
+    CHECK(DropZero(zero));
+    CHECK(zero.empty());
+}

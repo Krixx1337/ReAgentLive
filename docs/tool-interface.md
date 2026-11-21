@@ -150,7 +150,10 @@ defines what the table did not.
   argument names. No tool and no JSON Schema is written by hand or
   exported from the console, and there is no module file to go stale.
   Verbs marked `blocks` and `quit` are left out; `batch` takes a list of
-  calls and runs them held.
+  calls and runs them held. Every tool also takes `budget` (the console's
+  [output budget](commands/console.md#fewer-round-trips), 25,000 characters
+  by default); a result past it comes back as `{digest}` with a text block
+  naming the call to make next, and the output schema allows either.
 - **Two readers of the type vocabulary, both strict.** The generator maps
   the argument and result types to Python annotations, the adapter to
   JSON Schema. A type either lacks stops it with the type's name, never a
