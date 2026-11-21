@@ -3,6 +3,7 @@
 // (unfiltered, repeated, refused), never advice. Pure; tests cover it.
 #pragma once
 #include <algorithm>
+#include <expected>
 #include <map>
 #include <optional>
 #include <set>
@@ -17,6 +18,7 @@ namespace shape {
 struct StatsTotals {
     uint64_t calls = 0, in = 0, out = 0, refused = 0;
     std::map<std::string, uint64_t> outByCaller;
+    uint64_t digested = 0, saved = 0;   // Results past the budget; what their digests kept out.
     double ms = 0;
     template<class V> static void Describe(V& v) {
         v("calls", &StatsTotals::calls);
@@ -24,6 +26,8 @@ struct StatsTotals {
         v("out", &StatsTotals::out);
         v("out_by_caller", &StatsTotals::outByCaller);
         v("refused", &StatsTotals::refused);
+        v("digested", &StatsTotals::digested);
+        v("saved", &StatsTotals::saved);
         v("ms", &StatsTotals::ms);
     }
 };
@@ -31,7 +35,7 @@ struct StatsVerb {
     std::string verb, origin;
     uint64_t calls = 0, out = 0, largest = 0;
     double ms = 0;
-    std::optional<uint64_t> batched, unfiltered, repeated, refused;
+    std::optional<uint64_t> batched, unfiltered, repeated, refused, digested, saved;
     std::optional<std::map<std::string, uint64_t>> refusedBy;
     template<class V> static void Describe(V& v) {
         v("verb", &StatsVerb::verb);
@@ -45,6 +49,8 @@ struct StatsVerb {
         v("repeated", &StatsVerb::repeated);
         v("refused", &StatsVerb::refused);
         v("refused_by", &StatsVerb::refusedBy);
+        v("digested", &StatsVerb::digested);
+        v("saved", &StatsVerb::saved);
     }
 };
 struct StatsCall {
@@ -52,12 +58,32 @@ struct StatsCall {
     std::vector<std::string> flags;
     uint64_t out = 0;
     std::optional<bool> batch;
+    std::optional<uint64_t> digest;     // The full size a digest stood in for.
     template<class V> static void Describe(V& v) {
         v("verb", &StatsCall::verb);
         v("flags", &StatsCall::flags);
         v("out", &StatsCall::out);
         v("caller", &StatsCall::caller);
         v("batch", &StatsCall::batch);
+        v("digest", &StatsCall::digest);
+    }
+};
+// stats --sessions: one session of the log.
+struct StatsSession {
+    std::string session, since, until;  // Its first and last call.
+    std::vector<std::string> callers;
+    uint64_t calls = 0, out = 0, toolOut = 0, digested = 0, saved = 0, refused = 0;
+    template<class V> static void Describe(V& v) {
+        v("session", &StatsSession::session);
+        v("since", &StatsSession::since);
+        v("until", &StatsSession::until);
+        v("callers", &StatsSession::callers);
+        v("calls", &StatsSession::calls);
+        v("out", &StatsSession::out);
+        v("tool_out", &StatsSession::toolOut);
+        v("digested", &StatsSession::digested);
+        v("saved", &StatsSession::saved);
+        v("refused", &StatsSession::refused);
     }
 };
 // stats: this session (the latest in the log when no target is attached),
@@ -70,6 +96,7 @@ struct Stats {
     std::vector<StatsVerb> rows;
     std::vector<StatsCall> largest;
     std::optional<std::vector<std::string>> neverCalled;
+    std::optional<std::vector<StatsSession>> sessionRows;
     template<class V> static void Describe(V& v) {
         v("session", &Stats::session);
         v("sessions", &Stats::sessions);
@@ -78,6 +105,7 @@ struct Stats {
         v("rows", &Stats::rows);
         v("largest", &Stats::largest);
         v("never_called", &Stats::neverCalled);
+        v("session_rows", &Stats::sessionRows);
     }
 };
 }
@@ -126,7 +154,15 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
             ++(*row.refusedBy)[line.refused.empty() ? "error" : line.refused];
         }
         if (!seen.insert({line.session, line.hash}).second) bump(row.repeated);
-        if (const Verb* verb = FindVerb(verbs, line.verb)) {
+        const uint64_t saved = line.digest > line.out ? line.digest - line.out : 0;
+        if (line.digest) {
+            bump(row.digested);
+            row.saved = row.saved.value_or(0) + saved;
+            ++stats.totals.digested;
+            stats.totals.saved += saved;
+        }
+        // A digested call cost its digest only: not worth a mark.
+        if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.digest) {
             const bool filters = std::ranges::any_of(verb->flags, [](const Flag& f) { return IsFilter(f.name); });
             if (filters && std::ranges::none_of(line.flags, [](const std::string& f) { return IsFilter(f); }))
                 bump(row.unfiltered);
@@ -153,6 +189,7 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
     for (size_t i = 0; i < calls.size() && i < StatsLargestCalls; ++i) {
         shape::StatsCall call{calls[i]->verb, calls[i]->caller, calls[i]->flags, calls[i]->out};
         if (calls[i]->batch) call.batch = true;
+        if (calls[i]->digest) call.digest = calls[i]->digest;
         stats.largest.push_back(std::move(call));
     }
     if (all) {
@@ -167,5 +204,58 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
 // The session `stats` reports when no target is attached: the log's latest.
 inline std::string LatestSession(std::span<const UsageLine> lines) {
     return lines.empty() ? std::string() : lines.back().session;
+}
+
+constexpr size_t StatsSessionRows = 30;
+
+// stats --sessions: totals over the whole log, and its newest sessions one row each.
+inline shape::Stats MakeSessionList(std::span<const UsageLine> lines, std::span<const Verb> verbs) {
+    auto stats = MakeStats(lines, std::nullopt, verbs);
+    stats.rows.clear();
+    stats.largest.clear();
+    stats.neverCalled.reset();
+    std::map<std::string, shape::StatsSession> bySession;
+    for (const auto& line : lines) {
+        auto& row = bySession[line.session];
+        if (row.session.empty()) row.session = line.session, row.since = line.time;
+        row.since = std::min(row.since, line.time);
+        row.until = std::max(row.until, line.time);
+        if (std::ranges::find(row.callers, line.caller) == row.callers.end()) row.callers.push_back(line.caller);
+        if (!line.batch) ++row.calls;
+        row.out += line.out;
+        if (line.caller == "tool") row.toolOut += line.out;
+        if (line.digest) {
+            ++row.digested;
+            row.saved += line.digest > line.out ? line.digest - line.out : 0;
+        }
+        if (!line.ok) ++row.refused;
+    }
+    std::vector<shape::StatsSession> rows;
+    for (auto& [id, row] : bySession) {
+        std::ranges::sort(row.callers);
+        rows.push_back(std::move(row));
+    }
+    std::ranges::stable_sort(rows, std::greater{}, &shape::StatsSession::until);
+    if (rows.size() > StatsSessionRows) rows.resize(StatsSessionRows);
+    stats.sessionRows = std::move(rows);
+    return stats;
+}
+
+// What `stats` asked for: --all, --sessions, --session <id>, or the current
+// session (`current`; nullopt with no target: the log's latest).
+struct StatsQuery {
+    bool all = false, sessions = false;
+    std::string session;
+};
+inline std::expected<shape::Stats, std::string> StatsFor(std::span<const UsageLine> lines, std::span<const Verb> verbs,
+                                                         const StatsQuery& query, std::optional<std::string> current) {
+    if (query.sessions) return MakeSessionList(lines, verbs);
+    if (query.all) return MakeStats(lines, std::nullopt, verbs);
+    if (!query.session.empty()) {
+        if (std::ranges::none_of(lines, [&](const UsageLine& line) { return line.session == query.session; }))
+            return std::unexpected("no session '" + query.session + "' in the usage log (stats --sessions lists them)");
+        return MakeStats(lines, query.session, verbs);
+    }
+    return MakeStats(lines, current ? *current : LatestSession(lines), verbs);
 }
 }

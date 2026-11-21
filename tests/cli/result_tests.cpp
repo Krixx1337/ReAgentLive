@@ -1047,6 +1047,75 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(none.rows.empty());
 }
 
+TEST_CASE("stats counts digests and what they kept out, and lists and picks sessions") {
+    const auto line = [](std::string session, std::string verb, uint64_t out, std::string time, std::string caller = "tool") {
+        UsageLine usage;
+        usage.time = "2026-01-02T03:04:0" + time + "Z";
+        usage.session = std::move(session);
+        usage.verb = std::move(verb);
+        usage.origin = "ue";
+        usage.caller = std::move(caller);
+        usage.hash = verb + time;
+        usage.out = out;
+        return usage;
+    };
+    std::vector<UsageLine> lines = {
+        line("old", "find", 300, "1", "shell"),
+        line("new", "census", 500, "2"),                     // Digested: 430000 stood behind it.
+        line("new", "census", 20000, "3"),                   // Its next, printed whole.
+        line("new", "dump", 400, "4"),                       // Digested and unfiltered: no mark.
+    };
+    lines[1].digest = 430000;
+    lines[3].digest = 22000;
+    lines[2].flags = {"--limit"};
+    const auto stats = MakeStats(lines, std::string("new"), AllVerbs());
+    Checked(stats);
+    CHECK(stats.totals.digested == 2);
+    CHECK(stats.totals.saved == (430000 - 500) + (22000 - 400));
+    const auto census = std::ranges::find(stats.rows, std::string("census"), &shape::StatsVerb::verb);
+    REQUIRE(census != stats.rows.end());
+    CHECK(census->digested == 1u);
+    CHECK(census->saved == 429500u);
+    CHECK_FALSE(census->unfiltered.has_value());              // The digested one is not marked; the rerun had --limit.
+    const auto dump = std::ranges::find(stats.rows, std::string("dump"), &shape::StatsVerb::verb);
+    CHECK_FALSE(dump->unfiltered.has_value());
+    const auto big = std::ranges::find(stats.largest, uint64_t{500}, &shape::StatsCall::out);
+    REQUIRE(big != stats.largest.end());
+    CHECK(big->digest == 430000u);
+
+    // --sessions: newest first, totals over the whole log, no verb rows.
+    const auto list = StatsFor(lines, AllVerbs(), {false, true, {}}, std::nullopt);
+    REQUIRE(list.has_value());
+    const auto json = Checked(*list);
+    REQUIRE(list->sessionRows.has_value());
+    REQUIRE(list->sessionRows->size() == 2);
+    const auto& newest = list->sessionRows->front();
+    CHECK(newest.session == "new");
+    CHECK(newest.since == "2026-01-02T03:04:02Z");
+    CHECK(newest.until == "2026-01-02T03:04:04Z");
+    CHECK(newest.callers == std::vector<std::string>{"tool"});
+    CHECK(newest.calls == 3);
+    CHECK(newest.toolOut == 20900);
+    CHECK(newest.digested == 2);
+    CHECK(list->sessionRows->back().session == "old");
+    CHECK(list->sessionRows->back().toolOut == 0);
+    CHECK(list->totals.calls == 4);
+    CHECK(list->rows.empty());
+    CHECK_FALSE(json.contains("never_called"));
+
+    // --session <id>: that one, or a refusal naming --sessions.
+    const auto old = StatsFor(lines, AllVerbs(), {false, false, "old"}, std::string("new"));
+    REQUIRE(old.has_value());
+    CHECK(old->session == "old");
+    CHECK(old->totals.calls == 1);
+    const auto missing = StatsFor(lines, AllVerbs(), {false, false, "gone"}, std::nullopt);
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().find("stats --sessions") != std::string::npos);
+    // No flag: the current session, else the log's latest.
+    CHECK(StatsFor(lines, AllVerbs(), {}, std::string("old"))->session == "old");
+    CHECK(StatsFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
+}
+
 TEST_CASE("a layout line round-trips and names the first thing that differs") {
     const auto written = LayoutJson("Pawn", "Controller", 0x2e8, 8, "ObjectProperty").dump();
     const auto line = ParseLayoutLine(written);

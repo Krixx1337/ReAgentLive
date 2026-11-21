@@ -32,13 +32,17 @@ inline const std::vector<Verb>& CoreVerbs() {
             "table_hash changes when any verb's arguments or result change: a cached script or skill is then stale."},
         {"quit", "core", "end the console", {}, {}, Of<shape::Quit>, parse::Quit, {}, {"exit", "q"}},
         {"stats", "core", "what this session cost: calls, output and refusals per verb, largest output first",
-            {}, {{"--all", Takes::Nothing, "bool", "", "every session in the log, and the verbs none called"}},
+            {}, {{"--all", Takes::Nothing, "bool", "", "every session in the log, and the verbs none called"},
+                 {"--sessions", Takes::Nothing, "bool", "", "the log's sessions, newest first: one row each"},
+                 {"--session", Takes::One, "str", "id", "one session from the log, by its id"}},
             Of<shape::Stats>, parse::Stats,
             "From the usage log beside the console; works with no target (then: the log's latest session). out is "
-            "characters; out_by_caller.tool is what reached an agent's context. Marks per verb: unfiltered (it has "
-            "--match, --nonzero, --own, --changed, --cls or --limit and the call gave none), repeated (the same input "
-            "again in its session), refused (by error kind). A batch's items count under their own verbs (batched); "
-            "the batch row holds its wrapper."},
+            "characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
+            "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
+            "verb: unfiltered (it has --match, --nonzero, --own, --changed, --cls or --limit, the call gave none and "
+            "printed whole), repeated (the same input again in its session), refused (by error kind). A batch's "
+            "items count under their own verbs (batched); the batch row holds its wrapper. --sessions lists up to 30 "
+            "sessions as session_rows, with totals over the whole log."},
         {"batch", "core", "up to 64 commands in as few host ticks as possible; one envelope each",
             {{"calls", "{ <command>; <command>; ... }", Rest, "calls",
               "command lines between braces, split by ;  (a JSON call: a list of {verb, args})"}},

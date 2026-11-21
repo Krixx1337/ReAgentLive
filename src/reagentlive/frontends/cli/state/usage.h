@@ -22,6 +22,7 @@ struct UsageLine {
     std::vector<std::string> flags;     // The names of the flags given.
     std::string hash;                   // Of the whole input line: the same call made again.
     uint64_t in = 0, out = 0;           // Characters. A batch's own line counts its wrapper alone.
+    uint64_t digest = 0;                // The result's size when a digest stood in for it (out is the digest's).
     bool ok = true;
     std::string refused;                // The error's kind; empty when ok.
     double ms = 0;
@@ -45,6 +46,7 @@ inline std::string UsageText(const UsageLine& line) {
         {"ok", line.ok}, {"ms", static_cast<double>(static_cast<int64_t>(line.ms * 10 + 0.5)) / 10}};
     if (!line.refused.empty()) json["refused"] = line.refused;
     if (line.batch) json["batch"] = true;
+    if (line.digest) json["digest"] = line.digest;
     return json.dump(-1, ' ', true, Json::error_handler_t::replace);
 }
 
@@ -73,6 +75,7 @@ inline std::optional<UsageLine> ParseUsageLine(std::string_view text) {
     for (const auto& flag : json["flags"])
         if (flag.is_string()) line.flags.push_back(flag.get<std::string>());
     str("refused", line.refused);
+    number("digest", line.digest);
     line.batch = json.contains("batch") && json["batch"].is_boolean() && json["batch"].get<bool>();
     return line;
 }

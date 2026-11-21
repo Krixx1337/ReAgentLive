@@ -74,18 +74,18 @@ std::string ReadFile(const std::filesystem::path& path) {
     return file ? std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()) : std::string();
 }
 
-// stats: from the log; `session` nullopt for --all, empty for none recorded yet.
-shape::Stats BuildStats(const std::filesystem::path& path, std::span<const Verb> verbs, bool all,
-                        std::optional<std::string> session) {
+// stats from the log; `current` is this run's session, nullopt with no target.
+std::expected<shape::Stats, std::string> BuildStats(const std::filesystem::path& path, std::span<const Verb> verbs,
+                                                    const Command& command, std::optional<std::string> current) {
     const auto lines = path.empty() ? std::vector<UsageLine>{} : ParseUsage(ReadFile(path));
-    if (all) session.reset();
-    else if (!session) session = LatestSession(lines);
-    return MakeStats(lines, session, verbs);
+    return StatsFor(lines, verbs, {command.all, command.listSessions, command.target}, std::move(current));
 }
 }
 
 void RunStats(Session& session, const Command& command, std::string_view jsonCommand) {
-    Emit(session, jsonCommand, BuildStats(session.usage.path, session.verbs, command.all, session.usage.session));
+    auto stats = BuildStats(session.usage.path, session.verbs, command, session.usage.session);
+    if (!stats) return JsonError(session, jsonCommand, "validation", stats.error());
+    Emit(session, jsonCommand, std::move(*stats));
 }
 
 std::filesystem::path CachePath(uint32_t pid) {
@@ -466,6 +466,7 @@ struct UsageScope {
         record.session = session.usage.session;
         record.caller = session.usage.caller;
         record.out = line.out > line.inner ? line.out - line.inner : 0;
+        record.digest = line.digest;
         record.ok = line.ok;
         record.refused = line.refused;
         record.ms = std::chrono::duration<double, std::milli>(Clock::now() - began).count();
@@ -649,14 +650,16 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
 }
 
 
-// One-shot runs against the same agent instance join the cache's usage session.
+// One-shot runs against the same agent instance join the cache's usage
+// session when they have its caller: a shell's checks stay out of a tool's figures.
 void LoadSessionCache(Session& session, const std::filesystem::path& path, bool oneShot) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return;
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     auto data = LoadCache(text);
     if (!data || data->owner != session.client.AgentOwner()) return; // Another agent instance: start fresh.
-    if (oneShot && !data->session.empty()) session.usage.session = data->session;
+    if (oneShot && !data->session.empty() && data->sessionCaller == session.usage.caller)
+        session.usage.session = data->session;
     session.refs = std::move(data->refs);
     session.modules = std::move(data->modules);
     for (auto& [base, layout] : data->layouts) session.layouts[base] = std::move(layout);
@@ -668,6 +671,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     data.owner = session.client.AgentOwner();
     if (!data.owner) return;
     data.session = session.usage.session;
+    data.sessionCaller = session.usage.caller;
     for (const auto& ref : session.refs) {
         if (!ref.address) break; // Not expressible as a literal ref; $N past it would shift.
         data.refs.push_back(ref);
@@ -733,7 +737,11 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
             }
             break;
         case Kind::Stats:
-            print(ResultEnvelope(name, ToJson(BuildStats(usagePath, verbs, parsed->all, std::nullopt))));
+            if (auto stats = BuildStats(usagePath, verbs, *parsed, std::nullopt)) print(ResultEnvelope(name, ToJson(*stats)));
+            else {
+                print(ErrorEnvelope(name, "validation", stats.error()));
+                failed = 1;
+            }
             break;
         case Kind::Quit: print(ResultEnvelope(name, ToJson(shape::Quit{}))); return failed;
         default: print(ErrorEnvelope(name, kind, why)); return 1;

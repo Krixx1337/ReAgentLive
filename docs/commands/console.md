@@ -267,10 +267,13 @@ the generated functions, the MCP tools), so one log covers them
 - **A line holds facts about the call, never its values:** time, session,
   verb and origin, caller, the names of the flags given, a hash of the
   input line, input and output characters, `ok` or the refusal's error
-  kind, milliseconds, and `batch` for a command that ran inside one. No
-  addresses, names, paths or results.
+  kind, milliseconds, `batch` for a command that ran inside one, and
+  `digest`, the result's full size, when a [digest](#fewer-round-trips)
+  stood in for it (`out` is then the digest's). No addresses, names, paths
+  or results.
 - **A session** is one console run. One-shot (`-c`) runs against the same
-  agent instance share one through the [cache file](#fewer-round-trips);
+  agent instance and caller share one through the [cache file](#fewer-round-trips)
+  (a shell's checks never join a tool's session);
   `--session <id>` names it outright (the MCP adapter passes one per
   server to the console it starts for each call).
 - **The caller** is `tool` (an agent reads every result, as through the
@@ -286,18 +289,25 @@ the generated functions, the MCP tools), so one log covers them
   oldest line kept.
 
 `stats` reports the session the console is in (with no target: the log's
-latest); `stats --all` every session in the log, plus `never_called`, the
-verbs of this table none of them used. Ranked by output, largest first:
+latest); `stats --session <id>` one session of the log; `stats --all`
+every session in the log, plus `never_called`, the verbs of this table
+none of them used. Ranked by output, largest first:
 
 | Key | Holds |
 |---|---|
-| `totals` | `calls` (what was sent: a batch's commands are inside its call), `in`, `out`, `out_by_caller` (`tool` is the context cost), `refused`, `ms` |
-| `rows` | per verb: `calls`, `out` and its `largest`, `ms`, `batched`, and the marks |
-| `largest` | the five largest single calls: verb, flag names, output, caller |
+| `totals` | `calls` (what was sent: a batch's commands are inside its call), `in`, `out`, `out_by_caller` (`tool` is the context cost), `refused`, `digested` (results past the output budget), `saved` (what their digests kept out: full size less the digest), `ms` |
+| `rows` | per verb: `calls`, `out` and its `largest`, `ms`, `batched`, `digested` and `saved`, and the marks |
+| `largest` | the five largest single calls: verb, flag names, output, caller, and `digest` (the full size) for one a digest stood in for |
+
+`stats --sessions` lists the log's sessions, newest first (up to 30), as
+`session_rows`: `session` (the id `--session` takes), `since` and `until`
+(its first and last call), `callers`, `calls`, `out`, `tool_out`,
+`digested`, `saved` and `refused`; `totals` covers the whole log and
+`rows` is empty.
 
 | Mark | Counts calls that... |
 |---|---|
-| `unfiltered` | went to a verb with `--match`, `--nonzero`, `--own`, `--changed`, `--cls` or `--limit` and gave none of them |
+| `unfiltered` | went to a verb with `--match`, `--nonzero`, `--own`, `--changed`, `--cls` or `--limit`, gave none of them and printed whole (a digested call cost only its digest) |
 | `repeated` | sent an input already sent in the same session |
 | `refused`, `refused_by` | the console refused, by error kind (`syntax`, `validation`, `agent`...) |
 

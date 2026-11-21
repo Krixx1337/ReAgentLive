@@ -50,6 +50,7 @@ struct Usage {
 // add their own output to `inner`, so the batch's line keeps its wrapper alone.
 struct LineUsage {
     uint64_t out = 0, inner = 0;
+    uint64_t digest = 0;                    // The results digests stood in for, at their full size.
     bool ok = true;
     std::string refused;
 };

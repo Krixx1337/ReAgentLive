@@ -55,6 +55,10 @@ Parsed Stats(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::Stats;
     command.all = args.Has("--all");
+    command.listSessions = args.Has("--sessions");
+    command.target = args.Value("--session");
+    if (command.all + command.listSessions + !command.target.empty() > 1)
+        return Fail("--all, --sessions and --session are one at a time");
     return command;
 }
 

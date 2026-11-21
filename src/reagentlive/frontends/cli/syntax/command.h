@@ -70,6 +70,7 @@ struct Command {
     // help: `target` is the verb asked about (empty: all), `all` is --json, `hashOnly` is --hash.
     // stats: `all` is --all. watch, watch-read, watch-stop: `all` is --all (every sample).
     bool hashOnly = false;
+    bool listSessions = false;  // stats --sessions; --session <id> is `target`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     sig::Pattern pattern;
     std::optional<uint64_t> expect;

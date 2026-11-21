@@ -417,6 +417,11 @@ TEST_CASE("local commands do not build a request") {
     CHECK(Parse("stats", NoRefs)->kind == Kind::Stats);
     CHECK_FALSE(Parse("stats", NoRefs)->all);
     CHECK(Parse("stats --all", NoRefs)->all);
+    CHECK(Parse("stats --sessions", NoRefs)->listSessions);
+    CHECK(Parse("stats --session mcp-1", NoRefs)->target == "mcp-1");
+    CHECK_FALSE(Parse("stats --all --sessions", NoRefs).has_value());
+    CHECK_FALSE(Parse("stats --sessions --session mcp-1", NoRefs).has_value());
+    CHECK_FALSE(Parse("stats --session", NoRefs).has_value());
     CHECK_FALSE(Parse("stats extra", NoRefs).has_value());
     CHECK_FALSE(Parse("batch { stats }", NoRefs).has_value());
     CHECK_FALSE(Parse("frobnicate", NoRefs).has_value());

@@ -21,6 +21,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   (`--fields`, `--limit`, `--nonzero`), or `file`, the whole envelope of a
   line that may have changed state. The MCP tools take `budget` and return
   the digest; the Python session returns a `Digest`. Breaking for tools.
+- **`stats` sees the budget and the sessions:** the usage log records a
+  digested result's full size (`digest`); `stats` counts `digested` calls
+  and the characters they `saved`, and no longer marks a digested call
+  `unfiltered`. `stats --sessions` lists the log's sessions newest first,
+  `stats --session <id>` reports one. One-shot runs join the cached
+  session only with its caller, so a shell's checks stay out of a tool's.
 - **`--nonzero` on `get`, `each`, `rows` and `call`:** leaves out the zero
   members inside values (elements stay); on `call` it implies a typed call.
 - **`describe` makes its object `$1`.** A typed call's `function` is

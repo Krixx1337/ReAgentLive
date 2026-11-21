@@ -123,7 +123,7 @@ to cross to the static tool (native-code reference).
   ranks this session's verbs by output and marks `unfiltered`, `repeated`
   and `refused` calls: check it before a long step and act on the marks.
   End the final report with its totals (`out_by_caller.tool` is the context
-  cost) and the two or three costliest habits.
+  cost, `saved` what digests kept out) and the two or three costliest habits.
 - One console per agent: a second one is refused as `busy`.
 
 ## Pitfalls that bite any session
@@ -164,7 +164,8 @@ tested, documented, and the backlog (`docs/ideas.md`) re-ranked with the evidenc
 ## Keeping this skill current
 
 At the end of every session, read `stats` and ask what would have saved
-time (`stats --all`: patterns across sessions, verbs nobody uses):
+time (`stats --all`: patterns across sessions, verbs nobody uses;
+`stats --sessions` to compare one session with the ones before):
 
 - **Scope first.** A lesson that would hold in another game goes here,
   worded without the game (an Unreal-only one under `references/unreal/`).

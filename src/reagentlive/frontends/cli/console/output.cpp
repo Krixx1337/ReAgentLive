@@ -105,6 +105,7 @@ void PrintJson(Session& session, Json record) {
     const auto budgeted = [&](std::string& text) {
         if (!session.input.budget || text.size() <= session.input.budget || !record.contains("result")) return;
         if (auto digest = Digested(session, record, text.size())) {
+            if (session.line) session.line->digest += text.size();
             record = std::move(*digest);
             text = Text(record);
         }
