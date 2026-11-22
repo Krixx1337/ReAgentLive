@@ -20,7 +20,7 @@ by name and never opens the target process itself.
 | `responseSeq` | agent | set to the handled `requestSeq` after writing `response` |
 | `owner` | agent | id of the agent instance that answers; a newer agent in the same process takes over and the older one stops ticking, after restoring its active trials once under their guards |
 | `takeovers` | agent | how many agents in this process were replaced |
-| `build` | agent | the answering agent's compile time (text, up to 23 characters) |
+| `build` | agent | the loaded build as the host names it (`Host::build`, such as the image's link time), else the agent library's compile time, which an incremental build can leave stale (text, up to 47 characters) |
 | `request`, `response` | client, agent | one slot each |
 
 Sequence, heartbeat, owner and takeovers fields are accessed only through `std::atomic_ref`.

@@ -109,6 +109,19 @@ int64_t SetCount(std::span<const uint8_t> bytes) {
     memcpy(&header, bytes.data(), sizeof(header));
     return ue::SparseHeaderValid(header) ? header.num - header.numFree : -1;
 }
+// A set or map row's value, as an array's: its header (allocation, slots,
+// occupied count); the preview lists the elements. Null when the header is
+// not a valid one, so the caller keeps the raw bytes.
+std::optional<Json> SparseValue(std::span<const uint8_t> bytes) {
+    ue::SparseHeader header{};
+    if (bytes.size() < sizeof(header)) return std::nullopt;
+    memcpy(&header, bytes.data(), sizeof(header));
+    if (!ue::SparseHeaderValid(header)) return std::nullopt;
+    char address[24];
+    snprintf(address, sizeof(address), "0x%llx", static_cast<unsigned long long>(header.data));
+    return Json{{"address", header.data ? Json(address) : Json(nullptr)}, {"capacity", header.max},
+                {"count", header.num - header.numFree}};
+}
 }
 
 void PrintFields(Session& session, const Ref& object, bool instance, std::string_view match, std::string_view jsonCommand) {
@@ -399,7 +412,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         bool partial = false;
         shape::DumpRow row;
         placed(row, field);
-        row.value = decoded(field) ? reader.Value(field, data, partial) :
+        const auto sparse = !session.meta && IsContainer(field.type) ? SparseValue(data) : std::nullopt;
+        row.value = sparse ? *sparse : decoded(field) ? reader.Value(field, data, partial) :
             texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)), session.meta);
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);

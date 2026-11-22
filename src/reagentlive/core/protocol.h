@@ -354,9 +354,10 @@ constexpr const char* HostThreadText(HostThread thread) {
 // ops lists the op numbers the agent handles, written once before magic.
 // owner: the agent instance that answers. A second agent in the same process
 // (the host injected again) opens the same section and takes it over; the
-// earlier one sees another owner and stops answering. build: the agent's
-// compile time, so a client can tell which build answers.
-constexpr size_t MaxBuildText = 24;
+// earlier one sees another owner and stops answering. build: the host's
+// label for the loaded build (Host::build), else the agent's compile time,
+// so a client can tell which build answers.
+constexpr size_t MaxBuildText = 48;
 struct Section {
     uint32_t magic, layout, agentPid, opCount;
     uint64_t heartbeat; // Agent ticks.

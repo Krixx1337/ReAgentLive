@@ -70,7 +70,7 @@ bool Open(const Host& host, std::span<const Command> commands) {
     if (!g_agentId) g_agentId = 1;
     section->layout = host.layout;
     std::atomic_ref(section->hostThread).store(static_cast<uint32_t>(host.thread), std::memory_order_relaxed);
-    CopyText(section->build, __DATE__ " " __TIME__);
+    CopyText(section->build, host.build && *host.build ? host.build : __DATE__ " " __TIME__);
     if (replacing) std::atomic_ref(section->takeovers).fetch_add(1, std::memory_order_relaxed);
     std::atomic_ref(section->owner).store(g_agentId, std::memory_order_release);
     section->agentPid = GetCurrentProcessId();

@@ -47,6 +47,10 @@ struct Host {
     // for it, false while there is none. Called on the Tick thread.
     const char* rootNames = nullptr;
     bool (*root)(const Host& host, const char* name, uint64_t& address, Guard& guard) = nullptr;
+    // Optional: the loaded build as status reports it (up to MaxBuildText - 1
+    // characters), such as the image's link time. Null: the agent library's
+    // compile time, which an incremental build can leave stale.
+    const char* build = nullptr;
 };
 
 // Opens the section on the first call (once; a failure is final). Afterwards

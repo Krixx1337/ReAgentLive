@@ -24,6 +24,9 @@ inline const std::vector<Verb>& UnrealVerbs() {
     static const Flag nonzero{"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside values (0, false, empty, None)"};
     static const Flag elements{"--elements", Takes::One, "int", "N", "elements shown per array, set or map (1..256)", "8"};
     static const Flag cursor{"--start", Takes::One, "int", "N", "a page's next_cursor"};
+    static const Flag pageLimit{"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"};
+    static const Flag classMatch{"--match", Takes::One, "str", "text", "keep class names containing text, any case"};
+    static const Flag fieldMatch{"--match", Takes::One, "str", "text", "field names or readable labels containing text, any case"};
     static const std::vector<Verb> verbs = {
         {"find", "ue", "objects whose name contains text and/or instances of a class; 24 per page",
             {{"text", "text", Any, "text", "part of the object's name, any case"}},
@@ -36,17 +39,17 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {},
             {cls,
              outer,
-             {"--match", Takes::One, "str", "text", "keep class names containing text, any case"},
-             {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
+             classMatch,
+             pageLimit,
              {"--start", Takes::One, "int", "N", "next_cursor: pages the stored census without a new scan"}},
             Of<shape::Census>, parse::Census, "Class refs become $1..$N. Every census becomes census-diff's baseline."},
         {"census-diff", "ue", "the classes whose count differs from the last census of that --cls",
             {},
             {cls,
              outer,
-             {"--match", Takes::One, "str", "text", "keep class names containing text, any case"},
-             {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
-             {"--start", Takes::One, "int", "N", "next_cursor"}},
+             classMatch,
+             pageLimit,
+             cursor},
             Of<shape::CensusDiff>, parse::CensusDiff,
             "Takes a new census, which becomes the next baseline. Class refs become $1..$N."},
         {"name-find", "ue", "FName indices whose text contains text (gameplay tags, row names)",
@@ -102,11 +105,11 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {}, Of<shape::Call>, parse::Release, {}, {}, true},
         {"fields", "ue", "reflected properties by offset; a class or struct lists its own",
             {{"object", "object|Class", One, "str", objectOrClass}},
-            {{"--match", Takes::One, "str", "text", "names or readable labels containing text, any case"}},
+            {fieldMatch},
             Of<shape::Fields>, parse::Fields},
         {"dump", "ue", "fields with their current values",
             {{"object", "object|Class", One, "str", objectOrClass}},
-            {{"--match", Takes::One, "str", "text", "names containing text"},
+            {fieldMatch,
              {"--nonzero", Takes::Nothing, "bool", "", "non-zero fields, without the zero members inside their values"},
              {"--own", Takes::Nothing, "bool", "", "only the fields the object's own class declares, none it inherits"},
              {"--changed", Takes::Maybe, "path", "file", "changed since snap (or a snapshot file); adds before"},
@@ -145,7 +148,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"--match", Takes::One, "str", "text", "row names containing text, any case"},
              {"--fields", Takes::One, "str", "a,b.c", "the row members to keep (paths into structs and arrays)"},
              cursor,
-             {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
+             pageLimit,
              nonzero},
             Of<shape::Rows>, parse::Rows,
             "RowMap is unreflected: read as the stock UE5 TMap<FName, uint8*> right after RowStruct, its slot "
