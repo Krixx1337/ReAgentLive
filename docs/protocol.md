@@ -130,8 +130,8 @@ chain come first, then rows from implemented native interfaces with
 `interface` 1 and the interface as `owner`.
 
 Function parameters takes the UFunction address from `func` and a page
-offset in `length`. It returns `FieldEntry` rows for parameters only.
-`reserved[0]` carries `ParameterFlag` bits (`Const` for `ConstParm`; a const
+offset in `length`. It returns a fields page (below) of parameters only.
+A record's `flags` carry `ParameterFlag` bits (`Const` for `ConstParm`; a const
 reference is an input, `ue::InputParameter`). `detail` packs the total parameter
 count in the low 32 bits and the block size in the high 32 bits (`fields`
 puts the listed type's object-table index there, so a client cache knows whose
@@ -267,12 +267,24 @@ counts the names returned, fewer when the response fills.
 
 Array preview uses the object ref, array header offset in `args[1]`, and
 element stride in `length`. The response contains the bounded prefix and
-reports the current element count in `detail`. The layout hash includes the
-size of `FieldEntry`, which carries the reflected element type and stride.
-For a single struct field or an array of structs, `FieldEntry` also carries
-the struct object's ref and name; `fields` on that ref lists its members.
+reports the current element count in `detail`.
 
-For a map or set, `FieldEntry` carries the key (a set's element) in the
+**Fields pages** (`fields`, parameters): a `FieldsPageHeader` (record
+count, ref count, string table bytes), that many `FieldRecord`s (44 bytes:
+offset, size, element size, map and set layout, bool mask, parameter flags,
+two ref numbers and seven string offsets), the page's struct refs (each
+once; a record names one by number, 0 for none), then a table of
+NUL-terminated strings, each once (offset 0 is the empty string). Names
+travel whole: a field whose strings no longer fit ends the page, and the
+client asks for the next page from the count it has. `FieldsPageWriter` and
+`ReadFieldsPage` (`protocol_ue.h`) build and check a page; the client
+refuses a page whose offsets or ref numbers fall outside it. The layout hash
+includes both struct sizes, so a console and agent from different revisions
+refuse each other. For a single struct field or an array of structs, a
+record carries the struct object's ref and name; `fields` on that ref lists
+its members.
+
+For a map or set, a record carries the key (a set's element) in the
 element members, a map's value type, size, offset and struct, and the
 element's `stride` (key, value and the two `int32` hash links). The layout
 comes from the property itself: UE5's `FScriptMapLayout` at `MapLayoutOffset`
@@ -292,8 +304,8 @@ raw header.
 | Reason | 64 bytes |
 | Text | 128 bytes |
 | Unreal call parameters | 1024 bytes |
-| Unreal find results | 24 per page, plus the total and the next cursor (`FindDetail`); class name under 64 characters |
-| Unreal fields | `MaxRead / sizeof(FieldEntry)` per page; page start ≤ 16384 |
+| Unreal find results | 24 per page, plus the total and the next cursor (`FindDetail`); class name under 128 characters |
+| Unreal fields | as many as one 4 KB page holds (records, refs and strings; up to 92); page start ≤ 16384 |
 | Unreal array preview | up to 8 elements of up to 512 bytes each, at most 4096 bytes in all |
 | Unreal census | 30 classes per page; 3 samples per class |
 | Unreal name-find | 64 names per page; names cut at 200 characters |

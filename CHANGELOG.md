@@ -7,6 +7,29 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Call recorder slots wait a second before reuse** (oldest restore
+  first), so a caller that loaded the thunk just before the restore never
+  runs another function's original; `calls-read` reads a row's block only
+  after the sequence that vouches for it.
+- **Fields pages carry whole names** (protocol: rebuild and re-inject):
+  fixed 44-byte records, the page's struct refs and a string table, each
+  string once, instead of 352-byte entries with names cut at 39 to 55
+  characters. A class's fields come in several times fewer requests, and
+  long owners match (`dump --own`, `layout`, native labels). Class names
+  up to 127 characters resolve and filter.
+- **`calls-read` and `calls-stop` decode through the shared reader:** FNames
+  and objects named, as typed call outputs are; strings, arrays, sets and
+  maps print their headers, since the caller may have freed them.
+- **`dump` has one reader:** previews, `before` and top-level pointers all
+  go through it (`before` as a copy: nothing it points into is read);
+  `--elements` lifts top-level previews too. `object_lookup_limited` is
+  gone: `unnamed` counts what was not named. The object is read in checked
+  `read object` chunks, so one freed mid-dump fails instead of mixing bytes.
+- **Smaller fixes:** `trace` decodes `BreakHitResult` by parameter name;
+  pooled-name lookups cache without case; `watch` on a field reuses the
+  session's struct cache; one UTF-16 decoder (surrogate pairs joined, no
+  escapes in values).
+
 - **`--outer <ref>` checks the object:** the request carries its slot and
   serial, and the agent refuses a gone one as not found instead of
   filtering by whatever reuses its address (protocol: rebuild and

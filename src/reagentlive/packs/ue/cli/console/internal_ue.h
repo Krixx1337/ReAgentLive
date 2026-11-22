@@ -70,8 +70,8 @@ struct PackState {
     std::vector<ClassRef> classRefs;
     std::optional<CensusBaseline> census;   // The last census: census --changed's baseline, census --start's rows.
     std::optional<CensusBaseline> censusBefore; // The census before it, for census --changed --start.
-    std::vector<ClassRef> defaultObjects;  // trace: Default__ objects by exact name, for the session.
-    std::unordered_map<std::string, int32_t> nameIndices; // Pooled names looked up by text, for the session.
+    std::vector<ClassRef> defaultObjects;  // Default__ objects by exact name, for the session (DefaultObject).
+    std::unordered_map<std::string, int32_t> nameIndices; // Pooled names by lowercase text, for the session (NameIndex).
 
     explicit PackState(Session& session) : structs(session) {}
 };
@@ -101,6 +101,7 @@ Ref PointerRef(std::string_view type, std::span<const uint8_t> bytes);
 void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, StructCache& structs, const Command& command,
                const std::optional<Snapshot>& baseline);
 std::optional<Snapshot> LoadSnapshot(const std::string& path);
+Result<std::vector<uint8_t>> ReadObjectBytes(Client& client, const Ref& object, size_t end);
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand);
 void Record(Session& session, const Ref& object, const Command& command, StructCache& structs, std::string_view jsonCommand);

@@ -78,6 +78,20 @@ std::optional<Snapshot> LoadSnapshot(const std::string& path) {
     return std::nullopt;
 }
 
+// An object's first `end` bytes, each chunk read only while it is still the
+// same object: one freed or reused mid-read fails instead of mixing bytes.
+Result<std::vector<uint8_t>> ReadObjectBytes(Client& client, const Ref& object, size_t end) {
+    std::vector<uint8_t> bytes;
+    bytes.reserve(end);
+    while (bytes.size() < end) {
+        auto chunk = ue::ReadObject(client, object, static_cast<uint32_t>(bytes.size()),
+            static_cast<uint32_t>(std::min(MaxRead, end - bytes.size())));
+        if (!chunk) return std::unexpected(chunk.error());
+        bytes.insert(bytes.end(), chunk->begin(), chunk->end());
+    }
+    return bytes;
+}
+
 // The baseline dump --changed compares against; with a file, also saved there for a later run.
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand) {
@@ -89,15 +103,9 @@ void Snap(Session& session, const Ref& object, const std::string& path, std::opt
     size_t end = DumpEnd(sorted);
     for (const auto& check : NativeMembers(session, object, sorted, true).shown)
         end = std::max(end, std::min<size_t>(size_t{check.member->field.offset} + check.member->field.Size(), MaxDumpBytes));
-    std::vector<uint8_t> bytes;
-    bytes.reserve(end);
-    while (bytes.size() < end) {
-        auto chunk = ue::ReadObject(client, object, static_cast<uint32_t>(bytes.size()),
-            static_cast<uint32_t>(std::min(MaxRead, end - bytes.size())));
-        if (!chunk) return CommandError(session, jsonCommand, chunk.error());
-        bytes.insert(bytes.end(), chunk->begin(), chunk->end());
-    }
-    baseline = Snapshot{object, std::move(sorted), std::move(bytes)};
+    auto bytes = ReadObjectBytes(client, object, end);
+    if (!bytes) return CommandError(session, jsonCommand, bytes.error());
+    baseline = Snapshot{object, std::move(sorted), std::move(*bytes)};
     if (!path.empty() && !SaveSnapshot(path, *baseline))
         return JsonError(session, jsonCommand, "snapshot", "cannot write snapshot file " + path);
     Emit(session, jsonCommand, shape::Snap{ReusableRef(object), end,

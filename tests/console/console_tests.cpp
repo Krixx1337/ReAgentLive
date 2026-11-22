@@ -35,24 +35,24 @@ const Fixture& TheFixture() {
     static const Fixture fixture = [] {
         auto& world = TheWorld();
         Type& vector = world.AddType("Vector", 24, true);
-        vector.fields = {Field("X", "DoubleProperty", 0, 8), Field("Y", "DoubleProperty", 8, 8), Field("Z", "DoubleProperty", 16, 8)};
+        vector.fields = {MakeField("X", "DoubleProperty", 0, 8), MakeField("Y", "DoubleProperty", 8, 8), MakeField("Z", "DoubleProperty", 16, 8)};
         Type& tag = world.AddType("GameplayTag", 8, true);
-        tag.fields = {Field("TagName", "NameProperty", 0, 8)};
+        tag.fields = {MakeField("TagName", "NameProperty", 0, 8)};
         Type& box = world.AddType("Box", 48, true);
-        box.fields = {StructField("Center", 0, vector), Field("Name", "NameProperty", 24, 8),
-            Field("Radius", "FloatProperty", 32, 4), Field("Owner", "WeakObjectProperty", 36, 8)};
-        const auto scoreKey = Field("Key", "NameProperty", 0, 8), scoreValue = Field("Value", "IntProperty", 0, 4);
+        box.fields = {StructField("Center", 0, vector), MakeField("Name", "NameProperty", 24, 8),
+            MakeField("Radius", "FloatProperty", 32, 4), MakeField("Owner", "WeakObjectProperty", 36, 8)};
+        const auto scoreKey = MakeField("Key", "NameProperty", 0, 8), scoreValue = MakeField("Value", "IntProperty", 0, 4);
         Type& info = world.AddType("Info", 152, true);
-        info.fields = {Field("Owner", "WeakObjectProperty", 0, 8), Field("Stale", "WeakObjectProperty", 8, 8),
-            Field("Friend", "ObjectProperty", 16, 8), MapField("Scores", 24, scoreKey, scoreValue, 24, 8),
+        info.fields = {MakeField("Owner", "WeakObjectProperty", 0, 8), MakeField("Stale", "WeakObjectProperty", 8, 8),
+            MakeField("Friend", "ObjectProperty", 16, 8), MapField("Scores", 24, scoreKey, scoreValue, 24, 8),
             ArrayField("Boxes", 104, "StructProperty", 48, &box), StructField("Tag", 120, tag),
             StructField("Zero", 128, vector)};
         Type& instanced = world.AddType("InstancedStruct", 16, true);
         Type& thingType = world.AddType("Thing", 0x400, false, "Object");
         thingType.fields = {StructField("Info", 0x30, info), ArrayField("Boxes", 0x100, "StructProperty", 48, &box),
             MapField("Scores", 0x110, scoreKey, scoreValue, 24, 8), ArrayField("Crowd", 0x160, "ObjectProperty", 8),
-            Field("Health", "FloatProperty", 0x170, 4), StructField("Payload", 0x178, instanced),
-            Field("Asset", "SoftObjectProperty", 0x188, 40), Field("Label", "StrProperty", 0x1b0, 16)};
+            MakeField("Health", "FloatProperty", 0x170, 4), StructField("Payload", 0x178, instanced),
+            MakeField("Asset", "SoftObjectProperty", 0x188, 40), MakeField("Label", "StrProperty", 0x1b0, 16)};
 
         Object& package = world.Add("Package_Things", "Package", 64);
         const Ref packageRef = package.ref;
@@ -244,4 +244,122 @@ TEST_CASE("fields --match keeps the matching fields, any case") {
     REQUIRE(some["rows"].size() == 1);
     CHECK(some["rows"][0]["name"] == "Scores");
     CHECK(all["rows"].size() > some["rows"].size());
+}
+
+namespace {
+// Names past the old wire caps, a class with many fields, and a recorded call.
+struct Extras {
+    std::string longClass, owner, armor;
+    Type* wide = nullptr;
+};
+const Extras& TheExtras() {
+    static const Extras extras = [] {
+        TheFixture();
+        auto& world = TheWorld();
+        Extras out;
+        out.longClass = "WDDamageModificationOperation_PlayerArmorDurability_WithAVeryLongTail"; // 70 characters.
+        out.owner = "WDDamageModificationOperation_PlayerArmorDurability";                     // 51.
+        Type& longType = world.AddType(out.longClass, 8, false, "Object");
+        auto longField = MakeField(std::string(120, 'L'), "IntProperty", 0, 4);
+        longField.owner = out.longClass;
+        longType.fields = {longField};
+        // Armor_0: one field its own class declares, one its parent does.
+        Type& armorType = world.AddType(out.owner, 16, false, "ArmorBase");
+        auto own = MakeField("Durability", "FloatProperty", 8, 4);
+        own.owner = out.owner;
+        auto inherited = MakeField("Base", "IntProperty", 0, 4);
+        inherited.owner = "ArmorBase";
+        armorType.fields = {own, inherited};
+        out.armor = Text(world.Instance("Armor_0", armorType).ref);
+        Type& wide = world.AddType("Wide", 4 * 120, false, "Object");
+        for (uint32_t i = 0; i < 120; ++i) {
+            auto field = MakeField("Field_" + std::to_string(i), "IntProperty", i * 4, 4);
+            field.owner = "Wide";
+            wide.fields.push_back(field);
+        }
+        out.wide = &wide;
+        // Thing:TakeDamage(Instigator, Bone, Label, Amount), called once by Thing_0.
+        Object& function = world.Add("TakeDamage", "Function", 64);
+        Function recorded;
+        recorded.slot = function.ref.index;
+        recorded.blockSize = 40;
+        const auto parameter = [](std::string name, std::string type, uint32_t offset, uint32_t size) {
+            auto field = MakeField(name, type, offset, size);
+            field.owner = "TakeDamage";
+            field.numbers.flags = ue::Param;
+            return field;
+        };
+        recorded.parameters = {parameter("Instigator", "ObjectProperty", 0, 8), parameter("Bone", "NameProperty", 8, 8),
+            parameter("Label", "StrProperty", 16, 16), parameter("Amount", "FloatProperty", 32, 4)};
+        Call call;
+        call.row.sequence = 1;
+        call.row.via = ue::CallsEvent;
+        call.block.assign(40, 0);
+        const auto buddy = std::ranges::find(world.objects, std::string("Buddy"), &Object::name);
+        const auto caller = std::ranges::find(world.objects, std::string("Thing_0"), &Object::name);
+        call.row.object = caller->ref.address;
+        const uint64_t instigator = buddy->ref.address;
+        memcpy(call.block.data(), &instigator, 8);
+        const int32_t bone[2] = {world.Name("head"), 0};
+        memcpy(call.block.data() + 8, bone, 8);
+        const char16_t label[] = u"Rifle";
+        SetArray(call.block.data() + 16, {reinterpret_cast<const uint8_t*>(label), sizeof(label)}, 6);
+        const float amount = 12.5f;
+        memcpy(call.block.data() + 32, &amount, 4);
+        call.row.size = static_cast<uint32_t>(call.block.size());
+        recorded.calls.push_back(std::move(call));
+        world.functions.push_back(std::move(recorded));
+        return out;
+    }();
+    return extras;
+}
+}
+
+TEST_CASE("a class named past 63 characters resolves, and names travel whole") {
+    const auto& extras = TheExtras();
+    const auto fields = Result("fields " + extras.longClass);
+    REQUIRE(fields["rows"].size() == 1);
+    CHECK(fields["rows"][0]["name"] == std::string(120, 'L'));
+    CHECK(fields["rows"][0]["owner"] == extras.longClass);
+}
+
+TEST_CASE("dump --own keeps the fields a 51-character class declares") {
+    const auto dumped = Result("dump " + TheExtras().armor + " --own");
+    REQUIRE(dumped["rows"].size() == 1);
+    CHECK(dumped["rows"][0]["name"] == "Durability");
+}
+
+TEST_CASE("a class's fields come in few pages") {
+    const auto& extras = TheExtras();
+    const uint32_t before = extras.wide->pages;
+    const auto fields = Result("fields Wide");
+    CHECK(fields["rows"].size() == 120);
+    const uint32_t pages = extras.wide->pages - before;
+    CHECK(pages * 4 <= (120 + 10) / 11); // At least 4x fewer than 11 entries a page.
+}
+
+TEST_CASE("dump --elements lifts a top-level array's preview past 8") {
+    const auto& fixture = TheFixture();
+    const auto dumped = Result("dump " + fixture.thing + " --match Crowd --elements 12");
+    REQUIRE(dumped["rows"].size() == 1);
+    const auto& preview = dumped["rows"][0]["preview"];
+    CHECK(preview["total"] == fixture.crowd);
+    REQUIRE(preview["elements"].size() == 12);
+    CHECK(preview["elements"][11]["object"]["name"] == "Extra_11");
+    CHECK(Result("dump " + fixture.thing + " --match Crowd")["rows"][0]["preview"]["elements"].size() == 8);
+}
+
+TEST_CASE("calls-read decodes a recorded block through the shared reader, as a copy") {
+    TheExtras();
+    const auto calls = Result("calls-read");
+    CHECK(calls["function"] == "TakeDamage");
+    REQUIRE(calls["rows"].size() == 1);
+    const auto& row = calls["rows"][0];
+    CHECK(row["object_name"] == "Thing_0");
+    std::map<std::string, Json> values;
+    for (const auto& value : row["values"]) values[value["name"].get<std::string>()] = value["value"];
+    CHECK(values["Instigator"]["name"] == "Buddy");   // Named, as typed call outputs are.
+    CHECK(values["Bone"] == "head");                  // FNames resolved.
+    CHECK(values["Amount"] == 12.5);
+    CHECK(values["Label"] != "Rifle");                // The caller's string memory is not read.
 }

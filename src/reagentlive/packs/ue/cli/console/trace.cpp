@@ -3,10 +3,12 @@
 // by GameplayStatics.BreakHitResult. Both are reached through call, by their
 // reflected parameters, so the agent needs nothing new.
 #include <algorithm>
+#include <optional>
 #include <cstring>
 #include <iterator>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/syntax/text.h"
@@ -16,18 +18,6 @@
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
 
 namespace reagentlive::cli::detail {
-Result<Ref> DefaultObject(Session& session, const std::string& name) {
-    auto& known = Ue(session).defaultObjects;
-    if (const auto found = std::ranges::find(known, name, &ClassRef::name); found != known.end()) return found->ref;
-    auto found = ue::Find(session.client, name, {"", 0, true});
-    if (!found) return std::unexpected(found.error());
-    for (const auto& object : found->objects)
-        if (object.name == name) {
-            known.push_back({name, object.ref, true});
-            return object.ref;
-        }
-    return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no object named " + name});
-}
 
 namespace {
 Error Invalid(std::string message) { return Error{Error::Kind::Agent, Status::BadRequest, 0, {}, std::move(message)}; }
@@ -167,6 +157,24 @@ constexpr HitLayout HitLayouts[]{
     {18, 1, 3, 5, 7, 8, 9, 10, 11, 13, 15},
     {16, 1, 3, 5, 7, 8, 9, 10, 11, 12, 13},
 };
+// The outputs by parameter name, so an engine fork with extra FHitResult
+// members still decodes; the positions above only when a name is missing
+// (an obfuscated build).
+std::optional<HitLayout> HitLayoutOf(const std::vector<const ue::Field*>& outputs) {
+    constexpr std::string_view names[]{"bInitialOverlap", "Distance", "ImpactPoint", "ImpactNormal", "PhysMat",
+                                       "HitActor", "HitComponent", "HitBoneName", "HitItem", "FaceIndex"};
+    size_t at[std::size(names)]{};
+    bool named = true;
+    for (size_t n = 0; n < std::size(names) && named; ++n) {
+        const auto found = std::ranges::find_if(outputs, [&](const ue::Field* f) { return f->name == names[n]; });
+        named = found != outputs.end();
+        at[n] = static_cast<size_t>(found - outputs.begin());
+    }
+    if (named) return HitLayout{outputs.size(), at[0], at[1], at[2], at[3], at[4], at[5], at[6], at[7], at[8], at[9]};
+    const auto layout = std::ranges::find(HitLayouts, outputs.size(), &HitLayout::outputs);
+    if (layout == std::end(HitLayouts)) return std::nullopt;
+    return *layout;
+}
 Result<void> Decode(Session& session, std::span<const uint8_t> hit, shape::Trace& out) {
     Client& client = session.client;
     auto statics = DefaultObject(session, "Default__GameplayStatics");
@@ -176,8 +184,8 @@ Result<void> Decode(Session& session, std::span<const uint8_t> hit, shape::Trace
     std::vector<const ue::Field*> inputs, outputs;
     for (const auto& parameter : prepared->signature.parameters)
         (ue::InputParameter(parameter.parameterFlags) ? inputs : outputs).push_back(&parameter);
-    const auto layout = std::ranges::find(HitLayouts, outputs.size(), &HitLayout::outputs);
-    if (layout == std::end(HitLayouts) || inputs.size() != 1 || inputs[0]->size != hit.size() ||
+    const auto layout = HitLayoutOf(outputs);
+    if (!layout || inputs.size() != 1 || inputs[0]->size != hit.size() ||
         !std::ranges::all_of(outputs, [&](const ue::Field* f) { return Fits(*f, prepared->block.size()); }) ||
         !Fits(*inputs[0], prepared->block.size()) || !IsVector(*outputs[layout->impact]) ||
         !IsVector(*outputs[layout->normal]) || outputs[layout->material]->size != 8 || outputs[layout->actor]->size != 8 ||
@@ -230,24 +238,6 @@ Result<void> Decode(Session& session, std::span<const uint8_t> hit, shape::Trace
 }
 }
 
-Result<int32_t> NameIndex(Session& session, std::string_view text) {
-    auto& known = Ue(session).nameIndices;
-    const std::string key(text);
-    if (const auto found = known.find(key); found != known.end()) return found->second;
-    for (uint32_t from = 0;;) {
-        auto found = ue::NameFind(session.client, text, from);
-        if (!found) return std::unexpected(found.error());
-        // FNames compare without case.
-        for (const auto& match : found->names)
-            if (text::SameText(match.name, text)) {
-                known.emplace(key, match.index);
-                return match.index;
-            }
-        if (!found->next) break;
-        from = found->next;
-    }
-    return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no pooled name is '" + key + "'"});
-}
 
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;

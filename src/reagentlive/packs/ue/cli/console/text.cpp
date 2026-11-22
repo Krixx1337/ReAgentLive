@@ -87,7 +87,7 @@ void TextBatch::Resolve(Session& session) {
         const uint32_t chars = std::min<uint32_t>(static_cast<uint32_t>(header.count), MaxTextChars);
         auto bytes = client.ReadRange(header.data, size_t{chars} * 2);
         if (!bytes) { errors_[i] = bytes.error().message; continue; }
-        auto decoded = native::WideString(*bytes).text;
+        auto decoded = native::Utf16(*bytes);
         if (static_cast<uint32_t>(header.count) > MaxTextChars + 1) decoded += "...";
         strings_[i] = std::move(decoded);
     }

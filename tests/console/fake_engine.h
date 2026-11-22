@@ -45,15 +45,24 @@ using Json = nlohmann::json;
 
 constexpr uint32_t Layout = reagentlive::LayoutCore + ue::LayoutPart;
 
+// One reflected property, as the agent puts it on a fields page.
+struct Field {
+    ue::FieldRecord numbers{};
+    Ref structType{}, valueStructType{};
+    std::string name, type, owner = "Fake", elementType, structName, valueType, valueStructName;
+    ue::FieldStrings Strings() const { return {name, type, owner, elementType, structName, valueType, valueStructName}; }
+};
+
 // A reflected type (a class or a struct) and an object (an instance, or the
 // type's own object). Object refs carry the slot and a serial; a slot whose
 // serial moved on is a gone object.
 struct Type {
     std::string name;
     uint32_t size = 0;
-    std::vector<ue::FieldEntry> fields;
+    std::vector<Field> fields;
     std::string parent;     // A class's parent class name, for class filters.
     int32_t slot = -1;      // Its own object.
+    mutable uint32_t pages = 0; // Fields pages answered for it.
 };
 struct Object {
     Ref ref{};
@@ -63,11 +72,25 @@ struct Object {
     Ref outer{};
 };
 
+// A recorded call: its row and its parameter block, as the agent's recorder keeps them.
+struct Call {
+    ue::CallsRow row{};
+    std::vector<uint8_t> block;
+};
+// A reflected function: its parameters (flags in numbers.flags), block size and recorded calls.
+struct Function {
+    int32_t slot = -1;
+    uint32_t blockSize = 0;
+    std::vector<Field> parameters;
+    std::vector<Call> calls;
+};
+
 struct World {
     std::deque<std::vector<uint8_t>> memory;    // Stable addresses.
     std::deque<Type> types;
     std::vector<Object> objects;                // By slot.
     std::vector<std::string> names{"None"};     // The FName pool, by comparison index.
+    std::deque<Function> functions;             // The last one is the recording calls-read reads.
 
     uint8_t* Alloc(size_t size) {
         memory.emplace_back(std::max<size_t>(size, 16), uint8_t{0});
@@ -154,48 +177,47 @@ inline World& TheWorld() {
 }
 
 // A field row, as the agent's reflection answers it.
-inline ue::FieldEntry Field(std::string_view name, std::string_view type, uint32_t offset, uint32_t size) {
-    ue::FieldEntry field{};
-    field.offset = offset;
-    field.size = size;
-    reagentlive::CopyText(field.name, name);
-    reagentlive::CopyText(field.type, type);
-    reagentlive::CopyText(field.owner, "Fake");
-    if (type == "BoolProperty") field.boolMask = 0xff;
+inline Field MakeField(std::string_view name, std::string_view type, uint32_t offset, uint32_t size) {
+    Field field;
+    field.numbers.offset = offset;
+    field.numbers.size = size;
+    field.name = name;
+    field.type = type;
+    if (type == "BoolProperty") field.numbers.boolMask = 0xff;
     return field;
 }
-inline ue::FieldEntry StructField(std::string_view name, uint32_t offset, const Type& type) {
-    auto field = Field(name, "StructProperty", offset, type.size);
+inline Field StructField(std::string_view name, uint32_t offset, const Type& type) {
+    auto field = MakeField(name, "StructProperty", offset, type.size);
     field.structType = TheWorld().TypeRef(type);
-    reagentlive::CopyText(field.structName, type.name);
+    field.structName = type.name;
     return field;
 }
 // An array: element type and size; a struct element names its type.
-inline ue::FieldEntry ArrayField(std::string_view name, uint32_t offset, std::string_view element, uint32_t elementSize,
-                                 const Type* type = nullptr) {
-    auto field = Field(name, "ArrayProperty", offset, 16);
-    field.elementSize = elementSize;
-    reagentlive::CopyText(field.elementType, element);
+inline Field ArrayField(std::string_view name, uint32_t offset, std::string_view element, uint32_t elementSize,
+                        const Type* type = nullptr) {
+    auto field = MakeField(name, "ArrayProperty", offset, 16);
+    field.numbers.elementSize = elementSize;
+    field.elementType = element;
     if (type) {
         field.structType = TheWorld().TypeRef(*type);
-        reagentlive::CopyText(field.structName, type->name);
+        field.structName = type->name;
     }
     return field;
 }
 // A map: key and value as fields, the slot's stride and the value's offset in it.
-inline ue::FieldEntry MapField(std::string_view name, uint32_t offset, const ue::FieldEntry& key, const ue::FieldEntry& value,
-                               uint32_t stride, uint32_t valueOffset) {
-    auto field = Field(name, "MapProperty", offset, 80);
-    field.elementSize = key.size;
-    memcpy(field.elementType, key.type, sizeof(field.elementType));
+inline Field MapField(std::string_view name, uint32_t offset, const Field& key, const Field& value, uint32_t stride,
+                      uint32_t valueOffset) {
+    auto field = MakeField(name, "MapProperty", offset, 80);
+    field.numbers.elementSize = key.numbers.size;
+    field.elementType = key.type;
     field.structType = key.structType;
-    memcpy(field.structName, key.structName, sizeof(field.structName));
-    field.stride = stride;
-    field.valueOffset = valueOffset;
-    field.valueSize = value.size;
-    memcpy(field.valueType, value.type, sizeof(field.valueType));
+    field.structName = key.structName;
+    field.numbers.stride = stride;
+    field.numbers.valueOffset = valueOffset;
+    field.numbers.valueSize = value.numbers.size;
+    field.valueType = value.type;
     field.valueStructType = value.structType;
-    memcpy(field.valueStructName, value.structName, sizeof(field.valueStructName));
+    field.valueStructName = value.structName;
     return field;
 }
 
@@ -254,12 +276,15 @@ inline Progress Fields(const Request& request, Response& response, bool, const H
     if (!object) { reagentlive::Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
     const int32_t index = object->ownType >= 0 ? object->ownType : object->type;
     if (index < 0) { reagentlive::Refuse(response, Status::NotFound, "no type"); return Progress::Done; }
-    const auto& fields = world.types[static_cast<size_t>(index)].fields;
-    const size_t first = request.length;
-    const size_t count = first < fields.size() ? std::min(fields.size() - first, ue::MaxFieldsPerPage) : 0;
-    if (count) memcpy(response.data, fields.data() + first, count * sizeof(ue::FieldEntry));
-    response.length = static_cast<uint32_t>(count * sizeof(ue::FieldEntry));
-    response.detail = ue::FindDetail(static_cast<uint32_t>(fields.size()), static_cast<uint32_t>(world.types[static_cast<size_t>(index)].slot));
+    const auto& type = world.types[static_cast<size_t>(index)];
+    ++type.pages;
+    ue::FieldsPageWriter page(response.data);
+    for (size_t i = request.length; i < type.fields.size(); ++i) {
+        const auto& field = type.fields[i];
+        if (!page.Add(field.numbers, field.structType, field.valueStructType, field.Strings())) break;
+    }
+    response.length = page.Finish();
+    response.detail = ue::FindDetail(static_cast<uint32_t>(type.fields.size()), static_cast<uint32_t>(type.slot));
     return Progress::Done;
 }
 
@@ -394,10 +419,53 @@ inline Progress Each(const Request& request, Response& response, bool, const Hos
     return Progress::Done;
 }
 
-// No functions in the fake world: each tries a lone column as one first.
-inline Progress Function(const Request& request, Response& response, bool, const Host&) {
+// No callable functions in the fake world: each tries a lone column as one first.
+inline Progress FunctionOp(const Request& request, Response& response, bool, const Host&) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     reagentlive::Refuse(response, Status::NotFound, "no such function");
+    return Progress::Done;
+}
+
+inline Progress Parameters(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    auto& world = TheWorld();
+    const Object* object = world.Resolve(ue::GetRef(request));
+    const auto function = object ? std::ranges::find(world.functions, object->ref.index, &Function::slot) : world.functions.end();
+    if (function == world.functions.end()) { reagentlive::Refuse(response, Status::BadRequest, "parameters require a UFunction"); return Progress::Done; }
+    ue::FieldsPageWriter page(response.data);
+    for (size_t i = request.length; i < function->parameters.size(); ++i) {
+        const auto& field = function->parameters[i];
+        if (!page.Add(field.numbers, field.structType, field.valueStructType, field.Strings())) break;
+    }
+    response.length = page.Finish();
+    response.detail = ue::FindDetail(static_cast<uint32_t>(function->parameters.size()), function->blockSize);
+    return Progress::Done;
+}
+
+// The recorder: the last function's calls, after the sequence asked for.
+inline Progress CallsRead(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    auto& world = TheWorld();
+    if (world.functions.empty()) { reagentlive::Refuse(response, Status::NotFound, "no such recording"); return Progress::Done; }
+    const auto& function = world.functions.back();
+    ue::CallsState state{};
+    state.function = world.objects[static_cast<size_t>(function.slot)].ref.address;
+    state.written = function.calls.size();
+    state.state = static_cast<uint32_t>(ue::CallsSlotState::Finished);
+    state.events = static_cast<uint32_t>(function.calls.size());
+    state.blockSize = function.blockSize;
+    memcpy(response.data, &state, sizeof(state));
+    size_t used = sizeof(state);
+    uint64_t last = request.args[1];
+    for (const auto& call : function.calls) {
+        if (call.row.sequence <= request.args[1]) continue;
+        memcpy(response.data + used, &call.row, sizeof(call.row));
+        memcpy(response.data + used + sizeof(call.row), call.block.data(), call.block.size());
+        used += sizeof(call.row) + call.block.size();
+        last = call.row.sequence;
+    }
+    response.length = static_cast<uint32_t>(used);
+    response.detail = last;
     return Progress::Done;
 }
 
@@ -425,7 +493,9 @@ constexpr reagentlive::Command Commands[] = {
     {ue::op::Each, "each", &Each},
     {ue::op::DescribeMany, "describe many", &DescribeMany},
     {ue::op::Entries, "entries", &Entries},
-    {ue::op::Function, "function", &Function},
+    {ue::op::Function, "function", &FunctionOp},
+    {ue::op::Parameters, "parameters", &Parameters},
+    {ue::op::CallsRead, "calls read", &CallsRead},
 };
 
 inline std::wstring SectionPrefix() { return L"Local\\reagentlive-fake-"; }

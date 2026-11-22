@@ -191,7 +191,7 @@ struct Filtered {
 struct Dump {
     RefId ref;
     std::vector<DumpRow> rows;
-    bool truncated = false, capped = false, objectLookupLimited = false;
+    bool truncated = false, capped = false;
     std::optional<Filtered> filtered;
     std::optional<std::vector<NativeRefused>> nativeRefused;
     std::optional<bool> tickAccurate;
@@ -201,7 +201,6 @@ struct Dump {
         v("rows", &Dump::rows);
         v("truncated", &Dump::truncated);
         v("capped", &Dump::capped);
-        v("object_lookup_limited", &Dump::objectLookupLimited);
         v("filtered", &Dump::filtered);
         v("native_refused", &Dump::nativeRefused);
         v("tick_accurate", &Dump::tickAccurate);
@@ -731,6 +730,7 @@ struct Calls {
     uint64_t calls = 0, events = 0, vm = 0, dropped = 0;
     std::vector<CallsRow> rows;
     std::optional<uint64_t> nextCursor;
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("function", &Calls::function);
         v("state", &Calls::state, "recording|expired|finished|replaced");
@@ -741,6 +741,7 @@ struct Calls {
         v("dropped", &Calls::dropped);
         v("rows", &Calls::rows);
         v("next_cursor", &Calls::nextCursor);
+        v("unnamed", &Calls::unnamed);
     }
 };
 struct Snap {

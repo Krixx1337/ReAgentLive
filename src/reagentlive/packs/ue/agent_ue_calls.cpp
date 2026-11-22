@@ -21,7 +21,9 @@
 namespace reagentlive::ue {
 namespace {
 using Native = void (*)(void* context, void* stack, void* result);
-static_assert(offsetof(SDK::UFunction, ExecFunction) == 0xD8);
+// FunctionReturnOffset sits in the SDK's padding after FunctionFlags: pin the
+// UFunction layout it was read from (UE5: flags 0xB0, return offset 0xB8).
+static_assert(FunctionReturnOffset == offsetof(SDK::UFunction, FunctionFlags) + 8);
 constexpr size_t RowStride = sizeof(CallsRow) + MaxCallsBlock;
 
 // One recording. Written on the game thread while not recording; the thunk
@@ -36,6 +38,7 @@ struct Slot {
     int64_t start, deadline, frequency;
     volatile LONG64 written;
     volatile LONG events, vm;
+    int64_t restoredMs;         // When the restore succeeded: reuse waits CallsReuseGraceMs.
     uint8_t* rows;              // MaxCallsRows * RowStride, allocated on first use and kept.
 };
 Slot g_slots[MaxCallsSlots];
@@ -114,8 +117,9 @@ void Restore(unsigned index) {
     if (state != CallsSlotState::Recording && state != CallsSlotState::Expired) return;
     const auto previous = InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(FuncField(slot.function)),
         reinterpret_cast<void*>(slot.original), reinterpret_cast<void*>(Thunks[index]));
-    slot.state = static_cast<LONG>(previous == reinterpret_cast<void*>(Thunks[index]) ? CallsSlotState::Finished
-                                                                                      : CallsSlotState::Replaced);
+    const bool restored = previous == reinterpret_cast<void*>(Thunks[index]);
+    if (restored) slot.restoredMs = static_cast<int64_t>(GetTickCount64());
+    slot.state = static_cast<LONG>(restored ? CallsSlotState::Finished : CallsSlotState::Replaced);
 }
 
 void Sweep() {
@@ -192,12 +196,14 @@ Progress CallsStart(const Request& request, Response& response, bool, const Host
     }
     const uint32_t blockSize = static_cast<uint32_t>(size);
     const bool hasReturn = returnOffset != 0xFFFF && returnOffset < blockSize;
-    unsigned index = MaxCallsSlots;
-    for (unsigned i = 0; i < MaxCallsSlots && index == MaxCallsSlots; ++i)
-        if (static_cast<CallsSlotState>(g_slots[i].state) == CallsSlotState::Free) index = i;
-    for (unsigned i = 0; i < MaxCallsSlots && index == MaxCallsSlots; ++i)
-        if (static_cast<CallsSlotState>(g_slots[i].state) == CallsSlotState::Finished && !g_slots[i].inFlight) index = i;
-    if (index == MaxCallsSlots) { Refuse(response, Status::Refused, "every recording slot is busy; stop one"); return Progress::Done; }
+    CallsSlotView views[MaxCallsSlots];
+    for (unsigned i = 0; i < MaxCallsSlots; ++i)
+        views[i] = {static_cast<CallsSlotState>(g_slots[i].state), static_cast<int32_t>(g_slots[i].inFlight), g_slots[i].restoredMs};
+    const unsigned index = PickCallsSlot(views, MaxCallsSlots, static_cast<int64_t>(GetTickCount64()));
+    if (index == MaxCallsSlots) {
+        Refuse(response, Status::Refused, "every recording slot is busy or just stopped; stop one or retry in a second");
+        return Progress::Done;
+    }
     CallsStarted started{reinterpret_cast<uint64_t>(function), reinterpret_cast<uint64_t>(current),
         reinterpret_cast<uint64_t>(Thunks[index]), index, blockSize, hasReturn ? returnOffset : 0xFFFFu,
         hasReturn ? blockSize - returnOffset : 0};
@@ -257,6 +263,7 @@ Progress CallsRead(const Request& request, Response& response, bool, const Host&
         const auto* row = reinterpret_cast<const CallsRow*>(slot.rows + static_cast<size_t>((sequence - 1) % MaxCallsRows) * RowStride);
         CallsRow copy = *row;
         if (copy.sequence != sequence) break; // Still being written, or overwritten since.
+        MemoryBarrier(); // The block is read after the sequence that vouches for it.
         if (used + sizeof(copy) + copy.size > MaxRead) break;
         memcpy(response.data + used, &copy, sizeof(copy));
         memcpy(response.data + used + sizeof(copy), row + 1, copy.size);

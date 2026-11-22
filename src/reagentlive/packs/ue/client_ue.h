@@ -41,14 +41,14 @@ struct FindOptions {
 };
 struct Field {
     uint32_t offset, size;
-    uint8_t boolMask;            // Bool properties only; see FieldEntry.
+    uint8_t boolMask;            // Bool properties only; see FieldRecord.
     std::string type, name, owner;
     uint32_t elementSize;
     std::string elementType;
-    Ref structType;              // Struct fields and arrays of structs; see FieldEntry.
+    Ref structType;              // Struct fields and arrays of structs; see FieldRecord.
     std::string structName;
     uint8_t parameterFlags = 0;
-    // Maps and sets (see FieldEntry): stride 0 when the layout is unknown.
+    // Maps and sets (see FieldRecord): stride 0 when the layout is unknown.
     uint32_t stride = 0, valueOffset = 0, valueSize = 0;
     std::string valueType;
     Ref valueStructType{};

@@ -34,9 +34,14 @@ struct TableShape {
     int32_t itemSerialOffset = -1;          // -1: unknown; every serial reads 0 ("not assigned yet").
     uint32_t objectFlagsOffset = 8;
     uint32_t nameNumberOffset = 4;          // The instance number inside an FName.
+    int32_t objectOuterOffset = -1;         // -1: right after an 8-byte name (stock UE5).
 };
+// Where an object's Outer is: the shape's, or after the name.
+constexpr uint32_t ObjectOuterOffset(const TableShape& shape) {
+    return shape.objectOuterOffset >= 0 ? static_cast<uint32_t>(shape.objectOuterOffset) : shape.objectNameOffset + 8;
+}
 // Bytes of an object header (flags, index, class, name, outer).
-constexpr uint32_t ObjectHeaderBytes(const TableShape& shape) { return shape.objectNameOffset + 16; }
+constexpr uint32_t ObjectHeaderBytes(const TableShape& shape) { return ObjectOuterOffset(shape) + 8; }
 
 // UE5's chunked table (64K items per chunk) and object header. Engines
 // differ in the item: the object pointer first, or after an 8-byte field,

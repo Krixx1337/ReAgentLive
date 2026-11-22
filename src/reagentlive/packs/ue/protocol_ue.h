@@ -54,7 +54,7 @@ constexpr size_t MaxParams = 1024;
 // object changes them. The agent checks the layout against its SDK.
 constexpr uint32_t ObjectIdentityOffset = 0xC, ObjectIdentityLength = 12;
 constexpr size_t MaxFindResults = 24;
-constexpr uint32_t MaxClassName = 64;
+constexpr uint32_t MaxClassName = MaxText; // Class names in a request: as long as its text.
 // The object filter find, each and census take: data = class name, NUL, then
 // optionally the outer's name text and NUL, then, with an outer object, its
 // slot and serial (two int32); address = the outer object (0: none). The
@@ -106,6 +106,14 @@ struct FindEntry {
     char className[48];
     Ref outer;          // The object's outer (a function's class, a subobject's owner); zero for a package.
 };
+// Two names equal as far as a wire field of `capacity` bytes holds them: a
+// longer name arrives cut to capacity - 1, so a full name is compared with a
+// wire one by its first capacity - 1 characters. Pure; tested.
+inline bool SameWireName(std::string_view a, std::string_view b, size_t capacity) {
+    const size_t kept = capacity - 1;
+    return a.substr(0, kept) == b.substr(0, kept);
+}
+constexpr size_t FindNameBytes = sizeof(FindEntry::name), FindClassBytes = sizeof(FindEntry::className);
 // DescribeMany: data = 1..MaxDescribeMany refs (address-only, full, or a weak
 // slot and serial, as for Describe). The response holds one FindEntry per ref
 // in order; a ref that is gone or not an object gets a zeroed entry.
@@ -193,31 +201,156 @@ inline bool InputParameter(uint8_t flags) {
     return !(flags & Output) || ((flags & Const) && (flags & Reference));
 }
 static_assert(sizeof(FunctionEntry) <= MaxRead);
-// One reflected property. size = element size x array dimension. Bool
-// properties: offset is the byte holding the bit and boolMask selects it
-// (0xff for a full-byte bool); 0 for every other type.
-struct FieldEntry {
-    uint32_t offset, size;
-    uint8_t boolMask, reserved[3]; // Parameters uses reserved[0] for ParameterFlag bits.
-    char name[56];
-    char type[32];
-    char owner[40]; // Class or struct that declares it.
-    uint32_t elementSize;
-    char elementType[32];
-    // Single struct fields and arrays of structs: the struct object (a ref
-    // for Fields) and its name. Zero address otherwise.
-    Ref structType;
-    char structName[48];
-    // Maps and sets: the key (a set's element) is elementType, elementSize and
-    // structType above; a map's value is below. stride is the element's whole
-    // slot (key, value and hash links), 0 when the layout is unknown or failed
-    // its check (ContainerLayoutValid).
-    uint32_t stride, valueOffset, valueSize, reserved2;
-    char valueType[32];
-    Ref valueStructType;
-    char valueStructName[48];
+// Fields and Parameters pages. A page is a FieldsPageHeader, `count`
+// FieldRecords, `refs` struct refs (each struct on the page once; a record
+// names one by number, 0: none), then a string table of NUL-terminated
+// strings, each stored once (a type or an owner repeats on every row), that a
+// record names by byte offset (0: the empty string). Names travel whole:
+// a field whose strings no longer fit ends the page, and the next page starts
+// at it.
+//
+// One reflected property's numbers. size = element size x array dimension.
+// Bool properties: offset is the byte holding the bit and boolMask selects
+// it (0xff for a full-byte bool); 0 for every other type. Single struct
+// fields and arrays of structs: structType and structName. Maps and sets: the
+// key (a set's element) is elementType, elementSize and structType; a map's
+// value is the value* members; stride is the element's whole slot (key,
+// value and hash links), 0 when the layout is unknown or failed its check
+// (ContainerLayoutValid).
+struct FieldsPageHeader {
+    uint16_t count, refs;
+    uint32_t strings;                       // Bytes of the string table.
 };
-constexpr size_t MaxFieldsPerPage = MaxRead / sizeof(FieldEntry);
+struct FieldRecord {
+    uint32_t offset, size, elementSize, stride, valueOffset, valueSize;
+    uint8_t boolMask, flags;                // flags: Parameters' ParameterFlag bits.
+    uint8_t structType, valueStructType;    // 1-based into the page's refs; 0: none.
+    uint16_t name, type, owner, elementType, structName, valueType, valueStructName; // Into the strings.
+    uint16_t reserved;
+};
+static_assert(sizeof(FieldsPageHeader) == 8 && sizeof(FieldRecord) == 44);
+// A record's strings: owner is the class or struct that declares it.
+struct FieldStrings {
+    std::string_view name, type, owner, elementType, structName, valueType, valueStructName;
+};
+constexpr size_t MaxFieldsPerPage = (MaxRead - sizeof(FieldsPageHeader)) / sizeof(FieldRecord);
+constexpr size_t MaxPageRefs = 64;
+
+// Builds one page into `out` (MaxRead bytes). Add returns false when the
+// field does not fit; the page stays valid without it. Pure; tested.
+class FieldsPageWriter {
+public:
+    explicit FieldsPageWriter(uint8_t* out) : out_(out) { strings_[0] = 0; }
+    bool Add(const FieldRecord& numbers, const Ref& structType, const Ref& valueStructType, const FieldStrings& text) {
+        if (count_ == MaxFieldsPerPage) return false;
+        const uint32_t savedStrings = used_;
+        const uint16_t savedRefs = refs_;
+        FieldRecord record = numbers;
+        bool fits = RefNumber(structType, record.structType) && RefNumber(valueStructType, record.valueStructType) &&
+            String(text.name, record.name) && String(text.type, record.type) && String(text.owner, record.owner) &&
+            String(text.elementType, record.elementType) && String(text.structName, record.structName) &&
+            String(text.valueType, record.valueType) && String(text.valueStructName, record.valueStructName);
+        fits = fits && Bytes(count_ + 1, refs_, used_) <= MaxRead;
+        if (!fits) {
+            used_ = savedStrings;
+            refs_ = savedRefs;
+            return false;
+        }
+        memcpy(out_ + sizeof(FieldsPageHeader) + size_t{count_} * sizeof(FieldRecord), &record, sizeof(record));
+        ++count_;
+        return true;
+    }
+    uint32_t Count() const { return count_; }
+    // Lays out the header, refs and strings after the records; the page's length.
+    uint32_t Finish() {
+        const FieldsPageHeader header{static_cast<uint16_t>(count_), refs_, used_};
+        memcpy(out_, &header, sizeof(header));
+        uint8_t* at = out_ + sizeof(header) + size_t{count_} * sizeof(FieldRecord);
+        memcpy(at, refTable_, size_t{refs_} * sizeof(Ref));
+        memcpy(at + size_t{refs_} * sizeof(Ref), strings_, used_);
+        return static_cast<uint32_t>(Bytes(count_, refs_, used_));
+    }
+
+private:
+    static size_t Bytes(size_t records, size_t refs, size_t strings) {
+        return sizeof(FieldsPageHeader) + records * sizeof(FieldRecord) + refs * sizeof(Ref) + strings;
+    }
+    bool RefNumber(const Ref& ref, uint8_t& number) {
+        number = 0;
+        if (!ref.address) return true;
+        for (uint16_t i = 0; i < refs_; ++i)
+            if (refTable_[i].address == ref.address && refTable_[i].index == ref.index && refTable_[i].serial == ref.serial) {
+                number = static_cast<uint8_t>(i + 1);
+                return true;
+            }
+        if (refs_ == MaxPageRefs) return false;
+        refTable_[refs_++] = ref;
+        number = static_cast<uint8_t>(refs_);
+        return true;
+    }
+    bool String(std::string_view text, uint16_t& offset) {
+        offset = 0;
+        if (text.empty()) return true;
+        for (uint32_t at = 1; at < used_; at += static_cast<uint32_t>(strlen(strings_ + at)) + 1)
+            if (text == std::string_view(strings_ + at)) {
+                offset = static_cast<uint16_t>(at);
+                return true;
+            }
+        if (used_ + text.size() + 1 > MaxRead) return false;
+        offset = static_cast<uint16_t>(used_);
+        memcpy(strings_ + used_, text.data(), text.size());
+        strings_[used_ + text.size()] = 0;
+        used_ += static_cast<uint32_t>(text.size()) + 1;
+        return true;
+    }
+    uint8_t* out_;
+    uint32_t count_ = 0, used_ = 1;          // The table starts with the empty string.
+    uint16_t refs_ = 0;
+    Ref refTable_[MaxPageRefs]{};
+    char strings_[MaxRead];
+};
+
+// One page's fields, checked: the header inside `length`, every ref number
+// and string offset inside its table, every string terminated in it.
+// visit(record, structType, valueStructType, strings) per field; false when
+// the page is malformed. Pure; tested.
+template<class Visit>
+bool ReadFieldsPage(const uint8_t* data, size_t length, Visit&& visit) {
+    FieldsPageHeader header{};
+    if (length < sizeof(header)) return false;
+    memcpy(&header, data, sizeof(header));
+    const size_t records = sizeof(header) + size_t{header.count} * sizeof(FieldRecord);
+    const size_t refs = records + size_t{header.refs} * sizeof(Ref);
+    if (header.count > MaxFieldsPerPage || header.refs > MaxPageRefs || !header.strings ||
+        refs + header.strings != length || data[refs] != 0 || data[length - 1] != 0)
+        return false;
+    const char* table = reinterpret_cast<const char*>(data + refs);
+    const auto text = [&](uint16_t offset, std::string_view& out) {
+        if (offset >= header.strings || (offset && table[offset - 1] != 0)) return false;
+        out = std::string_view(table + offset);
+        return true;
+    };
+    const auto ref = [&](uint8_t number, Ref& out) {
+        out = {};
+        if (!number) return true;
+        if (number > header.refs) return false;
+        memcpy(&out, data + records + (size_t{number} - 1) * sizeof(Ref), sizeof(Ref));
+        return true;
+    };
+    for (uint16_t i = 0; i < header.count; ++i) {
+        FieldRecord record{};
+        memcpy(&record, data + sizeof(header) + size_t{i} * sizeof(FieldRecord), sizeof(record));
+        Ref structType{}, valueStructType{};
+        FieldStrings strings;
+        if (!ref(record.structType, structType) || !ref(record.valueStructType, valueStructType) ||
+            !text(record.name, strings.name) || !text(record.type, strings.type) || !text(record.owner, strings.owner) ||
+            !text(record.elementType, strings.elementType) || !text(record.structName, strings.structName) ||
+            !text(record.valueType, strings.valueType) || !text(record.valueStructName, strings.valueStructName))
+            return false;
+        visit(record, structType, valueStructType, strings);
+    }
+    return true;
+}
 
 // UE5 keeps a map's or set's element layout in the property, after its inner
 // property pointers: FScriptMapLayout (ValueOffset, then FScriptSetLayout) at
@@ -239,7 +372,6 @@ inline bool ContainerLayoutValid(const ContainerLayout& layout, uint32_t keySize
 // type's object-table index; Parameters: the block size); a parameter-size
 // refusal carries the expected size.
 static_assert(MaxFindResults * sizeof(FindEntry) <= MaxRead);
-static_assert(MaxFieldsPerPage * sizeof(FieldEntry) <= MaxRead);
 static_assert(MaxParams <= MaxRead);
 
 // Census: data = optional class name as for Find; text empty; args[1] = index
@@ -330,7 +462,9 @@ constexpr uint32_t CallRelease = 1, CallPure = 2;
 constexpr uint64_t CallKept = 1;
 constexpr uint32_t MaxKeptResults = 8;
 // Slots carried from a kept block: the return value and outputs that are not
-// const references (UE marks const& inputs OutParm too).
+// const references (UE marks const& inputs OutParm too). A non-const
+// reference is an input as well, but its kept value (memory the engine owns,
+// such as an array's storage) replaces the request's, so nothing leaks.
 inline bool CarriedParameter(uint64_t propertyFlags) {
     return (propertyFlags & flags::ReturnParm) ||
         ((propertyFlags & flags::OutParm) && !(propertyFlags & flags::ConstParm));
@@ -531,6 +665,29 @@ constexpr uint64_t CallsLatest = MaxCallsSlots;
 // ::Locals, UFunction::ReturnValueOffset (0xFFFF: none). Not in the SDK.
 constexpr uint32_t FrameNodeOffset = 0x10, FrameLocalsOffset = 0x28, FunctionReturnOffset = 0xB8;
 enum class CallsSlotState : uint32_t { Free, Recording, Expired, Finished, Replaced };
+// A caller can load a thunk's address from the function before the restore
+// swaps it back and enter the thunk later, past its in-flight count. A
+// finished slot is therefore reused only CallsReuseGraceMs after its restore,
+// and the one restored longest ago first.
+constexpr int64_t CallsReuseGraceMs = 1000;
+struct CallsSlotView {
+    CallsSlotState state;
+    int32_t inFlight;
+    int64_t restoredMs; // When the restore succeeded (Finished only).
+};
+// The slot CallsStart takes: the first free one, else the finished one
+// restored longest ago, idle and past the grace; `count` when none. Pure; tested.
+inline uint32_t PickCallsSlot(const CallsSlotView* slots, uint32_t count, int64_t nowMs) {
+    for (uint32_t i = 0; i < count; ++i)
+        if (slots[i].state == CallsSlotState::Free) return i;
+    uint32_t best = count;
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& slot = slots[i];
+        if (slot.state != CallsSlotState::Finished || slot.inFlight || nowMs - slot.restoredMs < CallsReuseGraceMs) continue;
+        if (best == count || slot.restoredMs < slots[best].restoredMs) best = i;
+    }
+    return best;
+}
 struct CallsStarted {
     uint64_t function, original, thunk;
     uint32_t slot, blockSize, returnOffset, returnSize;
@@ -550,7 +707,8 @@ struct CallsRow {
 // The pack's part of the layout check (added to reagentlive::LayoutCore by the host).
 // New ops need no change here: the section header lists the ops an agent handles.
 // Every struct the pack sends is in the sum (see reagentlive::LayoutCore).
-constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + sizeof(FieldEntry) * 11 +
+constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + sizeof(FieldRecord) * 11 +
+    sizeof(FieldsPageHeader) * 107 + MaxPageRefs * 109 +
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
     sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + sizeof(CallsState) * 97 + sizeof(CallsRow) * 103 +

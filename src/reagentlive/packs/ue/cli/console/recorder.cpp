@@ -1,6 +1,8 @@
 // reagentlive CLI console, Unreal pack: calls-start, calls-read and
 // calls-stop (the agent's call recorder, protocol_ue.h). Rows are decoded by
-// the recorded function's reflected parameters, as typed call outputs are.
+// the recorded function's reflected parameters through the shared reader, as
+// a copy: names and objects are looked up, memory the block points into is
+// not read (the caller may have freed it since).
 #include <algorithm>
 #include <cstring>
 #include <span>
@@ -14,6 +16,7 @@
 #include "reagentlive/packs/ue/client_ue.h"
 
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
+#include "reagentlive/packs/ue/cli/console/rows.h"
 
 namespace reagentlive::cli::detail {
 namespace {
@@ -56,52 +59,62 @@ shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<
     // Rows the agent no longer held when read: before the first one returned.
     const uint64_t first = calls.empty() ? last + 1 : calls.front().row.sequence;
     out.dropped = first > after + 1 ? first - after - 1 : 0;
-    // Name the calling objects in as few round trips as describe-many allows.
-    std::vector<Ref> objects;
+    // The calling objects and every parameter, through one reader: its names,
+    // objects and pointers resolved together, then printed.
+    RowReader reader(session, structs, RowReader::PreviewNested);
+    reader.Snapshot();
+    reader.Meta(session.meta);
+    const auto direction = [](const ue::Field& parameter) {
+        return parameter.parameterFlags & ue::Return ? "return" : ue::InputParameter(parameter.parameterFlags) ? "in" : "out";
+    };
+    const auto caller = [](const ue::CallsCall& call) {
+        uint8_t bytes[8];
+        memcpy(bytes, &call.row.object, sizeof(bytes));
+        return std::vector<uint8_t>(bytes, bytes + sizeof(bytes));
+    };
+    const auto each = [&](const ue::CallsCall& call, auto&& visit) {
+        if (!function.known || call.block.empty()) return;
+        for (const auto& parameter : function.signature.parameters)
+            if (parameter.size && size_t{parameter.offset} + parameter.size <= call.block.size()) visit(parameter);
+    };
     for (const auto& call : calls) {
-        const Ref ref{static_cast<uintptr_t>(call.row.object), -1, 0};
-        if (ref.address && std::ranges::find(objects, ref) == objects.end()) objects.push_back(ref);
+        reader.Named("ObjectProperty", caller(call));
+        each(call, [&](const ue::Field& parameter) {
+            bool ignored = false;
+            reader.Value(parameter, FieldBytes(call.block, parameter), ignored);
+        });
     }
-    std::unordered_map<uint64_t, ue::Object> named;
-    for (size_t at = 0; at < objects.size(); at += ue::MaxDescribeMany) {
-        const auto page = std::span(objects).subspan(at, std::min<size_t>(ue::MaxDescribeMany, objects.size() - at));
-        auto described = ue::DescribeMany(session.client, page);
-        if (!described) break;
-        for (size_t i = 0; i < page.size(); ++i)
-            if ((*described)[i]) named.emplace(page[i].address, *(*described)[i]);
-    }
+    reader.Resolve();
     for (const auto& call : calls) {
         shape::CallsRow row;
         row.sequence = call.row.sequence;
         row.ms = static_cast<double>(call.row.microseconds) / 1000.0;
         row.thread = call.row.thread;
         row.via = call.row.via == ue::CallsEvent ? "event" : "vm";
-        if (const auto found = named.find(call.row.object); found != named.end()) {
-            row.object = FullRef(found->second.ref);
-            row.objectName = found->second.name;
-            row.objectClass = found->second.className;
+        if (const auto* named = reader.Named("ObjectProperty", caller(call))) {
+            row.object = FullRef(named->ref);
+            row.objectName = named->name;
+            row.objectClass = named->className;
         } else {
             row.object = {ReusableRef(Ref{static_cast<uintptr_t>(call.row.object), -1, 0}).text};
         }
         if (function.known && !call.block.empty()) {
             std::vector<shape::CallsValue> values;
-            for (const auto& parameter : function.signature.parameters) {
-                if (!parameter.size || size_t{parameter.offset} + parameter.size > call.block.size()) continue;
+            each(call, [&](const ue::Field& parameter) {
                 shape::CallsValue value;
                 value.name = parameter.name;
-                value.direction = parameter.parameterFlags & ue::Return ? "return" :
-                    ue::InputParameter(parameter.parameterFlags) ? "in" : "out";
+                value.direction = direction(parameter);
                 bool partial = false;
-                value.value = JsonFieldValue(parameter, FieldBytes(call.block, parameter), structs,
-                    format_detail::UnresolvedName{}, partial, Style(session));
+                value.value = reader.Value(parameter, FieldBytes(call.block, parameter), partial);
                 value.truncated = partial;
                 values.push_back(std::move(value));
-            }
+            });
             row.values = std::move(values);
         }
         out.rows.push_back(std::move(row));
     }
     if (last < state.written) out.nextCursor = last;
+    if (reader.Unnamed()) out.unnamed = reader.Unnamed();
     return out;
 }
 }

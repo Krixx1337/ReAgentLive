@@ -87,9 +87,14 @@ ObjectLayout SdkLayout() {
     shape.objectNameOffset = static_cast<uint32_t>(offsetof(SDK::UObject, Name));
     shape.objectFlagsOffset = static_cast<uint32_t>(offsetof(SDK::UObject, Flags));
     shape.nameNumberOffset = static_cast<uint32_t>(offsetof(SDK::FName, Number));
+    shape.objectOuterOffset = static_cast<int32_t>(offsetof(SDK::UObject, Outer));
     return {shape, static_cast<int32_t>(offsetof(SDK::UStruct, SuperStruct)),
             static_cast<int32_t>(offsetof(SDK::UStruct, Size)), true};
 }
+// The identity a client guards objects with (protocol_ue.h) is this SDK's
+// header too: the stock shapes are asserted beside Find.
+static_assert(offsetof(SDK::UObject, Index) == ObjectIdentityOffset &&
+              offsetof(SDK::UObject, Class) == ObjectIdentityOffset + 4);
 // Template() tests these flags by value.
 static_assert(static_cast<uint32_t>(SDK::EObjectFlags::ClassDefaultObject) == 0x10 &&
               static_cast<uint32_t>(SDK::EObjectFlags::ArchetypeObject) == 0x20);

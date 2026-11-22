@@ -69,7 +69,7 @@ inline NameId ObjectName(const Object* object) {
     return {Field<int32_t>(object, shape.objectNameOffset), Field<uint32_t>(object, shape.objectNameOffset + shape.nameNumberOffset)};
 }
 // The object's outer: right after its name in the header.
-inline Object* ObjectOuter(const Object* object) { return Field<Object*>(object, Layout().shape.objectNameOffset + 8); }
+inline Object* ObjectOuter(const Object* object) { return Field<Object*>(object, globals::ObjectOuterOffset(Layout().shape)); }
 // A class's parent class (UStruct::SuperStruct), or null when unknown.
 inline const Object* SuperOf(const Object* type) {
     return Layout().superStruct < 0 ? nullptr : Field<const Object*>(type, static_cast<uint32_t>(Layout().superStruct));

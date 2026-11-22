@@ -128,6 +128,40 @@ inline Decoded WideString(std::span<const uint8_t> bytes) {
     return out;
 }
 
+// UTF-16LE text as UTF-8 for a JSON value: no escapes (JSON adds its own),
+// surrogate pairs joined, a lone half as '?'. Stops at a NUL.
+inline std::string Utf16(std::span<const uint8_t> bytes) {
+    std::string out;
+    const auto put = [&](uint32_t c) {
+        if (c < 0x80) out += static_cast<char>(c);
+        else if (c < 0x800) { out += static_cast<char>(0xc0 | c >> 6); out += static_cast<char>(0x80 | (c & 0x3f)); }
+        else if (c < 0x10000) {
+            out += static_cast<char>(0xe0 | c >> 12);
+            out += static_cast<char>(0x80 | (c >> 6 & 0x3f));
+            out += static_cast<char>(0x80 | (c & 0x3f));
+        } else {
+            out += static_cast<char>(0xf0 | c >> 18);
+            out += static_cast<char>(0x80 | (c >> 12 & 0x3f));
+            out += static_cast<char>(0x80 | (c >> 6 & 0x3f));
+            out += static_cast<char>(0x80 | (c & 0x3f));
+        }
+    };
+    for (size_t i = 0; i + 1 < bytes.size(); i += 2) {
+        const uint32_t c = bytes[i] | (bytes[i + 1] << 8);
+        if (!c) break;
+        if (c >= 0xd800 && c < 0xdc00 && i + 3 < bytes.size()) {
+            const uint32_t low = bytes[i + 2] | (bytes[i + 3] << 8);
+            if (low >= 0xdc00 && low < 0xe000) {
+                put(0x10000 + ((c - 0xd800) << 10) + (low - 0xdc00));
+                i += 2;
+                continue;
+            }
+        }
+        put(c >= 0xd800 && c < 0xe000 ? '?' : c);
+    }
+    return out;
+}
+
 // What a region is, in one word: code, rodata or data inside an image (by
 // its section, else its protection), mapped, private, reserved or free.
 // Private read-write memory is `private`: a stack is not told from a heap.

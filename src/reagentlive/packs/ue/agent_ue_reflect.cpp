@@ -75,46 +75,50 @@ bool PlainData(const SDK::FProperty* property, const Host& host) {
 }
 
 namespace {
+// One property as it goes on a page: its numbers, struct refs and full names.
+struct FieldText {
+    FieldRecord numbers{};
+    Ref structType{}, valueStructType{};
+    std::string name, type, owner, elementType, structName, valueType, valueStructName;
+    FieldStrings Strings() const { return {name, type, owner, elementType, structName, valueType, valueStructName}; }
+};
+
 // The struct a StructProperty holds, as a ref the client can pass to Fields.
-void DescribeStruct(const SDK::FField* field, Ref& structType, char (&structName)[48], const Context& pack,
+void DescribeStruct(const SDK::FField* field, Ref& structType, std::string& structName, const Context& pack,
                     const Host& host) {
     if (!host.readable(field, sizeof(SDK::FStructProperty))) return;
     const SDK::UStruct* type = static_cast<const SDK::FStructProperty*>(field)->Struct;
     const Ref ref = Identify(type, pack);
     if (!ref.address || !type->IsA(SDK::EClassCastFlags::Struct)) return;
     structType = ref;
-    const auto name = NameOf(type->Name);
-    CopyText(structName, View(name));
-}
-void DescribeStruct(const SDK::FField* field, FieldEntry& entry, const Context& pack, const Host& host) {
-    DescribeStruct(field, entry.structType, entry.structName, pack, host);
+    structName = NameOf(type->Name);
 }
 
 // A map's key and value or a set's element, and the element layout when it
 // passes ContainerLayoutValid (stride stays 0 otherwise).
-void DescribeContainer(const SDK::FField* field, bool map, FieldEntry& entry, const Context& pack, const Host& host) {
+void DescribeContainer(const SDK::FField* field, bool map, FieldText& entry, const Context& pack, const Host& host) {
     const auto* base = reinterpret_cast<const uint8_t*>(field);
     if (!host.readable(base, (map ? MapLayoutOffset : SetLayoutOffset) + sizeof(ContainerLayout))) return;
-    const auto inner = [&](const SDK::FProperty* property, char (&type)[32], uint32_t& size, Ref& structType,
-                           char (&structName)[48]) {
+    const auto inner = [&](const SDK::FProperty* property, std::string& type, uint32_t& size, Ref& structType,
+                           std::string& structName) {
         if (!host.readable(property, sizeof(SDK::FProperty)) ||
             !host.readable(property->ClassPrivate, sizeof(SDK::FFieldClass)) || property->ElementSize <= 0) return false;
         size = static_cast<uint32_t>(property->ElementSize);
-        CopyText(type, View(NameOf(property->ClassPrivate->Name)));
-        if (std::string_view(type) == "StructProperty") DescribeStruct(property, structType, structName, pack, host);
+        type = NameOf(property->ClassPrivate->Name);
+        if (type == "StructProperty") DescribeStruct(property, structType, structName, pack, host);
         return true;
     };
     const SDK::FProperty* key = map ? static_cast<const SDK::FMapProperty*>(field)->KeyProperty
                                     : static_cast<const SDK::FSetProperty*>(field)->ElementProperty;
-    if (!inner(key, entry.elementType, entry.elementSize, entry.structType, entry.structName)) return;
-    if (map && !inner(static_cast<const SDK::FMapProperty*>(field)->ValueProperty, entry.valueType, entry.valueSize,
+    if (!inner(key, entry.elementType, entry.numbers.elementSize, entry.structType, entry.structName)) return;
+    if (map && !inner(static_cast<const SDK::FMapProperty*>(field)->ValueProperty, entry.valueType, entry.numbers.valueSize,
                       entry.valueStructType, entry.valueStructName)) return;
     ContainerLayout layout{};
     if (map) memcpy(&layout, base + MapLayoutOffset, sizeof(layout));
     else memcpy(&layout.hashNextIdOffset, base + SetLayoutOffset, 3 * sizeof(int32_t));
-    if (!ContainerLayoutValid(layout, entry.elementSize, entry.valueSize)) return;
-    entry.stride = static_cast<uint32_t>(layout.stride);
-    entry.valueOffset = map ? static_cast<uint32_t>(layout.valueOffset) : 0;
+    if (!ContainerLayoutValid(layout, entry.numbers.elementSize, entry.numbers.valueSize)) return;
+    entry.numbers.stride = static_cast<uint32_t>(layout.stride);
+    entry.numbers.valueOffset = map ? static_cast<uint32_t>(layout.valueOffset) : 0;
 }
 
 // Each native interface `start` or a parent implements, from the class's
@@ -476,8 +480,9 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
     }
     const SDK::UStruct* type = object->IsA(SDK::EClassCastFlags::Struct) ?
         static_cast<const SDK::UStruct*>(object) : object->Class;
-    auto* entries = reinterpret_cast<FieldEntry*>(response.data);
-    uint32_t index = 0, count = 0;
+    FieldsPageWriter page(response.data);
+    bool full = false;
+    uint32_t index = 0;
     unsigned depth = 0;
     // Fields: the type's object-table index, so a client cache can tell whose
     // table it is (an instance reports its class). Parameters: the block size.
@@ -496,59 +501,64 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
                 Refuse(response, Status::BadRequest, "invalid parameter offset");
                 return Progress::Done;
             }
-            if (index++ < request.length || count >= MaxFieldsPerPage) continue;
-            FieldEntry& entry = entries[count++];
-            entry = {};
+            // Past this page's start; once a field did not fit, the rest are only counted.
+            if (index++ < request.length || full) continue;
+            FieldText entry;
+            FieldRecord& numbers = entry.numbers;
             if (signature) {
-                entry.reserved[0] = Param;
-                if (has(Flags::OutParm)) entry.reserved[0] |= Output;
-                if (has(Flags::ReturnParm)) entry.reserved[0] |= Return;
-                if (has(Flags::ReferenceParm)) entry.reserved[0] |= Reference;
-                if (has(Flags::ConstParm)) entry.reserved[0] |= Const;
-                if (PlainData(property, host)) entry.reserved[0] |= Plain;
-                if (property->ArrayDim == 1) entry.reserved[0] |= Scalar;
+                numbers.flags = Param;
+                if (has(Flags::OutParm)) numbers.flags |= Output;
+                if (has(Flags::ReturnParm)) numbers.flags |= Return;
+                if (has(Flags::ReferenceParm)) numbers.flags |= Reference;
+                if (has(Flags::ConstParm)) numbers.flags |= Const;
+                if (PlainData(property, host)) numbers.flags |= Plain;
+                if (property->ArrayDim == 1) numbers.flags |= Scalar;
             }
             const int64_t size = static_cast<int64_t>(property->ElementSize) * property->ArrayDim;
-            entry.offset = property->Offset > 0 ? static_cast<uint32_t>(property->Offset) : 0;
-            entry.size = size > 0 && size <= UINT32_MAX ? static_cast<uint32_t>(size) : 0;
-            entry.boolMask = 0;
-            CopyText(entry.name, View(NameOf(field->Name)));
+            numbers.offset = property->Offset > 0 ? static_cast<uint32_t>(property->Offset) : 0;
+            numbers.size = size > 0 && size <= UINT32_MAX ? static_cast<uint32_t>(size) : 0;
+            entry.name = NameOf(field->Name);
             if (host.readable(field->ClassPrivate, sizeof(SDK::FFieldClass))) {
-                CopyText(entry.type, View(NameOf(field->ClassPrivate->Name)));
+                entry.type = NameOf(field->ClassPrivate->Name);
                 const bool isBool = (field->ClassPrivate->CastFlags & static_cast<uint64_t>(SDK::EClassCastFlags::BoolProperty)) != 0;
                 if (isBool && host.readable(field, sizeof(SDK::FBoolProperty))) {
                     const auto* flag = static_cast<const SDK::FBoolProperty*>(field);
-                    entry.offset += flag->ByteOffset;
-                    entry.boolMask = flag->FieldMask;
+                    numbers.offset += flag->ByteOffset;
+                    numbers.boolMask = flag->FieldMask;
                 }
-                if (std::string_view(entry.type) == "StructProperty" && property->ArrayDim == 1)
-                    DescribeStruct(field, entry, pack, host);
-                const std::string_view typeName(entry.type);
-                if ((typeName == "MapProperty" || typeName == "SetProperty") && property->ArrayDim == 1 &&
+                if (entry.type == "StructProperty" && property->ArrayDim == 1)
+                    DescribeStruct(field, entry.structType, entry.structName, pack, host);
+                if ((entry.type == "MapProperty" || entry.type == "SetProperty") && property->ArrayDim == 1 &&
                     host.readable(field, sizeof(SDK::FSetProperty)))
-                    DescribeContainer(field, typeName == "MapProperty", entry, pack, host);
-                if (std::string_view(entry.type) == "ArrayProperty" && property->ArrayDim == 1 &&
+                    DescribeContainer(field, entry.type == "MapProperty", entry, pack, host);
+                if (entry.type == "ArrayProperty" && property->ArrayDim == 1 &&
                     host.readable(field, sizeof(SDK::FArrayProperty))) {
                     const auto* inner = static_cast<const SDK::FArrayProperty*>(field)->InnerProperty;
                     if (host.readable(inner, sizeof(SDK::FProperty)) &&
                         host.readable(inner->ClassPrivate, sizeof(SDK::FFieldClass)) && inner->ElementSize > 0) {
-                        entry.elementSize = static_cast<uint32_t>(inner->ElementSize);
-                        CopyText(entry.elementType, View(NameOf(inner->ClassPrivate->Name)));
-                        if (std::string_view(entry.elementType) == "StructProperty")
-                            DescribeStruct(inner, entry, pack, host);
+                        numbers.elementSize = static_cast<uint32_t>(inner->ElementSize);
+                        entry.elementType = NameOf(inner->ClassPrivate->Name);
+                        if (entry.elementType == "StructProperty")
+                            DescribeStruct(inner, entry.structType, entry.structName, pack, host);
                     }
                 }
             } else {
-                CopyText(entry.type, "?");
+                entry.type = "?";
             }
-            CopyText(entry.owner, View(owner));
+            entry.owner = owner;
+            if (page.Add(numbers, entry.structType, entry.valueStructType, entry.Strings())) continue;
+            if (!page.Count()) {
+                Refuse(response, Status::Refused, "a field's names do not fit one page");
+                return Progress::Done;
+            }
+            full = true; // The next page starts at this field.
         }
         if (signature && field) {
             Refuse(response, Status::NotReadable, "incomplete parameter metadata");
             return Progress::Done;
         }
     }
-    response.length = count * static_cast<uint32_t>(sizeof(FieldEntry));
+    response.length = page.Finish();
     response.detail = FindDetail(index, blockSize);
     StillSame(before, pack, response);
     return Progress::Done;

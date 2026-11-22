@@ -122,9 +122,9 @@ CALLS = [
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
     [C('dump', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
-                                                      'truncated': False, 'capped': False, 'object_lookup_limited': False})],
+                                                      'truncated': False, 'capped': False})],
     [C('dump', {'object': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
-        'ref': REF, 'rows': [], 'truncated': False, 'capped': False, 'object_lookup_limited': False})],
+        'ref': REF, 'rows': [], 'truncated': False, 'capped': False})],
     [C('census-diff', {'cls': 'Actor'}), ok({'classes': {'before': 3, 'after': 4}, 'instances': {'before': 9, 'after': 11},
                                                'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'before': 0, 'after': 2, 'samples': ['0x90#9:1']}]})],

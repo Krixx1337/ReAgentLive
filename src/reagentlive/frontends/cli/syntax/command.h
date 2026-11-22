@@ -113,7 +113,7 @@ struct Command {
 };
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).
-constexpr size_t MaxTypeName = 64;
+constexpr size_t MaxTypeName = 128;
 // watch --follow: an offset from the root object, inside the object.
 constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;

@@ -240,7 +240,15 @@ TEST_CASE("the stock shapes share the UE5 object header and differ only in the i
         CHECK(globals::ObjectHeaderBytes(shape) == 0x28);
         CHECK(shape.perChunk == 0x10000);
         CHECK(shape.itemSerialOffset == -1); // Unknown without an SDK: serials read 0.
+        CHECK(globals::ObjectOuterOffset(shape) == 0x20);
     }
+}
+
+TEST_CASE("an SDK's Outer offset sets where the outer and the header end are") {
+    auto shape = globals::StockShapes[0];
+    shape.objectOuterOffset = 0x28; // Case-preserving names: a 16-byte FName.
+    CHECK(globals::ObjectOuterOffset(shape) == 0x28);
+    CHECK(globals::ObjectHeaderBytes(shape) == 0x30);
 }
 
 namespace {

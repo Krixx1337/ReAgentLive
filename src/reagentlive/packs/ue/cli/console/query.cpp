@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <thread>
 #include <cstdio>
@@ -46,7 +47,7 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
         if (entry->name != name) continue;
         if (entry->verified) return entry->ref;
         auto object = ue::Describe(client, entry->ref);
-        if (object && object->ref == entry->ref && object->name == name) {
+        if (object && object->ref == entry->ref && ue::SameWireName(object->name, name, ue::FindNameBytes)) {
             entry->verified = true;
             return entry->ref;
         }
@@ -54,15 +55,15 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
         Ue(session).classRefs.erase(entry);
         break;
     }
-    // Exact: the agent stops at the first class or struct of that name instead
-    // of scanning (and counting) the whole table; an older agent gives the
-    // same first match by substring, so the name is still compared here.
+    // Exact: the agent compares the whole name and stops at the first class or
+    // struct of that name instead of scanning (and counting) the whole table.
+    // The reply's name is cut to the wire field, so it is compared that far.
     uint32_t from = 0;
     for (int page = 0; page < 64; ++page) {
         auto found = ue::Find(client, name, {"Struct", from, true});
         if (!found) return std::unexpected(found.error());
         for (const auto& object : found->objects) {
-            if (object.name != name) continue;
+            if (!ue::SameWireName(object.name, name, ue::FindNameBytes)) continue;
             Ue(session).classRefs.push_back({name, object.ref, true});
             return object.ref;
         }
@@ -70,6 +71,41 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
         from = found->next;
     }
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no class or struct named " + name});
+}
+
+// A default object (Default__Class) by exact name, kept for the session.
+Result<Ref> DefaultObject(Session& session, const std::string& name) {
+    auto& known = Ue(session).defaultObjects;
+    if (const auto found = std::ranges::find(known, name, &ClassRef::name); found != known.end()) return found->ref;
+    auto found = ue::Find(session.client, name, {"", 0, true});
+    if (!found) return std::unexpected(found.error());
+    for (const auto& object : found->objects)
+        if (ue::SameWireName(object.name, name, ue::FindNameBytes)) { // The agent compared it whole.
+            known.push_back({name, object.ref, true});
+            return object.ref;
+        }
+    return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no object named " + name});
+}
+
+// A pooled name's comparison index by text, kept for the session.
+Result<int32_t> NameIndex(Session& session, std::string_view text) {
+    auto& known = Ue(session).nameIndices;
+    std::string key(text); // FNames compare without case: every spelling shares one entry.
+    std::ranges::transform(key, key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (const auto found = known.find(key); found != known.end()) return found->second;
+    for (uint32_t from = 0;;) {
+        auto found = ue::NameFind(session.client, text, from);
+        if (!found) return std::unexpected(found.error());
+        // FNames compare without case.
+        for (const auto& match : found->names)
+            if (text::SameText(match.name, text)) {
+                known.emplace(key, match.index);
+                return match.index;
+            }
+        if (!found->next) break;
+        from = found->next;
+    }
+    return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no pooled name is '" + std::string(text) + "'"});
 }
 
 namespace {
@@ -723,7 +759,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
 }
 
 std::expected<WatchFieldRange, std::string> PackWatchField(Session& session, const Ref& object, std::string_view path) {
-    StructCache structs(session);
+    StructCache& structs = Ue(session).structs; // The session's, so a watch reuses known structs.
     const auto target = ResolvePath(session, structs, object, path, false);
     if (!target.error.empty()) return std::unexpected(target.error);
     if (target.native) return std::unexpected(std::string(path) + " is a native member: watch it as <addr>:<type>");

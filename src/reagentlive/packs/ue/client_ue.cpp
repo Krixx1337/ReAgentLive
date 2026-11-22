@@ -71,22 +71,21 @@ static Result<Signature> ReadFields(Client& client, const Ref& object, uint32_t 
         auto response = client.Send(request);
         if (!response) return std::unexpected(response.error());
         if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
-        const size_t count = response->length / sizeof(FieldEntry);
         const uint32_t total = FindTotal(response->detail);
         const uint32_t size = FindNext(response->detail);
-        if (response->length % sizeof(FieldEntry) || count > MaxFieldsPerPage ||
-            fields.size() + count > total || (!count && fields.size() < total) ||
-            (op == op::Parameters && !fields.empty() && size != result.size))
+        const size_t before = fields.size();
+        const bool read = ReadFieldsPage(response->data, response->length,
+            [&](const FieldRecord& r, const Ref& structType, const Ref& valueStructType, const FieldStrings& s) {
+                fields.push_back({r.offset, r.size, r.boolMask, std::string(s.type), std::string(s.name),
+                    std::string(s.owner), r.elementSize, std::string(s.elementType), structType, std::string(s.structName),
+                    op == op::Parameters ? r.flags : uint8_t{0}, r.stride, r.valueOffset, r.valueSize,
+                    std::string(s.valueType), valueStructType, std::string(s.valueStructName)});
+            });
+        const size_t count = fields.size() - before;
+        if (!read || fields.size() > total || (!count && fields.size() < total) ||
+            (op == op::Parameters && before && size != result.size))
             return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid fields page"});
         result.size = size;
-        for (size_t i = 0; i < count; ++i) {
-            FieldEntry entry;
-            memcpy(&entry, response->data + i * sizeof(FieldEntry), sizeof(entry));
-            fields.push_back({entry.offset, entry.size, entry.boolMask, Text(entry.type), Text(entry.name), Text(entry.owner),
-                entry.elementSize, Text(entry.elementType), entry.structType, Text(entry.structName),
-                op == op::Parameters ? entry.reserved[0] : uint8_t{0}, entry.stride, entry.valueOffset, entry.valueSize,
-                Text(entry.valueType), entry.valueStructType, Text(entry.valueStructName)});
-        }
         // Page 0 names the type: a known table whose first page matches is
         // reused. Not copied: under a hold the next request must follow within
         // the agent's short wait, and a large table takes longer to copy.

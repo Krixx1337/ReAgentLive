@@ -25,7 +25,7 @@ inline std::string ArrayHeader(std::span<const uint8_t> bytes, const char* kind)
 }
 
 // One property's value from its bytes (offset already applied). type is the
-// engine's property class name; boolMask as in ue::FieldEntry.
+// engine's property class name; boolMask as in ue::FieldRecord.
 template<class NameLookup = format_detail::UnresolvedName>
 std::string FormatValue(std::string_view type, std::span<const uint8_t> bytes,
                         uint8_t boolMask = 0, const NameLookup& nameLookup = {}) {

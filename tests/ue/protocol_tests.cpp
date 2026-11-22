@@ -75,9 +75,75 @@ TEST_CASE("function names split on the first colon") {
 
 TEST_CASE("find and field pages fit one response") {
     CHECK(ue::MaxFindResults * sizeof(ue::FindEntry) <= sizeof(Response::data));
-    CHECK(ue::MaxFieldsPerPage * sizeof(ue::FieldEntry) <= sizeof(Response::data));
+    CHECK(sizeof(ue::FieldsPageHeader) + ue::MaxFieldsPerPage * sizeof(ue::FieldRecord) <= sizeof(Response::data));
     CHECK(LayoutCore != 0);
     CHECK(ue::LayoutPart != 0);
+}
+
+TEST_CASE("a fields page carries whole names, each string and struct once") {
+    uint8_t data[MaxRead];
+    ue::FieldsPageWriter page(data);
+    const std::string owner(120, 'O'), name(120, 'N');
+    const Ref vector{0x1000, 7, 1};
+    ue::FieldRecord numbers{};
+    numbers.offset = 0x30;
+    numbers.size = 24;
+    REQUIRE(page.Add(numbers, vector, {}, {name, "StructProperty", owner, "", "Vector", "", ""}));
+    numbers.offset = 0x48;
+    REQUIRE(page.Add(numbers, vector, {}, {"Velocity", "StructProperty", owner, "", "Vector", "", ""}));
+    const uint32_t length = page.Finish();
+    // Two records, one ref, and "", the long name, the type, the owner, "Vector" and "Velocity" once each.
+    CHECK(length == sizeof(ue::FieldsPageHeader) + 2 * sizeof(ue::FieldRecord) + sizeof(Ref) +
+        1 + (name.size() + 1) + 15 + (owner.size() + 1) + 7 + 9);
+    std::vector<std::string> names, owners;
+    std::vector<Ref> structs;
+    CHECK(ue::ReadFieldsPage(data, length, [&](const ue::FieldRecord& r, const Ref& type, const Ref&, const ue::FieldStrings& s) {
+        names.emplace_back(s.name);
+        owners.emplace_back(s.owner);
+        structs.push_back(type);
+        CHECK(s.structName == "Vector");
+        CHECK(s.elementType.empty());
+        CHECK((r.offset == 0x30 || r.offset == 0x48));
+    }));
+    CHECK(names == std::vector<std::string>{name, "Velocity"});
+    CHECK(owners == std::vector<std::string>{owner, owner});
+    CHECK(structs[1].address == vector.address);
+    CHECK(structs[1].index == vector.index);
+}
+
+TEST_CASE("a fields page ends at the field that does not fit, and a broken page is refused") {
+    uint8_t data[MaxRead];
+    ue::FieldsPageWriter page(data);
+    ue::FieldRecord numbers{};
+    uint32_t added = 0;
+    while (page.Add(numbers, {}, {}, {"Field_" + std::to_string(added), "IntProperty", "Thing", "", "", "", ""})) ++added;
+    CHECK(added > 50); // A 352-byte entry fit 11.
+    const uint32_t length = page.Finish();
+    uint32_t read = 0;
+    CHECK(ue::ReadFieldsPage(data, length, [&](auto&&...) { ++read; }));
+    CHECK(read == added);
+    const auto refused = [&](auto&& damage) {
+        uint8_t copy[MaxRead];
+        memcpy(copy, data, length);
+        size_t size = length;
+        damage(copy, size);
+        return !ue::ReadFieldsPage(copy, size, [](auto&&...) {});
+    };
+    CHECK(refused([](uint8_t*, size_t& size) { --size; }));                      // Shorter than it says.
+    CHECK(refused([](uint8_t* p, size_t&) { p[0] = 0xFF; p[1] = 0xFF; }));        // Too many records.
+    CHECK(refused([&](uint8_t* p, size_t&) { p[length - 1] = 'x'; }));            // The last string unterminated.
+    CHECK(refused([](uint8_t* p, size_t&) {                                       // A name inside another string.
+        ue::FieldRecord r;
+        memcpy(&r, p + sizeof(ue::FieldsPageHeader), sizeof(r));
+        r.name += 1;
+        memcpy(p + sizeof(ue::FieldsPageHeader), &r, sizeof(r));
+    }));
+    CHECK(refused([](uint8_t* p, size_t&) {                                       // A ref the page does not hold.
+        ue::FieldRecord r;
+        memcpy(&r, p + sizeof(ue::FieldsPageHeader), sizeof(r));
+        r.structType = 1;
+        memcpy(p + sizeof(ue::FieldsPageHeader), &r, sizeof(r));
+    }));
 }
 
 TEST_CASE("object reads require a full ref and a bounded range") {
@@ -555,6 +621,34 @@ TEST_CASE("the call recorder's requests are bounded") {
     CHECK(ue::Check(request) == Status::BadRequest);
     // A full row fits a reply beside the state, so every row can be read.
     CHECK(sizeof(ue::CallsState) + sizeof(ue::CallsRow) + ue::MaxCallsBlock <= MaxRead);
+}
+
+TEST_CASE("a name cut by a wire field equals the full name as far as the field reaches") {
+    const std::string full(70, 'A');
+    char wire[ue::FindNameBytes]{};
+    CopyText(wire, full);
+    CHECK(ue::SameWireName(wire, full, ue::FindNameBytes));
+    CHECK(ue::SameWireName(full, wire, ue::FindNameBytes));
+    CHECK_FALSE(ue::SameWireName(wire, std::string(62, 'A') + "B", ue::FindNameBytes));
+    CHECK(ue::SameWireName("Thing", "Thing", ue::FindNameBytes));
+    CHECK_FALSE(ue::SameWireName("Thing", "Things", ue::FindNameBytes));
+}
+
+TEST_CASE("a finished recording slot is reused only after its grace, oldest first") {
+    using State = ue::CallsSlotState;
+    constexpr int64_t now = 10000;
+    ue::CallsSlotView slots[4]{{State::Recording, 0, 0}, {State::Finished, 0, now - 200},
+                               {State::Replaced, 0, 0}, {State::Finished, 0, now - 5000}};
+    CHECK(ue::PickCallsSlot(slots, 4, now) == 3);                     // Past the grace.
+    slots[3].restoredMs = now - 100;
+    CHECK(ue::PickCallsSlot(slots, 4, now) == 4);                     // Both too recent.
+    slots[1].restoredMs = now - ue::CallsReuseGraceMs;
+    slots[3].restoredMs = now - ue::CallsReuseGraceMs - 1;
+    CHECK(ue::PickCallsSlot(slots, 4, now) == 3);                     // The oldest restore.
+    slots[3].inFlight = 1;
+    CHECK(ue::PickCallsSlot(slots, 4, now) == 1);                     // A call still inside.
+    slots[2].state = State::Free;
+    CHECK(ue::PickCallsSlot(slots, 4, now) == 2);                     // A free slot first.
 }
 
 TEST_CASE("exec entries take only a row cursor") {

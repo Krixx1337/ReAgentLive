@@ -78,29 +78,14 @@ std::string FieldValue(const ue::Field& field, std::span<const uint8_t> bytes, S
 }
 
 namespace {
-// An array's element as a field of its own, so struct elements expand too.
-ue::Field ElementField(const ue::Field& array) {
-    ue::Field element{};
-    element.size = array.elementSize;
-    element.type = array.elementType;
-    element.structType = array.structType;
-    element.structName = array.structName;
-    return element;
-}
-
 // One previewed element's parts: an array's element, a set's element, or a
 // map's key and value, each at its offset in a slot of `stride` bytes.
 struct Part { const char* name; ue::Field field; uint32_t offset; };
 struct ElementLayout { uint32_t stride; std::vector<Part> parts; };
 ElementLayout ElementParts(const ue::Field& container) {
-    if (container.type == "ArrayProperty") return {container.elementSize, {{"value", ElementField(container), 0}}};
-    if (container.type == "SetProperty") return {container.stride, {{"value", ElementField(container), 0}}};
-    ue::Field value{};
-    value.size = container.valueSize;
-    value.type = container.valueType;
-    value.structType = container.valueStructType;
-    value.structName = container.valueStructName;
-    return {container.stride, {{"key", ElementField(container), 0}, {"value", std::move(value), container.valueOffset}}};
+    if (container.type == "ArrayProperty") return {container.elementSize, {{"value", Element(container), 0}}};
+    if (container.type == "SetProperty") return {container.stride, {{"value", MapKey(container), 0}}};
+    return {container.stride, {{"key", MapKey(container), 0}, {"value", MapValue(container), container.valueOffset}}};
 }
 // Occupied slots of a set or map field, or -1 when its header is not a valid one.
 int64_t SetCount(std::span<const uint8_t> bytes) {
@@ -160,65 +145,34 @@ Ref PointerRef(std::string_view type, std::span<const uint8_t> bytes) {
     return {};
 }
 
-// Fields plus their current values. Resolve only a bounded set of distinct pointers per dump.
-// Filters (--match, --nonzero, --changed) drop rows before any lookup for them.
+// A container field's first `count` elements, read as pages of entries (an
+// agent without entries: an array's 8-element preview).
+Result<ue::ArrayPreview> PreviewElements(Client& client, const Ref& object, const ue::Field& field, ue::ContainerKind kind,
+                                         uint32_t stride, uint32_t count) {
+    if (!client.Supports(ue::op::Entries)) {
+        if (kind != ue::ContainerKind::Array || !client.Supports(ue::op::PreviewArray))
+            return std::unexpected(Error{Error::Kind::Agent, Status::Refused, 0, {}, "agent cannot read container elements"});
+        return ue::PreviewArray(client, object, field);
+    }
+    ue::ArrayPreview out{};
+    for (uint32_t first = 0;;) {
+        auto page = ue::Entries(client, object, field.offset, kind, stride, first);
+        if (!page) return std::unexpected(page.error());
+        out.total = page->total;
+        out.bytes.insert(out.bytes.end(), page->bytes.begin(), page->bytes.end());
+        if (out.bytes.size() / stride >= count || !page->next || page->bytes.empty()) break;
+        first = page->next;
+    }
+    out.bytes.resize(std::min<size_t>(out.bytes.size() / stride, count) * stride);
+    return out;
+}
+
+// Fields plus their current values, every value through the shared reader.
+// Filters (--match, --nonzero, --changed, --own) drop rows before any lookup for them.
 void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, StructCache& structs, const Command& command,
                const std::optional<Snapshot>& sessionBaseline) {
     Client& client = session.client;
-    constexpr size_t MaxDescriptions = 32;
-    struct Description {
-        Ref target;
-        std::optional<ue::Object> object;
-    };
-    std::vector<Description> descriptions;
-    bool describe = client.Supports(ue::op::Describe);
-    const bool describeMany = client.Supports(ue::op::DescribeMany);
-    bool limited = false;
     constexpr size_t MaxArrays = 16;
-    size_t fieldLookups = 0, elementLookups = 0;
-    // Collecting: new targets wait in `pending` for one DescribeMany; otherwise
-    // (an agent without it) each is described at once.
-    bool collecting = false;
-    std::vector<size_t> pending;
-    const auto describePointer = [&](std::string_view type, std::span<const uint8_t> value, size_t& lookups)
-        -> const ue::Object* {
-        const auto target = PointerRef(type, value);
-        if (describe && (target.address || target.serial)) {
-            auto found = std::ranges::find(descriptions, target, &Description::target);
-            if (found == descriptions.end() && lookups < MaxDescriptions) {
-                ++lookups;
-                if (collecting) {
-                    pending.push_back(descriptions.size());
-                    descriptions.push_back({target, std::nullopt});
-                    return nullptr;
-                }
-                auto result = ue::Describe(client, target);
-                if (!result && result.error().kind == Error::Kind::Timeout) {
-                    describe = false;
-                    limited = true;
-                }
-                descriptions.push_back({target, result ? std::optional(std::move(*result)) : std::nullopt});
-                found = std::prev(descriptions.end());
-            }
-            if (found == descriptions.end()) limited = true;
-            else if (found->object) return &*found->object;
-        }
-        return nullptr;
-    };
-    const auto describePending = [&] {
-        if (pending.empty()) return;
-        std::vector<Ref> targets;
-        for (const size_t slot : pending) targets.push_back(descriptions[slot].target);
-        auto found = ue::DescribeMany(client, targets);
-        if (found) {
-            for (size_t i = 0; i < pending.size() && i < found->size(); ++i)
-                descriptions[pending[i]].object = std::move((*found)[i]);
-        } else {
-            limited = true;
-            if (found.error().kind == Error::Kind::Timeout) describe = false;
-        }
-        pending.clear();
-    };
     std::optional<Snapshot> loaded;
     const Snapshot* baseline = nullptr;
     if (command.changed) {
@@ -249,14 +203,14 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     size_t end = DumpEnd(sorted);
     for (const auto& check : native.shown)
         end = std::max(end, std::min<size_t>(size_t{check.member->field.offset} + check.member->field.Size(), MaxDumpBytes));
-    auto bytes = client.ReadRange(object.address, end);
+    auto bytes = ReadObjectBytes(client, object, end);
     if (!bytes) return CommandError(session, "dump", bytes.error());
     std::vector<bool> keep(sorted.size(), true);
     size_t shown = 0;
     for (size_t i = 0; i < sorted.size(); ++i) {
         const auto& f = sorted[i];
         const auto data = FieldBytes(*bytes, f);
-        if (command.own) keep[i] = f.owner == ownClass;
+        if (command.own) keep[i] = ue::SameWireName(f.owner, ownClass, ue::FindClassBytes); // An instance's class name is cut.
         if (!command.match.empty() && keep[i])
             keep[i] = text::ContainsNoCase(session.names.Display(f), command.match) ||
                 text::ContainsNoCase(f.name, command.match);
@@ -272,124 +226,77 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         shown += keep[i];
     }
 
-    // Reuse the captured previews when collecting names and printing the dump.
+    // Top-level arrays, sets and maps: their first elements (--elements, else
+    // the preview's 8), read once and printed beside the header.
+    const uint32_t previewCount = command.elements ? command.elements : RowReader::PreviewNested;
     struct Preview {
         size_t fieldIndex;
         Result<ue::ArrayPreview> elements;
     };
     std::vector<Preview> previews;
     size_t arrayLimitAt = sorted.size();
-    if (client.Supports(ue::op::PreviewArray)) {
-        for (size_t i = 0; i < sorted.size(); ++i) {
-            const auto& f = sorted[i];
-            const auto fieldBytes = FieldBytes(*bytes, f);
+    for (size_t i = 0; i < sorted.size(); ++i) {
+        const auto& f = sorted[i];
+        if (!keep[i]) continue;
+        const auto fieldBytes = FieldBytes(*bytes, f);
+        ue::ContainerKind kind = ue::ContainerKind::Array;
+        uint32_t stride = f.elementSize;
+        if (IsContainer(f.type)) {
+            if (!f.stride || SetCount(fieldBytes) <= 0) continue;
+            kind = f.type == "MapProperty" ? ue::ContainerKind::Map : ue::ContainerKind::Set;
+            stride = f.stride;
+        } else {
             ue::ArrayHeader header{};
-            const bool set = f.type == "SetProperty" || f.type == "MapProperty";
-            if (!keep[i]) continue;
-            if (set) {
-                if (!f.stride || !client.Supports(ue::op::Entries) || SetCount(fieldBytes) <= 0) continue;
-            } else if (f.type != "ArrayProperty" || fieldBytes.size() != sizeof(header) ||
-                f.elementType.empty() || !format_detail::Load(fieldBytes, header) ||
-                !ue::ArrayPreviewBytes(header, f.elementSize)) continue;
-            if (previews.size() == MaxArrays) {
-                arrayLimitAt = i;
-                break;
-            }
-            Result<ue::ArrayPreview> elements = std::unexpected(Error{});
-            if (set) {
-                const auto kind = f.type == "MapProperty" ? ue::ContainerKind::Map : ue::ContainerKind::Set;
-                auto page = ue::Entries(client, object, f.offset, kind, f.stride, 0);
-                if (page) {
-                    const size_t kept = std::min<size_t>(page->bytes.size() / f.stride, ue::MaxArrayPreviewElements);
-                    page->bytes.resize(kept * f.stride);
-                    elements = ue::ArrayPreview{page->total, std::move(page->bytes)};
-                } else {
-                    elements = std::unexpected(page.error());
-                }
-            } else {
-                elements = ue::PreviewArray(client, object, f);
-            }
-            const bool timedOut = !elements && elements.error().kind == Error::Kind::Timeout;
-            previews.push_back({i, std::move(elements)});
-            if (timedOut) break;
+            if (f.type != "ArrayProperty" || fieldBytes.size() != sizeof(header) || f.elementType.empty() ||
+                !format_detail::Load(fieldBytes, header) || !ue::ArrayPreviewBytes(header, f.elementSize)) continue;
         }
+        if (previews.size() == MaxArrays) {
+            arrayLimitAt = i;
+            break;
+        }
+        auto elements = PreviewElements(client, object, f, kind, stride, previewCount);
+        const bool timedOut = !elements && elements.error().kind == Error::Kind::Timeout;
+        previews.push_back({i, std::move(elements)});
+        if (timedOut) break;
     }
 
-    std::vector<int32_t> indices;
-    std::unordered_map<int32_t, size_t> nameSlots;
-    std::vector<std::string> names;
-    // Field values and preview elements through the decoder, its own names
-    // and texts included. The plain formatter (with the names collected here)
-    // stays for a top-level container's header beside its preview, --meta
-    // previews, and `before`: a snapshot's nested pointers may be freed.
-    RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
-    reader.KeepTopPointers(); // A pointer field is named on its row (`object`).
-    // A top-level container keeps its header: its preview already lists the elements.
-    const auto decoded = [&](const ue::Field& field) {
-        return !session.meta && field.type != "ArrayProperty" && !IsContainer(field.type);
-    };
-    if (client.Supports(ue::op::Names)) {
-        const auto collectName = [&](int32_t index) -> std::string_view {
-            if (index >= 0 && nameSlots.try_emplace(index, indices.size()).second)
-                indices.push_back(index);
-            return {};
-        };
-        for (size_t i = 0; i < sorted.size(); ++i)
-            if (keep[i]) {
-                FormatField(sorted[i], FieldBytes(*bytes, sorted[i]), structs, 0, collectName);
-                bool ignored = false;
-                if (decoded(sorted[i])) reader.Value(sorted[i], FieldBytes(*bytes, sorted[i]), ignored);
-            }
-        for (const auto& preview : previews) {
-            if (!preview.elements) continue;
-            const auto layout = ElementParts(sorted[preview.fieldIndex]);
-            const auto data = std::span(preview.elements->bytes);
-            for (size_t offset = 0; offset < data.size(); offset += layout.stride)
-                for (const auto& part : layout.parts) {
-                    const auto element = data.subspan(offset + part.offset, part.field.size);
-                    FormatField(part.field, element, structs, 0, collectName);
-                    bool ignored = false;
-                    if (!session.meta) reader.Value(part.field, element, ignored);
-                }
-        }
-        if (auto result = ue::Names(client, indices); result) names = std::move(*result);
+    // Two readers: `live` for field values and preview elements, `held` for
+    // what is a copy (a container's header beside its preview, `before`):
+    // nothing is read through those. Both collect, resolve, then print.
+    RowReader live(session, structs, previewCount);
+    RowReader held(session, structs, previewCount);
+    for (RowReader* reader : {&live, &held}) {
+        reader->KeepTopPointers(); // A pointer field is named on its row (`object`).
+        reader->Meta(session.meta);
     }
-    const auto lookupName = [&](int32_t index) -> std::string_view {
-        const auto slot = nameSlots.find(index);
-        if (slot == nameSlots.end() || slot->second >= names.size()) return {};
-        return names[slot->second];
+    held.Snapshot();
+    const auto header = [](const ue::Field& field) { return field.type == "ArrayProperty" || IsContainer(field.type); };
+    const auto value = [&](const ue::Field& field, std::span<const uint8_t> data, bool& partial) {
+        return header(field) ? held.Value(field, data, partial) : live.Value(field, data, partial);
     };
-    // Text values (fields and array elements), converted by the engine.
-    TextBatch texts;
-    for (size_t i = 0; i < sorted.size(); ++i)
-        if (keep[i] && !decoded(sorted[i])) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i])); // Else: the decoder.
-    for (const auto& preview : previews) {
-        if (!preview.elements || !session.meta) continue; // Else: the decoder.
+    const auto parts = [&](const Preview& preview, auto&& visit) {
+        if (!preview.elements) return;
         const auto layout = ElementParts(sorted[preview.fieldIndex]);
         const auto data = std::span(preview.elements->bytes);
-        for (size_t offset = 0; offset < data.size(); offset += layout.stride)
-            for (const auto& part : layout.parts) texts.Add(part.field, data.subspan(offset + part.offset, part.field.size));
+        for (size_t offset = 0; offset + layout.stride <= data.size(); offset += layout.stride)
+            for (const auto& part : layout.parts) visit(offset, part, data.subspan(offset + part.offset, part.field.size));
+    };
+    for (size_t i = 0; i < sorted.size(); ++i) {
+        if (!keep[i]) continue;
+        bool ignored = false;
+        const auto data = FieldBytes(*bytes, sorted[i]);
+        value(sorted[i], data, ignored);
+        live.Named(sorted[i].type, data);
+        if (baseline) held.Value(sorted[i], FieldBytes(baseline->bytes, sorted[i]), ignored);
     }
-    texts.Resolve(session);
-    reader.Resolve();
-
-    // Every pointer the rows will name, in two requests: fields, then array elements.
-    if (describeMany) {
-        collecting = true;
-        for (size_t i = 0; i < sorted.size(); ++i)
-            if (keep[i]) describePointer(sorted[i].type, FieldBytes(*bytes, sorted[i]), fieldLookups);
-        describePending();
-        for (const auto& captured : previews) {
-            if (!captured.elements) continue;
-            const auto layout = ElementParts(sorted[captured.fieldIndex]);
-            const auto data = std::span(captured.elements->bytes);
-            for (size_t offset = 0; offset < data.size(); offset += layout.stride)
-                for (const auto& part : layout.parts)
-                    describePointer(part.field.type, data.subspan(offset + part.offset, part.field.size), elementLookups);
-        }
-        describePending();
-        collecting = false;
-    }
+    for (const auto& preview : previews)
+        parts(preview, [&](size_t, const Part& part, std::span<const uint8_t> element) {
+            bool ignored = false;
+            live.Value(part.field, element, ignored);
+            live.Named(part.field.type, element);
+        });
+    live.Resolve();
+    held.Resolve();
 
     const auto modules = LoadedModules(session);
     // A compact row's name: the readable one where it was recovered, the reflected one beside it as raw.
@@ -399,6 +306,11 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         if (!readable.empty() && readable != field.name) row.raw = field.name;
         row.offset = field.offset;
         if (session.meta) row.meta = MakeFieldInfo(field);
+    };
+    const auto named = [&](const ue::Object* found) -> std::optional<shape::Object> {
+        if (!found) return std::nullopt;
+        RememberRef(refs, found->ref);
+        return MakeObject(*found);
     };
     shape::Dump result;
     result.ref = ReusableRef(object);
@@ -413,56 +325,40 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         shape::DumpRow row;
         placed(row, field);
         const auto sparse = !session.meta && IsContainer(field.type) ? SparseValue(data) : std::nullopt;
-        row.value = sparse ? *sparse : decoded(field) ? reader.Value(field, data, partial) :
-            texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)), session.meta);
-        if (baseline) {
-            const auto old = FieldBytes(baseline->bytes, field);
-            row.before = JsonFieldValue(field, old, structs, lookupName, partial, Style(session), 1);
-        }
+        row.value = sparse ? *sparse : value(field, data, partial);
+        if (baseline) row.before = held.Value(field, FieldBytes(baseline->bytes, field), partial);
         row.valueWhere = Locate(PointerRef(field.type, data).address, modules);
-        if (const auto* named = describePointer(field.type, data, fieldLookups)) {
-            row.object = MakeObject(*named);
-            RememberRef(refs, named->ref);
-        }
+        row.object = named(live.Named(field.type, data));
         if (preview != previews.end() && preview->fieldIndex == i) {
             const auto& captured = *preview++;
             if (captured.elements) {
-                const auto& elements = *captured.elements;
                 const auto layout = ElementParts(field);
                 const bool map = layout.parts.size() == 2;
                 shape::Preview page;
-                page.total = elements.total;
-                const auto elementBytes = std::span(elements.bytes);
-                for (size_t offset = 0; offset < elementBytes.size(); offset += layout.stride) {
+                page.total = captured.elements->total;
+                const auto elementBytes = std::span(captured.elements->bytes);
+                for (size_t offset = 0; offset + layout.stride <= elementBytes.size(); offset += layout.stride) {
                     shape::PreviewElement item;
                     for (const auto& part : layout.parts) {
                         const auto element = elementBytes.subspan(offset + part.offset, part.field.size);
                         const bool key = std::string_view(part.name) == "key";
-                        // Through the decoder, as fields are: pointers nested in an
-                        // element are named; a top-level pointer element is named
-                        // beside it (`object`), as a pointer field is.
-                        auto value = session.meta ? texts.Value(part.field, element,
-                            JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1), true) :
-                            reader.Value(part.field, element, partial);
-                        if (key) item.key = std::move(value);
-                        else item.value = std::move(value);
-                        if (const auto* named = describePointer(part.field.type, element, elementLookups)) {
-                            (map ? (key ? item.keyObject : item.valueObject) : item.object) = MakeObject(*named);
-                            RememberRef(refs, named->ref);
-                        }
+                        auto decoded = live.Value(part.field, element, partial);
+                        if (key) item.key = std::move(decoded);
+                        else item.value = std::move(decoded);
+                        // A top-level pointer element is named beside it (`object`), as a pointer field is.
+                        (map ? (key ? item.keyObject : item.valueObject) : item.object) = named(live.Named(part.field.type, element));
                     }
                     page.elements.push_back(std::move(item));
                 }
-                partial |= page.elements.size() < elements.total;
+                partial |= page.elements.size() < page.total;
                 row.preview = std::move(page);
             } else {
                 partial = true;
                 row.previewError = captured.elements.error().message;
-                if (captured.elements.error().kind == Error::Kind::Timeout) describe = false;
             }
         } else if (field.type == "ArrayProperty") {
-            ue::ArrayHeader header{};
-            if (format_detail::Load(data, header) && header.count != 0) {
+            ue::ArrayHeader arrayHeader{};
+            if (format_detail::Load(data, arrayHeader) && arrayHeader.count != 0) {
                 partial = true;
                 row.previewError = i >= arrayLimitAt ? "array preview limit reached" : "array preview unavailable";
             }
@@ -479,7 +375,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                 std::span(from).subspan(field.offset, field.Size()) : std::span<const uint8_t>{};
         };
         const auto data = at(*bytes);
-        bool keepRow = (!command.own || check.member->owner == ownClass) &&
+        bool keepRow = (!command.own || ue::SameWireName(check.member->owner, ownClass, ue::FindClassBytes)) &&
             (command.match.empty() || text::ContainsNoCase(field.name, command.match));
         if (keepRow && command.nonzero) keepRow = std::ranges::any_of(data, [](uint8_t b) { return b != 0; });
         if (keepRow && baseline) {
@@ -509,8 +405,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         for (auto& row : result.rows) KeepNonZero(row.value);
     const size_t total = sorted.size() + native.shown.size();
     result.truncated = truncated;
-    if (reader.Unnamed()) result.unnamed = reader.Unnamed();
-    result.objectLookupLimited = limited;
+    if (const uint32_t unnamed = live.Unnamed() + held.Unnamed()) result.unnamed = unnamed;
     if (!command.match.empty() || command.nonzero || command.changed || command.own) result.filtered = shape::Filtered{shown, total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
     if (!TickAccurate(session)) result.tickAccurate = false;

@@ -202,7 +202,9 @@ start is a write the host approves.
   still holds the thunk. Otherwise something else swapped it since: it is
   left alone (`state: replaced`) and the thunk keeps forwarding, which is
   safe because the host's image stays loaded. `--dry` shows the pointer
-  and thunk without writing.
+  and thunk without writing. A stopped slot is reused only a second after
+  its restore, oldest first: a caller that loaded the thunk just before
+  the restore can still enter it, and must find the old original there.
 - **What is seen:** every call that goes through the engine's reflection.
   Through `ProcessEvent` (C++ callers, RPCs received, Blueprint events,
   delegates, `call`), the frame's `Node` is the function and its locals
@@ -221,13 +223,18 @@ start is a write the host approves.
   and counted), parameter blocks up to 1 KiB. Rows carry the sequence,
   milliseconds since the start, thread id and the calling object (named
   while it lives). `--object` keeps only calls on one object.
+- **Values** decode through the shared reader, as a copy (as `dump`'s
+  `before`): FNames and objects are named, but strings, arrays, sets and
+  maps print their headers, since the caller may have freed that memory
+  after the call; text is not converted.
 
 ## Class names
 
 `fields`, `dump`, `func`, `funcs` and `params` also take a bare class or
 struct name (`fields Character`). The console finds the object of
 that exact name under `Struct` once per agent instance and reuses its ref
-through the cache file. The lookup is an exact `find` (`FindExact`): the
+through the cache file. Names up to 127 characters: the agent compares the
+whole name, and the reply's name (cut at 63) is compared that far. The lookup is an exact `find` (`FindExact`): the
 agent stops at the first match instead of scanning and counting the whole
 table, so a class costs the slots up to it; only a name that is no class
 costs a full scan. An agent built before it treats the name as a substring
@@ -358,7 +365,11 @@ generated wrapper, so follow it separately when locating native game logic.
   `truncated` only when true. The layout (owner, type, size, bool mask)
   comes as `meta` with `--meta`; `fields` stays the layout command.
 - `--own` keeps the fields the object's own class declares (an instance's
-  class is looked up; a class target is its own).
+  class is looked up; a class target is its own). An instance's class name
+  arrives cut at 47 characters, so owners are compared that far.
+- The object is read in `read object` chunks, each checked to be the same
+  object: one freed or replaced mid-dump fails the command instead of
+  printing mixed bytes.
 - `dump` is `fields` plus `read`s of the object (4 KB per tick, up to 64 KB),
   formatted by property type (`frontends/cli/values/format.h`): structs expanded,
   bools by mask,
@@ -377,22 +388,24 @@ generated wrapper, so follow it separately when locating native game logic.
   pointer is `{path, object}`: the asset path, and the loaded object named
   or null. An instanced struct (`FInstancedStruct`) is `{struct, value}`:
   its struct type named, its memory decoded with that struct's members.
-- With agent support for `describe`, `dump` names single object, class and
-  weak object pointers. It looks up at most 32 distinct pointers in field
-  order, and 32 more among array elements: one describe-many request each
-  (one `describe` per pointer on an agent without it). Unresolved pointers
-  keep their raw values. `dump` appends reusable `$N` refs without
-  renumbering existing refs; `describe` makes its object `$1`. The next
-  successful `find` replaces the list.
-- Array previews show up to eight elements per array and up to 16 arrays
-  per dump; sets and maps with a known layout get the same preview (the
-  occupied count and the first eight entries, a map's as `key` and `value`),
-  through `entries`, for elements up to 512 bytes (fewer when eight would exceed
-  4 KB). The agent reads the header and elements on the same tick, so
-  short-lived entries are caught consistently. Elements use the usual value
-  formatter, structs expanded. Object
-  elements can get named refs with a separate budget of 32 distinct lookups.
-  Empty arrays and arrays with unavailable metadata keep their header.
+- Every value goes through the shared reader, as `get` and `each` decode
+  it: a top-level pointer field or element stays an address in `value` and
+  is named beside it (`object`, a map's `key_object` and `value_object`);
+  pointers inside values are named in place. Up to 112 distinct pointers
+  are named per dump, the rest counted in `unnamed`. `dump` appends
+  reusable `$N` refs without renumbering existing refs; `describe` makes its
+  object `$1`. The next successful `find` replaces the list.
+- `before` (`--changed`) decodes the snapshot's bytes the same way, as a
+  copy: names and objects are looked up, but nothing the snapshot points
+  into is read (arrays, sets, maps and strings print their headers) and no
+  text goes to the engine, because that memory may be freed since.
+- Arrays, sets and maps with a known layout get a preview beside their
+  header: the count and the first eight elements (`--elements N` for more),
+  a map's as `key` and `value`, read as pages of `entries` (an agent without
+  it: an array's 8-element preview), up to 16 containers per dump. The
+  agent reads a page's header and elements on the same tick, so short-lived
+  entries are caught consistently. Empty arrays and arrays with unavailable
+  metadata keep their header.
 - Struct values expand through `fields` on the struct type, as
   [compact values](console.md#fewer-round-trips) (`{"X": -928370, "Y": -861551, "Z":
   -81104}`; `record` files: `(X -928370, Y -861551, Z -81104)`). Nested structs expand up to

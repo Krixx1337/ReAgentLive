@@ -14,6 +14,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include "reagentlive/frontends/cli/code/native.h"
 #include "reagentlive/frontends/cli/syntax/text.h"
 #include "reagentlive/packs/ue/cli/values/pack_input.h"
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
@@ -121,6 +122,12 @@ public:
     // --meta: a value in its reflected layout (members with their layout, a
     // name's index and number, a text with how it was read), not compact.
     void Meta(bool meta) { meta_ = meta; }
+    // Values copied earlier (dump's `before`, a recorded call's block): the
+    // memory they point into may be freed since, so nothing is read through
+    // them (arrays, sets, maps and strings print their headers) and no text
+    // goes to the engine. Names and object pointers are still looked up: by
+    // index, and by a describe the agent checks.
+    void Snapshot() { snapshot_ = true; }
 
     // One value, its names looked up by the reader: collected on the first
     // pass, resolved by Resolve, used on the second.
@@ -136,6 +143,22 @@ public:
     }
     // Distinct pointers past MaxPointers, printed as addresses: the result's `unnamed`.
     uint32_t Unnamed() const { return unnamed_; }
+    // A top-level pointer's object, for a verb that names it beside its value
+    // (dump's `object`): collected on the first pass, found after Resolve; null
+    // when it is not a pointer, null, gone or past MaxPointers.
+    const ue::Object* Named(std::string_view type, std::span<const uint8_t> bytes) {
+        if (!IsPointer(type) || bytes.size() != 8) return nullptr;
+        const Ref target = PointerRef(type, bytes);
+        if (!target.address && !target.serial) return nullptr;
+        const auto at = std::ranges::find(targets_, target);
+        if (!resolved_) {
+            if (at == targets_.end()) targets_.push_back(target);
+            return nullptr;
+        }
+        const auto slot = static_cast<size_t>(at - targets_.begin());
+        if (at == targets_.end() || slot >= asked_ || slot >= described_.size() || !described_[slot]) return nullptr;
+        return &*described_[slot];
+    }
 
     // Why a path names no member, or empty.
     std::string Check(const ue::Field& element, const RowPaths& paths, unsigned depth = 0) {
@@ -236,6 +259,9 @@ public:
     Json Value(const ue::Field& field, std::span<const uint8_t> bytes, const RowPaths& paths, const Names& names,
                bool& truncated, unsigned depth = 0, unsigned nest = 0) {
         const ValueStyle style{false, &session_.names};
+        if (snapshot_ && Follows(field)) // Its header: the memory behind it is not read.
+            return JsonFieldValue(field, bytes, structs_, names, truncated, ValueStyle{meta_, &session_.names},
+                meta_ && !depth && !nest ? 0u : 1u);
         if (meta_ && !depth && !nest) { // The reflected layout, as the plain formatter prints it.
             texts_.Add(field, bytes);
             return texts_.Value(field, bytes, JsonFieldValue(field, bytes, structs_, names, truncated, ValueStyle{true, &session_.names}),
@@ -258,7 +284,7 @@ public:
         const auto* members = field.type == "StructProperty" && nest < MaxStructs ? structs_(field.structType) : nullptr;
         if (!members || members->empty() || pack_input::LoneName(*members))
             return JsonFieldValue(field, bytes, structs_, names, truncated, style, 1);
-        if (paths.Empty())
+        if (paths.Empty() && !snapshot_)
             if (const auto* tags = TagList(*members)) return Tags(*tags, bytes, names, truncated, depth);
         Json row = Json::object();
         for (const auto& member : *members) {
@@ -272,6 +298,12 @@ public:
     }
 
 private:
+    // A value whose decoding reads memory it points into, or calls the engine.
+    static bool Follows(const ue::Field& field) {
+        return field.type == "TextProperty" || field.type == "ArrayProperty" || IsContainer(field.type) ||
+            field.type == "StrProperty" || (field.type == "StructProperty" && field.structName == "InstancedStruct");
+    }
+
     // The reader's own name lookup (Value without a lookup of the caller's).
     auto Names() {
         return [this](int32_t index) -> std::string_view {
@@ -387,16 +419,7 @@ private:
         const auto* data = Elements(header.data, size_t(chars) * 2);
         if (!data) { truncated = true; return nullptr; }
         if (chars < header.count - 1) truncated = true;
-        std::string text;
-        for (size_t i = 0; i + 1 < data->size(); i += 2) {
-            const uint32_t c = (*data)[i] | (*data)[i + 1] << 8;
-            if (c < 0x80) text += static_cast<char>(c);
-            else if (c < 0x800) { text += static_cast<char>(0xC0 | c >> 6); text += static_cast<char>(0x80 | (c & 0x3F)); }
-            else if (c >= 0xD800 && c < 0xE000) text += '?'; // A surrogate half: not paired here.
-            else { text += static_cast<char>(0xE0 | c >> 12); text += static_cast<char>(0x80 | (c >> 6 & 0x3F));
-                   text += static_cast<char>(0x80 | (c & 0x3F)); }
-        }
-        return text;
+        return native::Utf16(*data);
     }
 
     // A soft object or class pointer (FSoftObjectPtr): a weak pointer to the
@@ -419,12 +442,8 @@ private:
         if (const auto asset = text(at + 8); !asset.empty()) path += (path.empty() ? "" : ".") + asset;
         ue::ArrayHeader sub{};
         memcpy(&sub, bytes.data() + at + 16, sizeof(sub));
-        if (sub.data && sub.count > 1 && sub.count <= 1024)
-            if (const auto* chars = Elements(sub.data, size_t(sub.count - 1) * 2)) {
-                path += ':';
-                for (size_t i = 0; i + 1 < chars->size(); i += 2)
-                    path += static_cast<char>((*chars)[i + 1] ? '?' : (*chars)[i]);
-            }
+        if (!snapshot_ && sub.data && sub.count > 1 && sub.count <= 1024)
+            if (const auto* chars = Elements(sub.data, size_t(sub.count - 1) * 2)) path += ':' + native::Utf16(*chars);
         if (path.empty()) return nullptr;
         Json object = Pointer("WeakObjectProperty", bytes.first(8), nullptr);
         if (object.is_object() && (object.contains("gone") || object.contains("unverified"))) object = nullptr;
@@ -501,7 +520,7 @@ private:
     Session& session_;
     StructCache& structs_;
     uint32_t nested_;
-    bool topPointers_ = true, resolved_ = false, meta_ = false;
+    bool topPointers_ = true, resolved_ = false, meta_ = false, snapshot_ = false;
     std::vector<int32_t> nameIndices_;                  // FNames met, in order...
     std::vector<std::string> names_;                    // ...and their text, once resolved.
     std::vector<Ref> targets_;                          // Pointers met, in order.

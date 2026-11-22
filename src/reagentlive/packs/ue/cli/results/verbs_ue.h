@@ -187,7 +187,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"--start", Takes::One, "int", "N", "next_cursor: only calls after it"}},
             Of<shape::Calls>, parse::CallsRead,
             "values: in, out and return by name, read after the call (inputs as the function left them). Objects "
-            "are named while they live. A recording past its time is restored first."},
+            "are named while they live; strings, arrays, sets and maps print their headers (the caller may have "
+            "freed them). A recording past its time is restored first."},
         {"calls-stop", "ue", "end a recording now (restores the pointer) and return its calls",
             {}, {{"--slot", Takes::One, "int", "N", "the recording (default: the last started)"}},
             Of<shape::Calls>, parse::CallsStop,
