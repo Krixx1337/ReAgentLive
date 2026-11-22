@@ -157,8 +157,9 @@ Parsed Read(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// peek <addr> [count] [--label <file>] [--name <name>]: what live qwords hold.
-// --label appends the one qword's label to a labels file for the static tool.
+// peek <addr> [count] [--label [file]] [--name <name>]: what live qwords hold.
+// --label appends the one qword's label to a labels file for the static tool
+// (no file: the console's own).
 Parsed Peek(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;
@@ -170,6 +171,7 @@ Parsed Peek(const Args& args, const ParseContext& context) {
         return Fail("count must be 1.." + std::to_string(MaxPeek));
     if (args.Has("--name") && !args.Has("--label")) return Fail("--name goes with --label");
     if (args.Has("--label")) {
+        command.label = true;
         command.file = args.Value("--label");
         command.target = args.Value("--name");
         if (counted && count != 1) return Fail("--label takes one qword");

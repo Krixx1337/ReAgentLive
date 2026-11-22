@@ -124,12 +124,14 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"name", "Name", One, "str", "the member's name (a trailing ? marks it unconfirmed)"}},
             {}, Of<shape::NativeLabel>, parse::Label, "fields, dump and get then show it (native; stale after a patch)."},
         {"export-labels", "ue", "names for a static-analysis tool (JSON lines, one build)",
-            {{"file", "file", One, "path", path}},
+            {{"file", "file", Optional, "path", "the labels file (default: the console's, <console>.labels.jsonl)"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"},
              {"--kinds", Takes::One, "str", "exec,vtable,interface,global", "which rows to derive (default: all)"}},
             Of<shape::ExportLabels>, parse::ExportLabels,
-            "Native exec thunks, vtables, interface implementations, and the globals peek --label put in the "
-            "file (always kept). After another tool's mappings: --kinds interface,global."},
+            "Native exec thunks, vtables and interface implementations, merged into the file: names a static tool "
+            "wrote back (user), globals peek --label confirmed, kinds not derived now and other builds' lines are "
+            "kept; per address the highest rank wins (user, global, exec, interface, vtable). After another tool's "
+            "mappings: --kinds interface,global."},
         {"layout-export", "ue", "the reflected fields classes declare, into a file (JSON lines) for layout-check",
             {{"file", "file", One, "path", path}, {"classes", "Class", Some, "str", "a class or struct name, per class (up to 256)"}},
             {}, Of<shape::LayoutExport>, parse::LayoutExport,

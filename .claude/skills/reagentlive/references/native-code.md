@@ -35,18 +35,17 @@ Answer one-address questions live, with no database:
   an FName index shows as `name_hint`. Accept the hint only when the code
   uses it where a tag is expected, then `peek <addr> --label <file>`
   records it for the static tool.
-- **Names for the static tool:** with SDK-generator IDA mappings, import
-  those first, then `export-labels <file> --kinds interface,global`;
-  without them, a full `export-labels <file>`. Never a full export after
-  mappings. Import with `src/reagentlive/frontends/ida/import_labels.py`
-  (labels: `docs/commands/unreal.md#labels-for-a-static-tool`).
+- **Names for the static tool:** after SDK-generator mappings,
+  `export-labels --kinds interface,global`, else a full `export-labels`.
+  `import_labels` it; `export_names` what you named before closing, so later
+  saves show it (`docs/commands/unreal.md#labels-for-a-static-tool`).
 - After a game patch: a new database (the RVAs change), then export and
   import the labels again. The first auto-analysis of a large Unreal image
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
 - **No database of this build, or not worth one:** `disasm <addr> --function
   --save <file> --callees` (`--labels`: an `export-labels` file) and the IDA
-  loader (`src/reagentlive/frontends/ida/load_function.py`) give the function,
+  loader (`src/reagentlive/frontends/ida/reagentlive_ida.py`) give the function,
   its chunks and callees in seconds; decompile all in one Python call,
   `add_saved` the next save
   (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`). Install

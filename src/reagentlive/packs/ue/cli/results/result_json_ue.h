@@ -862,7 +862,8 @@ struct LayoutCheck {
 struct ExportLabels {
     std::string path, module;
     uint32_t timestamp = 0;
-    uint64_t total = 0, globals = 0, exec = 0, vtables = 0, interfaces = 0, interfaceLookups = 0;
+    uint64_t total = 0, globals = 0, user = 0, exec = 0, vtables = 0, interfaces = 0, interfaceLookups = 0;
+    uint64_t otherBuilds = 0;   // Lines of other builds, kept as they were.
     bool capped = false;
     template<class V> static void Describe(V& v) {
         v("path", &ExportLabels::path);
@@ -870,10 +871,12 @@ struct ExportLabels {
         v("timestamp", &ExportLabels::timestamp);
         v("total", &ExportLabels::total);
         v("globals", &ExportLabels::globals);
+        v("user", &ExportLabels::user);
         v("exec", &ExportLabels::exec);
         v("vtables", &ExportLabels::vtables);
         v("interfaces", &ExportLabels::interfaces);
         v("interface_lookups", &ExportLabels::interfaceLookups);
+        v("other_builds", &ExportLabels::otherBuilds);
         v("capped", &ExportLabels::capped);
     }
 };

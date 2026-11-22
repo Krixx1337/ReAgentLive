@@ -809,13 +809,14 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     };
     Names names;
     uint32_t pid = 0;
-    std::filesystem::path namesFile, usagePath;
+    std::filesystem::path namesFile, usagePath, labelsPath;
     bool namesRequired = false, record = true;
     std::string caller = "shell", sessionId;
     wchar_t module[MAX_PATH];
     if (const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH); length && length < MAX_PATH) {
         if (!config.namesFile.empty()) namesFile = std::filesystem::path(module).parent_path() / config.namesFile;
         usagePath = std::filesystem::path(module).replace_extension(L".usage.jsonl");
+        labelsPath = std::filesystem::path(module).replace_extension(L".labels.jsonl");
     }
     std::optional<std::vector<std::string>> oneShot;
     for (int i = 1; i < argc; ++i) {
@@ -901,6 +902,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     session.lastBeat = {client->Heartbeat(), Clock::now()};
     const auto cachePath = CachePath(pid);
     session.results = ResultsFolder(pid, client->AgentOwner());
+    session.labels = labelsPath;
     session.usage = {usagePath, record && !usagePath.empty(),
         std::format("{:%Y%m%dT%H%M%S}-{}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()),
             GetCurrentProcessId()), caller};

@@ -1,10 +1,10 @@
-"""The IDA label import's planning, without IDA."""
+"""The IDA names round trip's planning (labels in, your names out), without IDA."""
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'ida'))
-import import_labels as labels  # noqa: E402
+import reagentlive_ida as labels  # noqa: E402
 
 ROW = '{"kind":"%s","module":"Game.exe","module_size":4096,"name":"%s","rva":"%s","timestamp":7}'
 
@@ -25,11 +25,36 @@ class ImportLabels(unittest.TestCase):
         self.assertIsNone(labels.build_of(b'\xff' * 0x58))  # Not a header: bytes IDA never loaded.
         self.assertIsNone(labels.build_of(bytes(header[:0x40])))
 
-    def test_another_build_is_refused(self):
-        rows = labels.load([ROW % ('exec', 'A::execB', '0x10')])
-        self.assertIsNone(labels.check_build(rows, 4096, 7))
-        self.assertIn('another build', labels.check_build(rows, 4096, 8))
-        self.assertIn('no labels', labels.check_build([], 4096, 7))
+    def test_only_this_builds_rows_are_used(self):
+        mine, other = ROW % ('exec', 'A::execB', '0x10'), ROW.replace('"timestamp":7', '"timestamp":8') % ('exec', 'C::execD', '0x20')
+        rows = labels.of_build(labels.load([mine, other]), 4096, 7)
+        self.assertEqual([row['name'] for row in rows], ['A::execB'])      # One file holds several builds.
+        self.assertIn('no labels for this build', labels.of_build(labels.load([other]), 4096, 7))
+        self.assertIn('no labels', labels.of_build([], 4096, 7))
+
+    def test_a_users_name_outranks_reflected_ones(self):
+        rows = labels.load([ROW % ('exec', 'A::execB', '0x10'), ROW % ('user', 'Ricochet_Resolve', '0x10'),
+                            ROW % ('vtable', 'vtbl_A', '0x20'), ROW % ('global', 'GTag', '0x20')])
+        self.assertEqual([(row['rva'], row['name']) for row in labels.best(rows)],
+                         [(0x10, 'Ricochet_Resolve'), (0x20, 'GTag')])
+
+    def test_your_names_go_out_as_user_rows_added_or_updated(self):
+        build = {'module': 'Game.exe', 'module_size': 4096, 'timestamp': 7, 'base': 0x140000000}
+        rows = labels.user_rows([(0x6fa0aa0, 'Ricochet_Resolve'), (0x10, 'fn_10'), (0x20, 'sub_140000020'),
+                                 (0x30, 'stub_140000030'), (0x40, 'loc_40')], build)
+        self.assertEqual([(row['rva'], row['name'], row['kind']) for row in rows], [('0x6fa0aa0', 'Ricochet_Resolve', 'user')])
+        renamed = ROW % ('user', 'OldName', '0x6fa0aa0')
+        elsewhere = ROW % ('user', 'FromAnotherDatabase', '0x50')
+        other_build = ROW.replace('"timestamp":7', '"timestamp":8') % ('user', 'Kept', '0x60')
+        reflected = ROW % ('exec', 'A::execB', '0x10')
+        lines = labels.merge_user_rows([renamed, elsewhere, other_build, reflected, 'not json'], rows, build)
+        self.assertNotIn(renamed, lines)                    # Same address: updated.
+        self.assertIn(elsewhere, lines)                     # A name this database does not hold: kept.
+        self.assertIn(other_build, lines)
+        self.assertIn(reflected, lines)
+        self.assertEqual(labels.load(lines[-1:])[0]['name'], 'Ricochet_Resolve')
+        self.assertEqual(len(lines), 4)                     # The malformed line is dropped.
+        self.assertEqual(labels.merge_user_rows(lines, [], build), lines)   # Nothing of yours: nothing lost.
 
     def test_a_users_name_stays_and_the_label_becomes_a_comment(self):
         rows = labels.load([ROW % ('exec', 'A::execB', '0x10'), ROW % ('vtable', 'vtbl_A', '0x20'),

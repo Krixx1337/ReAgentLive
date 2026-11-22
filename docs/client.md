@@ -248,13 +248,12 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 
 Not interfaces: they never drive the agent.
 
-- **IDA label import** (`frontends/ida/import_labels.py`): run inside IDA,
-  it brings in a labels file the console wrote, refuses one from another
-  build and never replaces a name you gave
+- **IDA side** (`frontends/ida/reagentlive_ida.py`, one file in IDA's
+  loaders folder): loads what `disasm --save` wrote, so IDA decompiles it
+  without the whole image
+  ([saving a function](commands/fast-lane.md#saving-a-function-for-a-static-tool)),
+  and carries names both ways: `import_labels` brings in the console's
+  labels file, `export_names` writes the names you gave back into it
   ([labels for a static tool](commands/unreal.md#labels-for-a-static-tool)).
-- **IDA function loader** (`frontends/ida/load_function.py`): an IDA
-  loader for a function `disasm --function --save` wrote, so IDA
-  decompiles it without the whole image
-  ([saving a function](commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 - **Round-trip timings** (`frontends/python/benchmark.py`): measures calls
   against a running host.

@@ -340,7 +340,7 @@ sits on the console.
 | **CLI** | text REPL and JSON calls, `$N` refs (typed lines), `base+off`, hex dump | exists, on the client API; one [verb table](tool-interface.md#self-describing-console) describes every command |
 | **GUI** (later) | ImGui desktop window on the console's JSON calls | tables, watch panels |
 | **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON call per command; `reagentlive_gen.py` generates typed functions per console | exists; no logic of its own, so every command lands in the console first; results are strict against the console's table |
-| **Static-tool scripts** | `frontends/ida/import_labels.py`: imports the console's label file; `frontends/ida/load_function.py`: loads a function saved by `disasm --save` | exist; read a file, never talk to the agent |
+| **Static-tool side** | `frontends/ida/reagentlive_ida.py`: loads `disasm --save` files, imports the console's labels file and exports the names you gave back into it | exists; reads and writes files, never talks to the agent: the shared labels file is the link, the agent driving both tools is the bridge |
 | **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per row of the console's table | exists; on the console's JSON calls ([tool interface](tool-interface.md#tool-interface)) |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
 

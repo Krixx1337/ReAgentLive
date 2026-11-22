@@ -317,13 +317,16 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         for (size_t i = 0; i < n && i < items->size(); ++i)
             if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
     }
-    // --labels: the names this build's labels file gives, by address.
+    // --labels, else the console's labels file when there is one: the names
+    // this build's rows give, by address (the highest-ranked row per address).
     std::map<uint64_t, std::string> labels;
-    if (!command.labels.empty()) {
-        std::ifstream in(command.labels);
-        if (!in) return JsonError(session, jsonCommand, "file", "cannot read " + command.labels);
-        for (std::string text; std::getline(in, text);)
-            if (auto row = ParseLabel(text, *module, *timestamp)) labels[module->base + row->rva] = std::move(row->name);
+    {
+        std::ifstream in(command.labels.empty() ? session.labels : std::filesystem::path(command.labels));
+        if (!in && !command.labels.empty()) return JsonError(session, jsonCommand, "file", "cannot read " + command.labels);
+        std::vector<LabelRow> rows;
+        for (std::string text; in && std::getline(in, text);)
+            if (auto row = ParseLabel(text, *module, *timestamp)) rows.push_back(std::move(*row));
+        for (auto& row : MergeLabels(std::move(rows))) labels[module->base + row.rva] = std::move(row.name);
     }
     std::vector<save::Saved> saved;
     for (size_t i = 0; i < listings.size(); ++i) saved.push_back({starts[i], listings[i].rows, owners[i]});

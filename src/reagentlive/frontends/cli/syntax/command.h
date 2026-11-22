@@ -88,6 +88,8 @@ struct Command {
     // addresses from a labels file (--labels, export-labels' format).
     bool callees = false;
     std::string labels;
+    // peek --label: append the qword's label (to `file`, else the console's labels file).
+    bool label = false;
     // search text: 1 for ASCII, 2 for UTF-16 (--wide); rows then carry the text around each hit.
     uint8_t textSearch = 0;
     // read, peek, vtable, disasm: offsets of a pointer chain after the

@@ -60,15 +60,21 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     const auto inside = [&](uint64_t address) { return address >= module->base && address - module->base < module->size; };
     std::vector<LabelRow> rows;
 
-    // Globals the reader confirmed with peek --label, for this build only.
-    size_t globals = 0;
-    if (std::ifstream in(command.file); in) {
+    // The file it rewrites (the console's own by default): names a person
+    // gave (user), globals peek --label confirmed and kinds not derived now
+    // stay, and so does every other build's line.
+    const std::string path = command.file.empty() ? session.labels.string() : command.file;
+    if (path.empty()) return JsonError(session, jsonCommand, "file", "no labels file: give one");
+    std::vector<std::string> lines;
+    if (std::ifstream in(path); in)
         for (std::string line; std::getline(in, line);)
-            if (auto row = ParseLabel(line, *module, *timestamp); row && row->kind == "global") {
-                rows.push_back(std::move(*row));
-                ++globals;
-            }
-    }
+            if (!line.empty()) lines.push_back(line);
+    auto kept = KeepLabels(lines, *module, *timestamp, [&](std::string_view kind) {
+        return (wantExec && kind == "exec") || (wantVtables && kind == "vtable") || (wantInterfaces && kind == "interface");
+    });
+    const auto globals = static_cast<uint64_t>(std::ranges::count(kept.rows, std::string("global"), &LabelRow::kind));
+    const auto users = static_cast<uint64_t>(std::ranges::count(kept.rows, std::string("user"), &LabelRow::kind));
+    rows = std::move(kept.rows);
 
     // Every native function's exec thunk.
     size_t execCount = 0;
@@ -191,17 +197,18 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     }
 
     rows = MergeLabels(std::move(rows));
-    const auto temporary = std::filesystem::path(command.file).concat(".tmp");
+    const auto temporary = std::filesystem::path(path).concat(".tmp");
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+        for (const auto& line : kept.otherBuilds) out << line << '\n';
         for (const auto& row : rows)
             out << ToJson(MakeLabel(*module, *timestamp, module->base + row.rva, row.name, row.kind)).dump() << '\n';
-        if (!out) return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
+        if (!out) return JsonError(session, jsonCommand, "file", "cannot write " + path);
     }
     std::error_code error;
-    std::filesystem::rename(temporary, command.file, error);
-    if (error) return JsonError(session, jsonCommand, "file", "cannot replace " + command.file + ": " + error.message());
-    Emit(session, jsonCommand, shape::ExportLabels{command.file, module->name, *timestamp, rows.size(), globals,
-        execCount, vtableCount, interfaceCount, lookups, capped});
+    std::filesystem::rename(temporary, path, error);
+    if (error) return JsonError(session, jsonCommand, "file", "cannot replace " + path + ": " + error.message());
+    Emit(session, jsonCommand, shape::ExportLabels{path, module->name, *timestamp, rows.size(), globals, users,
+        execCount, vtableCount, interfaceCount, lookups, kept.otherBuilds.size(), capped});
 }
 }

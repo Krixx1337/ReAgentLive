@@ -477,7 +477,9 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
     result.address = start;
     result.where = Locate(start, modules);
     for (const auto& value : values) result.rows.push_back(MakePeekRow(value, modules));
-    if (!command.file.empty()) {
+    if (command.label) {
+        const std::string path = command.file.empty() ? session.labels.string() : command.file;
+        if (path.empty()) return JsonError(session, jsonCommand, "label", "no labels file: give one with --label");
         const auto* module = ModuleAt(start, modules);
         if (!module) return JsonError(session, jsonCommand, "label", "only addresses inside a loaded module can be labelled");
         if (!values[0].read) return JsonError(session, jsonCommand, "label", "the qword is unreadable");
@@ -488,9 +490,9 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
         const auto timestamp = ImageTimestamp(session, *module);
         if (!timestamp) return JsonError(session, jsonCommand, "label", "the module's PE header is unreadable");
         auto label = MakeLabel(*module, *timestamp, start, name, "global");
-        std::ofstream file(command.file, std::ios::binary | std::ios::app);
+        std::ofstream file(path, std::ios::binary | std::ios::app);
         file << ToJson(label).dump() << '\n';
-        if (!file) return JsonError(session, jsonCommand, "label", "cannot append to " + command.file);
+        if (!file) return JsonError(session, jsonCommand, "label", "cannot append to " + path);
         result.labelled = std::move(label);
     }
     Emit(session, jsonCommand, std::move(result));

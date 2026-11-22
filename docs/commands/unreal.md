@@ -506,31 +506,47 @@ names keep their instance suffix (`Row_2`).
 
 ## Labels for a static tool
 
-`export-labels <file> [--module M]
-[--kinds exec,vtable,interface,global]` (default the exe and every kind;
-a kind not asked for costs no requests) rewrites the file as JSON lines `{module, module_size,
-timestamp, rva, name, kind}`, one per RVA, for one build (image size and
-PE timestamp): every native function's exec thunk (`Class::execName`,
-`exec`), each class default object's vtable (`vtbl_Class`, named after a
-native class where one shares it with Blueprint classes, `vtable`), native
-interface implementations found through `func` on native class default
-objects (`Class::Interface_Function`, `interface`, at most 4096 lookups,
-`capped` past that), and the globals `peek --label` put in the file for
-this build (`global`, kept first, whatever `--kinds` says: only
-`peek --label` makes them). No blind scan of globals. Another tool's IDA
-mappings (Dumper-7's) are optional: imported first, they name exec
-thunks, vtables and types, and `--kinds interface,global` adds only what
-needs the running process.
+One names file carries what ReAgentLive and a static tool know about a
+build, both ways: `<console>.labels.jsonl` beside the console, the default
+for `export-labels`, `peek --label` and `disasm --save` (a save reads it
+when it exists). JSON lines `{module, module_size, timestamp, rva, name,
+kind}`; one file holds several builds (image size and PE timestamp tell
+them apart, and each command uses only the running build's rows). Per
+address the highest rank wins: `user` (a name a person gave in the static
+tool), `global` (`peek --label`), `exec`, `interface`, then the rest.
 
-`frontends/ida/import_labels.py`, run inside IDA (File > Script file, or
-`apply(path)` from a script or headless session), refuses another build
-(size and timestamp from the PE header IDA keeps, so a default load with
-no header bytes works), names each address, keeps a name the user set
-(the label becomes a comment), makes exec thunks functions, and prints how
-many rows it named, commented and skipped (already there). The whole
-import is one undo step, with a wait box that can cancel it. The result counts what was
-written: `total` rows, of which `globals`, `exec`, `vtables` and
-`interfaces`.
+`export-labels [file] [--module M]
+[--kinds exec,vtable,interface,global]` (default the console's file, the
+exe and every kind; a kind not asked for costs no requests) merges into the
+file: every native function's exec thunk (`Class::execName`, `exec`), each
+class default object's vtable (`vtbl_Class`, named after a native class
+where one shares it with Blueprint classes, `vtable`) and native interface
+implementations found through `func` on native class default objects
+(`Class::Interface_Function`, `interface`, at most 4096 lookups, `capped`
+past that). It keeps `user` and `global` rows, this build's rows of kinds
+not derived now and every other build's lines (`other_builds`). No blind
+scan of globals. Another tool's IDA mappings (Dumper-7's) are optional:
+imported first, they name exec thunks, vtables and types, and
+`--kinds interface,global` adds only what needs the running process. The
+result counts what was written: `total` rows of this build, of which
+`globals`, `user`, `exec`, `vtables` and `interfaces`.
+
+`frontends/ida/reagentlive_ida.py` is the IDA side (also the save loader,
+[saving a function](fast-lane.md#saving-a-function-for-a-static-tool)):
+
+- `import_labels(path)` (File > Script file runs it, asking for the file)
+  names a full database of the build (size and timestamp from the PE header
+  IDA keeps, so a default load with no header bytes works) or a save
+  database (the build its loader kept); the highest-ranked row per address,
+  a name you set stays (the label becomes a comment), exec thunks become
+  functions. One undo step, a wait box that can cancel it; it prints how
+  many rows it named, commented and skipped.
+- `export_names(path)` writes every name you gave in that database (not
+  `sub_…`, `fn_…` or other made-up names, and not names a file brought in)
+  as `user` rows of its build, adding or updating them; names it does not
+  hold stay (a save database never wipes what another database named).
+  The next save, import or export shows them: a finding named once stays
+  named, in saves and in the full database alike.
 
 ## Readable names
 

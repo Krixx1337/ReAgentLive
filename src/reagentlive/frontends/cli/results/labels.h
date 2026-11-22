@@ -19,10 +19,11 @@ struct LabelRow {
     bool operator==(const LabelRow&) const = default;
 };
 
-// Which row keeps an RVA that two rows share: what the reader confirmed
-// (peek --label), then reflected names, then names derived from layouts.
+// Which row keeps an RVA that two rows share: a name a person gave in the
+// static tool (user), what the reader confirmed (peek --label), then
+// reflected names, then names derived from layouts.
 inline int LabelRank(std::string_view kind) {
-    return kind == "global" ? 0 : kind == "exec" ? 1 : kind == "interface" ? 2 : 3;
+    return kind == "user" ? 0 : kind == "global" ? 1 : kind == "exec" ? 2 : kind == "interface" ? 3 : 4;
 }
 
 // Sorted by RVA, one row per RVA.
@@ -64,5 +65,27 @@ inline std::optional<LabelRow> ParseLabel(std::string_view line, const Module& m
     auto name = row["name"].get<std::string>();
     if (name.empty()) return std::nullopt;
     return LabelRow{rva, std::move(name), row["kind"].get<std::string>()};
+}
+
+// What an export keeps of the file it rewrites: this build's rows whose
+// kind it does not derive again (user and global names always survive),
+// and every other build's line unchanged. Malformed lines are dropped.
+struct KeptLabels {
+    std::vector<LabelRow> rows;
+    std::vector<std::string> otherBuilds;
+};
+template<class Derived>
+KeptLabels KeepLabels(std::span<const std::string> lines, const Module& module, uint32_t timestamp, Derived derived) {
+    KeptLabels kept;
+    for (const auto& line : lines) {
+        if (auto row = ParseLabel(line, module, timestamp)) {
+            if (!derived(row->kind)) kept.rows.push_back(std::move(*row));
+            continue;
+        }
+        const auto json = Json::parse(line, nullptr, false);
+        if (json.is_object() && json.contains("rva") && json.contains("name") && json.contains("timestamp"))
+            kept.otherBuilds.push_back(line);
+    }
+    return kept;
 }
 }

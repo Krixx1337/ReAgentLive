@@ -735,6 +735,24 @@ TEST_CASE("a labels line is read back only for the same build") {
     CHECK_FALSE(ParseLabel("not json", module, 7).has_value());
 }
 
+TEST_CASE("a name given in the static tool outranks every derived one, and an export keeps what it does not derive") {
+    CHECK(MergeLabels({{0x10, "A::execB", "exec"}, {0x10, "Ricochet_Resolve", "user"}, {0x10, "GTag", "global"}}) ==
+          std::vector<LabelRow>{{0x10, "Ricochet_Resolve", "user"}});
+    const Module module{"Game.exe", 0x7ff600000000, 0x100000};
+    const std::vector<std::string> lines{
+        Checked(MakeLabel(module, 7, module.base + 0x10, "A::execB", "exec")).dump(),
+        Checked(MakeLabel(module, 7, module.base + 0x20, "Ricochet_Resolve", "user")).dump(),
+        Checked(MakeLabel(module, 7, module.base + 0x30, "GTag", "global")).dump(),
+        Checked(MakeLabel(module, 7, module.base + 0x40, "vtbl_A", "vtable")).dump(),
+        Checked(MakeLabel(module, 8, module.base + 0x50, "Old", "user")).dump(),   // Another build.
+        "not json"};
+    const auto kept = KeepLabels(lines, module, 7, [](std::string_view kind) { return kind == "exec"; });
+    CHECK(kept.rows == std::vector<LabelRow>{{0x20, "Ricochet_Resolve", "user"}, {0x30, "GTag", "global"},
+                                             {0x40, "vtbl_A", "vtable"}});   // exec is derived again; vtable was not asked for.
+    REQUIRE(kept.otherBuilds.size() == 1);
+    CHECK(kept.otherBuilds[0] == lines[4]);
+}
+
 TEST_CASE("name and name-find results") {
     const std::vector<int32_t> indices{5, 6};
     const std::vector<std::string> names{"Health", ""};

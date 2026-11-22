@@ -27,6 +27,17 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Names round trip with IDA:** one labels file per console,
+  `<console>.labels.jsonl`, is the default for `export-labels`,
+  `peek --label` and `disasm --save` (read when it exists). `export-labels`
+  now merges into it and keeps what it does not derive (names given in IDA,
+  confirmed globals, other builds). The IDA side is one file,
+  `frontends/ida/reagentlive_ida.py`: the save loader plus `import_labels`
+  (full or save databases), `export_names` (your names back as `user`
+  rows, which outrank every derived name) and `decompile_all`. Breaking:
+  `load_function.py` and `import_labels.py` are gone; copy
+  `reagentlive_ida.py` into IDA's loaders folder and delete the old files
+  ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).
 - **Tail calls saved like calls:** `disasm --save --callees` also saves
   the functions a direct `jmp` out of the function (or its chunks) reaches,
   and names unsaved tail targets (`tail` rows), so a wrapper no longer
@@ -52,7 +63,7 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   ([disasm](docs/commands/fast-lane.md#disasm)).
 - **Decompile one function without a whole-image database:**
   `disasm --function --save <file>` and the IDA loader
-  `frontends/ida/load_function.py`
+  `frontends/ida/reagentlive_ida.py`
   ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 
 ### Improved
@@ -95,7 +106,7 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 - **A stale IDA loader loaded newer saves silently:** the loader now
   refuses a row kind it does not know and says to copy the new
-  `load_function.py`, instead of loading the file without its chunks or names.
+  `reagentlive_ida.py`, instead of loading the file without its chunks or names.
 - **Functions whose exception entry begins early listed nothing:** a
   packed image can start an entry a few bytes before the code, on bytes
   that do not decode. `disasm --function` then lists from the address given,

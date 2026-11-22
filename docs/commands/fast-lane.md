@@ -121,10 +121,10 @@ only through a jump table is not found.
   saved functions then read as names, and every callee decompiles from the
   same database. The result lists each saved function in `functions` and
   the call targets past the cap in `skipped`.
-- **`--labels <file>`** names functions, call targets and globals from
-  an `export-labels` file of the same build
-  ([labels](unreal.md#labels-for-a-static-tool)): exec thunks, interface
-  implementations and the globals `peek --label` confirmed.
+- **Names** come from the console's labels file when it exists, or
+  `--labels <file>` ([labels](unreal.md#labels-for-a-static-tool)): names
+  you gave in IDA (`user`), the globals `peek --label` confirmed, exec
+  thunks and interface implementations; the highest-ranked row per address.
 - **No partial saves.** A walk (no exception entry) from more than 32
   bytes past the last return, unconditional jump or padding in its
   unlisted piece adds `piece`, the piece holding the address, and `--save`
@@ -145,7 +145,7 @@ JSON lines:
 | `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch |
 | `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
 
-`frontends/ida/load_function.py` is the IDA loader: copy it into IDA's
+`frontends/ida/reagentlive_ida.py` is the IDA loader: copy it into IDA's
 user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and
 open the file; IDA's headless library reads the same folder, so an
 automated session opens it too. It builds an x64 database (Visual C++, so
@@ -164,7 +164,9 @@ or why it added nothing (another build, an unreadable file).
 
 - **Install name.** Any file name in the loaders folder works; IDA offers
   every loader there. After updating ReAgentLive, copy the repo's file over
-  the installed one: a loader older than the file refuses it at the first
+  the installed one (`reagentlive_ida.py`, which also replaces the
+  retired `load_function.py` and `import_labels.py`): a loader older than
+  the file refuses it at the first
   row kind it does not know ("this loader is older than the file"), so a
   save never loads with its chunks or names silently missing.
 - **Which loader ran.** The loader claims the file by its first line (a
@@ -178,11 +180,16 @@ or why it added nothing (another build, an unreadable file).
   piece holding the call, whose start may sit behind junk bytes
   ([disasm](#disasm)).
 - **From an automated session** (an IDA bridge with Python): open the
-  saved file, then decompile every function in one call:
+  saved file, then load this file as a module and call it:
 
   ```python
-  import ida_hexrays, ida_name, idautils
-  "\n\n".join(f"// {ida_name.get_name(f)}\n{ida_hexrays.decompile(f)}" for f in idautils.Functions())
+  import importlib.util, os, idaapi
+  path = os.path.join(idaapi.get_user_idadir(), 'loaders', 'reagentlive_ida.py')
+  spec = importlib.util.spec_from_file_location('reagentlive_ida', path)
+  rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
+  rl.decompile_all()            # every function's pseudocode, one string
+  rl.add_saved('<next save>')   # grow the database
+  rl.export_names('<console>.labels.jsonl')   # names you gave, for later saves
   ```
 
   The pseudocode already shows the saved constants' values: no need to

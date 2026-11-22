@@ -60,7 +60,7 @@ TEST_CASE("addresses accept base and module names with an offset inside the imag
     CHECK(Parse("search ptr game.exe+0x20", NoRefs, modules)->request.data[0] == 0x20);
 }
 
-TEST_CASE("export-labels takes a file and an optional module") {
+TEST_CASE("export-labels takes an optional file and an optional module") {
     auto parsed = Parse("export-labels labels.jsonl", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::ExportLabels);
@@ -69,7 +69,9 @@ TEST_CASE("export-labels takes a file and an optional module") {
     parsed = Parse("export-labels labels.jsonl --module engine.dll", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "engine.dll");
-    CHECK_FALSE(Parse("export-labels", NoRefs).has_value());
+    parsed = Parse("export-labels", NoRefs);              // The console's labels file.
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->file.empty());
     CHECK_FALSE(Parse("export-labels labels.jsonl --module", NoRefs).has_value());
     CHECK(parsed->limit == label_kind::All); // Every kind by default.
     parsed = Parse("export-labels labels.jsonl --kinds interface,global --module engine.dll", NoRefs);
@@ -119,7 +121,10 @@ TEST_CASE("peek reads up to 64 qwords and labels exactly one") {
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "TagGlobal");
     CHECK_FALSE(Parse("peek base+0x100 2 --label labels.jsonl", NoRefs, modules).has_value());
-    CHECK_FALSE(Parse("peek base+0x100 --label", NoRefs, modules).has_value());
+    parsed = Parse("peek base+0x100 --label", NoRefs, modules);   // The console's labels file.
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->label);
+    CHECK(parsed->file.empty());
     CHECK_FALSE(Parse("peek base+0x100 --label a b c", NoRefs, modules).has_value());
     CHECK_FALSE(Parse("peek base+0x100 --name TagGlobal", NoRefs, modules).has_value()); // A name labels nothing by itself.
 }

@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'ida'))
-import load_function as loader  # noqa: E402
+import reagentlive_ida as loader  # noqa: E402
 
 # As the console writes it: nlohmann sorts each row's keys.
 FUNCTION = ('{"base":"0x140000000","end":"0x140001006","module":"Game.exe","module_size":4096,'

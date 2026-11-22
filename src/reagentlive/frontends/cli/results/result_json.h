@@ -520,7 +520,7 @@ struct Label {
         v("timestamp", &Label::timestamp);
         v("rva", &Label::rva);
         v("name", &Label::name);
-        v("kind", &Label::kind, "global|exec|vtable|interface");
+        v("kind", &Label::kind, "user|global|exec|vtable|interface");
     }
 };
 
