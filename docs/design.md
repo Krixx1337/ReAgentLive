@@ -14,6 +14,11 @@ Current behaviour lives in the [command pages](INDEX.md#commands),
 
 ## Principles
 
+- **Read freely; never write code.** The line is invasiveness. Reading and
+  analysing live memory of any size is in scope; hooks or patches in
+  executable code and debugging (breakpoints, debug registers, exception
+  handlers in the target) are out for good. Writes to data are opt-in and
+  approved one by one.
 - **The core never hooks, and starts no threads unless the host opts in.**
   The host calls `Tick()` from a thread it trusts. The one exception is
   `search --background`, allowed only by `Host::backgroundSearch`: a single
@@ -233,19 +238,19 @@ were cheap and carry the parts no other tool has:
 - **Shaped for an AI's costs:** few commands, each doing a whole lookup, with
   filtered output.
 
-**Build or borrow.** A feature is built here only when it needs at least one
-of: the host's thread, tick timing, object identity, or host knowledge;
-**or when it is a local question about one address that should not wait for
-whole-program analysis** (the [fast lane](#fast-lane)). Anything else is
-borrowed from the tool that already does it:
+**Build or borrow.** A feature is built here when it needs at least one of:
+the host's thread, tick timing, object identity, or host knowledge; **or
+when it reads live code an agent should not wait on whole-program analysis
+for** (the [fast lane](#fast-lane)). What another tool already does well is
+borrowed:
 
 | Need | Borrow from | Not built here because |
 |---|---|---|
 | What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch` for the tick a value changes on, a trial write or `pin` to tell a value recomputed every tick from one set once, and `func --script` or `refs` for Blueprint readers |
 | Narrowing scans over the whole process, pointer scans | a memory scanner | large, and needs no tick or identity. A bounded one over one range (`mem-snap`, `mem-diff`, up to 1 MiB) is built: an AI agent cannot drive the scanner's window, and the range is usually an object it already found |
 | Tracing native code, direct C++ calls, code hooks | a dynamic instrumentation tool | code patches in the target; the core writes none. Reflected calls are covered by the call recorder (`calls-start`), one `UFunction` pointer |
-| What is at one address, what points at it, whether a signature holds there | nothing: the [fast lane](#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |
-| Call graphs, whole-function logic, decompiling, types, naming | a static analysis tool | it has the whole image, names and types |
+| What is at one address, what points at it, what uses a member offset, whether a signature holds there | nothing: the [fast lane](#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |
+| Decompiling, types, whole-program call graphs | a static analysis tool, fed by fast-lane saves (`--save --callees`) | it has the decompiler and the types; ReAgentLive hands it the live functions it needs in seconds |
 
 - **Be a good neighbour, not a rival.** Hand addresses over in a form other
   tools take (`module` and `rva`) and accept them back; that is ReAgentLive's
@@ -583,57 +588,64 @@ a time, since its own thread and Draw both tick the agent.
 ### Fast lane
 
 A static tool answers a question about one address only after analysing the
-whole image: hours for a large game, and again after every patch. The fast
-lane answers such local questions from live bytes in well under a second,
-with no database:
+whole image: hours for a large game, again after every patch, and longer on
+a packed image whose exception directory hides or fakes functions. The fast
+lane answers code questions from live bytes in well under a second, with no
+database:
 
 | Question | Command |
 |---|---|
-| What are the instructions here? | `disasm` |
+| What are the instructions here, or the whole function? | `disasm` (`--function`) |
 | What points here? | `xrefs` |
-| Is this pattern unique, and does it land here? | `sig --check` |
+| Which code near here uses these member offsets? | `touches` |
+| Is this pattern unique, and does it land here? | `sig-check` |
+| Decompile this function and what it calls | `disasm --function --save --callees`, then the static tool |
 
-- **The fence: these three, and nothing that needs the whole program.** No
-  decompiler, types, call graphs, naming, signature maker, or sweep over
-  every function or table. A fourth command qualifies only as a local,
-  one-address question answered from bytes. Everything else stays with the
-  static tool, reached through `module` and `rva`.
-- **Why the disassembler was un-parked.** It was parked because all code read
-  so far matched the file the static tool shows. That still holds; the
-  reason is analysis time on large images, not live code differing from the
-  file.
-- **A whole function and its constants are in** (`disasm --function`):
-  one function's bytes, decoded linearly to its entry's end, with the
-  values its read-only loads read and the strings it points at. Still local
-  to one address, and nothing is inferred; reading every instruction by
-  hand cost more calls than any other step in a live session.
-- **Saving one function for the static tool is in** (`--save`): the bytes
-  and constants, loaded by a small IDA loader into a database of that one
-  function, so the decompiler is borrowed, not built. A database of the
-  whole image takes hours; one function takes seconds.
-- **Function bounds are in** because they are a table lookup, not analysis:
-  the exception directory lists every function with unwind data, sorted, and
-  a lookup is a few held reads (sampled entries, then one window). No entry
-  is `function: null`; a leaf function is never guessed from padding or
-  prologues.
-- **Sweeps are out.** Finding every vtable, grouping them, naming them from
-  nearby strings is the one-address chain run thousands of times: a script
-  over the Python client, or the static tool's job. Layout habits such as
-  "the string sits after the table" belong to one linker, so nothing is
-  built on them.
+- **The fence is invasiveness, not size.** Anything that reads live bytes
+  and hands its result on is in scope, however much analysis it does:
+  following calls and jumps, naming from a labels file, bounded sweeps.
+  Out for good: hooks or patches in executable code, and debugging
+  (breakpoints, debug registers, exception handlers in the target); see
+  [principles](#principles). What the static tool already does well
+  (decompiling, types, whole-program call graphs) is borrowed, not rebuilt.
+- **Why the disassembler was un-parked.** It was parked because all code
+  read so far matched the file the static tool shows. That still holds; the
+  reason is analysis time on large and packed images, not live code
+  differing from the file.
+- **A whole function and its constants** (`disasm --function`): decoded
+  linearly to its entry's end, with the values its read-only loads read
+  and the strings it points at. Reading every instruction by hand cost more
+  calls than any other step in a live session.
+- **Saves for the static tool** (`--save`): the bytes and constants of a
+  function, its chained chunks and, with `--callees`, every function it
+  calls, named from a labels file; a small IDA loader builds one database
+  from them and `add_saved` grows it. The decompiler is borrowed: a
+  database of the whole image takes hours, a save seconds. Measured on a
+  packed image: a handler and 16 callees in one save (0.75 s) and three tool
+  calls to readable pseudocode, against about forty for seven functions one
+  at a time.
+- **Function bounds** come from the exception directory, a table lookup.
+  Code it leaves out is never called a function: `xrefs` and `touches`
+  label it `unlisted`, with the bounds of the piece between returns and
+  padding. Packed images fake the directory (one-byte decoys at a fixed
+  stride, entries a few bytes before the code, functions split into chained
+  chunks); each trick is handled where it was met, with the evidence on the
+  command page.
+- **Sweeps:** bounded, read-only ones are in (`touches` over a range, the
+  piece around one address). An image-wide sweep (every vtable, every
+  function) stays a script over the Python client: it is the one-address
+  chain run thousands of times, and its output is a file, not a reply.
 - **Where it lands.** Only the relative-reference scan behind `xrefs` is a
   core agent op (with a client call), since it reads memory only and works
-  with any host. The decoder (Zydis, pinned, formatter on) links into the console alone; a configure check
-  fails when an agent target links it. Kinds, bounds, string hints and
-  `sig` feedback are console work.
-- **Rejected:** following calls or conditional jumps in `disasm` (exploring a
-  function), structured operands or struct recovery from offsets, walking
-  backwards from an unrecognised reference to its instruction start (not
-  reliable on x86 without analysis; `disasm --function` shows it in place),
-  hooking a function to log callers (hooks stay out; `xrefs` gives the static
-  callers), and the step-0 check of whether the static tool decompiles an
-  unanalysed image fast enough to replace `disasm --function` (not run: the
-  host's database was already analysed).
+  with any host. The decoder (Zydis, pinned, formatter on) links into the
+  console alone; a configure check fails when an agent target links it.
+  Kinds, bounds, pieces, saves and `sig` feedback are console work.
+- **Not built, no case yet:** structured operands, struct recovery from
+  offsets, and walking backwards from an unrecognised reference to its
+  instruction start (unreliable on x86 without analysis; `disasm
+  --function` shows it in place). **Out for good:** hooking a function to
+  log its callers (a code hook; `xrefs` gives the static callers, and
+  `calls-start` records reflected calls through a pointer swap).
 
 ### Native objects
 
