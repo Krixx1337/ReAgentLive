@@ -128,7 +128,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     std::set<std::string> writers;
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
-    CHECK(writers == std::set<std::string>{"write", "trial", "trial-clear", "pin", "watch", "each", "call", "release", "calls-start"});
+    CHECK(writers == std::set<std::string>{"write", "trial", "trial-clear", "pin", "watch", "each", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
         {"help", "start, or a page's next_cursor"}});

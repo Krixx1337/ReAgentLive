@@ -225,6 +225,19 @@ Parsed Enum(const Args& args, const ParseContext& context) {
     return command;
 }
 
+// game-thread [on|off|status]: the host's Draw tick (status by default).
+Parsed GameThread(const Args& args, const ParseContext&) {
+    const std::string_view action = args.At(0);
+    Command command;
+    command.kind = Kind::GameThread;
+    command.request.op = ue::op::GameThread;
+    if (action.empty() || action == "status") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::Status);
+    else if (action == "on") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::On);
+    else if (action == "off") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::Off);
+    else return Fail("game-thread takes on, off or status");
+    return command;
+}
+
 Parsed Params(const Args& args, const ParseContext& context) {
     return FunctionTarget(args, context, ue::op::Parameters, Kind::Remote);
 }

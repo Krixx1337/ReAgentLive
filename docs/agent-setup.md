@@ -63,8 +63,11 @@ environment does not carry over to a new shell. The build writes
 
 `REAGENTLIVE_PACKS` empty leaves out the Unreal pack's tools. The
 own-thread host cannot run them, and leaving them out keeps the tool list
-small. Unreal support needs a host built into the user's own mod
-([hosting](hosting.md)).
+small. For a UE5 game, build the [Unreal example](../examples/unreal/README.md)
+instead (`cmake -S examples/unreal -B build/unreal ...`, then point the
+tools at `build/unreal/reagentlive-ue.exe`): the whole Unreal pack with no
+dump, engine calls after `game-thread on`. Or build a host into the user's
+own mod ([hosting](hosting.md)).
 
 ## 3. Generate the typed functions
 

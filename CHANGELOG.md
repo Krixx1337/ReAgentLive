@@ -7,6 +7,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **Unreal example** (`examples/unreal/`): one DLL for any UE5 game with
+  no dump: the whole Unreal pack on its own thread, engine calls after
+  `game-thread on`, and its console `reagentlive-ue.exe`.
+- **`game-thread [on|off|status]`** (new op 278, `reagentlive::ue-draw`,
+  `packs/ue/host_draw.h`): a game-thread tick through the game viewport's
+  Draw for hosts that tick elsewhere; one pointer in the viewport object is
+  swapped for a private copy of its Draw table. Protocol change: rebuild
+  and re-inject.
 - **`FirstLiveInstance(className)`** for hosts: the first live instance of
   a class or subclass once the object table is located (a host finding the
   game viewport to tick on its Draw, for one).

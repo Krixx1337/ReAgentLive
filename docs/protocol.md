@@ -114,6 +114,7 @@ stays inside its slot.
 | `entries` | 273 | Unreal pack |
 | `calls-start`, `calls-read`, `calls-stop` | 274, 275, 276 | Unreal pack |
 | `enum` | 277 | Unreal pack |
+| `game-thread` | 278 | Unreal pack, hosts that link `reagentlive::ue-draw` |
 
 Ops not in the host's command table are answered with `unsupported op`.
 Adding an op does not change the layout sum: the `ops` list advertises it,

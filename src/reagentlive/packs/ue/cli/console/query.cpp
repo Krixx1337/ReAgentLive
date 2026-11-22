@@ -93,6 +93,31 @@ Result<Ref> DefaultObject(Session& session, const std::string& name) {
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no object named " + name});
 }
 
+// game-thread [on|off|status]: the host's Draw tick, one request.
+void RunGameThread(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    if (!client.Supports(ue::op::GameThread))
+        return JsonError(session, jsonCommand, "unsupported", "this agent's host has no game-thread tick");
+    auto response = client.Send(command.request);
+    if (!response) return CommandError(session, jsonCommand, response.error());
+    if (response->status != Status::Ok) return CommandError(session, jsonCommand, AgentError(*response));
+    ue::GameThreadState state{};
+    if (response->length != sizeof(state)) return JsonError(session, jsonCommand, "agent", "invalid game-thread reply size");
+    memcpy(&state, response->data, sizeof(state));
+    constexpr const char* Modes[] = {"off", "waiting", "conflict", "on", "stopped"};
+    shape::GameThread out;
+    out.mode = state.mode < std::size(Modes) ? Modes[state.mode] : "unknown";
+    out.text = std::string(state.text, strnlen(state.text, sizeof(state.text)));
+    if (state.thread) out.thread = state.thread;
+    if (state.viewport) out.viewport = Addr(state.viewport);
+    if (state.table) out.table = Addr(state.table);
+    if (state.draw) {
+        out.draw = Addr(state.draw);
+        out.drawWhere = Locate(state.draw, LoadedModules(session));
+    }
+    Emit(session, jsonCommand, std::move(out));
+}
+
 // enum <object|Enum>: the names and values, named in one names request.
 void RunEnum(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;

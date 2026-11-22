@@ -240,9 +240,12 @@ hooks it in a new game, confirm the target, read-only:
    `UGameViewportClient::Draw`. Anything else: do not hook it; report what
    entry 4 is.
 
-Then the user switches the host to the game-thread tick, `status` shows
-`host_thread: engine`, and the known-answer call (`call` group above, with
-the user's approval) proves the rest. Ask the user to test the host's stop
+Then, with the user's approval (it writes one pointer in the viewport
+object), `game-thread on` on a host that links `reagentlive::ue-draw` (or
+the host's own switch); `game-thread` shows the mode and the hooked Draw's
+RVA, `status` shows `host_thread: engine`, and the known-answer call
+(`call` group above, approved too) proves the rest. `game-thread off` puts
+the table back. Ask the user to test the host's stop
 (it must put back whatever the hook replaced) before ending the session.
 
 ## Reading names while probing

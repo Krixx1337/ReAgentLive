@@ -5,6 +5,17 @@ targets, the host checklist, the `Tick` call, which thread to tick on, and
 logging. Code rules the library
 keeps for injected images: [contributing](contributing.md#code-rules).
 
+## Unreal example
+
+The same shape for any UE5 game with no dump: `examples/unreal/host.cpp`
+ticks the whole Unreal pack on its own thread (`reagentlive::ue-base`, the
+stock UE5 layout checked on known objects) and links
+`reagentlive::ue-draw`, so `game-thread on` moves the tick to the game
+viewport's Draw, where engine calls work. Its console is
+`reagentlive-ue.exe`, section `Local\reagentlive-ue-<pid>`; its
+[README](../examples/unreal/README.md) is the quick start. Like the
+own-thread example it is a starting point, loaded with any DLL loader.
+
 ## Own-thread example
 
 The fast way in, for any x64 process with no mod and no SDK:
@@ -30,7 +41,8 @@ reagentlive -c "status; modules; region <module>+0x1000"
   [fast lane](commands/fast-lane.md) and
   [native objects](commands/native-objects.md).
 - **Not included:** object commands and engine calls: they need a pack and a
-  host on the engine's thread. The console refuses them with a message
+  host on the engine's thread (the [Unreal example](#unreal-example) for
+  UE5 games). The console refuses them with a message
   saying the host has no Unreal pack. `status` says `host_thread: own` and
   `packs: []`; reads can be torn and a write can race the game. Configure
   with `-DREAGENTLIVE_PACKS=` for a console (and tools) without the
@@ -124,6 +136,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 |---|---|
 | `reagentlive::core` | `core/agent.cpp`, include root, C++23 |
 | `reagentlive::ue-base` | every Unreal pack agent file, `packs/ue/agent_ue*.cpp` (defined with `ue` in `REAGENTLIVE_PACKS`), links `core`; no SDK: the stock UE5 layout, each group checked on known objects before its ops run ([without an SDK](commands/unreal.md#without-an-sdk)) |
+| `reagentlive::ue-draw` | opt-in host helper, links `ue-base`: a game-thread tick through the game viewport's Draw and the `game-thread` op (`packs/ue/host_draw.h`) |
 | `reagentlive::ue` | links `ue-base` and builds it with the host's SDK as the layout (`REAGENTLIVE_UE_SDK`, every group on); the consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
 | `reagentlive::client` | `core/client.cpp` |
 | `reagentlive::ue-client` | `packs/ue/client_ue.cpp`, links `client`; no SDK needed |

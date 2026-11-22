@@ -61,6 +61,12 @@ inline constexpr EngineLayout StockUE5 = {
     .rowMap = 0x30,
 };
 
+// The game viewport client's FViewportClient part and Draw's entry in its
+// vtable (destructor, Precache, RedrawRequested, RequestInvalidateHitProxy,
+// Draw): host_draw.h ticks there. Not a profile member: the host confirms it
+// per game before hooking it.
+inline constexpr uint32_t ViewportInterfaceOffset = 0x28, ViewportDrawIndex = 4;
+
 // The interface array's entry; an object's identity guard (index, then class).
 inline constexpr uint32_t InterfaceEntrySize = 16, ObjectIdentityLength = 12;
 

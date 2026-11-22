@@ -6,6 +6,7 @@
 #                       stock UE5 layout checked on known objects (agent_ue_check.cpp)
 #   reagentlive::ue         the same handlers with the host's Dumper-7 SDK as the layout
 #                       (SDK/... on the include path); every layout group on
+#   reagentlive::ue-draw    opt-in host helper: a game-thread tick through the viewport's Draw
 #   reagentlive::ue-client  client calls (Find, Fields, Call); no SDK needed
 #
 # Its CLI parts are source lists the root adds to reagentlive::cli and
@@ -27,6 +28,14 @@ target_sources(reagentlive-ue-base INTERFACE "${reagentlive_ue_dir}/agent_ue.cpp
     "${reagentlive_ue_dir}/agent_ue_script.cpp" "${reagentlive_ue_dir}/agent_ue_calls.cpp")
 target_link_libraries(reagentlive-ue-base INTERFACE reagentlive-core)
 set_property(GLOBAL APPEND PROPERTY REAGENTLIVE_AGENT_TARGETS reagentlive-ue-base)
+
+# Opt-in for hosts: a game-thread tick through the game viewport's Draw and
+# the GameThread op (host_draw.h). Links ue-base.
+add_library(reagentlive-ue-draw INTERFACE)
+add_library(reagentlive::ue-draw ALIAS reagentlive-ue-draw)
+target_sources(reagentlive-ue-draw INTERFACE "${reagentlive_ue_dir}/host_draw.cpp")
+target_link_libraries(reagentlive-ue-draw INTERFACE reagentlive-ue-base)
+set_property(GLOBAL APPEND PROPERTY REAGENTLIVE_AGENT_TARGETS reagentlive-ue-draw)
 
 add_library(reagentlive-ue INTERFACE)
 add_library(reagentlive::ue ALIAS reagentlive-ue)

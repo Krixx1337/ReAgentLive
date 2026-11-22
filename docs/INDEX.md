@@ -14,6 +14,7 @@ in the docs (`core/`, `packs/ue/`, `frontends/`) are under `src/reagentlive/`.
 | Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
 | Have an AI agent set it all up | [agent setup](agent-setup.md) (build, MCP tools, skill, check) |
 | Try it in any process, no mod or SDK | [own-thread example](hosting.md#own-thread-example) |
+| Any UE5 game, no dump, calls included | [Unreal example](hosting.md#unreal-example) |
 | Put the agent into a process | [hosting](hosting.md) |
 | Write a client or change the wire format | [clients](client.md), [protocol](protocol.md) |
 | Keep a mod's logic or a tool outside the game, with a lean DLL inside | [outside programs](outside-programs.md) |
@@ -36,7 +37,7 @@ in the docs (`core/`, `packs/ue/`, `frontends/`) are under `src/reagentlive/`.
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `dump`, labels, readable names, native members |
 | [commands/capture.md](commands/capture.md) | which command for which question about change; `snap`, `record`, replay |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
-| [hosting.md](hosting.md) | own-thread example, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
+| [hosting.md](hosting.md) | Unreal and own-thread examples, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
 | [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
 | [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |
 | [protocol.md](protocol.md) | shared section, exchange and hold, handshake, ops, statuses, limits |

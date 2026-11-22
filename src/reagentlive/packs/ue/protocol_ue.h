@@ -42,7 +42,8 @@ constexpr uint32_t ExecEntries = Find + 16;
 constexpr uint32_t Entries = Find + 17;
 constexpr uint32_t CallsStart = Find + 18, CallsRead = Find + 19, CallsStop = Find + 20;
 constexpr uint32_t Enum = Find + 21;
-static_assert(Enum < reagentlive::op::PackSlot(1), "the Unreal pack's ops stay in its slot");
+constexpr uint32_t GameThread = Find + 22;
+static_assert(GameThread < reagentlive::op::PackSlot(1), "the Unreal pack's ops stay in its slot");
 }
 
 // A UObject ref: core's Ref, with the object-table index and its serial.
@@ -649,6 +650,22 @@ struct EnumEntry {
 constexpr uint32_t MaxEnumEntries = 65536;
 constexpr size_t MaxEnumPerPage = MaxRead / sizeof(EnumEntry);
 
+// GameThread: the host's game-thread tick through the game viewport's Draw
+// (host_draw.h; a host that links reagentlive::ue-draw answers it). flags =
+// GameThreadAction: Status reads it, On arms it (the host installs it on its
+// next tick), Off puts the viewport's table back. The reply is a
+// GameThreadState.
+enum class GameThreadAction : uint32_t { Status, On, Off };
+enum class GameThreadMode : uint32_t { Off, Waiting, Conflict, On, Stopped };
+struct GameThreadState {
+    uint32_t mode;              // GameThreadMode.
+    uint32_t thread;            // The game thread's ID; 0 until known.
+    uint64_t viewport;          // The viewport client hooked (or found); 0 until known.
+    uint64_t table;             // Its Draw interface's own vtable; 0 until known.
+    uint64_t draw;              // The game's Draw (that table's entry 4); 0 until known.
+    char text[96];              // The state as one line.
+};
+
 // The call recorder. A host opts in by listing these ops. CallsStart swaps
 // one UFunction's native pointer (UFunction::Func, a heap field: no code,
 // vtable or import is written) for one of MaxCallsSlots fixed thunks that
@@ -725,7 +742,7 @@ constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + si
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
     sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + sizeof(CallsState) * 97 + sizeof(CallsRow) * 103 +
-    sizeof(EnumEntry) * 113 +
+    sizeof(EnumEntry) * 113 + sizeof(GameThreadState) * 127 +
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);
 
 namespace detail {
@@ -805,6 +822,9 @@ inline Status Check(const Request& request) {
         return request.address && !request.length && request.args[1] <= MaxScriptEntries ? Status::Ok : Status::BadRequest;
     case op::Enum:
         return request.address && !request.length && request.args[1] <= MaxEnumEntries ? Status::Ok : Status::BadRequest;
+    case op::GameThread:
+        return !request.length && request.flags <= static_cast<uint32_t>(GameThreadAction::Off) ? Status::Ok
+                                                                                                 : Status::BadRequest;
     case op::Entries: {
         const uint32_t offset = EntriesOffset(request.args[1]);
         const auto kind = static_cast<ContainerKind>(request.flags);

@@ -364,6 +364,24 @@ struct Rows {
     }
 };
 
+// game-thread: the host's Draw tick (host_draw.h).
+struct GameThread {
+    std::string mode;                   // off, waiting, conflict, on, stopped.
+    std::string text;
+    std::optional<uint32_t> thread;     // The game thread's ID, once known.
+    std::optional<Addr> viewport, table, draw;
+    Location drawWhere;
+    template<class V> static void Describe(V& v) {
+        v("mode", &GameThread::mode, "off|waiting|conflict|on|stopped");
+        v("text", &GameThread::text);
+        v("thread", &GameThread::thread);
+        v("viewport", &GameThread::viewport);
+        v("table", &GameThread::table);
+        v("draw", &GameThread::draw);
+        v.flat("draw_", &GameThread::drawWhere);
+    }
+};
+
 // enum: the names and values in the enum's order.
 struct EnumRow {
     std::string name;

@@ -206,6 +206,13 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"enum", "object|Enum", One, "str", "an enum object ($N, a literal ref, an address), or an enum by name"}},
             {}, Of<shape::Enum>, parse::Enum,
             "Byte and enum properties print numbers; this names them. Names keep the enum's prefix (EFoo::Bar)."},
+        {"game-thread", "ue", "the host's game-thread tick through the game viewport's Draw: status, on, off",
+            {{"action", "on|off|status", Optional, "str", "on arms it, off puts the viewport's table back", "status"}},
+            {}, Of<shape::GameThread>, parse::GameThread,
+            "Calls, each with functions, script, refs and the recorder need the game thread. on swaps one pointer in "
+            "the viewport object for a copy of its Draw table: confirm Draw first (the skill's new-game page). "
+            "Agents whose host does not link reagentlive::ue-draw answer unsupported.",
+            {}, true},
         {"refs", "ue", "Blueprint functions whose bytecode names a pooled name (EX_NameConst)",
             {{"name", "name|#index", One, "str", "the exact pooled name, or its comparison index"}}, {}, Of<shape::Refs>, parse::Refs},
         {"funcs", "ue", "functions on the class chain, then on the native interfaces it implements",

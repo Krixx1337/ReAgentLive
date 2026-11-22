@@ -294,7 +294,7 @@ bool PackCommand(const Command& command) {
     switch (command.kind) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Record: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
-    case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum:
+    case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::GameThread:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -349,6 +349,10 @@ void RunPackCommand(Session& session, const Command& command, std::string_view j
     }
     if (command.kind == Kind::Enum) {
         RunEnum(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::GameThread) {
+        RunGameThread(session, command, jsonCommand);
         return;
     }
     if (command.kind == Kind::Rows) {

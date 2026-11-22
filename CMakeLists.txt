@@ -201,9 +201,12 @@ endfunction()
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL reagentlive_check_no_decoder)
 
 # Examples build on their own (examples/*/CMakeLists.txt); the tests need the
-# own-thread host, so it joins them here.
+# own-thread host and, with the Unreal pack, the Unreal example, so they join here.
 if(REAGENTLIVE_BUILD_TESTS)
     add_subdirectory(examples/own_thread)
+    if(TARGET reagentlive-ue-draw)
+        add_subdirectory(examples/unreal)
+    endif()
 endif()
 
 # Tests: built when reagentlive is the top-level project, or when the host sets
@@ -256,6 +259,13 @@ if(REAGENTLIVE_BUILD_TESTS)
     target_compile_definitions(reagentlive-example-tests PRIVATE
         "REAGENTLIVE_OWN_THREAD_DLL=L\"$<TARGET_FILE:reagentlive-own-thread>\"")
     add_dependencies(reagentlive-example-tests reagentlive-own-thread)
+    # The Unreal example the same way, when the pack is built.
+    if(TARGET reagentlive-unreal)
+        target_sources(reagentlive-example-tests PRIVATE tests/example/unreal_tests.cpp)
+        target_compile_definitions(reagentlive-example-tests PRIVATE
+            "REAGENTLIVE_UNREAL_DLL=L\"$<TARGET_FILE:reagentlive-unreal>\"")
+        add_dependencies(reagentlive-example-tests reagentlive-unreal)
+    endif()
     foreach(test reagentlive-cli-tests reagentlive-ue-tests reagentlive-loopback-tests reagentlive-example-tests)
         set_target_properties(${test} PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
         target_compile_options(${test} PRIVATE /W4 /WX /EHsc)
