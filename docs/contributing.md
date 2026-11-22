@@ -318,10 +318,8 @@ linked. The docs test checks both lines within a page's first 15 lines.
   Split a page by subject once it covers two or passes about 500 lines.
 - Plans are their own file, deleted when they ship: the decision moves to
   design, the behaviour to its page.
-- **CHANGELOG:** every entry that changes the wire protocol (an op, a
-  struct or a constant in `core/protocol.h` or a pack's `protocol_*.h`)
-  ends with the exact phrase `Protocol change: rebuild and re-inject.` on
-  one line. [The update procedure](agents/update.md#2-show-what-is-coming) searches for it
-  to tell the user a running target needs the new DLL.
+- **CHANGELOG:** follow its [writing rules](../CHANGELOG.md#writing-entries):
+  user-facing, grouped, and the exact protocol-change line that
+  [the update procedure](agents/update.md#2-show-what-is-coming) searches for.
 - Examples use placeholders (`game.exe`, `mygame-dev-1234`) and stock
   engine classes, never one game's names.
