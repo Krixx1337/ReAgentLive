@@ -45,6 +45,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **`disasm --function` walks where no entry holds the address:** it lists
   to the function's last return instead of refusing
   ([disasm](docs/commands/fast-lane.md#disasm)).
+- **A digest keeps `saved` and `next`:** a `disasm --save` too large to
+  print still names its file, and a cut listing its resume address
+  ([digests](docs/commands/console.md)).
 - **IDA label import:** one undo step, a wait box that cancels, and
   `apply(path)` for headless sessions
   ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).

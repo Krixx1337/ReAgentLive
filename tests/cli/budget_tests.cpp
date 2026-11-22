@@ -252,6 +252,16 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     CHECK(status["errors"] == 2);
     CHECK(status["tick_accurate"] == false);
     CHECK_FALSE(status.contains("omitted"));
+    // A file the call wrote and a cut listing's resume address survive too.
+    Json listing = VendorCall(200);
+    listing["saved"] = "fn.jsonl";
+    listing["next"] = "0x140001000";
+    Json written = Envelope(listing);
+    const auto kept = budget::Replace(written, Text(written).size(), CallLine("call $1 Vendor:GetItems", true),
+        [](const std::string&) { return std::string(); });
+    REQUIRE(kept);
+    CHECK((*kept)["digest"]["status"]["saved"] == "fn.jsonl");
+    CHECK((*kept)["digest"]["status"]["next"] == "0x140001000");
     // A result with none carries no status.
     Json plain = Envelope(VendorCall(200));
     const auto none = budget::Replace(plain, Text(plain).size(), CallLine("call $1 Vendor:GetItems", true),

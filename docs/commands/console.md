@@ -189,7 +189,10 @@ request costs up to a host tick. The console cuts both:
   (`narrow`) and `status`: every key the result had that says whether it
   is complete (`capped`, `truncated`, `unnamed`, `matched`, `omitted`,
   `errors` as a count, `tick_accurate`, `same_tick`, `total`,
-  `next_cursor`, `filtered`), so a capped result never reads as whole.
+  `next_cursor`, `next`, `filtered`) or names a file the call wrote
+  (`saved`), so a capped result never reads as whole and a saved file is
+  never lost (`status.next` is a cut listing's resume address, not the
+  digest's own `next` line).
   Then one of two:
   - `next`: the line again, narrowed by what the result showed. A row
     list's members that fit go in `--fields` (whole members where they
