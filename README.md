@@ -148,7 +148,7 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
   task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
   [design](docs/design.md).
-- **Status:** version 0.3.0 ([changelog](CHANGELOG.md)). It is usable,
+- **Status:** version 0.4.0 ([changelog](CHANGELOG.md)). It is usable,
   and the API can change before 1.0. Windows x64, C++23.
 
 ## License
