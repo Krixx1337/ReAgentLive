@@ -566,8 +566,8 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
 
 // An enum's names and values, one page from args[1]. Two layouts: the
 // stock TArray of {FName, int64} pairs at UEnum::Names, or two arrays and a
-// count (seen in a UE5 build whose SDK still shows the pairs): FName* and
-// int64*, each with bit 0 set, at Names - 8 and Names, the int32 count at
+// count (UE 5.6 and later; a Dumper-7 SDK may still declare the pairs):
+// FName* and int64*, bit 0 a dynamic-allocation tag, at Names - 8 and Names, the int32 count at
 // Names + 8. A layout is used only when its array is plausible and every
 // name in it decodes in the pool.
 struct EnumLayout {
