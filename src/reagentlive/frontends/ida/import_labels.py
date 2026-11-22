@@ -1,9 +1,11 @@
 """Import a ReAgentLive labels file (export-labels, peek --label) into an IDA database.
 
-Run in IDA (File > Script file...). It asks for the labels file, checks that
-the database is the same build (image size and PE timestamp), then names each
-address. A name the user set is never replaced: the label becomes a comment.
-Exec thunks also become functions. The planning below is plain Python, tested
+Run in IDA (File > Script file...), or call apply(path) from a session. It
+asks for the labels file, checks that the database is the same build (image
+size and PE timestamp, from the PE header IDA keeps), then names each
+address in one undoable step, with a wait box you can cancel. A name the
+user set is never replaced: the label becomes a comment. Exec thunks also
+become functions. The planning below is plain Python, tested
 without IDA (tests/python/test_ida_labels.py).
 """
 import json
@@ -65,50 +67,94 @@ def plan(rows, existing):
     return actions
 
 
-def _apply_in_ida():
+def build_of(header):
+    """(SizeOfImage, TimeDateStamp) from PE header bytes that start at 'PE\\0\\0', or None."""
+    if not header or len(header) < 0x54 or header[:4] != b'PE\0\0':
+        return None
+    return int.from_bytes(header[0x50:0x54], 'little'), int.from_bytes(header[8:12], 'little')
+
+
+def _database_build():
+    """The open database's (SizeOfImage, TimeDateStamp). IDA keeps the PE header
+    in the database's PE node even when its bytes were not loaded (the default)."""
+    import ida_bytes
+    import ida_nalt
+    import idautils
+
+    build = build_of(idautils.peutils_t().header())
+    if build:
+        return build
+    base = ida_nalt.get_imagebase()  # A manual load with the header bytes in the database.
+    if ida_bytes.is_loaded(base + 0x3C):
+        pe = base + ida_bytes.get_dword(base + 0x3C)
+        return build_of(ida_bytes.get_bytes(pe, 0x54))
+    return None
+
+
+def apply(path=None):
+    """Import the labels file at `path` (asked for when None) into the open database.
+    Returns (named, commented, skipped), or None when nothing was imported."""
     import ida_bytes
     import ida_funcs
     import ida_kernwin
     import ida_name
-    import idaapi
+    import ida_nalt
+    import ida_undo
 
-    path = ida_kernwin.ask_file(0, '*.jsonl', 'ReAgentLive labels file')
-    if not path:
-        return
+    if path is None:
+        path = ida_kernwin.ask_file(0, '*.jsonl', 'ReAgentLive labels file')
+        if not path:
+            return None
     with open(path, encoding='utf-8') as handle:
         rows = load(handle)
-    base = idaapi.get_imagebase()
-    pe = base + ida_bytes.get_dword(base + 0x3C)
-    problem = check_build(rows, ida_bytes.get_dword(pe + 0x50), ida_bytes.get_dword(pe + 8))
+    build = _database_build()
+    if not build:
+        ida_kernwin.warning('ReAgentLive labels not imported: this database has no PE header')
+        return None
+    problem = check_build(rows, *build)
     if problem:
         ida_kernwin.warning(f'ReAgentLive labels not imported: {problem}')
-        return
+        return None
+    base = ida_nalt.get_imagebase()
 
     def existing(rva):
         ea = base + rva
         return ida_name.get_name(ea) or '', ida_bytes.has_user_name(ida_bytes.get_flags(ea))
 
+    ida_undo.create_undo_point('ReAgentLive labels', 'ReAgentLive labels')  # One Undo reverts the import.
+    actions = plan(rows, existing)
     named = commented = skipped = 0
-    for action in plan(rows, existing):
-        ea = base + action[1]
-        if action[0] == 'skip':
-            skipped += 1
-            continue
-        if action[0] == 'name':
-            if action[3] == 'exec' and not ida_funcs.get_func(ea):
-                ida_funcs.add_func(ea)
-            if ida_name.set_name(ea, action[2], ida_name.SN_NOWARN | ida_name.SN_NOCHECK):
-                named += 1
+    ida_kernwin.show_wait_box('ReAgentLive labels: importing')
+    try:
+        for index, action in enumerate(actions):
+            if index % 500 == 0:
+                if ida_kernwin.user_cancelled():
+                    break
+                ida_kernwin.replace_wait_box(f'ReAgentLive labels: {index} of {len(actions)}')
+            ea = base + action[1]
+            if action[0] == 'skip':
+                skipped += 1
                 continue
-            text = f'reagentlive: {action[2]}'  # Taken at another address: keep it as a comment.
-        else:
-            text = action[2]
-        old = ida_bytes.get_cmt(ea, False) or ''
-        if text not in old:
+            if action[0] == 'name':
+                if action[3] == 'exec' and not ida_funcs.get_func(ea):
+                    ida_funcs.add_func(ea)
+                if ida_name.set_name(ea, action[2], ida_name.SN_NOWARN | ida_name.SN_NOCHECK):
+                    named += 1
+                    continue
+                text = f'reagentlive: {action[2]}'  # Taken at another address: keep it as a comment.
+            else:
+                text = action[2]
+            old = ida_bytes.get_cmt(ea, False) or ''
+            if text in old:
+                skipped += 1  # Imported before.
+                continue
             ida_bytes.set_cmt(ea, f'{old}\n{text}' if old else text, False)
-        commented += 1
-    print(f'ReAgentLive labels: {named} named, {commented} commented, {skipped} skipped (already named), '
+            commented += 1
+    finally:
+        ida_kernwin.hide_wait_box()
+    print(f'ReAgentLive labels: {named} named, {commented} commented, {skipped} skipped (already there), '
           f'from {len(rows)} rows')
+    return named, commented, skipped
 
 
 if __name__ == '__main__':
@@ -116,4 +162,4 @@ if __name__ == '__main__':
         import idaapi  # noqa: F401
     except ImportError:
         raise SystemExit('Run this inside IDA (File > Script file...).')
-    _apply_in_ida()
+    apply()

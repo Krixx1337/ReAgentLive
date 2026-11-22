@@ -518,10 +518,13 @@ mappings (Dumper-7's) are optional: imported first, they name exec
 thunks, vtables and types, and `--kinds interface,global` adds only what
 needs the running process.
 
-`frontends/ida/import_labels.py`, run inside IDA, refuses another build,
-names each address, keeps a name the user set (the label becomes a
-comment), makes exec thunks functions, and prints how many rows it named,
-commented and skipped (already named so). The result counts what was
+`frontends/ida/import_labels.py`, run inside IDA (File > Script file, or
+`apply(path)` from a script or headless session), refuses another build
+(size and timestamp from the PE header IDA keeps, so a default load with
+no header bytes works), names each address, keeps a name the user set
+(the label becomes a comment), makes exec thunks functions, and prints how
+many rows it named, commented and skipped (already there). The whole
+import is one undo step, with a wait box that can cancel it. The result counts what was
 written: `total` rows, of which `globals`, `exec`, `vtables` and
 `interfaces`.
 

@@ -45,6 +45,15 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **`disasm --function` walks where no entry holds the address:** it lists
   to the function's last return instead of refusing
   ([disasm](docs/commands/fast-lane.md#disasm)).
+- **IDA label import:** one undo step, a wait box that cancels, and
+  `apply(path)` for headless sessions
+  ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).
+
+### Fixed
+
+- **IDA label import refused every database loaded the default way:** it
+  read the build from header bytes IDA does not load; it now reads the PE
+  header IDA keeps.
 
 ## 0.4.0
 

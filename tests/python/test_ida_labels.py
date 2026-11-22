@@ -15,6 +15,16 @@ class ImportLabels(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['rva'], 0x10)
 
+    def test_the_build_comes_from_the_pe_header(self):
+        header = bytearray(0x58)
+        header[:4] = b'PE\0\0'
+        header[8:12] = (7).to_bytes(4, 'little')          # TimeDateStamp
+        header[0x50:0x54] = (4096).to_bytes(4, 'little')  # SizeOfImage
+        self.assertEqual(labels.build_of(bytes(header)), (4096, 7))
+        self.assertIsNone(labels.build_of(b''))
+        self.assertIsNone(labels.build_of(b'\xff' * 0x58))  # Not a header: bytes IDA never loaded.
+        self.assertIsNone(labels.build_of(bytes(header[:0x40])))
+
     def test_another_build_is_refused(self):
         rows = labels.load([ROW % ('exec', 'A::execB', '0x10')])
         self.assertIsNone(labels.check_build(rows, 4096, 7))
