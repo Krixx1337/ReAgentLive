@@ -93,6 +93,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **A stale IDA loader loaded newer saves silently:** the loader now
+  refuses a row kind it does not know and says to copy the new
+  `load_function.py`, instead of loading the file without its chunks or names.
 - **Functions whose exception entry begins early listed nothing:** a
   packed image can start an entry a few bytes before the code, on bytes
   that do not decode. `disasm --function` then lists from the address given,

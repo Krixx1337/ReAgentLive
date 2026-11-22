@@ -163,8 +163,10 @@ through a whole investigation instead of one per save. It returns `None`,
 or why it added nothing (another build, an unreadable file).
 
 - **Install name.** Any file name in the loaders folder works; IDA offers
-  every loader there. After updating ReAgentLive, compare the installed
-  copy with the repo's: a stale loader still loads, with old behaviour.
+  every loader there. After updating ReAgentLive, copy the repo's file over
+  the installed one: a loader older than the file refuses it at the first
+  row kind it does not know ("this loader is older than the file"), so a
+  save never loads with its chunks or names silently missing.
 - **Which loader ran.** The loader claims the file by its first line (a
   `function` row), not by its extension. It ran when the functions are
   named `fn_<rva>` (or their labels) and carry a

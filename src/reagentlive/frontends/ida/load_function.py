@@ -21,6 +21,7 @@ import re
 
 _ALLOWED = re.compile(r'[^A-Za-z0-9_:$?@.]')
 _BUILD = ('module', 'module_size', 'timestamp', 'base')
+_STALE = "this loader is older than the file: copy the new load_function.py into IDA's loaders folder"
 
 
 def sanitize(name):
@@ -60,6 +61,10 @@ def parse(lines):
                     segments.append((int(row['address'], 16), data, 'CODE' if kind == 'code' else 'DATA'))
             elif kind == 'name':
                 names.append((int(row['address'], 16), sanitize(row['name']), row.get('what', '')))
+            else:
+                # A row kind added since: skipping it would load the file
+                # silently with less in it (no chunks, no names).
+                return f'line {number}: unknown row "{kind}"; {_STALE}'
         except (ValueError, KeyError, TypeError) as error:
             return f'line {number}: {error}'
     if build is None:

@@ -75,6 +75,8 @@ class LoadFunction(unittest.TestCase):
         self.assertIn('line 2', loader.parse([FUNCTION, '{"row":"code","address":"zz","bytes":"90"}']))
         overlap = '{"address":"0x140001002","bytes":"90","row":"data","rva":"0x1002"}'
         self.assertIn('overlap', loader.parse([FUNCTION, CODE, overlap]))
+        newer = '{"address":"0x140001000","row":"type","rva":"0x1000"}'
+        self.assertIn('older than the file', loader.parse([FUNCTION, CODE, newer]))
 
     def test_ida_claims_only_saved_functions(self):
         claimed = loader.accept_file(FakeInput(FUNCTION + '\n' + CODE), 'f.jsonl')
