@@ -29,10 +29,19 @@ bool ClassFilter(const Args& args, Request& request) {
     return true;
 }
 
+// A call's object: $N, a ref or an address, or a default object by name
+// (Default__Class), which the console finds before the call.
+static bool CallObject(std::string_view text, const ParseContext& context, Command& command) {
+    if (Object(text, context.refs, command.request)) return true;
+    if (!text.starts_with("Default__") || !ClassName(text)) return false;
+    command.className = text;
+    return true;
+}
+
 // object, function and an optional hex block: call's raw form and release.
 Parsed CallBlock(const Args& args, const ParseContext& context, size_t firstByte, Command command) {
     Request& request = command.request;
-    if (!Object(args.At(0), context.refs, request)) return Fail("object must be $N or an address");
+    if (!CallObject(args.At(0), context, command)) return Fail("object must be $N, an address or a Default__ name");
     if (args.At(1).size() >= MaxText) return Fail("function name too long");
     if (!Bytes(args.From(firstByte), request.data, ue::MaxParams, request.length))
         return Fail("params must be hex pairs, at most " + std::to_string(ue::MaxParams));
@@ -160,7 +169,7 @@ Parsed CallLine(const Args& args, const ParseContext& context, uint32_t flags) {
     }
     if (!named && !args.Has("--typed") && !rows) return CallBlock(args, context, 2, std::move(command));
     if (args.Has("--typed") && args.positionals.size() > 2) return Fail("--typed is a typed call with no inputs");
-    if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
+    if (!CallObject(args.At(0), context, command)) return Fail("object must be $N, an address or a Default__ name");
     if (args.At(1).size() >= MaxText) return Fail("function name too long");
     command.kind = Kind::TypedCall;
     for (size_t i = 2; i < args.positionals.size(); ++i) command.fields.push_back(args.positionals[i]);

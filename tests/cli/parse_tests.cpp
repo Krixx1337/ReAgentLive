@@ -227,6 +227,17 @@ TEST_CASE("call-pure is a call with the pure flag; --dry marks either form") {
     CHECK(Parse("call $1 Controller:GetControlRotation --typed --dry", TwoRefs)->dry);
 }
 
+TEST_CASE("a call's object can be a default object by name, never a class") {
+    auto parsed = Parse("call-pure Default__KismetSystemLibrary IsValid Object=None", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::TypedCall);
+    CHECK(parsed->className == "Default__KismetSystemLibrary");
+    parsed = Parse("call Default__GameplayStatics GetPlayerPawn 00", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->className == "Default__GameplayStatics");
+    CHECK_FALSE(Parse("call KismetSystemLibrary IsValid 00", TwoRefs).has_value());
+}
+
 TEST_CASE("call keeps the full ref from find and marks raw addresses for identification") {
     auto parsed = Parse("call $1 Actor:K2_GetActorLocation 00", TwoRefs);
     REQUIRE(parsed.has_value());

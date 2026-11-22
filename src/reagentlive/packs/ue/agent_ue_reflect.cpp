@@ -564,9 +564,57 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
     return Progress::Done;
 }
 
-// UEnum::Names, a TArray of {FName, int64}, one page from args[1]. The
-// array is checked before any pair is read, and each pair is copied under
-// the fault guard.
+// An enum's names and values, one page from args[1]. Two layouts: the
+// stock TArray of {FName, int64} pairs at UEnum::Names, or two arrays and a
+// count (seen in a UE5 build whose SDK still shows the pairs): FName* and
+// int64*, each with bit 0 set, at Names - 8 and Names, the int32 count at
+// Names + 8. A layout is used only when its array is plausible and every
+// name in it decodes in the pool.
+struct EnumLayout {
+    const uint8_t* names;
+    const uint8_t* values;
+    size_t nameStride, valueStride;
+    uint32_t count;
+};
+bool EnumNamesDecode(const EnumLayout& layout) {
+    for (uint32_t i = 0; i < layout.count; ++i) {
+        int32_t index = 0;
+        char text[256];
+        size_t length = 0;
+        if (!GuardedCopy(&index, layout.names + size_t{i} * layout.nameStride, sizeof(index)) ||
+            !GuardedName(index, text, sizeof(text), length) || !length) return false;
+    }
+    return true;
+}
+bool FindEnumLayout(const SDK::UEnum* object, EnumLayout& out) {
+    const auto* base = reinterpret_cast<const uint8_t*>(object);
+    constexpr size_t NamesOffset = offsetof(SDK::UEnum, Names);
+    static_assert(sizeof(SDK::UEnum::Names) == sizeof(ArrayHeader) && NamesOffset >= 8 &&
+                  NamesOffset + 12 <= sizeof(SDK::UEnum));
+    // A pair is the FName, then the int64 at the next 8-byte boundary.
+    constexpr size_t ValueOffset = (sizeof(SDK::FName) + 7) & ~size_t{7}, PairSize = ValueOffset + sizeof(int64_t);
+    ArrayHeader pairs{};
+    memcpy(&pairs, base + NamesOffset, sizeof(pairs));
+    if (pairs.count >= 0 && static_cast<uint32_t>(pairs.count) <= MaxEnumEntries && pairs.capacity >= pairs.count &&
+        (!pairs.count || pairs.data)) {
+        const auto* data = reinterpret_cast<const uint8_t*>(pairs.data);
+        out = {data, data + ValueOffset, PairSize, PairSize, static_cast<uint32_t>(pairs.count)};
+        if (EnumNamesDecode(out)) return true;
+    }
+    uint64_t names = 0, values = 0;
+    int32_t count = 0;
+    memcpy(&names, base + NamesOffset - 8, sizeof(names));
+    memcpy(&values, base + NamesOffset, sizeof(values));
+    memcpy(&count, base + NamesOffset + 8, sizeof(count));
+    names &= ~uint64_t{1};
+    values &= ~uint64_t{1};
+    if (count < 0 || static_cast<uint32_t>(count) > MaxEnumEntries ||
+        (count && (!names || !values || (names & 7) || (values & 7)))) return false;
+    out = {reinterpret_cast<const uint8_t*>(names), reinterpret_cast<const uint8_t*>(values), sizeof(SDK::FName),
+           sizeof(int64_t), static_cast<uint32_t>(count)};
+    return EnumNamesDecode(out);
+}
+
 Progress EnumBody(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
@@ -578,32 +626,25 @@ Progress EnumBody(const Request& request, Response& response, bool, const Host& 
         return Progress::Done;
     }
     const Ref before = Identify(object, pack);
-    const auto& field = static_cast<const SDK::UEnum*>(object)->Names;
-    static_assert(sizeof(field) == sizeof(ArrayHeader));
-    ArrayHeader names{};
-    memcpy(&names, &field, sizeof(names));
-    if (names.count < 0 || static_cast<uint32_t>(names.count) > MaxEnumEntries || names.capacity < names.count ||
-        (names.count && !names.data)) {
-        Refuse(response, Status::Refused, "the enum's names do not look like an array");
+    EnumLayout layout{};
+    if (!FindEnumLayout(static_cast<const SDK::UEnum*>(object), layout)) {
+        Refuse(response, Status::Refused, "the enum's names match no known layout");
         return Progress::Done;
     }
-    // A pair is the FName, then the int64 at the next 8-byte boundary.
-    constexpr size_t ValueOffset = (sizeof(SDK::FName) + 7) & ~size_t{7}, PairSize = ValueOffset + sizeof(int64_t);
     const uint32_t numberOffset = Layout().shape.nameNumberOffset;
-    const auto total = static_cast<uint32_t>(names.count);
+    const uint32_t total = layout.count;
     const uint32_t first = request.args[1] < total ? static_cast<uint32_t>(request.args[1]) : total;
     const uint32_t shown = static_cast<uint32_t>(std::min<size_t>(total - first, MaxEnumPerPage));
     auto* entries = reinterpret_cast<EnumEntry*>(response.data);
     for (uint32_t i = 0; i < shown; ++i) {
-        uint8_t pair[PairSize];
-        if (!GuardedCopy(pair, reinterpret_cast<const uint8_t*>(names.data) + size_t{first + i} * PairSize, PairSize)) {
+        EnumEntry& entry = entries[i];
+        const uint8_t* name = layout.names + size_t{first + i} * layout.nameStride;
+        if (!GuardedCopy(&entry.name, name, sizeof(entry.name)) ||
+            !GuardedCopy(&entry.number, name + numberOffset, sizeof(entry.number)) ||
+            !GuardedCopy(&entry.value, layout.values + size_t{first + i} * layout.valueStride, sizeof(entry.value))) {
             Refuse(response, Status::NotReadable, "the enum's names are unreadable");
             return Progress::Done;
         }
-        EnumEntry& entry = entries[i];
-        memcpy(&entry.name, pair, sizeof(entry.name));
-        memcpy(&entry.number, pair + numberOffset, sizeof(entry.number));
-        memcpy(&entry.value, pair + ValueOffset, sizeof(entry.value));
     }
     response.length = shown * static_cast<uint32_t>(sizeof(EnumEntry));
     response.detail = FindDetail(total, first + shown < total ? first + shown : 0);
