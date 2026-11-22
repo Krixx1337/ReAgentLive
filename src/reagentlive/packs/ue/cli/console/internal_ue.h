@@ -1,6 +1,7 @@
 // reagentlive CLI console, Unreal pack: declarations the packs/ue/cli/console/ files
 // share, and the pack's state for one console run. Internal.
 #pragma once
+#include <deque>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -45,7 +46,9 @@ private:
         std::optional<std::vector<ue::Field>> fields;
     };
     Session& session_;
-    std::vector<Entry> entries_;
+    // A deque: callers keep a returned list while decoding members, and a
+    // lookup they make meanwhile adds an entry; a vector would move them all.
+    std::deque<Entry> entries_;
 };
 
 // Class and struct objects by exact name, for the session (they live as long as the process).

@@ -22,6 +22,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   re-inject the agent).
 - **`--nonzero` marks what it emptied:** an element or value whose members
   were all zero prints `{"zeroed": N}`, not `{}`.
+- **Fix: decoding a struct read freed memory** when a nested struct type
+  was not in the console's struct cache yet (the cache grew and moved the
+  member list being walked): names went unresolved on first sight, and
+  values could be wrong. The cache no longer moves its entries.
 - **The Python session names why a console did not start:** its exit code
   and the end of its stderr, so the MCP adapter's error says it too.
 
