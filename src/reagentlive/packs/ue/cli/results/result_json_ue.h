@@ -315,6 +315,7 @@ struct Entries {
     uint32_t from = 0;
     std::optional<uint32_t> nextCursor;
     bool truncated = false;
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     std::optional<bool> tickAccurate;
     template<class V> static void Describe(V& v) {
         v("ref", &Entries::ref);
@@ -325,6 +326,7 @@ struct Entries {
         v("from", &Entries::from);
         v("next_cursor", &Entries::nextCursor);
         v("truncated", &Entries::truncated);
+        v("unnamed", &Entries::unnamed);
         v("tick_accurate", &Entries::tickAccurate);
     }
 };

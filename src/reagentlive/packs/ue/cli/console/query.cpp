@@ -705,22 +705,33 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     const size_t count = bytes.size() / stride;
     const auto keyOf = [&](size_t i) { return bytes.subspan(i * stride, key.size); };
     const auto valueOf = [&](size_t i) { return bytes.subspan(i * stride + field->valueOffset, value.size); };
-    // FNames in one lookup, object pointers in one describe-many.
+    // FNames in one lookup, object pointers in one describe-many. Elements
+    // decode through the shared decoder (RowReader), as dump's previews do:
+    // pointers nested in an element are named, texts converted. A top-level
+    // pointer element keeps its object beside it.
     std::vector<int32_t> indices;
     std::vector<std::string> names;
     StructCache& structs = Ue(session).structs;
-    if (client.Supports(ue::op::Names)) {
+    RowReader reader(session, structs, RowReader::PreviewNested);
+    reader.KeepTopPointers();
+    {
         const auto collect = [&](int32_t index) -> std::string_view {
             if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
             return {};
         };
+        bool ignored = false;
         for (size_t i = 0; i < count; ++i) {
             FormatField(key, keyOf(i), structs, 0, collect);
-            if (map) FormatField(value, valueOf(i), structs, 0, collect);
+            reader.Value(key, keyOf(i), {}, collect, ignored);
+            if (map) {
+                FormatField(value, valueOf(i), structs, 0, collect);
+                reader.Value(value, valueOf(i), {}, collect, ignored);
+            }
         }
-        if (!indices.empty())
+        if (!indices.empty() && client.Supports(ue::op::Names))
             if (auto result = ue::Names(client, indices); result) names = std::move(*result);
     }
+    reader.Resolve();
     const auto lookupName = [&](int32_t index) -> std::string_view {
         const auto at = std::ranges::find(indices, index);
         const auto slot = static_cast<size_t>(at - indices.begin());
@@ -748,7 +759,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
             named = MakeObject(*found);
             RememberRef(session.refs, found->ref);
         }
-        return JsonFieldValue(of, data, structs, lookupName, partial, Style(session), 1);
+        return reader.Value(of, data, {}, lookupName, partial);
     };
     for (size_t i = 0; i < count; ++i) {
         shape::EntryRow row;
@@ -767,6 +778,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     result.from = command.limit;
     if (page->next) result.nextCursor = page->next;
     result.truncated = partial;
+    if (reader.Unnamed()) result.unnamed = reader.Unnamed();
     if (!TickAccurate(session)) result.tickAccurate = false;
     Emit(session, jsonCommand, std::move(result));
 }

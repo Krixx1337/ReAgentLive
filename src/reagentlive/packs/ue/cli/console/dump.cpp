@@ -324,8 +324,12 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             const auto layout = ElementParts(sorted[preview.fieldIndex]);
             const auto data = std::span(preview.elements->bytes);
             for (size_t offset = 0; offset < data.size(); offset += layout.stride)
-                for (const auto& part : layout.parts)
-                    FormatField(part.field, data.subspan(offset + part.offset, part.field.size), structs, 0, collectName);
+                for (const auto& part : layout.parts) {
+                    const auto element = data.subspan(offset + part.offset, part.field.size);
+                    FormatField(part.field, element, structs, 0, collectName);
+                    bool ignored = false;
+                    if (!session.meta) reader.Value(part.field, element, {}, collectName, ignored);
+                }
         }
         if (auto result = ue::Names(client, indices); result) names = std::move(*result);
     }
@@ -339,7 +343,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     for (size_t i = 0; i < sorted.size(); ++i)
         if (keep[i] && !decoded(sorted[i])) texts.Add(sorted[i], FieldBytes(*bytes, sorted[i])); // Else: the decoder.
     for (const auto& preview : previews) {
-        if (!preview.elements) continue;
+        if (!preview.elements || !session.meta) continue; // Else: the decoder.
         const auto layout = ElementParts(sorted[preview.fieldIndex]);
         const auto data = std::span(preview.elements->bytes);
         for (size_t offset = 0; offset < data.size(); offset += layout.stride)
@@ -412,8 +416,12 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                     for (const auto& part : layout.parts) {
                         const auto element = elementBytes.subspan(offset + part.offset, part.field.size);
                         const bool key = std::string_view(part.name) == "key";
-                        auto value = texts.Value(part.field, element,
-                            JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1), session.meta);
+                        // Through the decoder, as fields are: pointers nested in an
+                        // element are named; a top-level pointer element is named
+                        // beside it (`object`), as a pointer field is.
+                        auto value = session.meta ? texts.Value(part.field, element,
+                            JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1), true) :
+                            reader.Value(part.field, element, {}, lookupName, partial);
                         if (key) item.key = std::move(value);
                         else item.value = std::move(value);
                         if (const auto* named = describePointer(part.field.type, element, elementLookups)) {
@@ -476,6 +484,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     SortRowsByOffset(result.rows);
     const size_t total = sorted.size() + native.shown.size();
     result.truncated = truncated;
+    if (reader.Unnamed()) result.unnamed = reader.Unnamed();
     result.objectLookupLimited = limited;
     if (!command.match.empty() || command.nonzero || command.changed || command.own) result.filtered = shape::Filtered{shown, total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
