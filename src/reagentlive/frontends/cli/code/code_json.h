@@ -137,6 +137,7 @@ struct Disasm {
     std::optional<uint64_t> savedRows;   // --save: the instructions the file holds.
     std::optional<std::vector<SavedFunction>> functions; // --callees: each saved function, the first included.
     std::optional<std::vector<Addr>> skipped;            // --callees: call targets past the cap, not saved.
+    std::optional<std::vector<SavedFunction>> chunks;    // --save: each chained chunk saved with its function.
     std::optional<AddressRange> piece;   // A walk from inside unlisted code: the piece holding the address.
     std::optional<FunctionBounds> function;
     std::optional<DisasmEnd> end;
@@ -154,6 +155,7 @@ struct Disasm {
         v("saved_rows", &Disasm::savedRows);
         v("functions", &Disasm::functions);
         v("skipped", &Disasm::skipped);
+        v("chunks", &Disasm::chunks);
         v("piece", &Disasm::piece);
         v("function", &Disasm::function);
         v("end", &Disasm::end);

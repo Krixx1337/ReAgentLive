@@ -3,8 +3,9 @@
 Copy this file into IDA's user loaders folder (Windows:
 %APPDATA%\\Hex-Rays\\IDA Pro\\loaders), then open the saved .jsonl file in IDA.
 It builds a small x64 database: each saved function's code and the
-read-only data it references at their live addresses, the functions made,
-and every `name` row applied. A name outside the saved bytes (a call target
+read-only data it references at their live addresses, the functions made
+(each chained chunk attached as a function tail), and every `name` row
+applied. A name outside the saved bytes (a call target
 not saved, a labelled global) gets a one-byte STUB segment so the decompiler
 shows the name instead of a bare address.
 
@@ -31,11 +32,11 @@ def parse(lines):
     """The saved file as a plan, or a string saying why it cannot be loaded.
 
     Plan: {'build': {module, module_size, timestamp, base}, 'functions': [(start, end)]
-    in file order, 'segments': [(start, bytes, 'CODE' | 'DATA')] sorted,
+    in file order, 'chunks': [(start, end, function)], 'segments': [(start, bytes, 'CODE' | 'DATA')] sorted,
     'names': [(address, name, what)], 'stubs': [(address, what)] for names no
     segment holds}.
     """
-    build, functions, segments, names = None, [], [], []
+    build, functions, chunks, segments, names = None, [], [], [], []
     for number, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
@@ -51,6 +52,8 @@ def parse(lines):
                 elif this != build:
                     return f'line {number}: a function of another build'
                 functions.append((int(row['start'], 16), int(row['end'], 16)))
+            elif kind == 'chunk':
+                chunks.append((int(row['start'], 16), int(row['end'], 16), int(row['function'], 16)))
             elif kind in ('code', 'data'):
                 data = bytes.fromhex(row['bytes'])
                 if data:
@@ -68,7 +71,7 @@ def parse(lines):
         if a + len(data) > b:
             return f'segments overlap at {b:#x}'
     held = [(start, start + len(data)) for start, data, _ in segments]
-    return {'build': build, 'functions': functions, 'segments': segments, 'names': names,
+    return {'build': build, 'functions': functions, 'chunks': chunks, 'segments': segments, 'names': names,
             'stubs': stubs(names, held)}
 
 
@@ -140,6 +143,10 @@ def _apply(plan, segments):
             ida_funcs.add_func(start)
         ida_bytes.set_cmt(start, f"reagentlive: {build['module']}+{start - build['base']:#x} "
                           f"(size {build['module_size']}, timestamp {build['timestamp']})", False)
+    for start, end, owner in plan['chunks']:
+        function = ida_funcs.get_func(owner)
+        if function and not ida_funcs.get_func(start):
+            ida_funcs.append_func_tail(function, start, end)
     for address, what in plan['stubs']:
         if ida_segment.getseg(address):
             continue

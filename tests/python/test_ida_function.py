@@ -56,6 +56,13 @@ class LoadFunction(unittest.TestCase):
         other = FUNCTION.replace('"timestamp":7', '"timestamp":8')
         self.assertIn('another build', loader.parse([FUNCTION, other, CODE]))
 
+    def test_chunk_rows_become_function_tails(self):
+        chunk = '{"end":"0x140002002","function":"0x140001000","row":"chunk","start":"0x140002000"}'
+        code = '{"address":"0x140002000","bytes":"90c3","row":"code","rva":"0x2000"}'
+        plan = loader.parse([FUNCTION, chunk, CODE, code])
+        self.assertEqual(plan['functions'], [(0x140001000, 0x140001006)])
+        self.assertEqual(plan['chunks'], [(0x140002000, 0x140002002, 0x140001000)])
+
     def test_an_added_save_keeps_only_bytes_no_segment_holds(self):
         segments = [(0x1000, bytes(range(16)), 'CODE'), (0x2000, b'ab', 'DATA')]
         self.assertEqual(loader.additions(segments, [(0x1004, 0x1008), (0x2000, 0x2002)]),

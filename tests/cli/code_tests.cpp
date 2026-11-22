@@ -730,6 +730,40 @@ TEST_CASE("--callees saves each in-module call target once, and labels name what
     CHECK(lines[7]["what"] == "global");
 }
 
+TEST_CASE("a function's chained chunk is found by its jumps and saved as a chunk row") {
+    const Module module{"Game.exe", Base, 0x100000};
+    std::vector<dis::Instruction> rows(4);
+    rows[0].address = Base + 0x1000; rows[0].bytes = {0x0f, 0x84, 0, 0, 0, 0};
+    rows[0].branch = "branch"; rows[0].target = Base + 0x5000;                     // jz into the chunk
+    rows[1].address = Base + 0x1006; rows[1].bytes = {0xe8, 0, 0, 0, 0};
+    rows[1].branch = "call"; rows[1].target = Base + 0x3000;                       // A call: not a chunk
+    rows[2].address = Base + 0x100b; rows[2].bytes = {0xeb, 0};
+    rows[2].branch = "jump"; rows[2].target = Base + 0x5000;                       // Again: once
+    rows[3].address = Base + 0x100d; rows[3].bytes = {0xc3};
+    rows[3].ends = true;                                                            // The ret
+    CHECK(save::Jumps(rows) == std::vector<uint64_t>{Base + 0x5000});
+    // An entry cut mid-flow: its chunk follows on from the last row.
+    std::vector<dis::Instruction> cut(1);
+    cut[0].address = Base + 0x2000; cut[0].bytes = {0x8b, 0xc3};                    // mov eax, ebx
+    CHECK(save::Jumps(cut) == std::vector<uint64_t>{Base + 0x2002});
+
+    std::vector<dis::Instruction> tail(1);
+    tail[0].address = Base + 0x5000; tail[0].bytes = {0x90, 0xc3};
+    const std::vector<save::Saved> parts{{Base + 0x1000, rows}, {Base + 0x5000, tail, Base + 0x1000}};
+    std::istringstream text(save::Lines(module, 7, parts, {}));
+    std::vector<Json> lines;
+    for (std::string line; std::getline(text, line);) lines.push_back(Json::parse(line));
+    REQUIRE(lines.size() >= 5);
+    CHECK(lines[0]["row"] == "function");
+    CHECK(lines[1]["row"] == "chunk");                  // No function row of its own.
+    CHECK(lines[1]["start"] == "0x140005000");
+    CHECK(lines[1]["end"] == "0x140005002");
+    CHECK(lines[1]["function"] == "0x140001000");
+    CHECK(lines[3]["row"] == "code");
+    CHECK(lines[3]["address"] == "0x140005000");
+    CHECK(std::ranges::count_if(lines, [](const Json& l) { return l.value("what", "") == "function"; }) == 1);
+}
+
 TEST_CASE("a saved function holds its code, the read-only data it reads and its import names") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(4);

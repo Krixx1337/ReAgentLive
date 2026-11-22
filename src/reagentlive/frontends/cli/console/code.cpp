@@ -225,14 +225,52 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
     const auto timestamp = ImageTimestamp(session, *module);
     if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
-    // --callees: each function the first calls directly, once, up to the caps.
-    std::vector<uint64_t> starts{address};
+    // The saved parts: each function, then its chained chunks (owners[i] is
+    // 0 for a function, else the function's start).
+    std::vector<uint64_t> starts{address}, owners{0};
     std::vector<dis::Listing> listings;
     listings.push_back(std::move(*listing));
+    const auto held = [&](uint64_t at) {
+        return std::ranges::any_of(listings, [at](const dis::Listing& part) {
+            return !part.rows.empty() && part.rows.front().address <= at &&
+                at < part.rows.back().address + part.rows.back().bytes.size();
+        });
+    };
+    // Chained chunks of the function at `owner`: jumps out of its listed
+    // parts into entries chained to its entry, each listed to its own end.
+    size_t chunks = 0;
+    const auto addChunks = [&](uint64_t owner) -> std::expected<void, std::string> {
+        auto entry = FunctionAt(session, owner);
+        if (!entry) return std::unexpected(entry.error());
+        if (!*entry) return {};
+        const uint64_t primary = (*entry)->range.start;
+        for (size_t part = 0; part < listings.size(); ++part) {
+            if (starts[part] != owner && owners[part] != owner) continue;
+            for (const uint64_t target : save::Jumps(listings[part].rows)) {
+                if (chunks == save::MaxChunks || held(target)) continue;
+                auto chained = FunctionAt(session, target);
+                if (!chained) return std::unexpected(chained.error());
+                if (!*chained || !(*chained)->chunk || (*chained)->range.start != primary) continue;
+                auto chunk = list((*chained)->chunk->start, MaxFunctionDisasm, false, false);
+                if (!chunk || chunk->rows.empty()) continue;
+                starts.push_back((*chained)->chunk->start);
+                owners.push_back(owner);
+                listings.push_back(std::move(*chunk));
+                ++chunks;
+            }
+        }
+        return {};
+    };
+    if (auto added = addChunks(address); !added) return JsonError(session, jsonCommand, "unwind", added.error());
+    // --callees: each function the first calls directly (its chunks too), once, up to the caps.
     std::vector<Addr> skipped;
     size_t calleeBytes = 0;
     if (command.callees) {
-        for (const uint64_t target : save::Callees(listings.front().rows, *module, address)) {
+        std::vector<uint64_t> targets;
+        for (size_t part = 0; part < listings.size(); ++part)
+            for (const uint64_t target : save::Callees(listings[part].rows, *module, address))
+                if (std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
+        for (const uint64_t target : targets) {
             if (starts.size() > save::MaxCallees || calleeBytes >= save::MaxCalleeBytes) {
                 skipped.push_back(target);
                 continue;
@@ -250,7 +288,9 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             }
             for (const auto& row : callee->rows) calleeBytes += row.bytes.size();
             starts.push_back(start);
+            owners.push_back(0);
             listings.push_back(std::move(*callee));
+            if (auto added = addChunks(start); !added) return JsonError(session, jsonCommand, "unwind", added.error());
         }
     }
     std::vector<save::Range> ranges;
@@ -278,7 +318,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             if (auto row = ParseLabel(text, *module, *timestamp)) labels[module->base + row->rva] = std::move(row->name);
     }
     std::vector<save::Saved> saved;
-    for (size_t i = 0; i < listings.size(); ++i) saved.push_back({starts[i], listings[i].rows});
+    for (size_t i = 0; i < listings.size(); ++i) saved.push_back({starts[i], listings[i].rows, owners[i]});
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
     if (!file || !(file << save::Lines(*module, *timestamp, saved, data, labels)))
         return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
@@ -286,14 +326,18 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     uint64_t rows = 0;
     for (const auto& one : listings) rows += one.rows.size();
     out.savedRows = rows;
-    if (command.callees) {
-        out.functions.emplace();
-        for (size_t i = 0; i < listings.size(); ++i) {
-            const auto& last = listings[i].rows.back();
-            out.functions->push_back({starts[i], last.address + last.bytes.size(), listings[i].rows.size()});
+    for (size_t i = 0; i < listings.size(); ++i) {
+        const auto& last = listings[i].rows.back();
+        const shape::SavedFunction one{starts[i], last.address + last.bytes.size(), listings[i].rows.size()};
+        if (owners[i]) {
+            if (!out.chunks) out.chunks.emplace();
+            out.chunks->push_back(one);
+        } else if (command.callees) {
+            if (!out.functions) out.functions.emplace();
+            out.functions->push_back(one);
         }
-        if (!skipped.empty()) out.skipped = std::move(skipped);
     }
+    if (!skipped.empty()) out.skipped = std::move(skipped);
     Emit(session, jsonCommand, std::move(out));
 }
 

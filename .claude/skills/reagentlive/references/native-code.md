@@ -44,16 +44,16 @@ Answer one-address questions live, with no database:
   import the labels again. The first auto-analysis of a large Unreal image
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
-- **No database of this build, or not worth one:** `disasm <addr>
-  --function --save <file> --callees` (plus `--labels` with an
-  `export-labels` file) and the IDA loader
-  (`src/reagentlive/frontends/ida/load_function.py`) give a database of the
-  function and its callees in seconds; decompile all in one Python call,
-  `add_saved` the next save into it
-  (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`).
-  Install the loader once (ask: outside the repo). Save from the function's
-  start: a save from inside unlisted code is refused. A member read through a typed
-  pointer shows as an index (`p[27]` on a `float *`): offset = index × size.
+- **No database of this build, or not worth one:** `disasm <addr> --function
+  --save <file> --callees` (`--labels`: an `export-labels` file) and the IDA
+  loader (`src/reagentlive/frontends/ida/load_function.py`) give the function,
+  its chunks and callees in seconds; decompile all in one Python call,
+  `add_saved` the next save
+  (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`). Install
+  the loader once (ask: outside the repo). Save from the function's start.
+  A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved (a tail
+  jump, a jump table): save it, `add_saved` it. A typed-pointer index
+  (`p[27]`) is offset = index × size.
 
 ## Following a native getter
 
