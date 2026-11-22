@@ -173,6 +173,21 @@ Ref OuterRef(const Object* object, const Context& pack) {
     return Identify(outer, pack);
 }
 
+const SDK::UObject* FirstLiveInstance(std::string_view className) {
+    if (!Located()) return nullptr;
+    try {
+        std::string scratch;
+        ResetClassCache();
+        const int32_t count = TableNum();
+        for (int32_t i = 0; i < count; ++i) {
+            const Object* object = TableObject(i);
+            if (object && HeaderReadable(object) && ObjectIndex(object) == i && !Template(object) &&
+                ClassMatches(object, className, scratch)) return object;
+        }
+    } catch (...) {}
+    return nullptr;
+}
+
 // Live instances only: class default (RF_ClassDefaultObject, 0x10) and
 // archetype (RF_ArchetypeObject, 0x20) objects are templates.
 bool Template(const Object* object) {

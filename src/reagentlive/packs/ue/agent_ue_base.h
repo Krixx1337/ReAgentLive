@@ -50,6 +50,8 @@ struct ObjectLayout {
     bool fromSdk = false;
 };
 const ObjectLayout& Layout();
+// True once the object table and name pool are located and checked.
+bool Located();
 // The engine layout every reflected read uses (engine_layout.h): the host's
 // SDK (reagentlive::ue) or StockUE5 (reagentlive::ue-base).
 const layout::EngineLayout& Engine();

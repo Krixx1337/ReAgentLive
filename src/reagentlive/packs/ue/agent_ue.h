@@ -44,6 +44,13 @@ constexpr uint32_t MaxScanMicroseconds = 50000;
 // until the pack has located the table.
 bool ObjectInTable(const SDK::UObject* object);
 
+// For hosts: the first live instance (no class default or archetype object)
+// of a class or a subclass, by class name. Null until the pack has located
+// the object table (its first command does), or when there is none. Walks
+// the whole table on the calling thread: call it rarely, from the thread
+// that ticks the agent.
+const SDK::UObject* FirstLiveInstance(std::string_view className);
+
 // Why a pack handler may not run now, or nullptr when it may.
 inline const char* EngineThreadProblem(const Context& pack) {
     if (!pack.gameThread) return "host gave no engine-thread check";

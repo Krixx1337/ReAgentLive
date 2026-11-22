@@ -7,6 +7,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **`FirstLiveInstance(className)`** for hosts: the first live instance of
+  a class or subclass once the object table is located (a host finding the
+  game viewport to tick on its Draw, for one).
 - **One home for engine layout:** every engine offset the Unreal pack
   reads is in `packs/ue/engine_layout.h` (`EngineLayout`, `StockUE5`,
   profile groups and `ProfileJson`); `engine_layout_sdk.h` fills it from a

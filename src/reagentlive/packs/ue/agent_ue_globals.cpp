@@ -248,6 +248,7 @@ void Locate(const Context& pack, const Host& host) {
 }
 
 const ObjectLayout& Layout() { return g_layout; }
+bool Located() { return g_located.ready; }
 #ifdef REAGENTLIVE_UE_SDK
 constexpr layout::EngineLayout EngineValue = layout::SdkLayout();
 #else
