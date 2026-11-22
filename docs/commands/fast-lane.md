@@ -114,8 +114,9 @@ attaches them as function tails, so the decompiler shows the whole
 function instead of a `JUMPOUT`. Up to 16 chunks per file; a chunk reached
 only through a jump table is not found.
 
-- **`--callees`** also saves each function it calls directly, one level
-  deep, each once, up to 16 functions or 256 KB of code, each listed from
+- **`--callees`** also saves each function it calls directly or reaches by
+  a tail jump (a direct `jmp` out of the function and its chunks), one
+  level deep, each once, up to 16 functions or 256 KB of code, each listed from
   the call target (an entry that begins elsewhere only bounds its end): calls between
   saved functions then read as names, and every callee decompiles from the
   same database. The result lists each saved function in `functions` and
@@ -142,7 +143,7 @@ JSON lines:
 | `chunk` | `start`, `end`, `function`: a chained chunk of the function starting at `function` |
 | `code` | `address`, `rva`, `bytes` (hex): the listed code, one row per contiguous run |
 | `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch |
-| `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `global` (a labelled RIP-relative target) |
+| `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
 
 `frontends/ida/load_function.py` is the IDA loader: copy it into IDA's
 user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and

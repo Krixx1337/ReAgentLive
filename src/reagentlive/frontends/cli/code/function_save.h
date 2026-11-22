@@ -96,6 +96,22 @@ inline std::vector<uint64_t> Jumps(std::span<const dis::Instruction> rows) {
     return out;
 }
 
+// Unconditional direct jump targets in the rows, in order, each once, that
+// lie in the module but outside every range in `held` [start, end): tail
+// calls (MSVC's `jmp` to another function), which --callees saves like calls.
+inline std::vector<uint64_t> TailJumps(std::span<const dis::Instruction> rows, const Module& module,
+                                       std::span<const Range> held) {
+    std::vector<uint64_t> out;
+    for (const auto& row : rows) {
+        if (!row.directJump || !row.target) continue;
+        const uint64_t at = *row.target;
+        if (at < module.base || at - module.base >= module.size) continue;
+        if (std::ranges::any_of(held, [at](const Range& r) { return r.start <= at && at < r.end; })) continue;
+        if (std::ranges::find(out, at) == out.end()) out.push_back(at);
+    }
+    return out;
+}
+
 // One saved part: where it starts and its listed rows. `owner` is 0 for a
 // function, else the start of the function whose chained chunk it is.
 struct Saved {
@@ -124,8 +140,8 @@ inline std::string HexText(std::span<const uint8_t> bytes) {
 // there (an unreadable one is left out); `labels` names addresses (from a
 // labels file). Names, one per address, first kind wins: each saved function
 // (its label, else fn_<rva>), the import slots called through, the direct
-// call targets not saved (label, else fn_<rva>), labelled RIP-relative
-// targets (globals).
+// call targets not saved (label, else fn_<rva>), tail jump targets outside
+// every saved part (`tail`), labelled RIP-relative targets (globals).
 inline std::string Lines(const Module& module, uint32_t timestamp, std::span<const Saved> functions,
                          std::span<const std::pair<uint64_t, std::vector<uint8_t>>> data,
                          const std::map<uint64_t, std::string>& labels = {}) {
@@ -166,6 +182,10 @@ inline std::string Lines(const Module& module, uint32_t timestamp, std::span<con
         for (const auto& row : function.rows)
             if (row.branch == "call" && row.target && !row.ripTarget && inside(*row.target))
                 name(*row.target, labelled(*row.target), "call");
+    std::vector<Range> parts;
+    for (const auto& part : functions) parts.push_back({part.start, endOf(part)});
+    for (const auto& function : functions)
+        for (const uint64_t target : TailJumps(function.rows, module, parts)) name(target, labelled(target), "tail");
     for (const auto& function : functions)
         for (const auto& row : function.rows)
             if (row.ripTarget && row.target && !row.import && labels.contains(*row.target))

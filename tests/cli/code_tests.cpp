@@ -730,6 +730,29 @@ TEST_CASE("--callees saves each in-module call target once, and labels name what
     CHECK(lines[7]["what"] == "global");
 }
 
+TEST_CASE("--callees saves tail jumps out of the function, and names the unsaved ones") {
+    const Module module{"Game.exe", Base, 0x100000};
+    std::vector<dis::Instruction> rows(3);
+    rows[0].address = Base + 0x1000; rows[0].bytes = {0xeb, 0x02};
+    rows[0].branch = "jump"; rows[0].target = Base + 0x1004; rows[0].directJump = true; // Inside: not a tail
+    rows[1].address = Base + 0x1002; rows[1].bytes = {0x90, 0x90};
+    rows[2].address = Base + 0x1004; rows[2].bytes = {0xe9, 0, 0, 0, 0};
+    rows[2].branch = "jump"; rows[2].target = Base + 0x8000; rows[2].directJump = true; // A tail call
+    const std::vector<save::Range> held{{Base + 0x1000, Base + 0x1009}};
+    CHECK(save::TailJumps(rows, module, held) == std::vector<uint64_t>{Base + 0x8000});
+    const std::vector<save::Range> withTarget{{Base + 0x1000, Base + 0x1009}, {Base + 0x8000, Base + 0x8010}};
+    CHECK(save::TailJumps(rows, module, withTarget).empty());                            // Saved already.
+
+    const std::vector<save::Saved> one{{Base + 0x1000, rows}};
+    std::istringstream text(save::Lines(module, 7, one, {}));
+    bool named = false;
+    for (std::string line; std::getline(text, line);) {
+        const auto row = Json::parse(line);
+        if (row.value("what", "") == "tail") named = row["name"] == "fn_8000" && row["address"] == "0x140008000";
+    }
+    CHECK(named);
+}
+
 TEST_CASE("a function's chained chunk is found by its jumps and saved as a chunk row") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(4);

@@ -152,7 +152,7 @@ def _apply(plan, segments):
             continue
         segment = ida_segment.segment_t()
         segment.start_ea, segment.end_ea, segment.bitness = address, address + 1, 2
-        segment.perm = ida_segment.SEGPERM_READ | (ida_segment.SEGPERM_EXEC if what in ('call', 'function') else 0)
+        segment.perm = ida_segment.SEGPERM_READ | (ida_segment.SEGPERM_EXEC if what in ('call', 'tail', 'function') else 0)
         ida_segment.add_segm_ex(segment, f'stub_{address:x}', 'STUB', ida_segment.ADDSEG_NOSREG)
     for address, name, _ in plan['names']:
         ida_name.set_name(address, name, ida_name.SN_NOWARN | ida_name.SN_NOCHECK)

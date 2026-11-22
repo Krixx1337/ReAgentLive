@@ -266,9 +266,17 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     std::vector<Addr> skipped;
     size_t calleeBytes = 0;
     if (command.callees) {
+        // Calls, then tail jumps out of the function and its chunks.
+        std::vector<save::Range> parts;
+        for (const auto& part : listings)
+            if (!part.rows.empty())
+                parts.push_back({part.rows.front().address, part.rows.back().address + part.rows.back().bytes.size()});
         std::vector<uint64_t> targets;
         for (size_t part = 0; part < listings.size(); ++part)
             for (const uint64_t target : save::Callees(listings[part].rows, *module, address))
+                if (std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
+        for (size_t part = 0; part < listings.size(); ++part)
+            for (const uint64_t target : save::TailJumps(listings[part].rows, *module, parts))
                 if (std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
         for (const uint64_t target : targets) {
             if (starts.size() > save::MaxCallees || calleeBytes >= save::MaxCalleeBytes) {

@@ -51,8 +51,8 @@ Answer one-address questions live, with no database:
   `add_saved` the next save
   (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`). Install
   the loader once (ask: outside the repo). Save from the function's start.
-  A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved (a tail
-  jump, a jump table): save it, `add_saved` it. A typed-pointer index
+  A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved (a jump
+  table, a target past the cap): save it, `add_saved` it. A typed-pointer index
   (`p[27]`) is offset = index × size.
 
 ## Following a native getter

@@ -27,6 +27,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Tail calls saved like calls:** `disasm --save --callees` also saves
+  the functions a direct `jmp` out of the function (or its chunks) reaches,
+  and names unsaved tail targets (`tail` rows), so a wrapper no longer
+  decompiles as a bare `JUMPOUT`. Copy the new loader into IDA's loaders folder.
 - **Chained chunks saved with their function:** `disasm --save` follows a
   function's jumps into exception entries chained to it and saves those
   chunks (`chunks` in the result, `chunk` rows in the file); the IDA loader
