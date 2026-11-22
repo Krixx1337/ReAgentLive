@@ -63,7 +63,7 @@ reports them. Copy them into the profile.
 |---|---|
 | `SuperStruct` | `Struct` → `Field`, `Class` → `Struct`: the one pointer offset where both hold |
 | `Size` (int32) | `Color` 0x4, `Guid` 0x10, `Transform` 0x60 (with doubles) |
-| `ChildProperties` | `Vector`, `Vector4`, `Vector2D`: the one pointer to an `FField` whose name is `X` (`Guid`: `A`). Hashed names: a pointer whose target's `FField.Owner` is the struct itself |
+| `ChildProperties` | `Vector`, `Vector4`, `Vector2D`: a pointer to an `FField` whose name is `X` (`Guid`: `A`). `PropertyLink` (stock 0x70) points at the same field for any struct with no parent, so two offsets fit: keep the one that is null in classes with no own properties but inherited ones (`Property`, `NumericProperty`, many others) while the other is set. Hashed names: a pointer whose target's `FField.Owner` (+0x10) is the struct itself |
 | `Children` | `PlayerController` → a `UFunction` object (`describe` it). The `UField` chain, not the `FField` one |
 | `Script` | a Blueprint function's `TArray<uint8>` (count > 0, capacity ≥ count). Native functions read 0 |
 
@@ -81,7 +81,7 @@ From any `ChildProperties` pointer (an `FField`):
 | `FField.Next` | `Vector.X` → `Y` → `Z` → null |
 | `FField.Name` | an `FName` that decodes to `X` |
 | `FFieldClass.Name` | at 0 in `FFieldClass` |
-| `FFieldClass.CastFlags` | uint64; for `FloatProperty` it includes the float flag (`CASTCLASS_FFloatProperty`) |
+| `FFieldClass.CastFlags` | uint64 that contains the class's own `Id` (a single bit: `ByteProperty` 0x40, `IntProperty` 0x80) plus its parents' bits (`Field` 0x1, `Property` 0x8000) |
 | `UField.Next` | `PlayerController` functions chain: each `Next` is another `UFunction` of the class |
 
 ### property (live)
@@ -91,7 +91,7 @@ From any `ChildProperties` pointer (an `FField`):
 | `Offset` (int32) | `Color`: `B` 0x0, `G` 0x1; `Guid`: `C` 0x8; `Vector`: 0, 8, 16 (doubles) |
 | `ElementSize` (int32) | `Guid.A` 4, `Vector.X` 8 (UE5 doubles), `Color.R` 1 |
 | `ArrayDim` (int32) | 1 for `Guid`'s members, `ElementSize - 4` before it in stock |
-| `PropertyFlags` (uint64) | `Guid.A` and `Color.R`: `Edit | BlueprintVisible | ZeroConstructor | IsPlainOldData` and more, shared across both |
+| `PropertyFlags` (uint64) | every member of `Guid`, `Color` and `Vector` has `ZeroConstructor` (0x200), `NoDestructor` (0x1000000) and `IsPlainOldData` (0x40000000); the rest differs (`Guid`'s members lack `BlueprintVisible`) |
 
 Hashed names: find `Offset` by structure instead. Every member of a struct
 has a distinct offset, the offsets are within the struct's `Size`, and
@@ -104,8 +104,10 @@ offset + element size of the last member ≤ `Size`.
   `Engine`, `PlayerController`, `Actor`, `PrimitiveComponent`,
   `SceneComponent` and `CharacterMovementComponent` (by `FFieldClass.Name`,
   or by cast flags when names are hashed). The base is the one offset where
-  every bool has `FieldSize` 1, `ByteMask` == `FieldMask` a single bit, and
-  `ByteOffset` 0. More than one fits: refuse.
+  every bool has `FieldSize` 1, `ByteOffset` below 8, a single-bit
+  `ByteMask`, and `FieldMask` equal to `ByteMask` (a bitfield bool) or 0xFF
+  (a native `bool`: `ByteMask` 1). Expect both kinds. More than one offset
+  fits: refuse.
 - `FStructProperty.Struct`: `TwoVectors`' members point to the `Vector`
   struct object.
 - `FObjectProperty.PropertyClass`: `Controller.Pawn` → class `Pawn`,
@@ -127,7 +129,7 @@ offset + element size of the last member ≤ `Size`.
 
 | Member | Known answer |
 |---|---|
-| `FunctionFlags` (uint32) | `PlayerController:WasInputKeyJustPressed`: `Final | Native | Public | BlueprintCallable | BlueprintPure | Const`; `ToggleSpeaking`: `Exec | Native | Public` |
+| `FunctionFlags` (uint32) | `PlayerController:WasInputKeyJustPressed` has at least `Final | Native | Public | BlueprintCallable | BlueprintPure | Const` (0x54020401); `ToggleSpeaking` and `SwitchLevel` at least `Exec | Native | Public` (0x20600). Match a superset: engine builds add `RequiredAPI` (0x2) |
 | `ExecFunction` | a pointer into the main module's `.text`, different per function, 8-byte aligned |
 | `ParmsSize` (uint16) | `KismetMathLibrary:Add_IntInt`: 12 (A, B, return) |
 | `ReturnValueOffset` (uint16) | `Add_IntInt`: 8; 0xFFFF for a function with no return |
@@ -184,6 +186,12 @@ static evidence.
 - **Known-answer call** (user approval required):
   `call-pure Default__KismetMathLibrary Add_IntInt A=2 B=3` returns 5.
   Only then turn on `call`, `each` with functions, and the recorder.
+
+### Reading names while probing
+
+Query each comparison index with its own `name` command. A garbage index
+(any pointer or flag word read as an index) can misalign the other names in
+the same `name` reply.
 
 ## 3. Finish
 
