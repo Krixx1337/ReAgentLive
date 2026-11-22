@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <expected>
 #include <functional>
@@ -65,12 +66,18 @@ struct Instruction {
 };
 
 namespace detail {
+// `lengths` runs in minimal mode (length, mnemonic and category, no
+// operands): for sweeps that only step over instructions.
 struct Decoder {
-    ZydisDecoder decoder;
+    ZydisDecoder decoder, lengths;
     ZydisFormatter formatter;
     Decoder() {
-        ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
-        ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
+        // Fixed arguments: a failure means a broken Zydis build, never input.
+        if (!ZYAN_SUCCESS(ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64)) ||
+            !ZYAN_SUCCESS(ZydisDecoderInit(&lengths, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64)) ||
+            !ZYAN_SUCCESS(ZydisDecoderEnableMode(&lengths, ZYDIS_DECODER_MODE_MINIMAL, ZYAN_TRUE)) ||
+            !ZYAN_SUCCESS(ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL)))
+            std::abort();
     }
 };
 }

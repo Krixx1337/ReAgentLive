@@ -84,6 +84,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **`touches` rows lost their `text` on long instructions:** its formatter
+  buffer was 96 characters; it is now 256, as Zydis's examples use. The
+  sweep also decodes operands only for instructions whose raw displacement
+  can match (always for EVEX and MVEX, whose 8-bit displacement is scaled),
+  and its length-only passes use Zydis's minimal decoder mode.
 - **IDA label import refused every database loaded the default way:** it
   read the build from header bytes IDA does not load; it now reads the PE
   header IDA keeps.

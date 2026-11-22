@@ -924,6 +924,21 @@ TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes an
     CHECK(uses[1].write);
     CHECK(uses[1].text.find("0x540") != std::string::npos);
 
+    // EVEX compresses an 8-bit displacement (disp8*N): raw 0x01 is [rcx+0x40]
+    // for a 64-byte operand, so the raw value alone must not filter it out.
+    const auto evex = Join({
+        {0x62, 0xf1, 0x7c, 0x48, 0x10, 0x41, 0x01},       // vmovups zmm0, [rcx+0x40]
+        {0x62, 0xf1, 0x7c, 0x48, 0x10, 0x41, 0x40},       // vmovups zmm0, [rcx+0x1000]: not asked
+    });
+    const std::vector<uint32_t> forty{0x40};
+    const auto scaled = touch::InCode(evex, Base, forty);
+    REQUIRE(scaled.size() == 1);
+    CHECK(scaled[0].instruction == Base);
+    CHECK(scaled[0].offset == 0x40);
+    CHECK(scaled[0].text.find("zmm0") != std::string::npos);
+    const std::vector<uint32_t> one{0x1};
+    CHECK(touch::InCode(evex, Base, one).empty());                   // The raw byte is not the offset.
+
     std::vector<touch::Row> rows(3);
     rows[0].start = 1; rows[0].uses = {uses[0], uses[0], uses[0]};
     rows[1].start = 2; rows[1].uses = {uses[0], uses[1]};

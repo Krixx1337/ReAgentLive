@@ -26,17 +26,37 @@ struct Use {
     std::string text;
 };
 
+// Whether an instruction's raw displacement can be one of `offsets`. Its
+// operands are decoded only then: most instructions are passed over on the
+// raw bytes alone. EVEX and MVEX scale an 8-bit displacement (disp8*N), so
+// theirs is decoded whenever there is one.
+inline bool MayUse(const ZydisDecodedInstruction& instruction, std::span<const uint32_t> offsets) {
+    const auto& disp = instruction.raw.disp;
+    if (!disp.size) return false;
+    if (instruction.encoding == ZYDIS_INSTRUCTION_ENCODING_EVEX || instruction.encoding == ZYDIS_INSTRUCTION_ENCODING_MVEX)
+        return true;
+    return disp.value > 0 && disp.value <= UINT32_MAX &&
+        std::ranges::find(offsets, static_cast<uint32_t>(disp.value)) != offsets.end();
+}
+
 // Uses in straight code [address, address + code.size()). Undecodable bytes
 // (data between chunks) are stepped over one at a time. Stack slots
 // ([rsp + disp]) and RIP-relative globals are never struct members.
 inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, std::span<const uint32_t> offsets) {
     static const dis::detail::Decoder decoder; // Console only: thread-safe statics are fine here.
     std::vector<Use> uses;
+    ZydisDecoderContext context;
     ZydisDecodedInstruction instruction;
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
     for (size_t at = 0; at < code.size();) {
-        if (!ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder.decoder, code.data() + at, code.size() - at, &instruction, operands))) {
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.decoder, &context, code.data() + at, code.size() - at,
+                &instruction))) {
             ++at;
+            continue;
+        }
+        if (!MayUse(instruction, offsets) || !ZYAN_SUCCESS(ZydisDecoderDecodeOperands(&decoder.decoder, &context,
+                &instruction, operands, instruction.operand_count_visible))) {
+            at += instruction.length;
             continue;
         }
         for (uint8_t i = 0; i < instruction.operand_count_visible; ++i) {
@@ -47,7 +67,7 @@ inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, 
             const auto disp = static_cast<uint32_t>(operand.mem.disp.value);
             if (std::ranges::find(offsets, disp) == offsets.end()) continue;
             Use use{address + at, disp, (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0, {}};
-            char text[96];
+            char text[256]; // The size Zydis examples use: long AVX text fits.
             if (ZYAN_SUCCESS(ZydisFormatterFormatInstruction(&decoder.formatter, &instruction, operands,
                     instruction.operand_count_visible, text, sizeof(text), address + at, nullptr))) use.text = text;
             uses.push_back(std::move(use));
@@ -75,7 +95,7 @@ inline std::vector<Piece> Pieces(std::span<const uint8_t> code, uint64_t address
             begin = at;
             continue;
         }
-        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.decoder, nullptr, code.data() + at, code.size() - at,
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.lengths, nullptr, code.data() + at, code.size() - at,
                 &instruction))) {
             ++at;
             continue;
@@ -134,7 +154,7 @@ inline bool NearEnd(std::span<const uint8_t> code, uint64_t address, uint64_t st
     size_t pos = static_cast<size_t>(start - address), end = pos;
     const size_t target = static_cast<size_t>(at - address);
     while (pos < target) {
-        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.decoder, nullptr, code.data() + pos, code.size() - pos,
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.lengths, nullptr, code.data() + pos, code.size() - pos,
                 &instruction))) {
             ++pos; // Junk: step over it a byte at a time.
             continue;
