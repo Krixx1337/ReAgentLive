@@ -80,9 +80,10 @@ struct Command {
     std::optional<uint64_t> expect;
     uint64_t offset = 0;
     std::optional<sig::Resolve> resolve;
-    // disasm: start at the containing function's start and stop at its end;
+    // disasm: start at the containing function's start and stop at its end
+    // (`resume`: start at the address, a cut listing's next; `file`: --save);
     // step through unconditional direct jumps. xrefs: list unknown hits too.
-    bool function = false, follow = false, all = false;
+    bool function = false, follow = false, all = false, resume = false;
     // read, peek, vtable, disasm: offsets of a pointer chain after the
     // address (<addr>->0x10->0x8); the console resolves it before running.
     std::vector<uint64_t> chain;
@@ -133,7 +134,7 @@ inline bool TestName(std::string_view name) {
 // layout-export: classes per call; layout-check: lines per file and mismatch rows shown.
 constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows = 200;
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.
-constexpr uint64_t MaxDisasm = 64, DefaultDisasm = 24;
+constexpr uint64_t MaxDisasm = 64, DefaultDisasm = 24, MaxFunctionDisasm = 2048; // The last: disasm --function.
 namespace touch {
 constexpr size_t MaxOffsets = 8;
 constexpr uint64_t DefaultRange = 0x80000, MaxRange = 0x400000; // Bytes each side of the address.

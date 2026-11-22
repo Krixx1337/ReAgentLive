@@ -335,7 +335,7 @@ sits on the console.
 | **CLI** | text REPL and JSON calls, `$N` refs (typed lines), `base+off`, hex dump | exists, on the client API; one [verb table](tool-interface.md#self-describing-console) describes every command |
 | **GUI** (later) | ImGui desktop window on the console's JSON calls | tables, watch panels |
 | **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON call per command; `reagentlive_gen.py` generates typed functions per console | exists; no logic of its own, so every command lands in the console first; results are strict against the console's table |
-| **Static-tool script** | `frontends/ida/import_labels.py`: imports the console's label file | exists; reads a file, never talks to the agent |
+| **Static-tool scripts** | `frontends/ida/import_labels.py`: imports the console's label file; `frontends/ida/load_function.py`: loads a function saved by `disasm --save` | exist; read a file, never talk to the agent |
 | **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per row of the console's table | exists; on the console's JSON calls ([tool interface](tool-interface.md#tool-interface)) |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
 
@@ -602,6 +602,15 @@ with no database:
   so far matched the file the static tool shows. That still holds; the
   reason is analysis time on large images, not live code differing from the
   file.
+- **A whole function and its constants are in** (`disasm --function`):
+  one function's bytes, decoded linearly to its entry's end, with the
+  values its read-only loads read and the strings it points at. Still local
+  to one address, and nothing is inferred; reading every instruction by
+  hand cost more calls than any other step in a live session.
+- **Saving one function for the static tool is in** (`--save`): the bytes
+  and constants, loaded by a small IDA loader into a database of that one
+  function, so the decompiler is borrowed, not built. A database of the
+  whole image takes hours; one function takes seconds.
 - **Function bounds are in** because they are a table lookup, not analysis:
   the exception directory lists every function with unwind data, sorted, and
   a lookup is a few held reads (sampled entries, then one window). No entry

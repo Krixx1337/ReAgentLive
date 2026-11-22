@@ -5,6 +5,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"
 #include "reagentlive/frontends/cli/code/disasm.h"
+#include "reagentlive/frontends/cli/code/function_save.h"
 #include "reagentlive/frontends/cli/code/image.h"
 #include "reagentlive/frontends/cli/code/native.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
@@ -16,6 +17,7 @@
 #include <array>
 #include <cstring>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -355,6 +357,82 @@ TEST_CASE("disasm walk stops at the return no earlier forward branch passes") {
     CHECK(over->stop == "walk end");
 }
 
+TEST_CASE("a whole-function listing passes the old limits and gives next where a cap cuts it") {
+    Image image;
+    const uint64_t a = Base + 0x6000;
+    std::vector<uint8_t> body(5000, 0x90);   // Past 512 bytes and past one read chunk.
+    body.push_back(0xc3);
+    image.Put(a, body);
+    dis::Options options;
+    options.count = dis::MaxFunctionInstructions;
+    options.bytes = dis::MaxFunctionBytes;
+    options.walk = true;
+    auto whole = dis::List(image.Read(), a, options);
+    REQUIRE(whole);
+    CHECK(whole->rows.size() == dis::MaxFunctionInstructions);   // The row cap comes before the ret.
+    CHECK(whole->stop == "count");
+    REQUIRE(whole->next);
+    CHECK(*whole->next == a + 2048);
+    options.count = 300;
+    auto cut = dis::List(image.Read(), a, options);
+    REQUIRE(cut);
+    CHECK(cut->rows.size() == 300);
+    CHECK(cut->next == a + 300);
+    std::vector<uint8_t> shorter(1000, 0x90);
+    shorter.push_back(0xc3);
+    image.Put(a, shorter);
+    options.count = dis::MaxFunctionInstructions;
+    auto ends = dis::List(image.Read(), a, options);
+    REQUIRE(ends);
+    CHECK(ends->rows.size() == 1001);
+    CHECK(ends->stop == "walk end");
+    CHECK_FALSE(ends->next);
+}
+
+TEST_CASE("read-only loads carry the value they read") {
+    Image image;
+    const uint64_t a = Base + 0x6000, data = Base + 0x8000, writable = Base + 0x9000;
+    const auto rel = [&](uint64_t end, uint64_t target) { return Rel32(static_cast<int32_t>(target - end)); };
+    image.Put(a, Join({{0xf3, 0x0f, 0x10, 0x05}, rel(a + 8, data),             // movss xmm0, [data]
+        {0xf2, 0x0f, 0x10, 0x05}, rel(a + 16, data + 8),                       // movsd xmm0, [data+8]
+        {0x8b, 0x05}, rel(a + 22, data + 16),                                  // mov eax, [data+16]
+        {0x0f, 0x54, 0x05}, rel(a + 29, data + 32),                            // andps xmm0, [data+32]
+        {0x8b, 0x05}, rel(a + 35, writable),                                   // mov eax, [writable]
+        {0x48, 0x8d, 0x05}, rel(a + 42, data),                                 // lea rax, [data]: no load
+        {0xc3}}));
+    const float half = 0.5f;
+    const double deg = 57.29577951308232;
+    std::vector<uint8_t> values(48, 0);
+    std::memcpy(values.data(), &half, 4);
+    std::memcpy(values.data() + 8, &deg, 8);
+    const int32_t seven = -7;
+    std::memcpy(values.data() + 16, &seven, 4);
+    for (int i = 0; i < 4; ++i) { values[32 + i * 4] = 0xff; values[33 + i * 4] = 0xff; values[34 + i * 4] = 0xff; values[35 + i * 4] = 0x7f; }
+    image.Put(data, values);
+    auto listing = dis::List(image.Read(), a, {7});
+    REQUIRE(listing);
+    REQUIRE(listing->rows.size() == 7);
+    const dis::ConstantFn constant = [&](uint64_t at) { return at < writable; };
+    REQUIRE(dis::AddValues(image.Read(), listing->rows, constant));
+    const auto& rows = listing->rows;
+    CHECK(rows[0].value == 0.5);
+    CHECK(rows[0].valueType == "f32");
+    CHECK(rows[1].value == deg);
+    CHECK(rows[1].valueType == "f64");
+    CHECK(rows[2].value == -7);
+    CHECK(rows[2].valueType == "i32");
+    CHECK_FALSE(rows[3].value);
+    CHECK(rows[3].valueBytes.size() == 16);                 // A packed mask: its bytes.
+    CHECK_FALSE(rows[4].value);                             // A writable global: peek it instead.
+    CHECK(rows[4].valueBytes.empty());
+    CHECK_FALSE(rows[5].value);                             // lea reads nothing.
+    const std::vector<Module> modules{image.module};
+    const auto json = Checked(MakeDisasm(a, *listing, std::nullopt, modules, false, true));
+    CHECK(json["rows"][0]["value"] == 0.5);
+    CHECK(json["rows"][0]["value_type"] == "f32");
+    CHECK(json["rows"][3]["value_hex"].is_string());
+}
+
 TEST_CASE("string hints: ASCII, UTF-16 and a target that is not text") {
     Image image;
     const uint64_t at = Base + 0x5000;
@@ -466,6 +544,14 @@ TEST_CASE("fast-lane syntax") {
     CHECK(disasm->follow);
     CHECK(Parse("disasm 0x1000", refs)->limit == DefaultDisasm);
     CHECK_FALSE(Parse("disasm 0x1000 65", refs));
+    // --function: the whole function by default, a count up to its cap; --resume and --save need it.
+    CHECK(Parse("disasm 0x1000 --function", refs)->limit == dis::MaxFunctionInstructions);
+    CHECK(Parse("disasm 0x1000 300 --function", refs)->limit == 300);
+    CHECK_FALSE(Parse("disasm 0x1000 2049 --function", refs));
+    CHECK(Parse("disasm 0x1000 --function --resume", refs)->resume);
+    CHECK(Parse("disasm 0x1000 --function --save fn.jsonl", refs)->file == "fn.jsonl");
+    CHECK_FALSE(Parse("disasm 0x1000 --resume", refs));
+    CHECK_FALSE(Parse("disasm 0x1000 --save fn.jsonl", refs));
     CHECK_FALSE(Parse("disasm 0x1000 --bogus", refs));
 
     auto xrefs = Parse("xrefs 0x1000 --module engine.dll --all", refs);
@@ -543,6 +629,25 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(compact["rows"][0]["target_rva"] == "0x1005");
     CHECK(compact["rows"][0]["string"] == "Weapon.cpp");
     CHECK(compact.dump().size() < json.dump().size());
+    // A --function listing without --meta: no bytes, rva on the first row only, the strings summary, next.
+    dis::Listing more = listing;
+    dis::Instruction second = row;
+    second.address = Base + 0x1005;
+    more.rows.push_back(second);
+    more.next = Base + 0x100a;
+    const auto whole = Checked(MakeDisasm(Base + 0x1000, more, function, modules, false, true));
+    CHECK_FALSE(whole["rows"][0].contains("bytes"));
+    CHECK(whole["rows"][0]["rva"] == "0x1000");
+    CHECK_FALSE(whole["rows"][1].contains("rva"));
+    CHECK(whole["rows"][1]["target_rva"] == "0x1005");
+    REQUIRE(whole["strings"].size() == 1);
+    CHECK(whole["strings"][0]["text"] == "Weapon.cpp");
+    CHECK(whole["strings"][0]["at"].size() == 2);
+    CHECK(whole["next"] == "0x14000100a");
+    const auto wholeFull = Checked(MakeDisasm(Base + 0x1000, more, function, modules, true, true));
+    CHECK(wholeFull["rows"][1].contains("bytes"));
+    CHECK(wholeFull["rows"][1]["rva"] == "0x1005");
+    CHECK_FALSE(compact.contains("strings"));
 
     const std::vector<xref::Hit> hits{{Base + 0x2001, "call", Base + 0x2000}, {Base + 0x3000, "unknown", std::nullopt},
         {Base + 0x4000, "pointer", std::nullopt}};
@@ -554,6 +659,40 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(xr["kinds"]["call"] == 1);
     CHECK(xr["rows"][0]["rva"] == "0x2000");
     CHECK(Checked(MakeXrefs(Base, modules[0], hits, functions, true, false, 0, modules))["rows"].size() == 3);
+}
+
+TEST_CASE("a saved function holds its code, the read-only data it reads and its import names") {
+    const Module module{"Game.exe", Base, 0x100000};
+    std::vector<dis::Instruction> rows(4);
+    rows[0].address = Base + 0x1000; rows[0].bytes = {0xf3, 0x0f, 0x10, 0x05, 0, 0, 0, 0};
+    rows[0].target = Base + 0x8000; rows[0].ripTarget = true; rows[0].loadSize = 4;
+    rows[1].address = Base + 0x1008; rows[1].bytes = {0x48, 0x8d, 0x0d, 0, 0, 0, 0};
+    rows[1].target = Base + 0x8004; rows[1].ripTarget = true; rows[1].string = "Hit";  // Touches the load's 8 bytes: merged.
+    rows[2].address = Base + 0x100f; rows[2].bytes = {0xff, 0x15, 0, 0, 0, 0};
+    rows[2].target = Base + 0x9000; rows[2].ripTarget = true; rows[2].loadSize = 8; rows[2].import = "KERNEL32.dll!Sleep";
+    rows[3].address = Base + 0x2000; rows[3].bytes = {0xc3};                            // After a hop: its own run.
+    const dis::ConstantFn constant = [](uint64_t) { return true; };
+    const auto ranges = save::DataRanges(rows, constant);
+    REQUIRE(ranges.size() == 1);
+    CHECK(ranges[0] == save::Range{Base + 0x8000, Base + 0x8008});
+    const std::vector<std::pair<uint64_t, std::vector<uint8_t>>> data{{Base + 0x8000, {0, 0, 0, 0x3f, 'H', 'i', 't', 0}}};
+    std::istringstream text(save::Lines(module, 7, Base + 0x1000, rows, data));
+    std::vector<Json> lines;
+    for (std::string line; std::getline(text, line);) lines.push_back(Json::parse(line));
+    REQUIRE(lines.size() == 6);
+    CHECK(lines[0]["row"] == "function");
+    CHECK(lines[0]["start"] == "0x140001000");
+    CHECK(lines[0]["end"] == "0x140002001");
+    CHECK(lines[0]["timestamp"] == 7);
+    CHECK(lines[1]["row"] == "code");
+    CHECK(lines[1]["bytes"].get<std::string>().size() == 21 * 2);
+    CHECK(lines[2]["row"] == "code");
+    CHECK(lines[2]["address"] == "0x140002000");
+    CHECK(lines[3]["row"] == "data");
+    CHECK(lines[3]["bytes"] == "0000003f48697400");
+    CHECK(lines[4]["name"] == "fn_1000");
+    CHECK(lines[5]["name"] == "KERNEL32.dll!Sleep");
+    CHECK(lines[5]["rva"] == "0x9000");
 }
 
 TEST_CASE("the cache keeps module layouts") {

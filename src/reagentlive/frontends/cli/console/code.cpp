@@ -8,6 +8,7 @@
 #include <map>
 #include <cstring>
 #include <chrono>
+#include <fstream>
 #include <optional>
 #include <span>
 #include <string>
@@ -15,6 +16,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/code/disasm.h"
+#include "reagentlive/frontends/cli/code/function_save.h"
 #include "reagentlive/frontends/cli/code/pe_names.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
@@ -108,17 +110,27 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     // --function with no entry holding the address (a leaf function, or an
     // image whose directory leaves code out): walk from the address instead.
     const bool walk = command.function && !*function;
-    if (command.function && *function) address = (*function)->range.start;
+    if (command.function && *function && !command.resume) address = (*function)->range.start;
     dis::Options options;
     options.count = command.limit;
     options.follow = command.follow;
     options.walk = walk;
+    if (command.function) options.bytes = dis::MaxFunctionBytes;
     if (command.function && !walk) options.bound = [&session](uint64_t at) { return EntryEnd(session, at); };
     auto listing = dis::List(AgentRead(session), address, options);
     if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
     const auto modules = LoadedModules(session);
     if (auto strings = dis::AddStrings(AgentRead(session), listing->rows, modules); !strings)
         return JsonError(session, jsonCommand, "read", strings.error());
+    // Read-only: inside a loaded module, in a section that is not writable.
+    const dis::ConstantFn constant = [&session, &modules](uint64_t at) {
+        const Module* module = ModuleAt(at, modules);
+        if (!module) return false;
+        auto layout = LayoutOf(session, *module);
+        if (!layout) return false;
+        const auto* section = (*layout)->At(at - module->base);
+        return section && !(section->flags & image::Writable);
+    };
     // [rip + disp] targets in a module's import table: the DLL function the slot holds.
     std::map<uint64_t, std::optional<pe::ImportDirectories>> directories;
     for (auto& row : listing->rows) {
@@ -130,7 +142,31 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             known = directories.emplace(module->base, pe::ReadImportDirectories(AgentRead(session), *module)).first;
         if (known->second) row.import = pe::ImportAt(AgentRead(session), *module, *known->second, *row.target);
     }
-    Emit(session, jsonCommand, MakeDisasm(address, *listing, *function, modules, session.meta));
+    if (auto values = dis::AddValues(AgentRead(session), listing->rows, constant); !values)
+        return JsonError(session, jsonCommand, "read", values.error());
+    if (!command.file.empty()) {
+        const Module* module = ModuleAt(address, modules);
+        if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
+        const auto timestamp = ImageTimestamp(session, *module);
+        if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
+        std::vector<ReadSpan> spans;
+        for (const auto& range : save::DataRanges(listing->rows, constant)) spans.push_back({range.start, range.end - range.start});
+        std::vector<std::pair<uint64_t, std::vector<uint8_t>>> data;
+        const auto read = AgentRead(session);
+        for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
+            const size_t n = std::min(MaxBatchReads, spans.size() - first);
+            auto items = read(std::span(spans).subspan(first, n));
+            if (!items) return JsonError(session, jsonCommand, "read", items.error());
+            for (size_t i = 0; i < n && i < items->size(); ++i)
+                if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
+        }
+        std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
+        if (!file || !(file << save::Lines(*module, *timestamp, address, listing->rows, data)))
+            return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
+    }
+    auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
+    if (!command.file.empty()) out.saved = command.file;
+    Emit(session, jsonCommand, std::move(out));
 }
 
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand) {

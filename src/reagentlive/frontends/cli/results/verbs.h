@@ -158,14 +158,20 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"sig-bytes", "core", "live bytes (default 64, up to 96) in both pattern forms, address fields wildcarded",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}}, {},
             Of<shape::SigBytes>, parse::SigBytes},
-        {"disasm", "core", "1..64 instructions (default 24, up to 512 bytes) decoded from live bytes",
-            {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions", "24"}},
-            {{"--function", Takes::Nothing, "bool", "", "list the containing function (exception table; else walk from addr)"},
+        {"disasm", "core", "instructions decoded from live bytes: 1..64 (default 24, 512 bytes), or a whole function",
+            {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions (--function: up to 2048)", "24"}},
+            {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},
+             {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},
+             {"--save", Takes::One, "path", "file", "with --function: write the function and its read-only data for a static tool"},
              {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
-            Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints and import names; the "
-            "listing names the module once. --meta adds each row's module and address fields. Accepts a pointer chain. "
-            "--function where no exception-table entry holds addr lists from addr to the first return or jump no "
-            "earlier forward branch passes: stop \"walk end\", no function key; addr is the start you gave."},
+            Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
+            "value a read-only [rip + disp] load reads; the listing names the module once. --meta adds each row's module "
+            "and address fields. Accepts a pointer chain. --function lists to the function's end, up to 2048 "
+            "instructions or 16 KB (a cut gives next: continue with --resume), with compact rows (no bytes, rva on the "
+            "first row; --meta for full rows) and strings: each string referenced, with the rows using it. Where no "
+            "exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch "
+            "passes: stop \"walk end\", no function key. Strings built at run time, reached through a pointer, or held as "
+            "names are not seen."},
         {"xrefs", "core", "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", One, "addr", at}},
             {{"--module", Takes::One, "str", "name", "scan another loaded module"},

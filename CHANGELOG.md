@@ -25,6 +25,17 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+### New
+
+- **Whole functions in one call:** `disasm --function` lists the function
+  to its end (up to 2,048 instructions) with compact rows, the value each
+  read-only constant load reads, and a `strings` summary
+  ([disasm](docs/commands/fast-lane.md#disasm)).
+- **Decompile one function without a whole-image database:**
+  `disasm --function --save <file>` and the IDA loader
+  `frontends/ida/load_function.py`
+  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+
 ### Improved
 
 - **`touches` finds code outside the exception directory:** leaf functions

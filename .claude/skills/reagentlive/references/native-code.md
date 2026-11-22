@@ -6,8 +6,11 @@ Verb behaviour: fast lane (`docs/commands/fast-lane.md`).
 
 Answer one-address questions live, with no database:
 
-- What is here: `disasm <addr>` (`--function` for the whole entry,
-  `--follow` through a jump stub). An `import` target names an API call.
+- What is here: `disasm <addr>` (`--follow` through a jump stub). A whole
+  function is one call: `disasm <addr> --function` gives every
+  instruction, the constants its loads read and the strings it uses; read
+  formulas from it instead of `read`ing each constant. An `import` target
+  names an API call.
 - What points here: `xrefs <addr>` (`--module` for a DLL calling into the
   exe).
 - What code uses these member offsets: `touches <exec> <offset>...` from a
@@ -41,6 +44,17 @@ Answer one-address questions live, with no database:
   import the labels again. The first auto-analysis of a large Unreal image
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
+- **No database of this build, or not worth one:** `disasm <addr>
+  --function --save <file>` and the IDA loader
+  (`src/reagentlive/frontends/ida/load_function.py`) give a database of
+  that one function in seconds; decompile it there. Calls out of it stay
+  bare addresses: save each callee you need the same way
+  (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`).
+  The loader is installed once in IDA's user loaders folder (ask: it is
+  outside the repo). A headless IDA bridge opens the saved file directly;
+  before opening a new save under the same name, close it and delete the
+  database files beside it. A member read through a typed pointer shows as
+  an index (`p[27]` on a `float *`): the offset is index × element size.
 
 ## Following a native getter
 
@@ -50,7 +64,8 @@ Answer one-address questions live, with no database:
 - Where the exception table has no entry (a leaf function, or a packed
   image that leaves real functions out), `disasm --function` walks from
   the address you give: give it the function's start (the byte after the
-  previous `ret`) and, when it stops on the count, list on from the last row.
+  previous `ret`). A listing a cap cut gives `next`: continue with
+  `disasm <next> --function --resume`.
 
 ## Native interface getters
 

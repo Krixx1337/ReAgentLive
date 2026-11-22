@@ -17,7 +17,7 @@ holds), `func` (a reflected function's native entry), `disasm`, `xrefs`,
 `touches` and `sig-check`.
 
 ```text
-disasm <addr> [count] [--function] [--follow]
+disasm <addr> [count] [--function [--resume] [--save F]] [--follow]
 xrefs <addr> [--module M] [--all]
 touches <addr> <offset> [offset ...] [--range N] [--reads]
 search text <text|"quoted text"> [--wide] [search options]
@@ -41,10 +41,13 @@ chance bytes. Bounds are never guessed from padding or prologues.
 
 `disasm` decodes up to `count` instructions (1..64, default 24) and 512
 bytes of live memory from `addr`, which must be an instruction boundary
-(the decoder is Zydis, in the console only). One read; when part of it is
-unreadable, up to the page end and on from there.
-- `--function` starts at the start of the function holding `addr` and stops
-  at its end. When no entry holds it, it walks from `addr` instead: the
+(the decoder is Zydis, in the console only). Reads of up to 4 KB; when part
+of one is unreadable, up to the page end and on from there.
+- `--function` lists the whole function holding `addr`, from its start to
+  its end: up to 2,048 instructions (`count` lowers it) and 16 KB. A cap
+  that cuts it gives `next`; `disasm <next> --function --resume` lists on
+  from there (`--resume` starts at `addr`, not at the function's start).
+  When no entry holds `addr`, it walks from `addr` instead: the
   listing stops (`stop: "walk end"`) at the first return or unconditional
   jump that no earlier forward branch passes, counting branches up to
   16 KB ahead (farther ones are tail calls). `function` is then absent and
@@ -65,15 +68,53 @@ unreadable, up to the page end and on from there.
   `!#12` by ordinal), read from the live headers; `fields` (`offset`, `size`, `kind`:
   `relative`, `rip`, `displacement`, `immediate`), which bytes of the
   instruction hold each value; `ends` on a return or unconditional jump.
+- `value` when an operand `[rip + disp]` is read (not `lea`, not a
+  branch) from a section that is not writable: a scalar with `value_type`
+  (`f32`, `f64`, `i32`, `i64`, by the operand's element type and size),
+  anything else (a packed mask, a 16-byte vector) as `value_hex`. A
+  writable target is a global that changes: `peek` it. Import slots get
+  `import` instead.
 - Rows are compact: the listing names its `module` once. `--meta` (a line
   ending in it, or `"meta": true` in a JSON call) adds each row's `module`,
   every `target_module` and `fields`; the generated tools do not pass it.
-  For masks to build a signature from, `sig-bytes` gives the same fields.
+  Under `--function` rows are more compact still: no `bytes`, and `rva`
+  only on the first row (targets keep `target_rva`); `--meta` brings back
+  full rows. For masks to build a signature from, `sig-bytes` gives the
+  same fields.
+- `strings` (with `--function`): each distinct string the rows reference,
+  once, with `at`: the rows using it, in order. Only strings the code
+  points at directly: text built at run time, reached through a pointer
+  table, or held as names in a name pool is not seen.
 - `size` is the bytes the rows cover; `stop` says why it ended (`count`,
-  `bytes`, `function end`, or `end`'s reason). Bytes that do not decode, an instruction running past the byte
+  `bytes`, `function end`, `walk end`, or `end`'s reason); `next` where
+  `count` or `bytes` cut it. Bytes that do not decode, an instruction running past the byte
   limit or the function end, or into unreadable memory end it with `end`
   {`address`, `offset` (bytes listed before it), `reason`}, never a guess.
 - No summary of what a function does, no names beyond `string` and `import`.
+
+### Saving a function for a static tool
+
+`disasm <addr> --function --save <file>` also writes the listed function
+for a static tool, so it decompiles that one function without analysing
+the whole image. The result names the file in `saved`. JSON lines:
+
+| `row` | Keys |
+|---|---|
+| `function` | `module`, `module_size`, `timestamp` (the build), `base`, `start`, `end` |
+| `code` | `address`, `rva`, `bytes` (hex): the listed code, one row per contiguous run |
+| `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch |
+| `name` | `address`, `rva`, `name`, `what`: the function (`fn_<rva>`) and each import slot it calls through |
+
+`frontends/ida/load_function.py` is the IDA loader: copy it into IDA's
+user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and
+open the file; IDA's headless library reads the same folder, so an
+automated session opens it too. It builds an x64 database (Visual C++, so
+the decompiler uses the Windows calling convention) with one segment per
+`code` and `data` row at its live address, makes the function and names
+the imports.
+Calls into code that was not saved stay bare addresses; writable globals
+are not saved (their values change). The `rva`s cross back to a full
+database of the same build.
 
 ## xrefs
 

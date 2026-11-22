@@ -50,7 +50,7 @@ struct InstructionField {
 struct Instruction {
     Addr address;
     Location where;
-    HexBytes bytes;
+    std::optional<HexBytes> bytes;       // Absent in a whole-function listing without --meta.
     std::string text;
     std::optional<Addr> target;
     Location targetWhere;
@@ -59,6 +59,11 @@ struct Instruction {
     std::optional<std::string> import;   // An import-table slot target: "kernel32.dll!VirtualAlloc".
     std::optional<std::vector<InstructionField>> fields;
     std::optional<bool> ends;
+    // A read-only [rip + disp] load's value: a scalar as `value` with
+    // `value_type` (f32, f64, i32, i64), anything else as `value_hex`.
+    std::optional<double> value;
+    std::optional<std::string> valueType;
+    std::optional<HexBytes> valueHex;
     template<class V> static void Describe(V& v) {
         v("address", &Instruction::address);
         v.flat("", &Instruction::where);
@@ -71,6 +76,20 @@ struct Instruction {
         v("import", &Instruction::import);
         v("fields", &Instruction::fields);
         v("ends", &Instruction::ends);
+        v("value", &Instruction::value);
+        v("value_type", &Instruction::valueType);
+        v("value_hex", &Instruction::valueHex);
+    }
+};
+// A string a whole-function listing references, once, with the rows using it.
+struct DisasmString {
+    std::string text;
+    std::optional<bool> wide;
+    std::vector<Addr> at;
+    template<class V> static void Describe(V& v) {
+        v("text", &DisasmString::text);
+        v("wide", &DisasmString::wide);
+        v("at", &DisasmString::at);
     }
 };
 struct DisasmEnd {
@@ -92,14 +111,19 @@ struct DisasmHop {
         v.flat("to_", &DisasmHop::toWhere);
     }
 };
-// disasm: the rows, how many bytes they cover, why the listing stopped, the
-// hops --follow took, and the function entry holding the first address.
+// disasm: the rows, how many bytes they cover, why the listing stopped
+// (`next` where a count or byte limit cut it), the hops --follow took, the
+// function entry holding the first address, and with --function the strings
+// the rows reference.
 struct Disasm {
     Addr address;
     Location where;
     uint64_t size = 0;
     std::string stop;
+    std::optional<Addr> next;
     std::vector<Instruction> rows;
+    std::optional<std::vector<DisasmString>> strings;
+    std::optional<std::string> saved;    // --save: the file written.
     std::optional<FunctionBounds> function;
     std::optional<DisasmEnd> end;
     std::optional<std::vector<DisasmHop>> followed;
@@ -109,7 +133,10 @@ struct Disasm {
         v.flat("", &Disasm::where);
         v("size", &Disasm::size);
         v("stop", &Disasm::stop);
+        v("next", &Disasm::next);
         v("rows", &Disasm::rows);
+        v("strings", &Disasm::strings);
+        v("saved", &Disasm::saved);
         v("function", &Disasm::function);
         v("end", &Disasm::end);
         v("followed", &Disasm::followed);
@@ -336,12 +363,14 @@ inline std::optional<shape::FunctionBounds> MakeFunction(const std::optional<unw
 }
 
 // Compact unless `full` (--meta): no `fields`, and no module name the listing
-// already gives (the row's own, or a target's in the same module).
-inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span<const Module> modules, bool full = true) {
+// already gives (the row's own, or a target's in the same module). `whole`
+// (a --function listing without --meta) also drops bytes.
+inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span<const Module> modules, bool full = true,
+                                          bool whole = false) {
     shape::Instruction out;
     out.address = row.address;
     out.where = Locate(row.address, modules);
-    out.bytes = HexBytes(row.bytes);
+    if (full || !whole) out.bytes = HexBytes(row.bytes);
     out.text = row.text;
     if (row.target) {
         out.target = Addr(*row.target);
@@ -358,21 +387,38 @@ inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span
         for (const auto& field : row.fields) out.fields->push_back({field.offset, field.size, std::string(field.kind)});
     }
     if (row.ends) out.ends = true;
+    if (row.value) {
+        out.value = *row.value;
+        out.valueType = std::string(row.valueType);
+    } else if (!row.valueBytes.empty()) out.valueHex = HexBytes(row.valueBytes);
     if (!full) out.where.module.reset();
     return out;
 }
 
+// `whole`: a --function listing. Without `full` its rows lose bytes and,
+// past the first, their rva; it adds the strings summary either way.
 inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
                                 const std::optional<unwind::Function>& function, std::span<const Module> modules,
-                                bool full = true) {
+                                bool full = true, bool whole = false) {
     shape::Disasm out;
     out.address = address;
     out.where = Locate(address, modules);
     for (const auto& row : listing.rows) {
-        out.rows.push_back(MakeInstruction(row, modules, full));
+        out.rows.push_back(MakeInstruction(row, modules, full, whole));
+        if (whole && !full && out.rows.size() > 1) out.rows.back().where.rva.reset();
         out.size += row.bytes.size();
     }
+    if (whole) {
+        out.strings.emplace();
+        for (const auto& use : dis::Strings(listing.rows)) {
+            shape::DisasmString item{use.text, std::nullopt, {}};
+            if (use.wide) item.wide = true;
+            for (const uint64_t at : use.at) item.at.push_back(Addr(at));
+            out.strings->push_back(std::move(item));
+        }
+    }
     out.stop = listing.stop;
+    if (listing.next) out.next = Addr(*listing.next);
     out.function = MakeFunction(function, modules);
     if (listing.end) out.end = shape::DisasmEnd{listing.end->address, listing.end->offset, listing.end->reason};
     if (!listing.followed.empty()) {

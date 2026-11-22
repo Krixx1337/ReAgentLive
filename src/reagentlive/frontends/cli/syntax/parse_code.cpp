@@ -7,15 +7,23 @@
 namespace reagentlive::cli::parse {
 using namespace text;
 
-// disasm <addr> [count] [--function] [--follow]: one read, decoded in the console.
+// disasm <addr> [count] [--function [--resume] [--save F]] [--follow]: decoded in the console.
+// --function lists the whole function: count defaults to its cap.
 Parsed Disasm(const Args& args, const ParseContext& context) {
     Command command;
-    uint64_t count = DefaultDisasm;
+    command.function = args.Has("--function");
+    const uint64_t most = command.function ? MaxFunctionDisasm : MaxDisasm;
+    uint64_t count = command.function ? MaxFunctionDisasm : DefaultDisasm;
     std::string why;
     if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
-    if (!args.At(1).empty() && (!Number(args.At(1), count) || !count || count > MaxDisasm))
-        return Fail("count must be 1.." + std::to_string(MaxDisasm));
-    command.function = args.Has("--function");
+    if (!args.At(1).empty() && (!Number(args.At(1), count) || !count || count > most))
+        return Fail("count must be 1.." + std::to_string(most));
+    command.resume = args.Has("--resume");
+    if (args.Has("--save")) {
+        command.file = args.Value("--save");
+        if (command.file.empty()) return Fail("--save needs a file");
+    }
+    if (!command.function && (command.resume || !command.file.empty())) return Fail("--resume and --save need --function");
     command.follow = args.Has("--follow");
     command.kind = Kind::Disasm;
     command.limit = static_cast<uint32_t>(count);

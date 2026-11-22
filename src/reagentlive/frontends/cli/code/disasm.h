@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <expected>
 #include <functional>
 #include <optional>
@@ -16,10 +17,14 @@
 #include <vector>
 #include "reagentlive/core/client.h"
 #include "reagentlive/frontends/cli/code/signature.h"
+#include "reagentlive/frontends/cli/syntax/command.h"
 
 namespace reagentlive::cli::dis {
 using ReadFn = sig::ReadFn;
 constexpr size_t MaxInstructions = 64, MaxBytes = 512, DefaultCount = 24;
+// --function lists the whole function, up to these; a cut listing gives `next`.
+constexpr size_t MaxFunctionInstructions = MaxFunctionDisasm, MaxFunctionBytes = 0x4000;
+constexpr size_t ReadChunk = MaxRead - sizeof(Status); // Bytes per read request.
 constexpr size_t MaxFollow = 3;     // Unconditional direct jumps stepped through per listing.
 constexpr uint64_t MaxWalkReach = 0x4000; // A walk counts forward branches this near; farther ones are tail calls.
 constexpr size_t MinString = 4, MaxString = 96;
@@ -48,6 +53,15 @@ struct Instruction {
     std::optional<std::string> string; // Text at a RIP-relative target, cut at MaxString.
     bool wide = false;                // string was UTF-16.
     std::optional<std::string> import; // An import-table slot target: the DLL and function it holds.
+    // The [rip + disp] operand the instruction reads (not lea, not a branch):
+    // its size and element in bytes, and whether the elements are floats.
+    uint8_t loadSize = 0, elementSize = 0;
+    bool floats = false;
+    // What it reads, from a non-writable section: a scalar as `value` with
+    // `valueType` (f32, f64, i32, i64), anything else as `valueBytes`.
+    std::optional<double> value;
+    std::string_view valueType;
+    std::vector<uint8_t> valueBytes;
 };
 
 namespace detail {
@@ -88,6 +102,12 @@ inline std::expected<Instruction, DecodeError> Decode(std::span<const uint8_t> b
         if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&instruction, &operand, address, &target))) {
             out.target = target;
             out.ripTarget = rip;
+        }
+        if (rip && (operand.actions & ZYDIS_OPERAND_ACTION_MASK_READ) && instruction.mnemonic != ZYDIS_MNEMONIC_LEA &&
+            instruction.meta.category != ZYDIS_CATEGORY_CALL && instruction.meta.category != ZYDIS_CATEGORY_UNCOND_BR) {
+            out.loadSize = static_cast<uint8_t>(operand.size / 8);
+            out.elementSize = static_cast<uint8_t>(operand.element_size / 8);
+            out.floats = operand.element_type == ZYDIS_ELEMENT_TYPE_FLOAT32 || operand.element_type == ZYDIS_ELEMENT_TYPE_FLOAT64;
         }
         break;
     }
@@ -173,7 +193,8 @@ struct Hop { uint64_t from, to; };
 // or nullopt for no bound; only with --function.
 using BoundFn = std::function<std::optional<uint64_t>(uint64_t address)>;
 struct Options {
-    size_t count = DefaultCount;  // 1..MaxInstructions.
+    size_t count = DefaultCount;  // 1..MaxFunctionInstructions.
+    size_t bytes = MaxBytes;      // 1..MaxFunctionBytes.
     bool follow = false;
     BoundFn bound;                // Null: no bound.
     // No bound known: stop at a return or unconditional jump that no earlier
@@ -185,6 +206,7 @@ struct Listing {
     std::vector<Hop> followed;
     std::optional<End> end;       // Undecodable, unreadable or cut by a limit inside an instruction.
     std::string stop;             // "count", "bytes", "function end", "walk end", or the end's reason.
+    std::optional<uint64_t> next; // Stopped by "count" or "bytes": where to list on.
 };
 
 // Lists up to `count` instructions and MaxBytes bytes from `start`, an
@@ -193,22 +215,24 @@ struct Listing {
 // inside the same limits.
 inline std::expected<Listing, std::string> List(const ReadFn& read, uint64_t start, const Options& options) {
     Listing listing;
-    const size_t count = std::clamp<size_t>(options.count, 1, MaxInstructions);
+    const size_t count = std::clamp<size_t>(options.count, 1, MaxFunctionInstructions);
+    const size_t limit = std::clamp<size_t>(options.bytes, 1, MaxFunctionBytes);
     size_t used = 0;
     uint64_t cursor = start;
     std::optional<uint64_t> until = options.bound ? options.bound(start) : std::nullopt;
     std::vector<uint8_t> buffer;
     uint64_t bufferStart = 0;
-    bool pageCut = false;   // The buffer ends at a page boundary because the rest was unreadable.
+    bool pageCut = false;   // The buffer ends before what may be listed: a read chunk or an unreadable page.
     uint64_t reach = 0;     // walk: the farthest forward branch target seen.
     // Reads from the cursor up to the budget and the bound; on failure, up to
     // the page end. False when nothing there is readable.
     const auto fill = [&]() -> std::expected<bool, std::string> {
-        uint64_t want = MaxBytes - used;
+        uint64_t want = limit - used;
         if (until) want = std::min<uint64_t>(want, *until > cursor ? *until - cursor : 0);
         if (!want) return true;
+        const uint64_t chunk = std::min<uint64_t>(want, ReadChunk);
         const uint64_t pageRest = 0x1000 - (cursor & 0xfff);
-        for (const uint64_t length : {want, std::min(want, pageRest)}) {
+        for (const uint64_t length : {chunk, std::min(chunk, pageRest)}) {
             const ReadSpan span{cursor, length};
             auto items = read(std::span(&span, 1));
             if (!items) return std::unexpected(items.error());
@@ -229,9 +253,9 @@ inline std::expected<Listing, std::string> List(const ReadFn& read, uint64_t sta
     if (auto filled = fill(); !filled) return std::unexpected(filled.error());
     else if (!*filled) { stopAt("unreadable"); return listing; }
     while (true) {
-        if (listing.rows.size() == count) { listing.stop = "count"; break; }
+        if (listing.rows.size() == count) { listing.stop = "count"; listing.next = cursor; break; }
         if (until && cursor >= *until) { listing.stop = "function end"; break; }
-        if (used >= MaxBytes) { listing.stop = "bytes"; break; }
+        if (used >= limit) { listing.stop = "bytes"; listing.next = cursor; break; }
         const auto available = std::span(buffer).subspan(static_cast<size_t>(cursor - bufferStart));
         auto instruction = Decode(available, cursor);
         if (!instruction && instruction.error() == DecodeError::NoMoreData && pageCut) {
@@ -264,7 +288,7 @@ inline std::expected<Listing, std::string> List(const ReadFn& read, uint64_t sta
             listing.followed.push_back({from, to});
             cursor = to;
             until = options.bound ? options.bound(to) : std::nullopt;
-            if (listing.rows.size() == count || used >= MaxBytes) continue;
+            if (listing.rows.size() == count || used >= limit) continue;
             if (auto filled = fill(); !filled) return std::unexpected(filled.error());
             else if (!*filled) { stopAt("unreadable"); break; }
             continue;
@@ -336,5 +360,72 @@ inline std::expected<void, std::string> AddStrings(const ReadFn& read, std::vect
         }
     }
     return {};
+}
+
+// The value every read-only load reads: `constant` says whether an address
+// lies in a non-writable section of a loaded module. Import slots are named
+// instead. Read MaxBatchReads per request.
+using ConstantFn = std::function<bool(uint64_t address)>;
+inline std::expected<void, std::string> AddValues(const ReadFn& read, std::vector<Instruction>& rows, const ConstantFn& constant) {
+    std::vector<ReadSpan> spans;
+    std::vector<size_t> owners;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const auto& row = rows[i];
+        if (!row.target || !row.ripTarget || !row.loadSize || row.loadSize > 16 || row.import || !constant(*row.target)) continue;
+        spans.push_back({*row.target, row.loadSize});
+        owners.push_back(i);
+    }
+    for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
+        const size_t n = std::min(MaxBatchReads, spans.size() - first);
+        auto items = read(std::span(spans).subspan(first, n));
+        if (!items) return std::unexpected(items.error());
+        for (size_t i = 0; i < n && i < items->size(); ++i) {
+            if (!(*items)[i] || (*items)[i]->size() != spans[first + i].length) continue;
+            auto& row = rows[owners[first + i]];
+            const auto& bytes = *(*items)[i];
+            const bool scalar = row.elementSize == row.loadSize || !row.elementSize;
+            if (scalar && row.floats && row.loadSize == 4) {
+                float v;
+                memcpy(&v, bytes.data(), 4);
+                row.value = v;
+                row.valueType = "f32";
+            } else if (scalar && row.floats && row.loadSize == 8) {
+                double v;
+                memcpy(&v, bytes.data(), 8);
+                row.value = v;
+                row.valueType = "f64";
+            } else if (scalar && !row.floats && row.loadSize == 4) {
+                int32_t v;
+                memcpy(&v, bytes.data(), 4);
+                row.value = v;
+                row.valueType = "i32";
+            } else if (scalar && !row.floats && row.loadSize == 8) {
+                int64_t v;
+                memcpy(&v, bytes.data(), 8);
+                if (v > -(int64_t{1} << 53) && v < (int64_t{1} << 53)) {
+                    row.value = static_cast<double>(v);
+                    row.valueType = "i64";
+                } else row.valueBytes = bytes;
+            } else row.valueBytes = bytes;
+        }
+    }
+    return {};
+}
+
+// Each distinct string the rows reference, once, with the rows using it in order.
+struct StringUse {
+    std::string text;
+    bool wide = false;
+    std::vector<uint64_t> at;
+};
+inline std::vector<StringUse> Strings(std::span<const Instruction> rows) {
+    std::vector<StringUse> out;
+    for (const auto& row : rows) {
+        if (!row.string) continue;
+        auto found = std::ranges::find_if(out, [&](const StringUse& use) { return use.text == *row.string && use.wide == row.wide; });
+        if (found == out.end()) out.push_back({*row.string, row.wide, {row.address}});
+        else found->at.push_back(row.address);
+    }
+    return out;
 }
 }

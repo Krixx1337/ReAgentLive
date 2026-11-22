@@ -252,5 +252,9 @@ Not interfaces: they never drive the agent.
   it brings in a labels file the console wrote, refuses one from another
   build and never replaces a name you gave
   ([labels for a static tool](commands/unreal.md#labels-for-a-static-tool)).
+- **IDA function loader** (`frontends/ida/load_function.py`): an IDA
+  loader for a function `disasm --function --save` wrote, so IDA
+  decompiles it without the whole image
+  ([saving a function](commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 - **Round-trip timings** (`frontends/python/benchmark.py`): measures calls
   against a running host.
