@@ -138,8 +138,10 @@ void Configure(TickFn tick, LogFn log) {
 
 void Arm() {
     if (InterlockedCompareExchange(&g_shutdown, 0, 0)) return;
-    if (Mode() == GameThreadMode::Conflict || Mode() == GameThreadMode::Stopped) Enter(GameThreadMode::Off, "armed");
+    const auto mode = Mode();
     InterlockedExchange(&g_armed, 1);
+    if (mode != GameThreadMode::On && mode != GameThreadMode::Waiting)
+        Enter(GameThreadMode::Waiting, "armed: the host installs on its next tick");
 }
 
 void Poll() {
