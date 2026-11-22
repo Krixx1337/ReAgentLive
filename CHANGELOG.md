@@ -84,6 +84,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **Functions whose exception entry begins early listed nothing:** a
+  packed image can start an entry a few bytes before the code, on bytes
+  that do not decode. `disasm --function` then lists from the address given,
+  and `--callees` always lists from the call target, the entry bounding the end.
 - **`touches` rows lost their `text` on long instructions:** its formatter
   buffer was 96 characters; it is now 256, as Zydis's examples use. The
   sweep also decodes operands only for instructions whose raw displacement

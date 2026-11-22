@@ -210,6 +210,13 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     };
     auto listing = list(address, command.limit, walk, command.follow);
     if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+    // An entry whose start does not decode (a packed image's, a few bytes
+    // early): list from the address given instead, still bounded by the entry.
+    if (listing->rows.empty() && address != command.request.address) {
+        address = command.request.address;
+        listing = list(address, command.limit, false, command.follow);
+        if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+    }
     auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
     if (piece) out.piece = shape::AddressRange{piece->start, piece->end};
     if (command.file.empty()) return Emit(session, jsonCommand, std::move(out));
@@ -230,9 +237,11 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
                 skipped.push_back(target);
                 continue;
             }
+            // A call target is a start, even where an entry says otherwise
+            // (one that begins a few bytes early); the entry bounds the end.
             auto entry = FunctionAt(session, target);
             if (!entry) return JsonError(session, jsonCommand, "unwind", entry.error());
-            const uint64_t start = *entry ? (*entry)->range.start : target; // A call target is a start.
+            const uint64_t start = target;
             if (std::ranges::find(starts, start) != starts.end()) continue;
             auto callee = list(start, MaxFunctionDisasm, !*entry, false);
             if (!callee || callee->rows.empty()) {

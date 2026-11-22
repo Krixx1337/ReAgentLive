@@ -53,6 +53,8 @@ of one is unreadable, up to the page end and on from there.
   its end: up to 2,048 instructions (`count` lowers it) and 16 KB. A cap
   that cuts it gives `next`; `disasm <next> --function --resume` lists on
   from there (`--resume` starts at `addr`, not at the function's start).
+  An entry whose start does not decode (a packed image may begin one a
+  few bytes early) is listed from `addr` instead, still bounded by it.
   When no entry holds `addr`, it walks from `addr` instead: the
   listing stops (`stop: "walk end"`) at the first return or unconditional
   jump that no earlier forward branch passes, counting branches up to
@@ -107,7 +109,8 @@ instructions in `saved_rows`; it leaves out `rows` and `strings`, which
 the file holds.
 
 - **`--callees`** also saves each function it calls directly, one level
-  deep, each once, up to 16 functions or 256 KB of code: calls between
+  deep, each once, up to 16 functions or 256 KB of code, each listed from
+  the call target (an entry that begins elsewhere only bounds its end): calls between
   saved functions then read as names, and every callee decompiles from the
   same database. The result lists each saved function in `functions` and
   the call targets past the cap in `skipped`.
