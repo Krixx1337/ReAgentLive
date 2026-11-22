@@ -14,7 +14,15 @@
 namespace reagentlive::ue {
 // size: the object's class size from a single `Describe` (0 from other
 // lookups, or when the agent could not read it).
-struct Object { Ref ref; std::string name, className; uint32_t size = 0; };
+// outer: the object's outer (a function's class, a subobject's owner); zero for a package.
+struct Object { Ref ref; std::string name, className; uint32_t size = 0; Ref outer{}; };
+// The outer filter of find, each and census (protocol_ue.h): objects with
+// this object up their outer chain, or an outer whose name contains text.
+struct OuterFilter {
+    std::string_view text;
+    uint64_t object = 0;
+    bool Empty() const { return text.empty() && !object; }
+};
 struct FindResult {
     std::vector<Object> objects; // Up to MaxFindResults matches from the cursor on.
     uint64_t total;              // All matches in the table.
@@ -29,6 +37,7 @@ struct FindOptions {
     bool exact = false;
     // Live instances only: no class default or archetype objects (FindLive).
     bool live = false;
+    OuterFilter outer;
 };
 struct Field {
     uint32_t offset, size;
@@ -125,7 +134,7 @@ struct CensusResult {
     uint64_t instances;          // Sum over rows.
 };
 // All pages: live instances per exact class, optionally under class `className`.
-Result<CensusResult> Census(Client& client, std::string_view className,
+Result<CensusResult> Census(Client& client, std::string_view className, OuterFilter outer = {},
                             std::chrono::milliseconds timeout = std::chrono::minutes(2));
 // A function's bytecode: confirmed anchored entries (protocol_ue.h), all pages.
 struct ScriptResult {
@@ -156,6 +165,7 @@ struct EachQuery {
     std::string_view function;   // Call mode: "[Owner:]Function"; empty = field mode.
     uint32_t offset = 0, size = 0; // Field: its offset and size. Call: the parameter block size.
     bool reuse = false;          // Re-read the instance list of the previous query of this class.
+    OuterFilter outer;
 };
 struct EachRow { Ref object; std::vector<uint8_t> value; };
 struct EachResult {

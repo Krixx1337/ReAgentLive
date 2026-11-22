@@ -56,7 +56,22 @@ Parsed FunctionTarget(const Args& args, const ParseContext& context, uint32_t op
     return command;
 }
 
-Parsed CensusOptions(const Args& args, bool changed) {
+// --outer: an object when it parses as one (a literal ref, an address, $N), else an outer's name text.
+std::string Outer(const Args& args, std::span<const Ref> refs, Command& command) {
+    if (!args.Has("--outer")) return {};
+    command.outer = args.Value("--outer");
+    Request object{};
+    if (Object(command.outer, refs, object) && ue::GetRef(object).address) {
+        command.outerAddress = ue::GetRef(object).address;
+        return {};
+    }
+    if (command.outer.empty() || command.outer.size() >= ue::MaxOuterText)
+        return "--outer is an object, or 1.." + std::to_string(ue::MaxOuterText - 1) + " characters of an outer's name";
+    command.outerText = command.outer;
+    return {};
+}
+
+Parsed CensusOptions(const Args& args, std::span<const Ref> refs, bool changed) {
     Command command;
     Request& request = command.request;
     command.limit = DefaultCensusLimit;
@@ -64,6 +79,7 @@ Parsed CensusOptions(const Args& args, bool changed) {
     command.match = args.Value("--match");
     if (args.Has("--cls") && (!ClassName(args.Value("--cls")) || !ClassFilter(args, request)))
         return Fail("--cls is one class name");
+    if (auto why = Outer(args, refs, command); !why.empty()) return Fail(std::move(why));
     uint64_t number = 0;
     if (args.Has("--limit")) {
         if (!Number(args.Value("--limit"), number) || number > UINT32_MAX) return Fail("--limit is a number (0: all)");
@@ -77,15 +93,16 @@ Parsed CensusOptions(const Args& args, bool changed) {
 }
 
 // find [text] [--cls Class] [--live] [--start cursor]; text keeps its inner spaces.
-Parsed Find(const Args& args, const ParseContext&) {
+Parsed Find(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;
     const std::string text = args.From(0);
     if (!ClassFilter(args, request)) return Fail("one class name, under 64 characters");
+    if (auto why = Outer(args, context.refs, command); !why.empty()) return Fail(std::move(why));
     uint64_t from = 0;
     if (!Cursor(args, INT32_MAX, from)) return Fail("cursor must be a slot number");
     request.args[1] = from;
-    if (text.empty() && !request.length) return Fail();
+    if (text.empty() && !request.length && command.outer.empty()) return Fail();
     if (text.size() >= MaxText) return Fail("search text too long");
     request.op = ue::op::Find;
     if (args.Has("--live")) request.flags = ue::FindLive;
@@ -114,6 +131,15 @@ std::string RowOptions(const Args& args, Command& command) {
     }
     if (!Cursor(args, UINT32_MAX, number)) return "--start is a row number";
     command.from = static_cast<uint32_t>(number);
+    return {};
+}
+
+// --elements N: elements shown per container in get, each and dump; 0 when not given.
+std::string Elements(const Args& args, Command& command) {
+    if (!args.Has("--elements")) return {};
+    uint64_t number = 0;
+    if (!Number(args.Value("--elements"), number) || !number || number > 256) return "--elements is 1..256";
+    command.elements = static_cast<uint32_t>(number);
     return {};
 }
 
@@ -256,6 +282,7 @@ Parsed Dump(const Args& args, const ParseContext& context) {
     if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
     command.nonzero = args.Has("--nonzero");
     command.changed = args.Has("--changed");
+    if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
     command.own = args.Has("--own");
     command.file = args.Value("--changed");
     command.match = args.Value("--match");
@@ -359,6 +386,7 @@ Parsed Get(const Args& args, const ParseContext& context) {
         command.fields.emplace_back(path);
     }
     command.nonzero = args.Has("--nonzero");
+    if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
     command.kind = Kind::Get;
     command.request.op = ue::op::Fields;
     return command;
@@ -464,10 +492,10 @@ Parsed CallsStop(const Args& args, const ParseContext&) {
     return command;
 }
 
-Parsed Census(const Args& args, const ParseContext&) { return CensusOptions(args, false); }
+Parsed Census(const Args& args, const ParseContext& context) { return CensusOptions(args, context.refs, false); }
 
 // census-diff: only the classes whose count differs from the last census of that --cls.
-Parsed CensusDiff(const Args& args, const ParseContext&) { return CensusOptions(args, true); }
+Parsed CensusDiff(const Args& args, const ParseContext& context) { return CensusOptions(args, context.refs, true); }
 
 // refs <name|#index>: functions whose bytecode names it. Text must match a
 // pooled name exactly; the console resolves it.
@@ -501,8 +529,9 @@ Parsed NameFind(const Args& args, const ParseContext&) {
 }
 
 // each <Class> <Field|[Owner:]Function> [--seconds N]
-Parsed Each(const Args& args, const ParseContext&) {
+Parsed Each(const Args& args, const ParseContext& context) {
     Command command;
+    if (auto why = Outer(args, context.refs, command); !why.empty()) return Fail(std::move(why));
     if (!ClassName(args.At(0))) return Fail("the first argument is a class name");
     if (args.Has("--seconds")) {
         uint64_t seconds = 0;
@@ -538,6 +567,7 @@ Parsed Each(const Args& args, const ParseContext&) {
         command.limit = static_cast<uint32_t>(number);
     }
     command.nonzero = args.Has("--nonzero");
+    if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
     command.kind = Kind::Each;
     command.className = args.At(0);
     command.request.op = ue::op::Each;

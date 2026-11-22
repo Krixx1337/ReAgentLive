@@ -266,7 +266,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     CHECK(Build(*read, *chain, {}).error().starts_with(text::ChainNoHop));
     // A misspelt key is named as unknown, never read as a left-out argument.
     CHECK(CallArgs(*FindVerb(AllVerbs(), "each"), Json{{"class_", "Pawn"}, {"paths", "Health"}}).error().starts_with(
-        "unknown argument 'class_' (it takes cls, paths, seconds, where, limit, nonzero)"));
+        "unknown argument 'class_' (it takes cls, paths, seconds, where, outer, limit, nonzero, elements)"));
     CHECK(CallArgs(*read, Json::object()).error() == "too few arguments" + usage);
     CHECK(CallArgs(*read, Json{{"addr", {"0x10", "0x20"}}}).error() == "addr: one value, not a list" + usage);
     CHECK_FALSE(CallArgs(*FindVerb(AllVerbs(), "xrefs"), Json{{"addr", "0x10"}, {"all", "yes"}}).has_value());
@@ -298,7 +298,7 @@ TEST_CASE("named types: listed once in the table, by name in the rows that use t
         CAPTURE(name);
         CHECK(table["types"].contains(name));
     }
-    CHECK(table["types"]["Object"]["notation"] == "{ref: ref, name: str, class: str, class_size?: u32}");
+    CHECK(table["types"]["Object"]["notation"] == "{ref: ref, name: str, class: str, class_size?: u32, outer?: {name: str, ref: ref}}");
     for (const auto& [name, named] : table["types"].items()) {
         CAPTURE(name);
         CHECK(named["type"].contains("struct")); // The definition itself, not a reference to it.
@@ -314,7 +314,7 @@ TEST_CASE("named types: listed once in the table, by name in the rows that use t
     CHECK(detail["types"].contains("Object"));
     // A verb whose whole result is a named type shows its definition.
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "describe"), true, false))["result"] ==
-        "{ref: ref, name: str, class: str, class_size?: u32}");
+        "{ref: ref, name: str, class: str, class_size?: u32, outer?: {name: str, ref: ref}}");
     // Origins give their own titles; only origins with rows are listed.
     CHECK(table["origins"] == Json{{{"origin", "core"}, {"title", "Core"}}, {{"origin", "ue"}, {"title", "Unreal pack"}}});
     // Blocking verbs are marked so a tool client can leave them out.

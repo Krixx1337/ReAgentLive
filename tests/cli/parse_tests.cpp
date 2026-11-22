@@ -625,6 +625,28 @@ TEST_CASE("name takes FName indices and the agent bounds them") {
     CHECK(ue::Check(request) == Status::BadRequest);
 }
 
+TEST_CASE("--outer takes an object or an outer's name, on find, each and census") {
+    const auto byRef = Parse("find --cls BodySetup --outer 0x10#4:2", NoRefs);
+    REQUIRE(byRef.has_value());
+    CHECK(byRef->outerAddress == 0x10);
+    CHECK(byRef->outerText.empty());
+    const auto byN = Parse("each BodySetup BoneName --outer $1", TwoRefs);
+    REQUIRE(byN.has_value());
+    CHECK(byN->outerAddress == TwoRefs[0].address);
+    const auto byName = Parse("census --cls BodySetup --outer PA_Pawn", NoRefs);
+    REQUIRE(byName.has_value());
+    CHECK(byName->outerText == "PA_Pawn");
+    CHECK(byName->outerAddress == 0);
+    CHECK(Parse("find --outer PA_Pawn", NoRefs).has_value());             // An outer alone is a filter.
+    CHECK_FALSE(Parse("find --outer " + std::string(64, 'x'), NoRefs).has_value());
+    // --elements: 1..256 on get, each and dump.
+    CHECK(Parse("get $1 Map --elements 16", TwoRefs)->elements == 16);
+    CHECK(Parse("each Pawn Map --elements 256", NoRefs)->elements == 256);
+    CHECK(Parse("dump $1 --elements 3", TwoRefs)->elements == 3);
+    CHECK_FALSE(Parse("get $1 Map --elements 0", TwoRefs).has_value());
+    CHECK_FALSE(Parse("each Pawn Map --elements 257", NoRefs).has_value());
+}
+
 TEST_CASE("find takes a class filter and a cursor") {
     const auto both = Parse("find Vendor --cls Character --start 4096", NoRefs);
     REQUIRE(both.has_value());

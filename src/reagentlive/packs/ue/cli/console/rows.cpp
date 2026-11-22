@@ -133,7 +133,7 @@ void RunRows(Session& session, const Command& command, StructCache& structs, std
     std::vector<std::string> resolved;
     if (!nameIndices.empty())
         if (auto names = ue::Names(client, nameIndices); names) resolved = std::move(*names);
-    reader.ResolveTexts();
+    reader.Resolve();
     const auto named = [&](int32_t index) -> std::string_view {
         const auto at = std::ranges::find(nameIndices, index);
         const auto slot = static_cast<size_t>(at - nameIndices.begin());
@@ -144,9 +144,10 @@ void RunRows(Session& session, const Command& command, StructCache& structs, std
         shape::TableRow item{rowName(row), Addr(row.row), nullptr};
         if (errors[i].empty()) item.value = reader.Value(type, bytes[i], paths, named, out.truncated);
         else { item.value = {{"error", errors[i]}}; out.truncated = true; }
-        if (command.nonzero) DropZero(item.value);
+        if (command.nonzero) KeepNonZero(item.value);
         out.rows.push_back(std::move(item));
     }
+    if (reader.Unnamed()) out.unnamed = reader.Unnamed();
     Emit(session, jsonCommand, std::move(out));
 }
 }

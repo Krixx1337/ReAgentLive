@@ -190,6 +190,14 @@ required) and the scan stops at the first match, total 0 and next = the
 slot after it. Any other flag is a bad request. An agent built before the
 flag ignores it.
 
+**The object filter** (`find`, `each`, `census`): `data` holds the class
+name and NUL (the class may be empty for `find` and `census`), then
+optionally an outer's name text and NUL (under 64 bytes); `address` holds
+an outer object (0: none). An object passes when an outer up its chain, at
+most 16 steps, is that object or has a name containing the text, any case.
+Every `FindEntry` (find, describe, describe many) carries `outer`, the
+object's own outer as a ref, zero for a package.
+
 `call` takes `flags` `CallRelease` (1, drop the kept block) and `CallPure`
 (2: refuse, before calling, a function that is neither const nor
 blueprint-pure or whose outputs own memory). A call that raises an access
@@ -220,7 +228,7 @@ past row 0 come from the cached rows of the same query.
 one `FindEntry`; `detail` is the size of the object's class (0 when unknown),
 which covers native members past the last reflected field.
 
-Describe many takes 1..32 refs of any of those forms in `data` (`length` =
+Describe many takes 1..28 refs of any of those forms in `data` (`length` =
 16 per ref) and returns one `FindEntry` per ref in order, zeroed for a ref
 that is gone or not an object; `detail` counts the ones found. `dump` uses it
 for its field pointers and again for its array elements.

@@ -129,6 +129,7 @@ struct PathTarget {
     bool stale = false;
     bool pointer = false;                 // stopAtPointer: `field` is the pointer, `rest` the path past it.
     std::string rest;
+    std::string pseudo;                   // each: Outer, Name or Class, from the instance itself.
 };
 
 PathTarget ResolvePath(Session& session, StructCache& structs, Ref object, std::string_view path, bool stopAtPointer) {
@@ -342,6 +343,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                     " per instance (call it on one object instead)");
             const std::string target = function->owner + ":" + function->name;
             ue::EachQuery query{command.className};
+            query.outer = {command.outerText, command.outerAddress};
             query.function = target;
             query.size = signature.size;
             auto result = ue::Each(client, query);
@@ -365,7 +367,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             record.truncated = truncated;
             if (command.nonzero)
                 for (auto& row : record.rows)
-                    for (auto& value : row.values) DropZero(value);
+                    for (auto& value : row.values) KeepNonZero(value);
             return Emit(session, jsonCommand, std::move(record));
         }
         if (function.error().kind != Error::Kind::Agent || function.error().status != Status::NotFound)
@@ -376,15 +378,22 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     std::vector<PathTarget> columns;
     for (const auto& path : paths) {
         auto column = ResolvePath(session, structs, *type, path, true);
+        // Outer, Name and Class name the instance itself when no field takes the name.
+        if (!column.error.empty())
+            for (const char* pseudo : {"Outer", "Name", "Class"})
+                if (text::SameText(path, pseudo)) column = PathTarget{.pseudo = pseudo};
         if (!column.error.empty())
             return fail(paths.size() == 1 && !whereColumn ? "neither a function nor a field of " + command.className + ": " + path +
                 " (" + column.error + ")" : path + ": " + column.error + " (a function is each's only column)");
+        // A set or map column reads its header in the pass; the decoder reads its elements per instance.
+        if (IsContainer(column.field.type) && !column.pointer && column.size > ue::MaxEachValue)
+            column.size = sizeof(ue::SparseHeader);
         if (column.size > ue::MaxEachValue)
             return fail(path + " is " + std::to_string(column.size) + " bytes; each reads 1.." +
                 std::to_string(ue::MaxEachValue) + " per instance (get reads it on one object)");
         columns.push_back(std::move(column));
     }
-    if (command.seconds && (columns.size() != 1 || columns.front().pointer))
+    if (command.seconds && (columns.size() != 1 || columns.front().pointer || !columns.front().pseudo.empty()))
         return fail("--seconds watches one field or function, not a path through a pointer");
 
     // The spans inside the instance, in passes of at most MaxEachValue bytes.
@@ -393,13 +402,16 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         std::vector<std::pair<Ref, std::vector<uint8_t>>> rows;
     };
     std::vector<std::pair<uint32_t, uint32_t>> spans;
-    for (const auto& column : columns) spans.emplace_back(column.offset, column.offset + column.size);
+    for (const auto& column : columns)
+        if (column.pseudo.empty()) spans.emplace_back(column.offset, column.offset + column.size);
+    if (spans.empty()) spans.emplace_back(0, 8); // Only Outer, Name or Class: a pass still lists the instances.
     std::vector<Pass> passes;
     for (const auto& [begin, end] : shape::EachPasses(std::move(spans), ue::MaxEachValue)) passes.push_back({begin, end, {}});
     bool capped = false;
     ue::EachQuery first{command.className};
     for (size_t i = 0; i < passes.size(); ++i) {
         ue::EachQuery query{command.className};
+        query.outer = {command.outerText, command.outerAddress};
         query.offset = passes[i].start;
         query.size = passes[i].end - passes[i].start;
         query.reuse = i > 0;
@@ -427,6 +439,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         ue::Field field;
         std::vector<uint8_t> bytes;
         std::optional<NativeMember> native;
+        std::optional<Json> fixed;            // Outer, Name, Class: the value itself.
     };
     const bool pointers = std::ranges::any_of(columns, &PathTarget::pointer);
     const Client::Hold hold(client);
@@ -436,6 +449,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         auto& row = cells.emplace_back();
         for (const auto& column : columns) {
             Cell& cell = row.emplace_back();
+            if (!column.pseudo.empty()) continue; // Filled from the describe below.
             const auto data = inObject(object, column);
             if (data.size() != column.size) { cell.error = "the instance was gone by a later pass"; continue; }
             if (!column.pointer) {
@@ -460,27 +474,58 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             cell.bytes = std::move(*bytes);
         }
     }
+    // Outer, Name and Class: every instance described, then the distinct outers named.
+    if (std::ranges::any_of(columns, [](const PathTarget& column) { return !column.pseudo.empty(); })) {
+        std::vector<Ref> instances;
+        for (const auto& entry : passes.front().rows) instances.push_back(entry.first);
+        auto described = ue::DescribeMany(client, instances);
+        if (!described) return CommandError(session, jsonCommand, described.error());
+        std::vector<Ref> outers;
+        for (const auto& object : *described)
+            if (object && object->outer.address && std::ranges::find(outers, object->outer) == outers.end())
+                outers.push_back(object->outer);
+        std::vector<std::optional<ue::Object>> outerObjects;
+        if (!outers.empty())
+            if (auto named = ue::DescribeMany(client, outers); named) outerObjects = std::move(*named);
+        for (size_t i = 0; i < cells.size(); ++i)
+            for (size_t c = 0; c < columns.size(); ++c) {
+                if (columns[c].pseudo.empty()) continue;
+                Cell& cell = cells[i][c];
+                const auto& object = i < described->size() ? (*described)[i] : std::nullopt;
+                if (!object) { cell.error = "the instance was gone"; continue; }
+                if (columns[c].pseudo == "Name") cell.fixed = object->name;
+                else if (columns[c].pseudo == "Class") cell.fixed = object->className;
+                else {
+                    cell.fixed = nullptr;
+                    const auto at = std::ranges::find(outers, object->outer);
+                    const auto slot = static_cast<size_t>(at - outers.begin());
+                    if (at != outers.end() && slot < outerObjects.size() && outerObjects[slot])
+                        cell.fixed = Json{{"name", outerObjects[slot]->name}, {"ref", RefText(outerObjects[slot]->ref)}};
+                }
+            }
+    }
     NameBatch names;
     for (const auto& row : cells)
         for (const auto& cell : row)
-            if (cell.error.empty() && !cell.native) names.Add(cell.field, cell.bytes, structs);
-    // Compact values through the decoder (nested arrays, tag lists, text at
-    // any depth); --meta keeps the reflected layout, top-level text only.
-    RowReader reader(session, structs, RowReader::PreviewNested);
+            if (cell.error.empty() && !cell.native && !cell.fixed) names.Add(cell.field, cell.bytes, structs);
+    // Compact values through the decoder (nested containers, tag lists, text
+    // and pointers at any depth); --meta keeps the reflected layout.
+    RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
     TextBatch texts;
     for (const auto& row : cells)
         for (const auto& cell : row) {
-            if (!cell.error.empty() || cell.native) continue;
+            if (!cell.error.empty() || cell.native || cell.fixed) continue;
             bool ignored = false;
             if (session.meta) texts.Add(cell.field, cell.bytes);
             else reader.Value(cell.field, cell.bytes, {}, names.Collect(), ignored);
         }
     names.Resolve(client);
     if (session.meta) texts.Resolve(session);
-    else reader.ResolveTexts();
+    else reader.Resolve();
 
     std::vector<shape::EachError> errors;
     const auto value = [&](const Cell& cell) -> Json {
+        if (cell.fixed) return *cell.fixed;
         if (cell.native) return layout::Value(cell.native->field, cell.bytes);
         if (!session.meta) return reader.Value(cell.field, cell.bytes, {}, names, truncated);
         return texts.Value(cell.field, cell.bytes, JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)),
@@ -515,7 +560,10 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     if (omittedRows) record.omitted = omittedRows;
     record.mode = "field";
     record.capped = capped;
-    record.sameTick = passes.size() == 1 && !pointers;
+    // Container elements are read per instance after the pass (--meta prints headers only).
+    const bool elements = !session.meta && std::ranges::any_of(columns, [](const PathTarget& column) {
+        return column.field.type == "ArrayProperty" || IsContainer(column.field.type); });
+    record.sameTick = passes.size() == 1 && !pointers && !elements;
     if (!errors.empty()) record.errors = std::move(errors);
     if (command.seconds) {
         std::vector<std::pair<Ref, std::vector<uint8_t>>> last = passes.front().rows;
@@ -524,7 +572,8 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     record.truncated = truncated;
     if (command.nonzero)
         for (auto& row : record.rows)
-            for (auto& cell : row.values) DropZero(cell);
+            for (auto& cell : row.values) KeepNonZero(cell);
+    if (reader.Unnamed()) record.unnamed = reader.Unnamed();
     Emit(session, jsonCommand, std::move(record));
 }
 
@@ -558,8 +607,9 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     NameBatch lookupName;
     for (const auto& value : values)
         if (value.error.empty() && !value.native) lookupName.Add(value.field, std::span(value.bytes), structs);
-    // Compact values through the decoder, as each does.
-    RowReader reader(session, structs, RowReader::PreviewNested);
+    // Compact values through the decoder, as each does; get names a top-level pointer on its row.
+    RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
+    reader.KeepTopPointers();
     TextBatch texts;
     for (const auto& value : values) {
         if (!value.error.empty() || value.native) continue;
@@ -569,7 +619,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     }
     lookupName.Resolve(client);
     if (session.meta) texts.Resolve(session);
-    else reader.ResolveTexts();
+    else reader.Resolve();
     const auto modules = LoadedModules(session);
     shape::Get result;
     bool failed = false;
@@ -611,7 +661,8 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     if (!TickAccurate(session)) result.tickAccurate = false;
     if (command.nonzero)
         for (auto& row : result.rows)
-            if (row.value) DropZero(*row.value);
+            if (row.value) KeepNonZero(*row.value);
+    if (reader.Unnamed()) result.unnamed = reader.Unnamed();
     Emit(session, jsonCommand, std::move(result));
 }
 

@@ -176,13 +176,15 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         bool ignored = false;
         if (arrayOutput(parameter))
             rows.Array(parameter, FieldBytes(*result, parameter), command.from, command.limit, paths, collect, ignored);
-        else
+        else if (session.meta)
             JsonFieldValue(parameter, FieldBytes(*result, parameter), structs, collect, ignored, Style(session));
+        else
+            rows.Value(parameter, FieldBytes(*result, parameter), {}, collect, ignored);
     }
     std::vector<std::string> resolved;
     if (!nameIndices.empty() && client.Supports(ue::op::Names))
         if (auto names = ue::Names(client, nameIndices); names) resolved = std::move(*names);
-    rows.ResolveTexts();
+    rows.Resolve();
     const auto named = [&](int32_t index) -> std::string_view {
         const auto at = std::ranges::find(nameIndices, index);
         const auto slot = static_cast<size_t>(at - nameIndices.begin());
@@ -199,10 +201,11 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         bool partial = false;
         row.value = arrayOutput(parameter) ?
             rows.Array(parameter, FieldBytes(*result, parameter), command.from, command.limit, paths, named, partial) :
-            JsonFieldValue(parameter, FieldBytes(*result, parameter), structs, named, partial, Style(session));
+            session.meta ? JsonFieldValue(parameter, FieldBytes(*result, parameter), structs, named, partial, Style(session)) :
+            rows.Value(parameter, FieldBytes(*result, parameter), {}, named, partial);
         row.truncated = partial;
         truncated |= partial;
-        if (command.nonzero) DropZero(row.value);
+        if (command.nonzero) KeepNonZero(row.value);
         outputs.push_back(std::move(row));
     }
     auto record = MakeCall(command.request, *result, "typed", kept);
@@ -210,6 +213,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
     if (kept) record.keptReason = calls::KeptReason(signature, structs);
     record.outputs = std::move(outputs);
     record.truncated = truncated;
+    if (rows.Unnamed()) record.unnamed = rows.Unnamed();
     return Emit(session, jsonCommand, std::move(record));
 }
 

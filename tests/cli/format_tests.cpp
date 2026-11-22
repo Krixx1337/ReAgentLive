@@ -354,4 +354,14 @@ TEST_CASE("--nonzero: zero members go, elements and non-zero values stay") {
     Json zero = {{"A", 0}, {"B", {{"C", false}}}};
     CHECK(DropZero(zero));
     CHECK(zero.empty());
+    // An element or a whole value the filter emptied says so; one empty to begin with stays empty.
+    Json list = Json::array({{{"Radius", 0}, {"Center", {{"X", 0}}}}, {{"Radius", 4}}, Json::object()});
+    CHECK_FALSE(DropZero(list));
+    CHECK(list == Json::array({{{"zeroed", 2}}, {{"Radius", 4}}, Json::object()}));
+    Json whole = {{"A", 0}, {"B", false}};
+    KeepNonZero(whole);
+    CHECK(whole == Json{{"zeroed", 2}});
+    Json scalar = 0;
+    KeepNonZero(scalar);
+    CHECK(scalar == 0);
 }

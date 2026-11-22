@@ -202,10 +202,17 @@ request costs up to a host tick. The console cuts both:
   gameplay tag) is that name. This holds for every decoded value: `get`,
   `dump` (values, `before`, previews), `entries`, `each`, typed `call`
   outputs. `get`, `each` and `dump` values go further, as returned arrays
-  do ([named calls](unreal.md#named-calls)): arrays inside them are read
-  (up to 8 elements each, 3 deep, then `truncated`), a tag container (every
-  member an array of tags) is the list of its own tags, and text converts
-  at any depth.
+  do ([named calls](unreal.md#named-calls)): arrays, sets and maps inside
+  them are read (up to 8 elements each, `--elements N` up to 256, 3 deep,
+  then `truncated`; a map as `{count, rows: [{key, value}]}`, its header
+  checked as `entries` checks it, else hex with `container_error`), a tag
+  container (every member an array of tags) is the list of its own tags,
+  text converts at any depth, and object, class and weak pointers inside
+  them are named (`{name, class, ref}`), up to 112 distinct per command in
+  describe-many requests: past that a pointer stays an address and the
+  result counts `unnamed`. A weak pointer that no longer resolves is
+  `gone`, or `unverified` when the answer did not come from the engine's
+  thread. `dump` and `get` name a top-level pointer on its row instead.
   **`--meta`** at the end of a line (with or without `--timing`; inside a
   `batch` per item, or on the batch for all) restores the layout: a struct
   as `members` (`name`, `owner`, `type`, `offset`, `size`, `value`) with

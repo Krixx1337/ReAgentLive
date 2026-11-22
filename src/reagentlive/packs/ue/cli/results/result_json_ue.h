@@ -195,6 +195,7 @@ struct Dump {
     std::optional<Filtered> filtered;
     std::optional<std::vector<NativeRefused>> nativeRefused;
     std::optional<bool> tickAccurate;
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("ref", &Dump::ref);
         v("rows", &Dump::rows);
@@ -204,6 +205,7 @@ struct Dump {
         v("filtered", &Dump::filtered);
         v("native_refused", &Dump::nativeRefused);
         v("tick_accurate", &Dump::tickAccurate);
+        v("unnamed", &Dump::unnamed);
     }
 };
 
@@ -347,6 +349,7 @@ struct Rows {
     uint32_t from = 0;
     std::optional<uint32_t> nextCursor;
     bool truncated = false;
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("ref", &Rows::ref);
         v("row_struct", &Rows::rowStruct);
@@ -356,6 +359,7 @@ struct Rows {
         v("from", &Rows::from);
         v("next_cursor", &Rows::nextCursor);
         v("truncated", &Rows::truncated);
+        v("unnamed", &Rows::unnamed);
     }
 };
 
@@ -506,6 +510,7 @@ struct Each {
     std::optional<std::vector<EachChange>> changes;
     std::optional<std::string> pollError;
     std::optional<uint64_t> matched, omitted; // --where: instances that matched; past --limit: rows not shown.
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("class", &Each::className);
         v("class_ref", &Each::classRef);
@@ -522,6 +527,7 @@ struct Each {
         v("poll_error", &Each::pollError);
         v("matched", &Each::matched);
         v("omitted", &Each::omitted);
+        v("unnamed", &Each::unnamed);
     }
 };
 
@@ -552,6 +558,7 @@ struct Call {
     // --dry: the function's native entry and whether it is const or pure.
     std::optional<Addr> exec;
     std::optional<bool> pure;
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("ref", &Call::ref);
         v("function", &Call::function);
@@ -564,6 +571,7 @@ struct Call {
         v("truncated", &Call::truncated);
         v("exec", &Call::exec);
         v("pure", &Call::pure);
+        v("unnamed", &Call::unnamed);
     }
 };
 
@@ -621,11 +629,13 @@ struct Get {
     std::vector<GetRow> rows;
     bool sameTick = false;
     std::optional<bool> tickAccurate;
+    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("ref", &Get::ref);
         v("rows", &Get::rows);
         v("same_tick", &Get::sameTick);
         v("tick_accurate", &Get::tickAccurate);
+        v("unnamed", &Get::unnamed);
     }
 };
 // trace: the first blocking hit on the line, decoded by the engine
@@ -825,14 +835,23 @@ struct ExportLabels {
 }
 
 inline shape::Object MakeObject(const ue::Object& object) {
-    shape::Object row{FullRef(object.ref), object.name, object.className, {}};
+    shape::Object row{FullRef(object.ref), object.name, object.className, {}, {}};
     if (object.size) row.classSize = object.size;
     return row;
 }
 
-inline shape::Find MakeFind(const ue::FindResult& found, uint32_t from) {
+// `outers`: the found objects' outers, described (nullopt where gone).
+inline shape::Find MakeFind(const ue::FindResult& found, uint32_t from, std::span<const std::optional<ue::Object>> outers = {}) {
     shape::Find out;
-    for (const auto& object : found.objects) out.rows.push_back(MakeObject(object));
+    for (const auto& object : found.objects) {
+        auto row = MakeObject(object);
+        for (const auto& outer : outers)
+            if (outer && outer->ref.address == object.outer.address) {
+                row.outer = shape::ObjectOuter{outer->name, FullRef(outer->ref)};
+                break;
+            }
+        out.rows.push_back(std::move(row));
+    }
     if (!from) out.total = found.total;
     out.from = from;
     if (found.next) out.nextCursor = found.next;

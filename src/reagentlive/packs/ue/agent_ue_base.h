@@ -68,6 +68,8 @@ inline NameId ObjectName(const Object* object) {
     const auto& shape = Layout().shape;
     return {Field<int32_t>(object, shape.objectNameOffset), Field<uint32_t>(object, shape.objectNameOffset + shape.nameNumberOffset)};
 }
+// The object's outer: right after its name in the header.
+inline Object* ObjectOuter(const Object* object) { return Field<Object*>(object, Layout().shape.objectNameOffset + 8); }
 // A class's parent class (UStruct::SuperStruct), or null when unknown.
 inline const Object* SuperOf(const Object* type) {
     return Layout().superStruct < 0 ? nullptr : Field<const Object*>(type, static_cast<uint32_t>(Layout().superStruct));
@@ -83,6 +85,10 @@ bool HeaderReadable(const Object* object);
 bool ClassMatches(const Object* object, std::string_view wanted, std::string& scratch);
 void ResetClassCache();
 std::string_view ClassArgument(const Request& request);
+// The request's object filter on outers (protocol_ue.h): true when none is set.
+bool OuterMatches(const Request& request, const Object* object, std::string& scratch);
+// The object's outer as a ref, zero when it has none (a package) or it is not an object.
+Ref OuterRef(const Object* object, const Context& pack);
 bool Template(const Object* object);
 std::string_view FullName(NameId name, std::string& out);
 // FullName as a new string.

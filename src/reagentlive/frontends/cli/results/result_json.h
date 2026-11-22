@@ -69,20 +69,32 @@ struct Quit {
     template<class V> static void Describe(V& v) { v("quit", &Quit::quit); }
 };
 
+// An object's outer: a function's or property's class, a subobject's owner.
+struct ObjectOuter {
+    std::string name;
+    RefId ref;
+    template<class V> static void Describe(V& v) {
+        v("name", &ObjectOuter::name);
+        v("ref", &ObjectOuter::ref);
+    }
+};
 // An object as a pack names it: peek's object rows, describe, and every
 // object a pack's result names. The core defines the shape; a pack fills it.
 // class_size only from a single describe: the object's class size, which
 // reaches past the last reflected field (native members, object tails).
+// outer on find and describe rows; absent for a package.
 struct Object {
     static constexpr std::string_view TypeName = "Object";
     RefId ref;
     std::string name, className;
     std::optional<uint32_t> classSize;
+    std::optional<ObjectOuter> outer;
     template<class V> static void Describe(V& v) {
         v("ref", &Object::ref);
         v("name", &Object::name);
         v("class", &Object::className);
         v("class_size", &Object::classSize);
+        v("outer", &Object::outer);
     }
 };
 

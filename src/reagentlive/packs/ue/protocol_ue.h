@@ -55,6 +55,11 @@ constexpr size_t MaxParams = 1024;
 constexpr uint32_t ObjectIdentityOffset = 0xC, ObjectIdentityLength = 12;
 constexpr size_t MaxFindResults = 24;
 constexpr uint32_t MaxClassName = 64;
+// The object filter find, each and census take: data = class name, NUL, then
+// optionally the outer's name text, NUL; address = an outer object (0: none).
+// An object passes when its class matches and an outer up its chain (at most
+// MaxOuterSteps) is that object or has a name containing the text, any case.
+constexpr uint32_t MaxOuterText = 64, MaxOuterSteps = 16;
 // Find's detail: total matches in the low 32 bits, the cursor for the next page
 // in the high 32 bits (0 when this page holds the last matches).
 constexpr uint32_t FindExact = 1, FindLive = 2;
@@ -97,12 +102,13 @@ struct FindEntry {
     Ref object;
     char name[64];
     char className[48];
+    Ref outer;          // The object's outer (a function's class, a subobject's owner); zero for a package.
 };
 // DescribeMany: data = 1..MaxDescribeMany refs (address-only, full, or a weak
 // slot and serial, as for Describe). The response holds one FindEntry per ref
 // in order; a ref that is gone or not an object gets a zeroed entry.
 // detail = entries found.
-constexpr uint32_t MaxDescribeMany = 32;
+constexpr uint32_t MaxDescribeMany = 28;
 static_assert(MaxDescribeMany * sizeof(FindEntry) <= MaxRead);
 struct FunctionEntry {
     uint64_t address, exec;
@@ -549,11 +555,29 @@ constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + si
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);
 
 namespace detail {
-// A class name in data: NUL-terminated, non-empty, under MaxClassName.
-inline bool HasClass(const Request& request) {
-    return request.length > 1 && request.length <= MaxClassName && request.data[0] &&
-        memchr(request.data, 0, request.length) != nullptr;
+// The object filter's data: a class name (may be empty) and NUL, then
+// optionally an outer text and NUL, each under its cap.
+inline bool FilterValid(const Request& request) {
+    if (!request.length) return true;
+    const auto* data = reinterpret_cast<const char*>(request.data);
+    const auto* end = static_cast<const char*>(memchr(data, 0, request.length));
+    if (!end || static_cast<uint32_t>(end - data) >= MaxClassName) return false;
+    const uint32_t rest = request.length - static_cast<uint32_t>(end - data) - 1;
+    if (!rest) return true;
+    const auto* outerEnd = static_cast<const char*>(memchr(end + 1, 0, rest));
+    return outerEnd && outerEnd == end + rest && static_cast<uint32_t>(outerEnd - end - 1) < MaxOuterText;
 }
+inline std::string_view FilterOuter(const Request& request) {
+    if (!request.length) return {};
+    const auto* data = reinterpret_cast<const char*>(request.data);
+    const size_t classLength = strnlen(data, request.length);
+    return classLength + 1 < request.length ? std::string_view(data + classLength + 1) : std::string_view{};
+}
+// A class name in data: NUL-terminated, non-empty, under MaxClassName (an outer text may follow).
+inline bool HasClass(const Request& request) {
+    return request.length > 1 && request.data[0] && FilterValid(request);
+}
+inline bool HasFilter(const Request& request) { return HasClass(request) || request.address || !FilterOuter(request).empty(); }
 inline bool FunctionText(std::string_view name) {
     const auto colon = name.find(':');
     return !name.empty() && colon != 0 && (colon == std::string_view::npos || colon + 1 < name.size());
@@ -564,15 +588,13 @@ inline bool FunctionText(std::string_view name) {
 inline Status Check(const Request& request) {
     switch (request.op) {
     case op::Find: {
-        if (!Terminated(request.text) || request.args[1] > INT32_MAX || request.length > MaxClassName ||
+        if (!Terminated(request.text) || request.args[1] > INT32_MAX || !detail::FilterValid(request) ||
             (request.flags & ~(FindExact | FindLive)) || ((request.flags & FindExact) && !request.text[0])) return Status::BadRequest;
-        const bool hasClass = detail::HasClass(request);
-        if (request.length && !hasClass) return Status::BadRequest;
-        return request.text[0] || hasClass ? Status::Ok : Status::BadRequest;
+        return request.text[0] || detail::HasFilter(request) ? Status::Ok : Status::BadRequest;
     }
     case op::Census:
-        if (!Terminated(request.text) || request.text[0] || request.args[1] > INT32_MAX ||
-            (request.length && !detail::HasClass(request))) return Status::BadRequest;
+        if (!Terminated(request.text) || request.text[0] || request.args[1] > INT32_MAX || !detail::FilterValid(request))
+            return Status::BadRequest;
         return Status::Ok;
     case op::NameFind:
         return Terminated(request.text) && request.text[0] && !request.length && request.args[1] <= INT32_MAX

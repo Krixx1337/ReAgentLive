@@ -7,6 +7,24 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **One decoder for every value:** sets and maps decode at any depth
+  (`{count, rows: [{key, value}]}`), in `rows`, typed calls, `get`, `each`
+  and `dump`; object, class and weak pointers inside values are named
+  (`{name, class, ref}`, `gone` or `unverified`), with `unnamed` counting
+  those past the cap. `each` takes set and map columns past 64 bytes, and
+  `--elements N` lifts the 8-element preview on `get`, `each` and `dump`.
+  `--fields` reaches into maps (`Damage.value`).
+- **Object filters:** `--outer <object|text>` on `find`, `each` and
+  `census`, applied in the agent's scan; `Outer`, `Name` and `Class` as
+  `each` columns and `--where` fields; `find` and `describe` rows name the
+  object's `outer`. Protocol: `FindEntry` carries the outer, describe many
+  takes 28 refs, and the filter rides in `data` and `address` (rebuild and
+  re-inject the agent).
+- **`--nonzero` marks what it emptied:** an element or value whose members
+  were all zero prints `{"zeroed": N}`, not `{}`.
+- **The Python session names why a console did not start:** its exit code
+  and the end of its stderr, so the MCP adapter's error says it too.
+
 - **Compact names and tags:** an FName prints as its text (`Name_N`,
   `#index` when unresolved) and a gameplay tag as its name, not
   `{index, number, name}` (kept under `--meta`); a text value as its

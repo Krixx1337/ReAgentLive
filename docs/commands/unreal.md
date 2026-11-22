@@ -20,7 +20,7 @@ commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
 | `describe <address\|$N>` | checks the game thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
 | `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the game thread; an undecodable index returns empty |
 | Array preview | used by `dump`; resolves the instance on the game thread, reads the array header and a bounded prefix of its backing storage on the same tick |
-| `census [--cls C]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
+| `census [--cls C] [--outer O]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
 | `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)) |
 | `each <Class> <Path\|[Owner:]Function>...` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
 | `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
@@ -180,9 +180,11 @@ rows per page (default 100, 0 for all), `--start N` from a page's
 `next_cursor`, and `--fields a,b.c` keeps only those members, a path
 going into structs and the elements of nested arrays
 (`--fields ItemTag,Variations.Price`); a path naming no member is refused
-with the members there. `--nonzero` leaves out the zero members inside
+with the members there; a path into a map goes through `key` or `value`
+(`--fields Damage.value`). `--nonzero` leaves out the zero members inside
 the outputs (0, false, empty, `None`; elements stay, so a list keeps its
-positions), as it does inside `get`, `each` and `rows` values. Any of the
+positions, and one emptied by the filter prints `{"zeroed": N}`), as it
+does inside `get`, `each` and `rows` values. Any of the
 four makes the call typed. They are `call` flags only: an array owns
 memory, so `call-pure` refuses it.
 
@@ -278,9 +280,32 @@ for one column, so the verb keeps one result type.
   the value's JSON. The field is read as one more column and shown only
   when it is one; `matched` counts the instances kept. Not with
   `--seconds` or a function column.
+- **`Outer`, `Name` and `Class`** name the instance itself, as columns and
+  in `--where`, when no field takes the name: one describe-many of the
+  instances, then one of their distinct outers. `Outer` is `{name, ref}`.
+  They match text: `--where Class~Body` is a substring of the class's own
+  name, while `--cls` takes a class and its subclasses.
+- **Containers.** An array, set or map column reads its header in the pass
+  and its elements per instance after it (8 shown, `--elements N` up to
+  256), so `same_tick` is false; a set or map is not held to the 64 bytes.
 - **`--limit N`** caps the rows shown (default 100, 0 for all); `omitted`
   counts the rest. Unfiltered output over a whole class is large: locate
   the object first, or filter.
+
+## Object filters
+
+`find`, `each` and `census` take the same filters over the object table,
+applied by the agent during its scan, so they cost no round trip per
+object:
+
+| Filter | Keeps |
+|---|---|
+| `--cls C` | instances of `C` or a subclass |
+| `--outer O` | objects with `O` up their outer chain (at most 16 steps). `O` is an object when it parses as one (a literal ref, an address, `$N`), else text an outer's name contains, any case |
+| `--live` (`find`) | no class default or archetype objects (`each` and `census` skip them always) |
+
+`find` and `describe` rows name each object's `outer` (`{name, ref}`): a
+function's or property's class, a subobject's owner; a package has none.
 
 ## census
 
@@ -341,8 +366,9 @@ generated wrapper, so follow it separately when locating native game logic.
 - With agent support for `name`, `dump` batches distinct FName indices across
   fields, expanded structs and array previews. Resolved names include the
   Unreal instance suffix where present. Unresolved names keep their index and
-  number. Compact values read arrays nested inside structs (8 elements,
-  3 deep) and show a tag container as its tags ([compact values](console.md#fewer-round-trips));
+  number. Compact values read arrays, sets and maps nested inside structs
+  (8 elements, `--elements N` up to 256, 3 deep), show a tag container as
+  its tags and name pointers ([compact values](console.md#fewer-round-trips));
   with `--meta` they show their headers.
 - With agent support for `describe`, `dump` names single object, class and
   weak object pointers. It looks up at most 32 distinct pointers in field

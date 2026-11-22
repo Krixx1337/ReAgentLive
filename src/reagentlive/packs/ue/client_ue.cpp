@@ -10,19 +10,30 @@ template<size_t N> std::string Text(const char (&field)[N]) { return std::string
 Error TooLong(const char* what) { return {Error::Kind::Agent, Status::BadRequest, 0, std::string(what) + " too long"}; }
 }
 
+// The object filter (protocol_ue.h): class name, NUL, then the outer text and NUL when set.
+static bool SetFilter(Request& request, std::string_view className, const OuterFilter& outer) {
+    if (className.size() >= MaxClassName || outer.text.size() >= MaxOuterText) return false;
+    request.address = outer.object;
+    if (className.empty() && outer.text.empty()) return true;
+    memcpy(request.data, className.data(), className.size());
+    request.data[className.size()] = 0;
+    request.length = static_cast<uint32_t>(className.size() + 1);
+    if (!outer.text.empty()) {
+        memcpy(request.data + request.length, outer.text.data(), outer.text.size());
+        request.data[request.length + outer.text.size()] = 0;
+        request.length += static_cast<uint32_t>(outer.text.size() + 1);
+    }
+    return true;
+}
+
 Result<FindResult> Find(Client& client, std::string_view text, FindOptions options, std::chrono::milliseconds timeout) {
-    if (text.empty() && options.className.empty())
-        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "find needs a name or a class"});
+    if (text.empty() && options.className.empty() && options.outer.Empty())
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "find needs a name, a class or an outer"});
     if (text.size() >= MaxText) return std::unexpected(TooLong("search text"));
-    if (options.className.size() >= MaxClassName) return std::unexpected(TooLong("class name"));
     Request request{};
     request.op = op::Find;
     CopyText(request.text, text);
-    if (!options.className.empty()) {
-        memcpy(request.data, options.className.data(), options.className.size());
-        request.data[options.className.size()] = 0;
-        request.length = static_cast<uint32_t>(options.className.size() + 1);
-    }
+    if (!SetFilter(request, options.className, options.outer)) return std::unexpected(TooLong("class name or outer text"));
     request.args[1] = options.from;
     if (options.exact) {
         if (text.empty()) return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "an exact find needs a name"});
@@ -37,7 +48,7 @@ Result<FindResult> Find(Client& client, std::string_view text, FindOptions optio
     for (size_t i = 0; i < count; ++i) {
         FindEntry entry;
         memcpy(&entry, response->data + i * sizeof(FindEntry), sizeof(entry));
-        result.objects.push_back({entry.object, Text(entry.name), Text(entry.className)});
+        result.objects.push_back({entry.object, Text(entry.name), Text(entry.className), 0, entry.outer});
     }
     return result;
 }
@@ -216,7 +227,7 @@ Result<Object> Describe(Client& client, const Ref& ref) {
         return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "incomplete object description"});
     memcpy(&entry, response->data, sizeof(entry));
     return Object{entry.object, Text(entry.name), Text(entry.className),
-        response->detail <= UINT32_MAX ? static_cast<uint32_t>(response->detail) : 0};
+        response->detail <= UINT32_MAX ? static_cast<uint32_t>(response->detail) : 0, entry.outer};
 }
 
 Result<std::vector<std::optional<Object>>> DescribeMany(Client& client, std::span<const Ref> refs) {
@@ -235,7 +246,7 @@ Result<std::vector<std::optional<Object>>> DescribeMany(Client& client, std::spa
         for (size_t i = 0; i < count; ++i) {
             FindEntry entry{};
             memcpy(&entry, response->data + i * sizeof(entry), sizeof(entry));
-            if (entry.object.address) objects.push_back(Object{entry.object, Text(entry.name), Text(entry.className)});
+            if (entry.object.address) objects.push_back(Object{entry.object, Text(entry.name), Text(entry.className), 0, entry.outer});
             else objects.push_back(std::nullopt);
         }
     }
@@ -258,20 +269,14 @@ Result<std::vector<uint8_t>> ReadObject(Client& client, const Ref& object, uint3
 
 namespace {
 Error BadResponse(const char* what) { return {Error::Kind::Agent, Status::BadRequest, 0, {}, what}; }
-
-void SetClass(Request& request, std::string_view className) {
-    memcpy(request.data, className.data(), className.size());
-    request.data[className.size()] = 0;
-    request.length = static_cast<uint32_t>(className.size() + 1);
-}
 }
 
-Result<CensusResult> Census(Client& client, std::string_view className, std::chrono::milliseconds timeout) {
-    if (className.size() >= MaxClassName) return std::unexpected(TooLong("class name"));
+Result<CensusResult> Census(Client& client, std::string_view className, OuterFilter outer, std::chrono::milliseconds timeout) {
+    if (className.size() >= MaxClassName || outer.text.size() >= MaxOuterText) return std::unexpected(TooLong("class name or outer text"));
     CensusResult result{{}, 0};
     Request request{};
     request.op = op::Census;
-    if (!className.empty()) SetClass(request, className);
+    SetFilter(request, className, outer);
     for (;;) {
         request.args[1] = result.rows.size();
         auto response = client.Send(request, timeout);
@@ -401,7 +406,7 @@ Result<EachResult> Each(Client& client, const EachQuery& query, std::chrono::mil
     Request request{};
     request.op = op::Each;
     request.flags = query.reuse ? EachReuse : 0;
-    SetClass(request, query.className);
+    if (!SetFilter(request, query.className, query.outer)) return std::unexpected(TooLong("outer text"));
     CopyText(request.text, query.function);
     request.args[0] = EachField(query.function.empty() ? query.offset : 0, query.size);
     if (ue::Check(request) != Status::Ok) return std::unexpected(BadResponse("invalid each query"));

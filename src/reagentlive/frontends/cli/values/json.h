@@ -22,22 +22,30 @@ template<class T> Json JsonNumber(std::span<const uint8_t> bytes) {
 
 // --nonzero on a decoded value: leaves out the zero members of its structs,
 // at any depth (0, false, null, "", the name None, an empty list or array,
-// a struct left with none). Elements stay, so a list keeps its positions.
-// True when the whole value is zero.
+// a struct left with none). Elements stay, so a list keeps its positions; an
+// element whose members were all zero says so, {"zeroed": N}, so it does not
+// read as empty. True when the whole value is zero.
 inline bool DropZero(Json& value) {
+    // An element or top-level struct emptied by the filter, not empty to begin with.
+    const auto zeroed = [](Json& element) {
+        const size_t members = element.is_object() ? element.size() : 0;
+        const bool zero = DropZero(element);
+        if (zero && members && element.is_object() && element.empty()) element = Json{{"zeroed", members}};
+        return zero;
+    };
     if (value.is_null()) return true;
     if (value.is_boolean()) return !value.get<bool>();
     if (value.is_number()) return value == 0;
     if (value.is_string()) return value.get_ref<const std::string&>().empty() || value == "None";
     if (value.is_array()) {
         bool zero = true;
-        for (auto& element : value) zero &= DropZero(element);
+        for (auto& element : value) zero &= zeroed(element);
         return value.empty() || zero;
     }
     // An array as decoded ({count, capacity, address, rows}): zero when empty.
     if (value.contains("count") && value.contains("rows") && value["count"] == 0) return true;
     if (value.contains("rows") && value["rows"].is_array()) {
-        for (auto& row : value["rows"]) DropZero(row);
+        for (auto& row : value["rows"]) zeroed(row);
         return false;
     }
     for (auto member = value.begin(); member != value.end();) {
@@ -45,5 +53,11 @@ inline bool DropZero(Json& value) {
         else ++member;
     }
     return value.empty();
+}
+// --nonzero on a whole value (a cell, a row's value, an output): as DropZero,
+// and a struct the filter emptied is {"zeroed": N} rather than {}.
+inline void KeepNonZero(Json& value) {
+    const size_t members = value.is_object() ? value.size() : 0;
+    if (DropZero(value) && members && value.is_object() && value.empty()) value = Json{{"zeroed", members}};
 }
 }

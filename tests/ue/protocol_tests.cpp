@@ -118,6 +118,38 @@ TEST_CASE("array preview bounds count, stride and address") {
     CHECK(ue::Check(request) == Status::BadRequest);
 }
 
+TEST_CASE("the object filter: a class, an outer text, an outer object") {
+    Request request{};
+    request.op = ue::op::Find;
+    const auto set = [&](std::string_view bytes) {
+        memcpy(request.data, bytes.data(), bytes.size());
+        request.length = static_cast<uint32_t>(bytes.size());
+    };
+    set(std::string_view("Body\0PA_Pawn\0", 13));
+    CHECK(ue::detail::FilterValid(request));
+    CHECK(ue::detail::FilterOuter(request) == "PA_Pawn");
+    CHECK(ue::Check(request) == Status::Ok);
+    set(std::string_view("\0PA_Pawn\0", 9));                   // An outer without a class.
+    CHECK(ue::Check(request) == Status::Ok);
+    CHECK_FALSE(ue::detail::HasClass(request));
+    set(std::string_view("Body\0PA", 7));                       // The outer text unterminated.
+    CHECK(ue::Check(request) == Status::BadRequest);
+    set(std::string_view("Body\0PA\0x", 10));                  // Bytes after it.
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.length = 0;
+    request.address = 0x1000;                                   // An outer object alone.
+    CHECK(ue::Check(request) == Status::Ok);
+    request.op = ue::op::Each;                                  // each still needs its class.
+    CHECK(ue::Check(request) == Status::BadRequest);
+    set(std::string_view("Body\0PA\0", 8));
+    request.args[0] = ue::EachField(0, 8);
+    CHECK(ue::Check(request) == Status::Ok);
+    request.op = ue::op::Census;
+    CHECK(ue::Check(request) == Status::Ok);
+    // Every found or described object carries its outer, and a page of them still fits.
+    CHECK(ue::MaxDescribeMany * sizeof(ue::FindEntry) <= sizeof(Response::data));
+}
+
 TEST_CASE("find bounds and detail packing") {
     Request request{};
     request.op = ue::op::Find;

@@ -25,7 +25,7 @@ namespace reagentlive::ue {
 namespace {
 // Each: the instance list of the last class, and the rows of the last result.
 struct EachState {
-    std::string className, function;
+    std::string className, function; // className: the whole filter (class, outer text, outer object).
     uint64_t args0 = 0;
     std::vector<Ref> instances;
     std::vector<uint8_t> rows;
@@ -116,12 +116,21 @@ Progress Each(const Request& request, Response& response, bool first, const Host
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response)) return Progress::Done;
     const std::string_view className = ClassArgument(request);
+    // The instance list is kept per filter: class, outer text and outer object.
+    std::string filter;
+    try {
+        filter.assign(className);
+        filter.push_back('\0');
+        filter.append(detail::FilterOuter(request));
+        filter.push_back('\0');
+        filter.append(std::to_string(request.address));
+    } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
         if (!g_each) g_each = new (std::nothrow) EachState;
         if (!g_each) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
         auto& state = *g_each;
-        const bool same = state.className == className;
+        const bool same = state.className == filter;
         if (request.args[1]) {
             if (state.ready && same && state.function == request.text && state.args0 == request.args[0]) {
                 EachPage(static_cast<uint32_t>(request.args[1]), response);
@@ -133,7 +142,7 @@ Progress Each(const Request& request, Response& response, bool first, const Host
         state.ready = false;
         if (!(same && state.listed && (request.flags & EachReuse))) {
             try {
-                state.className.assign(className);
+                state.className = filter;
                 state.instances.clear();
             } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
             state.listed = state.capped = false;
@@ -152,7 +161,8 @@ Progress Each(const Request& request, Response& response, bool first, const Host
                 if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
                 SDK::UObject* object = TableObject(state.cursor);
                 if (!object || !HeaderReadable(object) || object->Index != state.cursor || Template(object) ||
-                    !ClassMatches(object, className, scratch)) continue;
+                    !ClassMatches(object, className, scratch) ||
+                    !OuterMatches(request, object, scratch)) continue;
                 const Ref ref = Identify(object, pack);
                 if (!ref.address) continue;
                 if (state.instances.size() == MaxEachInstances) { state.capped = true; break; }

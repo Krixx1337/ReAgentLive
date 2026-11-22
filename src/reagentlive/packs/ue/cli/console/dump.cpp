@@ -303,7 +303,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     std::vector<std::string> names;
     // Compact field values through the decoder (nested arrays, tag lists,
     // text at any depth); --meta and previews keep the plain formatter.
-    RowReader reader(session, structs, RowReader::PreviewNested);
+    RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
+    reader.KeepTopPointers(); // A pointer field is named on its row (`object`).
     // A top-level array keeps its header: its preview already lists the elements.
     const auto decoded = [&](const ue::Field& field) { return !session.meta && field.type != "ArrayProperty"; };
     if (client.Supports(ue::op::Names)) {
@@ -345,7 +346,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             for (const auto& part : layout.parts) texts.Add(part.field, data.subspan(offset + part.offset, part.field.size));
     }
     texts.Resolve(session);
-    reader.ResolveTexts();
+    reader.Resolve();
 
     // Every pointer the rows will name, in two requests: fields, then array elements.
     if (describeMany) {

@@ -41,7 +41,10 @@ bool HasUnreal(const Client& client) {
 // baseline; --match and --limit only shape what is printed.
 void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
     const Request& request = command.request;
-    const std::string filter(request.length ? reinterpret_cast<const char*>(request.data) : "");
+    const std::string className(request.length ? reinterpret_cast<const char*>(request.data) : "");
+    // The filter a census is stored and compared under: its class and outer, as the flags read.
+    const std::string filter = command.outer.empty() ? className :
+        (className.empty() ? "" : className + " ") + "--outer " + command.outer;
     const CensusPage page{command.from, command.limit};
     ue::CensusResult census;
     int64_t ms = 0;
@@ -55,7 +58,7 @@ void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs,
             if (const auto problem = CensusBaselineProblem(Ue(session).census, filter); !problem.empty())
                 return JsonError(session, jsonCommand, "validation", problem);
         const auto started = Clock::now();
-        auto scanned = ue::Census(session.client, filter);
+        auto scanned = ue::Census(session.client, className, {command.outerText, command.outerAddress});
         if (!scanned) return CommandError(session, jsonCommand, scanned.error());
         ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
         census = std::move(*scanned);
@@ -164,11 +167,19 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     case ue::op::Find: {
         const std::string_view className = request.length ? reinterpret_cast<const char*>(request.data) : "";
         const auto from = static_cast<uint32_t>(request.args[1]);
-        auto found = ue::Find(client, request.text, {className, from, false, (request.flags & ue::FindLive) != 0});
+        auto found = ue::Find(client, request.text, {className, from, false, (request.flags & ue::FindLive) != 0,
+            {command.outerText, command.outerAddress}});
         if (!found) return CommandError(session, jsonCommand, found.error());
         refs.clear();
         for (const auto& object : found->objects) refs.push_back(object.ref);
-        return Emit(session, jsonCommand, MakeFind(*found, from));
+        // Each row's owner, named in one describe-many of the distinct outers.
+        std::vector<Ref> outers;
+        for (const auto& object : found->objects)
+            if (object.outer.address && std::ranges::find(outers, object.outer) == outers.end()) outers.push_back(object.outer);
+        std::vector<std::optional<ue::Object>> described;
+        if (!outers.empty() && client.Supports(ue::op::DescribeMany))
+            if (auto named = ue::DescribeMany(client, outers); named) described = std::move(*named);
+        return Emit(session, jsonCommand, MakeFind(*found, from, described));
     }
     case ue::op::Call: {
         bool kept = false;
@@ -211,7 +222,11 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         if (!object) return CommandError(session, jsonCommand, object.error());
         // One object: it becomes $1, so `describe X; funcs $1` means X.
         refs.assign(1, object->ref);
-        return Emit(session, jsonCommand, MakeObject(*object));
+        auto row = MakeObject(*object);
+        if (object->outer.address)
+            if (auto outer = ue::Describe(client, object->outer); outer)
+                row.outer = shape::ObjectOuter{outer->name, FullRef(outer->ref)};
+        return Emit(session, jsonCommand, std::move(row));
     }
     }
     JsonError(session, jsonCommand, "unsupported", "unsupported operation");

@@ -60,16 +60,25 @@ Progress CensusBody(const Request& request, Response& response, bool first, cons
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const std::string_view wanted = ClassArgument(request);
+    // A page of the stored census answers only the same filter: class, outer text and outer object.
+    std::string filter;
+    try {
+        filter.assign(wanted);
+        filter.push_back('\0');
+        filter.append(detail::FilterOuter(request));
+        filter.push_back('\0');
+        filter.append(std::to_string(request.address));
+    } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
         if (!g_census) g_census = new (std::nothrow) CensusState;
         if (!g_census) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
-        if (request.args[1] && g_census->complete && g_census->filter == wanted) {
+        if (request.args[1] && g_census->complete && g_census->filter == filter) {
             CensusPage(static_cast<uint32_t>(request.args[1]), response);
             return Progress::Done;
         }
         try {
-            g_census->filter.assign(wanted);
+            g_census->filter = filter;
             g_census->rows.clear();
             g_census->slots.clear();
         } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
@@ -88,6 +97,7 @@ Progress CensusBody(const Request& request, Response& response, bool first, cons
             Object* object = TableObject(state.cursor);
             if (!object || !HeaderReadable(object) || ObjectIndex(object) != state.cursor || Template(object)) continue;
             if (!wanted.empty() && !ClassMatches(object, wanted, scratch)) continue;
+            if (!OuterMatches(request, object, scratch)) continue;
             const Object* type = ObjectClass(object);
             if (!type) continue;
             const auto [slot, added] = state.slots.try_emplace(type, static_cast<uint32_t>(state.rows.size()));

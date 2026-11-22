@@ -81,3 +81,7 @@ No reflection, no engine pack, or a native member behind a reflected one:
 - "Does a write stick?": find the storage here, then follow the write
   checklist for calls and writes (approval, `--expect`, copies that snap
   back).
+- Containers the reflection does not describe (native-only sets and maps,
+  table storage): read the layout and stride from `fields` or a static
+  tool, `read-batch` the allocation, then `name` the FName keys. Reflected
+  sets and maps decode on their own in every value.

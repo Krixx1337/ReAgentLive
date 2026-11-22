@@ -47,6 +47,7 @@ Standard library only.
 import json
 import struct
 import subprocess
+import tempfile
 from collections.abc import Mapping
 
 __all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'Digest', 'Session', 'samples', 'addr', 'unhex',
@@ -185,6 +186,12 @@ def _wrap(value, kind, where, named):
     return value
 
 
+def console_name(process):
+    """The console's file name, for messages."""
+    args = process.args if isinstance(process.args, (list, tuple)) else [process.args]
+    return str(args[0]).replace('\\', '/').rsplit('/', 1)[-1] if args else 'the console'
+
+
 class Session:
     """One console process; not thread-safe. Use as a context manager.
 
@@ -197,20 +204,27 @@ class Session:
     """
 
     def __init__(self, console, args=(), caller='script', table=None):
+        # stderr goes to a file, read only when the start fails: a pipe nobody reads could fill and stall the console.
+        self._stderr = tempfile.TemporaryFile('w+', encoding='utf-8', errors='replace')
         self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,
-                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+                                         stdout=subprocess.PIPE, stderr=self._stderr, text=True, bufsize=1)
         self._types = {}
         self.digest = None  # The last call's Digest (its result was past the budget), or None.
         try:
             if table is not None:
                 current = self.send('help --hash')
-                if not (current.get('ok') and current['result'].get('table_hash') == table.get('table_hash')):
+                if not (current.get('ok') and current.get('result', {}).get('table_hash') == table.get('table_hash')):
                     table = None
             if table is None:
                 reply = self.send('help --json')
                 if not reply.get('ok'):
                     raise ReAgentLiveError(reply.get('command', 'help --json'), reply.get('error'))
+                if 'result' not in reply:
+                    raise ReAgentLiveError('help --json', {'message': f'no table in the reply (keys: {", ".join(reply)})'})
                 table = reply['result']
+        except ReAgentLiveError as error:
+            self.close()
+            raise ReAgentLiveError('start', dict(error.error, message=self._started_badly(error))) from None
         except BaseException:
             self.close()
             raise
@@ -220,6 +234,19 @@ class Session:
         for row in self.table['rows']:
             for name in (row['verb'], *row.get('aliases', ())):
                 self._types[name] = row['type']
+
+    def _started_badly(self, error):
+        """Why the console did not start: the error, its exit code and the end of its stderr."""
+        text = f'{console_name(self._process)} did not start: {error}'
+        if self._process.returncode is not None:
+            text += f'; exit code {self._process.returncode}'
+        try:
+            self._stderr.seek(0)
+            if tail := self._stderr.read()[-800:].strip():
+                text += f'; stderr: {tail}'
+        except (OSError, ValueError):
+            pass
+        return text
 
     def __enter__(self):
         return self

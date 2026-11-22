@@ -145,6 +145,25 @@ std::string_view ClassArgument(const Request& request) {
     return request.length ? std::string_view(reinterpret_cast<const char*>(request.data)) : std::string_view{};
 }
 
+bool OuterMatches(const Request& request, const Object* object, std::string& scratch) {
+    const std::string_view text = detail::FilterOuter(request);
+    if (!request.address && text.empty()) return true;
+    const Object* outer = object;
+    for (uint32_t step = 0; step < MaxOuterSteps; ++step) {
+        outer = ObjectOuter(outer);
+        if (!outer || !HeaderReadable(outer)) return false;
+        if (request.address && reinterpret_cast<uintptr_t>(outer) == request.address) return true;
+        if (!text.empty() && NameMatches(FullName(ObjectName(outer), scratch), text)) return true;
+    }
+    return false;
+}
+
+Ref OuterRef(const Object* object, const Context& pack) {
+    const Object* outer = ObjectOuter(object);
+    if (!outer || !HeaderReadable(outer) || !pack.object(outer)) return {};
+    return Identify(outer, pack);
+}
+
 // Live instances only: class default (RF_ClassDefaultObject, 0x10) and
 // archetype (RF_ArchetypeObject, 0x20) objects are templates.
 bool Template(const Object* object) {
@@ -245,6 +264,7 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
             continue;
         if (!wantedClass.empty() && !ClassMatches(object, wantedClass, scratch)) continue;
         if (live && Template(object)) continue;
+        if (!OuterMatches(request, object, scratch)) continue;
         if (!pack.object(object)) continue;
         if (query.empty()) FullName(ObjectName(object), name);
         ++g_find.total;
@@ -254,7 +274,9 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
             continue;
         }
         FindEntry& entry = entries[g_find.count++];
+        entry = {};
         entry.object = Identify(object, pack);
+        entry.outer = OuterRef(object, pack);
         CopyText(entry.name, name);
         if (const Object* type = ObjectClass(object); pack.object(type)) {
             CopyText(entry.className, FullName(ObjectName(type), scratch));
@@ -292,6 +314,7 @@ bool DescribeRef(Ref ref, const Context& pack, FindEntry& entry, uint32_t* class
     if (!object) return false;
     entry = {};
     entry.object = Identify(object, pack);
+    entry.outer = OuterRef(object, pack);
     std::string name;
     CopyText(entry.name, FullName(ObjectName(object), name));
     if (const Object* type = ObjectClass(object); pack.object(type)) {

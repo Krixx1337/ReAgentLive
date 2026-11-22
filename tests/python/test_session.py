@@ -233,6 +233,15 @@ class SessionTests(unittest.TestCase):
         self.c.read(4096, 4)
         self.assertIsNone(self.session.digest)                    # Each call sets it again.
 
+    def test_a_console_that_fails_at_start_says_why(self):
+        script = 'import sys; sys.stderr.write("cannot attach: no target"); sys.exit(3)'
+        with self.assertRaises(dl.ReAgentLiveError) as caught:
+            dl.Session(sys.executable, ['-I', '-c', script])
+        message = str(caught.exception)
+        self.assertIn('did not start', message)
+        self.assertIn('exit code 3', message)
+        self.assertIn('cannot attach: no target', message)
+
     def test_every_verb_has_a_generated_method_named_by_origin(self):
         for verb, row in self.rows.items():
             if verb == 'quit':
@@ -254,7 +263,7 @@ class SessionTests(unittest.TestCase):
         self.assertIs(trial.parameters['owner'].default, inspect.Parameter.empty)   # A required flag.
         self.assertEqual(trial.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
         find = inspect.signature(self.gen.UeVerbs.find)
-        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'start'])
+        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'outer', 'start'])
         self.assertIn('Literal', str(inspect.signature(self.gen.Console.search).parameters['type'].annotation))
         self.assertIn('class_size', self.gen.Object.__annotations__)              # Named types are classes.
         self.assertIn('Chain', str(self.gen.ReadResult.__annotations__['chain']))

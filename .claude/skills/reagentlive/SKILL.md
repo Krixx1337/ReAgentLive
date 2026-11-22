@@ -112,7 +112,8 @@ to cross to the static tool (native-code reference).
 - Fewer tool calls beat faster ones: put everything for the next decision in
   one `batch { ... }` or one `get` with several paths.
 - Filter `dump` (`--match`, `--nonzero`, `--changed`) instead of reading all
-  of it; never `each` or `find` a whole class unfiltered (`--where`, `--cls`).
+  of it; never `each` or `find` a whole class unfiltered (`--where`, `--cls`,
+  `--outer` for one asset's subobjects).
 - Separate commands read separate ticks; what must line up goes in one
   `get`, `read-batch` or `batch` (read its `spans_ticks`).
 - `--timing` shows a line's round trips.
