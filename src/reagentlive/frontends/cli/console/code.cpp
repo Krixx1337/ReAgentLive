@@ -20,6 +20,7 @@
 #include "reagentlive/frontends/cli/code/pe_names.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
+#include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/core/client.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
@@ -100,82 +101,15 @@ Result<std::pair<std::vector<uint64_t>, bool>> ScanAll(Session& session, Query q
 }
 }
 
-void RunDisasm(Session& session, const Command& command, std::string_view jsonCommand) {
-    Client& client = session.client;
-    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "disasm needs read-batch");
-    const Client::Hold hold(client);
-    uint64_t address = command.request.address;
-    auto function = FunctionAt(session, address);
-    if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
-    // --function with no entry holding the address (a leaf function, or an
-    // image whose directory leaves code out): walk from the address instead.
-    const bool walk = command.function && !*function;
-    if (command.function && *function && !command.resume) address = (*function)->range.start;
-    dis::Options options;
-    options.count = command.limit;
-    options.follow = command.follow;
-    options.walk = walk;
-    if (command.function) options.bytes = dis::MaxFunctionBytes;
-    if (command.function && !walk) options.bound = [&session](uint64_t at) { return EntryEnd(session, at); };
-    auto listing = dis::List(AgentRead(session), address, options);
-    if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
-    const auto modules = LoadedModules(session);
-    if (auto strings = dis::AddStrings(AgentRead(session), listing->rows, modules); !strings)
-        return JsonError(session, jsonCommand, "read", strings.error());
-    // Read-only: inside a loaded module, in a section that is not writable.
-    const dis::ConstantFn constant = [&session, &modules](uint64_t at) {
-        const Module* module = ModuleAt(at, modules);
-        if (!module) return false;
-        auto layout = LayoutOf(session, *module);
-        if (!layout) return false;
-        const auto* section = (*layout)->At(at - module->base);
-        return section && !(section->flags & image::Writable);
-    };
-    // [rip + disp] targets in a module's import table: the DLL function the slot holds.
-    std::map<uint64_t, std::optional<pe::ImportDirectories>> directories;
-    for (auto& row : listing->rows) {
-        if (!row.target || !row.ripTarget || row.string) continue;
-        const Module* module = ModuleAt(*row.target, modules);
-        if (!module) continue;
-        auto known = directories.find(module->base);
-        if (known == directories.end())
-            known = directories.emplace(module->base, pe::ReadImportDirectories(AgentRead(session), *module)).first;
-        if (known->second) row.import = pe::ImportAt(AgentRead(session), *module, *known->second, *row.target);
-    }
-    if (auto values = dis::AddValues(AgentRead(session), listing->rows, constant); !values)
-        return JsonError(session, jsonCommand, "read", values.error());
-    if (!command.file.empty()) {
-        const Module* module = ModuleAt(address, modules);
-        if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
-        const auto timestamp = ImageTimestamp(session, *module);
-        if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
-        std::vector<ReadSpan> spans;
-        for (const auto& range : save::DataRanges(listing->rows, constant)) spans.push_back({range.start, range.end - range.start});
-        std::vector<std::pair<uint64_t, std::vector<uint8_t>>> data;
-        const auto read = AgentRead(session);
-        for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
-            const size_t n = std::min(MaxBatchReads, spans.size() - first);
-            auto items = read(std::span(spans).subspan(first, n));
-            if (!items) return JsonError(session, jsonCommand, "read", items.error());
-            for (size_t i = 0; i < n && i < items->size(); ++i)
-                if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
-        }
-        std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
-        if (!file || !(file << save::Lines(*module, *timestamp, address, listing->rows, data)))
-            return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
-    }
-    auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
-    if (!command.file.empty()) KeepSaveSummary(out, command.file);
-    Emit(session, jsonCommand, std::move(out));
-}
-
 namespace {
 // The piece of code no exception-table entry lists that holds `address`, cut
 // as touches cuts such code (at returns and int3 padding), swept from the
 // window's start. Empty when an entry holds it or it lies outside the
 // executable sections.
+// `follows`: set to whether the address lies within save::JunkBytes of the
+// last end of straight-line code in its piece (touch::NearEnd): a start.
 std::expected<std::optional<touch::Piece>, std::string> UnlistedPiece(Session& session, const Module& module,
-                                                                      uint64_t address) {
+                                                                      uint64_t address, bool* follows = nullptr) {
     auto layout = LayoutOf(session, module);
     if (!layout) return std::unexpected(layout.error());
     const auto* section = (*layout)->At(address - module.base);
@@ -206,9 +140,154 @@ std::expected<std::optional<touch::Piece>, std::string> UnlistedPiece(Session& s
         if (!items->empty() && (*items)[0])
             std::copy((*items)[0]->begin(), (*items)[0]->end(), code.begin() + (spans[0].address - window->start));
     }
-    return touch::PieceAt(code, window->start, address);
+    const auto piece = touch::PieceAt(code, window->start, address);
+    if (piece && follows) *follows = touch::NearEnd(code, window->start, piece->start, address, save::JunkBytes);
+    return piece;
 }
 } // namespace
+void RunDisasm(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "disasm needs read-batch");
+    const Client::Hold hold(client);
+    uint64_t address = command.request.address;
+    auto function = FunctionAt(session, address);
+    if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
+    // --function with no entry holding the address (a leaf function, or an
+    // image whose directory leaves code out): walk from the address instead.
+    const bool walk = command.function && !*function;
+    if (command.function && *function && !command.resume) address = (*function)->range.start;
+    const auto modules = LoadedModules(session);
+    // A walk from well inside unlisted code lists part of a function: say
+    // where its piece starts, and refuse to save that part unasked.
+    std::optional<touch::Piece> piece;
+    if (const Module* module = walk ? ModuleAt(address, modules) : nullptr) {
+        bool follows = false;
+        auto held = UnlistedPiece(session, *module, address, &follows);
+        if (!held) return JsonError(session, jsonCommand, "unwind", held.error());
+        if (*held && !follows) piece = *held;
+    }
+    if (piece && !command.file.empty() && !command.resume)
+        return JsonError(session, jsonCommand, "start", "the address lies " + save::Hex(address - piece->start) +
+            " bytes into unlisted code that starts at " + save::Hex(piece->start) + ": save from the function's start "
+            "(junk bytes may lead the piece), or pass --resume to save from the address");
+    // Read-only: inside a loaded module, in a section that is not writable.
+    const dis::ConstantFn constant = [&session, &modules](uint64_t at) {
+        const Module* module = ModuleAt(at, modules);
+        if (!module) return false;
+        auto layout = LayoutOf(session, *module);
+        if (!layout) return false;
+        const auto* section = (*layout)->At(at - module->base);
+        return section && !(section->flags & image::Writable);
+    };
+    // [rip + disp] targets in a module's import table: the DLL function the slot holds.
+    std::map<uint64_t, std::optional<pe::ImportDirectories>> directories;
+    // One function listed from `start`, walking (no entry) or bounded by its
+    // entry, with strings, import names and constant values added.
+    const auto list = [&](uint64_t start, uint64_t count, bool walking,
+                          bool follow) -> std::expected<dis::Listing, std::string> {
+        dis::Options options;
+        options.count = count;
+        options.follow = follow;
+        options.walk = walking;
+        if (command.function) options.bytes = dis::MaxFunctionBytes;
+        if (command.function && !walking) options.bound = [&session](uint64_t at) { return EntryEnd(session, at); };
+        auto listing = dis::List(AgentRead(session), start, options);
+        if (!listing) return std::unexpected(listing.error());
+        if (auto strings = dis::AddStrings(AgentRead(session), listing->rows, modules); !strings)
+            return std::unexpected(strings.error());
+        for (auto& row : listing->rows) {
+            if (!row.target || !row.ripTarget || row.string) continue;
+            const Module* module = ModuleAt(*row.target, modules);
+            if (!module) continue;
+            auto known = directories.find(module->base);
+            if (known == directories.end())
+                known = directories.emplace(module->base, pe::ReadImportDirectories(AgentRead(session), *module)).first;
+            if (known->second) row.import = pe::ImportAt(AgentRead(session), *module, *known->second, *row.target);
+        }
+        if (auto values = dis::AddValues(AgentRead(session), listing->rows, constant); !values)
+            return std::unexpected(values.error());
+        return listing;
+    };
+    auto listing = list(address, command.limit, walk, command.follow);
+    if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+    auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
+    if (piece) out.piece = shape::AddressRange{piece->start, piece->end};
+    if (command.file.empty()) return Emit(session, jsonCommand, std::move(out));
+
+    const Module* module = ModuleAt(address, modules);
+    if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
+    const auto timestamp = ImageTimestamp(session, *module);
+    if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
+    // --callees: each function the first calls directly, once, up to the caps.
+    std::vector<uint64_t> starts{address};
+    std::vector<dis::Listing> listings;
+    listings.push_back(std::move(*listing));
+    std::vector<Addr> skipped;
+    size_t calleeBytes = 0;
+    if (command.callees) {
+        for (const uint64_t target : save::Callees(listings.front().rows, *module, address)) {
+            if (starts.size() > save::MaxCallees || calleeBytes >= save::MaxCalleeBytes) {
+                skipped.push_back(target);
+                continue;
+            }
+            auto entry = FunctionAt(session, target);
+            if (!entry) return JsonError(session, jsonCommand, "unwind", entry.error());
+            const uint64_t start = *entry ? (*entry)->range.start : target; // A call target is a start.
+            if (std::ranges::find(starts, start) != starts.end()) continue;
+            auto callee = list(start, MaxFunctionDisasm, !*entry, false);
+            if (!callee || callee->rows.empty()) {
+                skipped.push_back(target);
+                continue;
+            }
+            for (const auto& row : callee->rows) calleeBytes += row.bytes.size();
+            starts.push_back(start);
+            listings.push_back(std::move(*callee));
+        }
+    }
+    std::vector<save::Range> ranges;
+    for (const auto& one : listings) {
+        const auto found = save::DataRanges(one.rows, constant);
+        ranges.insert(ranges.end(), found.begin(), found.end());
+    }
+    std::vector<ReadSpan> spans;
+    for (const auto& range : save::Merge(std::move(ranges))) spans.push_back({range.start, range.end - range.start});
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> data;
+    const auto read = AgentRead(session);
+    for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
+        const size_t n = std::min(MaxBatchReads, spans.size() - first);
+        auto items = read(std::span(spans).subspan(first, n));
+        if (!items) return JsonError(session, jsonCommand, "read", items.error());
+        for (size_t i = 0; i < n && i < items->size(); ++i)
+            if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
+    }
+    // --labels: the names this build's labels file gives, by address.
+    std::map<uint64_t, std::string> labels;
+    if (!command.labels.empty()) {
+        std::ifstream in(command.labels);
+        if (!in) return JsonError(session, jsonCommand, "file", "cannot read " + command.labels);
+        for (std::string text; std::getline(in, text);)
+            if (auto row = ParseLabel(text, *module, *timestamp)) labels[module->base + row->rva] = std::move(row->name);
+    }
+    std::vector<save::Saved> saved;
+    for (size_t i = 0; i < listings.size(); ++i) saved.push_back({starts[i], listings[i].rows});
+    std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
+    if (!file || !(file << save::Lines(*module, *timestamp, saved, data, labels)))
+        return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
+    KeepSaveSummary(out, command.file);
+    uint64_t rows = 0;
+    for (const auto& one : listings) rows += one.rows.size();
+    out.savedRows = rows;
+    if (command.callees) {
+        out.functions.emplace();
+        for (size_t i = 0; i < listings.size(); ++i) {
+            const auto& last = listings[i].rows.back();
+            out.functions->push_back({starts[i], last.address + last.bytes.size(), listings[i].rows.size()});
+        }
+        if (!skipped.empty()) out.skipped = std::move(skipped);
+    }
+    Emit(session, jsonCommand, std::move(out));
+}
+
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Xrefs) || !client.Supports(op::Search) || !client.Supports(op::ReadBatch))

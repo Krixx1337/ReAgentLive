@@ -27,6 +27,16 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **A function and its callees in one database:** `disasm --save
+  --callees` saves each function it calls directly (one level, up to 16),
+  `--labels` names functions, call targets and globals from an
+  `export-labels` file, and the IDA loader stubs named addresses so calls
+  read as names. `add_saved(path)` adds a later save to the open database.
+  Breaking: a save file holds one `function` row per saved function; copy
+  the new loader into IDA's loaders folder
+  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+- **No partial saves:** a `disasm --function` walk from more than 32 bytes
+  into unlisted code adds `piece`, and `--save` refuses unless `--resume`.
 - **Whole functions in one call:** `disasm --function` lists the function
   to its end (up to 2,048 instructions) with compact rows, the value each
   read-only constant load reads, and a `strings` summary

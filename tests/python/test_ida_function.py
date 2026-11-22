@@ -37,11 +37,30 @@ class LoadFunction(unittest.TestCase):
     def test_a_saved_file_becomes_segments_and_names(self):
         plan = loader.parse([DATA, FUNCTION, '', CODE, NAME])
         self.assertIsInstance(plan, dict)
-        self.assertEqual(plan['function']['start'], 0x140001000)
-        self.assertEqual(plan['function']['base'], 0x140000000)
+        self.assertEqual(plan['functions'], [(0x140001000, 0x140001006)])
+        self.assertEqual(plan['build']['base'], 0x140000000)
         self.assertEqual([(s, k) for s, _, k in plan['segments']], [(0x140001000, 'CODE'), (0x140003000, 'DATA')])
         self.assertEqual(plan['segments'][1][1], bytes([0, 0, 0, 0x3f]))
-        self.assertEqual(plan['names'], [(0x140004000, 'KERNEL32.dll_Sleep')])
+        self.assertEqual(plan['names'], [(0x140004000, 'KERNEL32.dll_Sleep', 'import')])
+        self.assertEqual(plan['stubs'], [(0x140004000, 'import')])   # Outside the saved bytes.
+
+    def test_callees_load_as_more_functions_and_named_targets_get_stubs(self):
+        callee = FUNCTION.replace('0x140001000', '0x140002000').replace('0x140001006', '0x140002001')
+        code = '{"address":"0x140002000","bytes":"c3","row":"code","rva":"0x2000"}'
+        names = ['{"address":"0x140002000","name":"AThing::Resolve","row":"name","rva":"0x2000","what":"function"}',
+                 '{"address":"0x140005000","name":"fn_5000","row":"name","rva":"0x5000","what":"call"}',
+                 '{"address":"0x140005000","name":"fn_5000","row":"name","rva":"0x5000","what":"call"}']
+        plan = loader.parse([FUNCTION, callee, CODE, code] + names)
+        self.assertEqual(plan['functions'], [(0x140001000, 0x140001006), (0x140002000, 0x140002001)])
+        self.assertEqual(plan['stubs'], [(0x140005000, 'call')])     # Once; the saved callee needs none.
+        other = FUNCTION.replace('"timestamp":7', '"timestamp":8')
+        self.assertIn('another build', loader.parse([FUNCTION, other, CODE]))
+
+    def test_an_added_save_keeps_only_bytes_no_segment_holds(self):
+        segments = [(0x1000, bytes(range(16)), 'CODE'), (0x2000, b'ab', 'DATA')]
+        self.assertEqual(loader.additions(segments, [(0x1004, 0x1008), (0x2000, 0x2002)]),
+                         [(0x1000, bytes(range(4)), 'CODE'), (0x1008, bytes(range(8, 16)), 'CODE')])
+        self.assertEqual(loader.additions(segments, []), segments)
 
     def test_what_cannot_be_loaded_says_why(self):
         self.assertIn('no function row', loader.parse([CODE]))

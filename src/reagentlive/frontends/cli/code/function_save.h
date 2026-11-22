@@ -1,11 +1,13 @@
-// reagentlive CLI: one function saved for a static tool (`disasm --function
-// --save <file>`). JSON lines: a `function` row (module, size, timestamp,
-// bounds), `code` and `data` rows (live bytes at their addresses), and
-// `name` rows (imports and the function itself). A loader builds a small
-// database from it, so the tool decompiles that function without analysing
-// the whole image. Pure: rows and bytes come in, text goes out.
+// reagentlive CLI: functions saved for a static tool (`disasm --function
+// --save <file> [--callees]`). JSON lines: one `function` row per saved
+// function (module, size, timestamp, bounds), `code` and `data` rows (live
+// bytes at their addresses), and `name` rows (the functions, imports, call
+// targets and labelled globals). A loader builds a small database from it,
+// so the tool decompiles those functions without analysing the whole image.
+// Pure: rows and bytes come in, text goes out.
 #pragma once
 #include <algorithm>
+#include <map>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -15,11 +17,27 @@
 
 namespace reagentlive::cli::save {
 constexpr size_t MaxData = 64; // Bytes kept per referenced constant or string.
+// --callees: functions saved besides the first, and their code in bytes.
+constexpr size_t MaxCallees = 16, MaxCalleeBytes = 256 * 1024;
+// Bytes of junk a packed image may leave between a return and the next
+// function: a walk that far into its unlisted piece is still a start.
+constexpr uint64_t JunkBytes = 32;
 
 struct Range {
     uint64_t start = 0, end = 0;
     bool operator==(const Range&) const = default;
 };
+
+// Sorted, with ranges that touch or overlap made one.
+inline std::vector<Range> Merge(std::vector<Range> ranges) {
+    std::ranges::sort(ranges, {}, &Range::start);
+    std::vector<Range> merged;
+    for (const auto& range : ranges) {
+        if (!merged.empty() && range.start <= merged.back().end) merged.back().end = std::max(merged.back().end, range.end);
+        else merged.push_back(range);
+    }
+    return merged;
+}
 
 // The read-only data the rows reference: each load's operand (at least 8
 // bytes) and each string with its terminator, at most MaxData each, merged
@@ -34,13 +52,7 @@ inline std::vector<Range> DataRanges(std::span<const dis::Instruction> rows, con
         if (!length) continue;
         ranges.push_back({*row.target, *row.target + std::min(length, MaxData)});
     }
-    std::ranges::sort(ranges, {}, &Range::start);
-    std::vector<Range> merged;
-    for (const auto& range : ranges) {
-        if (!merged.empty() && range.start <= merged.back().end) merged.back().end = std::max(merged.back().end, range.end);
-        else merged.push_back(range);
-    }
-    return merged;
+    return Merge(std::move(ranges));
 }
 
 // The listed code as contiguous runs (a --follow hop starts a new run).
@@ -52,6 +64,24 @@ inline std::vector<std::pair<uint64_t, std::vector<uint8_t>>> CodeRuns(std::span
     }
     return runs;
 }
+
+// Direct calls in the rows to other code in the module, in call order, each
+// once: what --callees saves besides the function (`self`).
+inline std::vector<uint64_t> Callees(std::span<const dis::Instruction> rows, const Module& module, uint64_t self) {
+    std::vector<uint64_t> out;
+    for (const auto& row : rows) {
+        if (row.branch != "call" || !row.target || row.ripTarget || *row.target == self) continue;
+        if (*row.target < module.base || *row.target - module.base >= module.size) continue;
+        if (std::ranges::find(out, *row.target) == out.end()) out.push_back(*row.target);
+    }
+    return out;
+}
+
+// One saved function: where it starts and its listed rows.
+struct Saved {
+    uint64_t start = 0;
+    std::span<const dis::Instruction> rows;
+};
 
 inline std::string Hex(uint64_t value) {
     char text[24];
@@ -70,28 +100,50 @@ inline std::string HexText(std::span<const uint8_t> bytes) {
 }
 
 // The file's text. `data` pairs each DataRanges range with the bytes read
-// there (an unreadable one is left out).
-inline std::string Lines(const Module& module, uint32_t timestamp, uint64_t functionStart,
-                         std::span<const dis::Instruction> rows,
-                         std::span<const std::pair<uint64_t, std::vector<uint8_t>>> data) {
+// there (an unreadable one is left out); `labels` names addresses (from a
+// labels file). Names, one per address, first kind wins: each saved function
+// (its label, else fn_<rva>), the import slots called through, the direct
+// call targets not saved (label, else fn_<rva>), labelled RIP-relative
+// targets (globals).
+inline std::string Lines(const Module& module, uint32_t timestamp, std::span<const Saved> functions,
+                         std::span<const std::pair<uint64_t, std::vector<uint8_t>>> data,
+                         const std::map<uint64_t, std::string>& labels = {}) {
     std::string out;
     const auto line = [&](const Json& row) { out += row.dump() + "\n"; };
-    const uint64_t end = rows.empty() ? functionStart : rows.back().address + rows.back().bytes.size();
-    line({{"row", "function"}, {"module", module.name}, {"module_size", module.size}, {"timestamp", timestamp},
-        {"base", Hex(module.base)}, {"start", Hex(functionStart)}, {"end", Hex(end)}});
-    for (const auto& [at, bytes] : CodeRuns(rows))
-        line({{"row", "code"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
+    for (const auto& function : functions) {
+        const auto& rows = function.rows;
+        const uint64_t end = rows.empty() ? function.start : rows.back().address + rows.back().bytes.size();
+        line({{"row", "function"}, {"module", module.name}, {"module_size", module.size}, {"timestamp", timestamp},
+            {"base", Hex(module.base)}, {"start", Hex(function.start)}, {"end", Hex(end)}});
+    }
+    for (const auto& function : functions)
+        for (const auto& [at, bytes] : CodeRuns(function.rows))
+            line({{"row", "code"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
     for (const auto& [at, bytes] : data)
         line({{"row", "data"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
-    line({{"row", "name"}, {"address", Hex(functionStart)}, {"rva", Hex(functionStart - module.base)},
-        {"name", "fn_" + Hex(functionStart - module.base).substr(2)}, {"what", "function"}});
     std::vector<uint64_t> named;
-    for (const auto& row : rows) {
-        if (!row.import || !row.target || std::ranges::find(named, *row.target) != named.end()) continue;
-        named.push_back(*row.target);
-        line({{"row", "name"}, {"address", Hex(*row.target)}, {"rva", Hex(*row.target - module.base)},
-            {"name", *row.import}, {"what", "import"}});
-    }
+    const auto name = [&](uint64_t at, const std::string& text, std::string_view what) {
+        if (std::ranges::find(named, at) != named.end()) return;
+        named.push_back(at);
+        line({{"row", "name"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"name", text}, {"what", what}});
+    };
+    const auto labelled = [&](uint64_t at) {
+        const auto found = labels.find(at);
+        return found != labels.end() ? found->second : "fn_" + Hex(at - module.base).substr(2);
+    };
+    for (const auto& function : functions) name(function.start, labelled(function.start), "function");
+    for (const auto& function : functions)
+        for (const auto& row : function.rows)
+            if (row.import && row.target) name(*row.target, *row.import, "import");
+    const auto inside = [&](uint64_t at) { return at >= module.base && at - module.base < module.size; };
+    for (const auto& function : functions)
+        for (const auto& row : function.rows)
+            if (row.branch == "call" && row.target && !row.ripTarget && inside(*row.target))
+                name(*row.target, labelled(*row.target), "call");
+    for (const auto& function : functions)
+        for (const auto& row : function.rows)
+            if (row.ripTarget && row.target && !row.import && labels.contains(*row.target))
+                name(*row.target, labels.at(*row.target), "global");
     return out;
 }
 }

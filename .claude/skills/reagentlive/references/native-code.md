@@ -45,15 +45,14 @@ Answer one-address questions live, with no database:
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
 - **No database of this build, or not worth one:** `disasm <addr>
-  --function --save <file>` and the IDA loader
-  (`src/reagentlive/frontends/ida/load_function.py`) give a database of
-  that one function in seconds; decompile it there. Calls out of it stay
-  bare addresses: save each callee you need the same way
+  --function --save <file> --callees` (plus `--labels` with an
+  `export-labels` file) and the IDA loader
+  (`src/reagentlive/frontends/ida/load_function.py`) give a database of the
+  function and its callees in seconds; decompile all in one Python call,
+  `add_saved` the next save into it
   (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`).
-  Install the loader once in IDA's user loaders folder (ask: outside the
-  repo). Save from the function's start, never a call site; check the
-  loader ran (`fn_<rva>` name), decompile, close each database; the
-  bridge recipe and checks are on that page. A member read through a typed
+  Install the loader once (ask: outside the repo). Save from the function's
+  start: a save from inside unlisted code is refused. A member read through a typed
   pointer shows as an index (`p[27]` on a `float *`): offset = index × size.
 
 ## Following a native getter

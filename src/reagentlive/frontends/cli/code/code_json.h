@@ -111,6 +111,16 @@ struct DisasmHop {
         v.flat("to_", &DisasmHop::toWhere);
     }
 };
+// disasm --save --callees: one saved function, its bounds and instruction count.
+struct SavedFunction {
+    Addr start, end;
+    uint64_t rows = 0;
+    template<class V> static void Describe(V& v) {
+        v("start", &SavedFunction::start);
+        v("end", &SavedFunction::end);
+        v("rows", &SavedFunction::rows);
+    }
+};
 // disasm: the rows, how many bytes they cover, why the listing stopped
 // (`next` where a count or byte limit cut it), the hops --follow took, the
 // function entry holding the first address, and with --function the strings
@@ -125,6 +135,9 @@ struct Disasm {
     std::optional<std::vector<DisasmString>> strings;
     std::optional<std::string> saved;    // --save: the file written; rows and strings are left out.
     std::optional<uint64_t> savedRows;   // --save: the instructions the file holds.
+    std::optional<std::vector<SavedFunction>> functions; // --callees: each saved function, the first included.
+    std::optional<std::vector<Addr>> skipped;            // --callees: call targets past the cap, not saved.
+    std::optional<AddressRange> piece;   // A walk from inside unlisted code: the piece holding the address.
     std::optional<FunctionBounds> function;
     std::optional<DisasmEnd> end;
     std::optional<std::vector<DisasmHop>> followed;
@@ -139,6 +152,9 @@ struct Disasm {
         v("strings", &Disasm::strings);
         v("saved", &Disasm::saved);
         v("saved_rows", &Disasm::savedRows);
+        v("functions", &Disasm::functions);
+        v("skipped", &Disasm::skipped);
+        v("piece", &Disasm::piece);
         v("function", &Disasm::function);
         v("end", &Disasm::end);
         v("followed", &Disasm::followed);

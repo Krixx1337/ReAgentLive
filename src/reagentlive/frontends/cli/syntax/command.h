@@ -84,6 +84,10 @@ struct Command {
     // (`resume`: start at the address, a cut listing's next; `file`: --save);
     // step through unconditional direct jumps. xrefs: list unknown hits too.
     bool function = false, follow = false, all = false, resume = false;
+    // disasm --save: also save the functions it calls (--callees), and name
+    // addresses from a labels file (--labels, export-labels' format).
+    bool callees = false;
+    std::string labels;
     // search text: 1 for ASCII, 2 for UTF-16 (--wide); rows then carry the text around each hit.
     uint8_t textSearch = 0;
     // read, peek, vtable, disasm: offsets of a pointer chain after the

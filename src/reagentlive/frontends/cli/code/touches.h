@@ -122,6 +122,31 @@ inline std::optional<Piece> PieceAt(std::span<const uint8_t> code, uint64_t addr
     return std::nullopt;
 }
 
+// Whether the last end of straight-line code before `at` lies within
+// `within` bytes, decoding `code` (at `address`) from the piece's `start`
+// (itself an end): a return, an unconditional jump or padding (nop, int3).
+// A function starts right after one, or behind a few junk bytes (a tail jump
+// can share its piece with the next function); a call site lies far past one.
+inline bool NearEnd(std::span<const uint8_t> code, uint64_t address, uint64_t start, uint64_t at, uint64_t within) {
+    static const dis::detail::Decoder decoder; // Console only: thread-safe statics are fine here.
+    if (start < address || at < start || at > address + code.size()) return false;
+    ZydisDecodedInstruction instruction;
+    size_t pos = static_cast<size_t>(start - address), end = pos;
+    const size_t target = static_cast<size_t>(at - address);
+    while (pos < target) {
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.decoder, nullptr, code.data() + pos, code.size() - pos,
+                &instruction))) {
+            ++pos; // Junk: step over it a byte at a time.
+            continue;
+        }
+        pos += instruction.length;
+        const auto m = instruction.mnemonic;
+        if (pos <= target && (m == ZYDIS_MNEMONIC_RET || m == ZYDIS_MNEMONIC_JMP || m == ZYDIS_MNEMONIC_NOP ||
+                              m == ZYDIS_MNEMONIC_INT3)) end = pos;
+    }
+    return target - end <= within;
+}
+
 // One function's uses, ranked by how many of the asked offsets it touches.
 // `listed` is false for a piece of code outside every exception-table entry.
 struct Row {

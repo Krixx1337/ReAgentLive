@@ -7,7 +7,7 @@
 namespace reagentlive::cli::parse {
 using namespace text;
 
-// disasm <addr> [count] [--function [--resume] [--save F]] [--follow]: decoded in the console.
+// disasm <addr> [count] [--function [--resume] [--save F [--callees] [--labels L]]] [--follow]: decoded in the console.
 // --function lists the whole function: count defaults to its cap.
 Parsed Disasm(const Args& args, const ParseContext& context) {
     Command command;
@@ -24,6 +24,12 @@ Parsed Disasm(const Args& args, const ParseContext& context) {
         if (command.file.empty()) return Fail("--save needs a file");
     }
     if (!command.function && (command.resume || !command.file.empty())) return Fail("--resume and --save need --function");
+    command.callees = args.Has("--callees");
+    if (args.Has("--labels")) {
+        command.labels = args.Value("--labels");
+        if (command.labels.empty()) return Fail("--labels needs a file");
+    }
+    if (command.file.empty() && (command.callees || !command.labels.empty())) return Fail("--callees and --labels need --save");
     command.follow = args.Has("--follow");
     command.kind = Kind::Disasm;
     command.limit = static_cast<uint32_t>(count);

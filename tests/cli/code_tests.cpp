@@ -552,6 +552,12 @@ TEST_CASE("fast-lane syntax") {
     CHECK(Parse("disasm 0x1000 --function --save fn.jsonl", refs)->file == "fn.jsonl");
     CHECK_FALSE(Parse("disasm 0x1000 --resume", refs));
     CHECK_FALSE(Parse("disasm 0x1000 --save fn.jsonl", refs));
+    const auto callees = Parse("disasm 0x1000 --function --save fn.jsonl --callees --labels l.jsonl", refs);
+    REQUIRE(callees);
+    CHECK(callees->callees);
+    CHECK(callees->labels == "l.jsonl");
+    CHECK_FALSE(Parse("disasm 0x1000 --function --callees", refs));             // Needs --save.
+    CHECK_FALSE(Parse("disasm 0x1000 --function --labels l.jsonl", refs));
     CHECK_FALSE(Parse("disasm 0x1000 --bogus", refs));
 
     auto xrefs = Parse("xrefs 0x1000 --module engine.dll --all", refs);
@@ -685,6 +691,45 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(summary.contains("function"));
 }
 
+TEST_CASE("--callees saves each in-module call target once, and labels name what the file holds") {
+    const Module module{"Game.exe", Base, 0x100000};
+    std::vector<dis::Instruction> rows(5);
+    rows[0].address = Base + 0x1000; rows[0].bytes = {0xe8, 0, 0, 0, 0};
+    rows[0].branch = "call"; rows[0].target = Base + 0x3000;
+    rows[1].address = Base + 0x1005; rows[1].bytes = {0xe8, 0, 0, 0, 0};
+    rows[1].branch = "call"; rows[1].target = Base + 0x3000;                        // Again: saved once.
+    rows[2].address = Base + 0x100a; rows[2].bytes = {0xe8, 0, 0, 0, 0};
+    rows[2].branch = "call"; rows[2].target = Base + 0x200000;                      // Outside the module.
+    rows[3].address = Base + 0x100f; rows[3].bytes = {0x48, 0x8b, 0x05, 0, 0, 0, 0};
+    rows[3].target = Base + 0x9000; rows[3].ripTarget = true; rows[3].loadSize = 8; // A writable global.
+    rows[4].address = Base + 0x1016; rows[4].bytes = {0xe8, 0, 0, 0, 0};
+    rows[4].branch = "call"; rows[4].target = Base + 0x4000;
+    CHECK(save::Callees(rows, module, Base + 0x1000) == std::vector<uint64_t>{Base + 0x3000, Base + 0x4000});
+    CHECK(save::Callees(rows, module, Base + 0x3000) == std::vector<uint64_t>{Base + 0x4000}); // Not itself.
+
+    std::vector<dis::Instruction> callee(1);
+    callee[0].address = Base + 0x3000; callee[0].bytes = {0xc3};
+    const std::vector<save::Saved> saved{{Base + 0x1000, rows}, {Base + 0x3000, callee}};
+    const std::map<uint64_t, std::string> labels{{Base + 0x3000, "AThing::Resolve"}, {Base + 0x9000, "GTagImpact"}};
+    std::istringstream text(save::Lines(module, 7, saved, {}, labels));
+    std::vector<Json> lines;
+    for (std::string line; std::getline(text, line);) lines.push_back(Json::parse(line));
+    REQUIRE(lines.size() == 8);
+    CHECK(lines[0]["row"] == "function");
+    CHECK(lines[0]["end"] == "0x14000101b");
+    CHECK(lines[1]["row"] == "function");
+    CHECK(lines[1]["start"] == "0x140003000");
+    CHECK(lines[2]["row"] == "code");
+    CHECK(lines[3]["address"] == "0x140003000");
+    CHECK(lines[4]["name"] == "fn_1000");
+    CHECK(lines[5]["name"] == "AThing::Resolve");
+    CHECK(lines[5]["what"] == "function");
+    CHECK(lines[6]["name"] == "fn_4000");     // A call target not saved: named so calls read as names.
+    CHECK(lines[6]["what"] == "call");
+    CHECK(lines[7]["name"] == "GTagImpact");  // Only a labelled global gets a name.
+    CHECK(lines[7]["what"] == "global");
+}
+
 TEST_CASE("a saved function holds its code, the read-only data it reads and its import names") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(4);
@@ -700,7 +745,8 @@ TEST_CASE("a saved function holds its code, the read-only data it reads and its 
     REQUIRE(ranges.size() == 1);
     CHECK(ranges[0] == save::Range{Base + 0x8000, Base + 0x8008});
     const std::vector<std::pair<uint64_t, std::vector<uint8_t>>> data{{Base + 0x8000, {0, 0, 0, 0x3f, 'H', 'i', 't', 0}}};
-    std::istringstream text(save::Lines(module, 7, Base + 0x1000, rows, data));
+    const std::vector<save::Saved> one{{Base + 0x1000, rows}};
+    std::istringstream text(save::Lines(module, 7, one, data));
     std::vector<Json> lines;
     for (std::string line; std::getline(text, line);) lines.push_back(Json::parse(line));
     REQUIRE(lines.size() == 6);
@@ -920,6 +966,14 @@ TEST_CASE("touches cuts unlisted code at returns and int3 padding, and --reads d
         {0xe8, 0x00, 0x00, 0x00, 0x00},                   // call: the hit
         {0xc3},
     });
+    // A start lies close after an end of straight-line code; a call site far past one.
+    CHECK(touch::NearEnd(junk, Base + 0x2000, Base + 0x2003, Base + 0x2003, 0));
+    CHECK_FALSE(touch::NearEnd(junk, Base + 0x2000, Base + 0x2003, Base + 0x2008, 2));  // 5 bytes past the start.
+    // A function after a tail jump and junk bytes: ...; jmp; junk (sar r9, 1); push rbx.
+    const auto tail = Join({{0x48, 0x8b, 0xc4}, {0xe9, 0, 0, 0, 0}, {0x49, 0xd1, 0xf9}, {0x53}});
+    CHECK(touch::NearEnd(tail, Base, Base, Base + 11, 3));
+    CHECK_FALSE(touch::NearEnd(tail, Base, Base, Base + 11, 2));
+    CHECK_FALSE(touch::NearEnd(tail, Base, Base, Base + 3, 2));                         // At the jmp, 3 past the start.
     const auto caller = touch::PieceAt(junk, Base + 0x2000, Base + 0x2008);
     REQUIRE(caller);
     CHECK(caller->start == Base + 0x2003);

@@ -17,7 +17,7 @@ holds), `func` (a reflected function's native entry), `disasm`, `xrefs`,
 `touches` and `sig-check`.
 
 ```text
-disasm <addr> [count] [--function [--resume] [--save F]] [--follow]
+disasm <addr> [count] [--function [--resume] [--save F [--callees] [--labels L]]] [--follow]
 xrefs <addr> [--module M] [--all]
 touches <addr> <offset> [offset ...] [--range N] [--reads]
 search text <text|"quoted text"> [--wide] [search options]
@@ -104,44 +104,76 @@ of one is unreadable, up to the page end and on from there.
 for a static tool, so it decompiles that one function without analysing
 the whole image. The result names the file in `saved` and counts its
 instructions in `saved_rows`; it leaves out `rows` and `strings`, which
-the file holds. JSON lines:
+the file holds.
+
+- **`--callees`** also saves each function it calls directly, one level
+  deep, each once, up to 16 functions or 256 KB of code: calls between
+  saved functions then read as names, and every callee decompiles from the
+  same database. The result lists each saved function in `functions` and
+  the call targets past the cap in `skipped`.
+- **`--labels <file>`** names functions, call targets and globals from
+  an `export-labels` file of the same build
+  ([labels](unreal.md#labels-for-a-static-tool)): exec thunks, interface
+  implementations and the globals `peek --label` confirmed.
+- **No partial saves.** A walk (no exception entry) from more than 32
+  bytes past the last return, unconditional jump or padding in its
+  unlisted piece adds `piece`, the piece holding the address, and `--save`
+  then refuses: the file would hold only the rest of a function. A start
+  lies right after one of those or behind a few junk bytes (a function
+  after a tail jump shares its piece with the code before it); a call
+  site lies far past one. Save from the function's start (junk bytes may lead the
+  piece: `disasm` its first bytes), or pass `--resume` to save from the
+  address anyway.
+
+JSON lines:
 
 | `row` | Keys |
 |---|---|
-| `function` | `module`, `module_size`, `timestamp` (the build), `base`, `start`, `end` |
+| `function` | `module`, `module_size`, `timestamp` (the build), `base`, `start`, `end`: one row per saved function, the first first |
 | `code` | `address`, `rva`, `bytes` (hex): the listed code, one row per contiguous run |
 | `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch |
-| `name` | `address`, `rva`, `name`, `what`: the function (`fn_<rva>`) and each import slot it calls through |
+| `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `global` (a labelled RIP-relative target) |
 
 `frontends/ida/load_function.py` is the IDA loader: copy it into IDA's
 user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and
 open the file; IDA's headless library reads the same folder, so an
 automated session opens it too. It builds an x64 database (Visual C++, so
 the decompiler uses the Windows calling convention) with one segment per
-`code` and `data` row at its live address, makes the function and names
-the imports.
-Calls into code that was not saved stay bare addresses; writable globals
-are not saved (their values change). The `rva`s cross back to a full
-database of the same build.
+`code` and `data` row at its live address, makes each function and
+applies the names. A name outside the saved bytes gets a one-byte `STUB`
+segment, so the decompiler shows `fn_6fa0aa0(...)` or a label instead of
+a bare address. Writable globals are not saved (their values change). The
+`rva`s cross back to a full database of the same build.
+
+`add_saved(<path>)`, called from IDA's Python on an open database, adds
+another save of the same build to it: only the bytes no segment holds yet,
+stubs replaced by the code that arrives. One database can then grow
+through a whole investigation instead of one per save. It returns `None`,
+or why it added nothing (another build, an unreadable file).
 
 - **Install name.** Any file name in the loaders folder works; IDA offers
   every loader there. After updating ReAgentLive, compare the installed
   copy with the repo's: a stale loader still loads, with old behaviour.
 - **Which loader ran.** The loader claims the file by its first line (a
-  `function` row), not by its extension. It ran when the function is
-  named `fn_<rva>` and carries a `reagentlive: <module>+<rva>` comment;
-  a database with one segment at 0 came from IDA's own binary loader
-  (the loader is missing or failed: its warning says why).
-- **Start at the function's start.** Saved from a mid-function address
-  (a call site in a function the exception table leaves out), the file
-  holds only the rest of the function and decompiles as a fragment. Find
-  the start first: an `xrefs` row marked `unlisted` gives the piece
-  holding the call, whose start may sit behind junk bytes
-  ([disasm](#disasm)); then save from it.
+  `function` row), not by its extension. It ran when the functions are
+  named `fn_<rva>` (or their labels) and carry a
+  `reagentlive: <module>+<rva>` comment; a database with one segment at 0
+  came from IDA's own binary loader (the loader is missing or failed: its
+  warning says why).
+- **Start at the function's start.** Find it first when the address is a
+  call site in unlisted code: an `xrefs` row marked `unlisted` gives the
+  piece holding the call, whose start may sit behind junk bytes
+  ([disasm](#disasm)).
 - **From an automated session** (an IDA bridge with Python): open the
-  saved file, then
-  `str(ida_hexrays.decompile(ida_funcs.get_func(<start>)))`. Each saved
-  file is its own database: close it once read, and before opening a new
+  saved file, then decompile every function in one call:
+
+  ```python
+  import ida_hexrays, ida_name, idautils
+  "\n\n".join(f"// {ida_name.get_name(f)}\n{ida_hexrays.decompile(f)}" for f in idautils.Functions())
+  ```
+
+  The pseudocode already shows the saved constants' values: no need to
+  read them again. Close the database once read, and before opening a new
   save under the same name delete the database files beside it.
 
 ## xrefs

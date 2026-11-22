@@ -163,6 +163,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},
              {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},
              {"--save", Takes::One, "path", "file", "with --function: write the function and its read-only data for a static tool, not the rows"},
+             {"--callees", Takes::Nothing, "bool", "", "with --save: also save each function it calls directly (one level, up to 16)"},
+             {"--labels", Takes::One, "path", "file", "with --save: name functions, call targets and globals from an export-labels file"},
              {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
             Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
             "value a read-only [rip + disp] load reads; the listing names the module once. --meta adds each row's module "
@@ -172,7 +174,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             "exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch "
             "passes: stop \"walk end\", no function key. Strings built at run time, reached through a pointer, or held as "
             "names are not seen. --save leaves rows and strings out of the result (the file holds them) and adds saved "
-            "and saved_rows."},
+            "and saved_rows; --callees adds functions (each saved one) and skipped (call targets past 16 functions or "
+            "256 KB). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
+            "piece (the piece holding addr, as xrefs gives it), and --save then refuses unless --resume."},
         {"xrefs", "core", "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", One, "addr", at}},
             {{"--module", Takes::One, "str", "name", "scan another loaded module"},
