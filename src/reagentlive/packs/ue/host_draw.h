@@ -10,7 +10,7 @@
 // not. The hook forwards every call first, then ticks the host only for that
 // viewport and only on the process's first thread (Unreal's game thread on
 // Windows). Confirm entry 4 per game before the first `on` (the skill's
-// references/unreal/new-game.md, "Calls in a new game").
+// references/unreal/game-thread.md).
 #pragma once
 #include <stdint.h>
 #include "reagentlive/core/agent.h"

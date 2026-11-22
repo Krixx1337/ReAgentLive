@@ -47,7 +47,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"calls", "{ <command>; <command>; ... }", Rest, "calls",
               "command lines between braces, split by ;  (a JSON call: a list of {verb, args})"}},
             {}, Of<shape::Batch>, parse::Batch,
-            "A $N from an earlier find in the batch works in a typed line. rows holds each command's envelope, with "
+            "A $N set by an earlier line in the batch works in a typed line. rows holds each command's envelope, with "
             "tick (and last_tick when its responses spanned ticks)."},
         {"read", "core", "hex dump of 1..4096 bytes (default 64); --type decodes values",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}},

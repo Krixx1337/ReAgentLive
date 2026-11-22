@@ -7,7 +7,9 @@
 #
 #   In the target process:
 #   reagentlive::core       protocol, agent (read/write/base, tick, dispatch)
-#   reagentlive::ue         Unreal pack's agent side (src/reagentlive/packs/ue/pack.cmake)
+#   reagentlive::ue-base    Unreal pack's agent side, no SDK (src/reagentlive/packs/ue/pack.cmake)
+#   reagentlive::ue         the same with the host's SDK as the layout
+#   reagentlive::ue-draw    opt-in host helper: a game-thread tick through the viewport's Draw
 #   In clients:
 #   reagentlive::client     C++ client API (attach, read, write, base, raw Send)
 #   reagentlive::ue-client  Unreal pack's client calls

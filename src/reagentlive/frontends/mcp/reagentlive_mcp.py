@@ -198,6 +198,18 @@ def tool_name(row):
     return name.replace('-', '_')
 
 
+def batch_writer(table, arguments):
+    """The first writing verb inside a batch call, or None. A batch tool is
+    marked read-only, so a client that allows read-only tools unasked must
+    never get a write, call or pin through it: those go as their own tool."""
+    writers = {row['verb'] for row in table['rows'] if row.get('writes')}
+    for inner in (arguments or {}).get('calls') or []:
+        verb = inner.get('verb') if isinstance(inner, dict) else None
+        if verb in writers:
+            return verb
+    return None
+
+
 def served(row, families, read_only):
     """Whether the server offers a tool for this verb."""
     if row['verb'] == 'quit' or row.get('blocks') or (read_only and row.get('writes')):
@@ -302,6 +314,9 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
         row = live.row(name)
         if row is None or not served(row, families, read_only):
             return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=f'no tool {name}')])
+        if row['verb'] == 'batch' and (writer := batch_writer(live.table, arguments)):
+            text = f'batch takes read-only verbs here; send {writer} as its own tool, so it is approved'
+            return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=text)])
         try:
             raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments or {})
         except RuntimeError as error:

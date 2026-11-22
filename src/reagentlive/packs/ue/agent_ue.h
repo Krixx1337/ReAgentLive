@@ -1,17 +1,19 @@
-// reagentlive Unreal pack: find, fields and call handlers over a Dumper-7 SDK.
+// reagentlive Unreal pack: lookup, reflection, container and call handlers.
 #pragma once
 #include "reagentlive/core/agent.h"
 #include "reagentlive/packs/ue/protocol_ue.h"
 namespace SDK { class UObject; }
 
-// Compiled inside the host against the host's Dumper-7 SDK (SDK/ include path).
-// Every handler reads engine state, so every one first asks the host's
-// gameThread check; a context without one is refused, never assumed to be
-// on the right thread.
+// Compiled inside the host. Engine types are read at the offsets of the
+// engine layout (engine_layout.h): the host's Dumper-7 SDK with
+// reagentlive::ue, or the stock UE5 layout with reagentlive::ue-base, each
+// layout group then checked on known objects before its ops run. Every
+// handler reads engine state, so every one first asks the host's gameThread
+// check; a context without one is refused, never assumed to be on the right
+// thread.
 //
-// From the SDK the pack takes engine layouts only (object, class, field and
-// table types), never addresses: it finds the object table and the name pool
-// at run time (globals.h) and checks them before its first command, so a
+// Never addresses from the SDK: the pack finds the object table and the name
+// pool at run time (globals.h) and checks them before its first command, so a
 // stale SDK after a game patch costs nothing but a scan.
 namespace reagentlive::ue {
 struct Context {
@@ -26,11 +28,11 @@ struct Context {
     // fails; 0 is the process's exe.
     uintptr_t image = 0;
     // Opt-in, off by default: answer lookups and reads (find, describe,
-    // fields, object reads, container entries, names) when gameThread()
-    // says no, as on a borrowed thread. Best effort: each runs under a
-    // fault guard, an object's identity is checked before and after its
-    // read, and values may still be torn. Calls and scans that run engine
-    // code stay refused.
+    // census, names, object reads, fields, entries, enum, func, funcs) when
+    // gameThread() says no, as on a borrowed thread. Best effort: each runs
+    // under a fault guard, an object's identity is checked before and after
+    // its read, and values may still be torn. Calls, params, each, script,
+    // refs, exec entries and the recorder stay refused (docs/commands/unreal.md).
     bool offThreadReads = false;
     // Optional: microseconds of each tick an object-table scan (find --cls,
     // census, each, refs, exec entries) may spend; 0 is 1000. More is fewer

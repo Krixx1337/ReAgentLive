@@ -160,8 +160,11 @@ class McpTests(unittest.TestCase):
             refused = await client.call_tool('read', {'addr': '$1'})
             guessed = await client.call_tool('read', {'addr': 16, 'length': 4})
             nulls = await client.call_tool('ue_find', {'text': 'A', 'cls': None})
-            return found, batched, refused, guessed, nulls
-        found, batched, refused, guessed, nulls = self.run_client(body)
+            sneaky = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'write'}]})
+            return found, batched, refused, guessed, nulls, sneaky
+        found, batched, refused, guessed, nulls, sneaky = self.run_client(body)
+        self.assertTrue(sneaky.isError)                               # A read-only tool never carries a write.
+        self.assertIn('send write as its own tool', sneaky.content[0].text)
         self.assertTrue(guessed.isError)                              # Checked against the row before a console runs.
         self.assertIn("'length' was unexpected", guessed.content[0].text)
         self.assertFalse(nulls.isError, nulls.content[0].text)       # A null argument is a left-out one.

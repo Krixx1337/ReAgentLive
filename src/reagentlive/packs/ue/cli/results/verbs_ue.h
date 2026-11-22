@@ -209,8 +209,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"game-thread", "ue", "the host's game-thread tick through the game viewport's Draw: status, on, off",
             {{"action", "on|off|status", Optional, "str", "on arms it, off puts the viewport's table back", "status"}},
             {}, Of<shape::GameThread>, parse::GameThread,
-            "Calls, each with functions, script, refs and the recorder need the game thread. on swaps one pointer in "
-            "the viewport object for a copy of its Draw table: confirm Draw first (the skill's new-game page). "
+            "call, call-pure, release, params, each, script, refs, exec entries and the recorder need the game thread. on swaps one pointer in "
+            "the viewport object for a copy of its Draw table: confirm Draw first (the skill's references/unreal/game-thread.md). "
             "Agents whose host does not link reagentlive::ue-draw answer unsupported.",
             {}, true},
         {"refs", "ue", "Blueprint functions whose bytecode names a pooled name (EX_NameConst)",
@@ -238,7 +238,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
 inline const std::vector<std::string>& UnrealNotes() {
     static const std::vector<std::string> notes = {
         "Unreal pack verbs are refused when the host does not offer the pack (status lists the packs).",
-        "Refs: $N from the last find, or the printed literal 0x<address>#<index>:<serial> (works across runs).",
+        "Refs: $N from the last command that lists refs (find, census, census-diff, each, describe; dump, get and entries add the objects they name), or the printed literal 0x<address>#<index>:<serial> (works across runs).",
         "A bare class or struct name works where object|Class is shown; the first lookup scans the table.",
         "Struct values print as {Name: value}; --meta at the end of a line adds their member layout.",
     };
