@@ -1,9 +1,14 @@
 # Outside programs
 
-Using ReAgentLive's core as a lean in-process proxy: one small DLL in the
-game that only reads, writes and calls on request, and a program outside
-that holds all the logic and any GUI. The console is one such program; this
-page is for the others.
+*Home of:* the core as a lean in-process proxy for a program outside the game: what it gives, its limits, what fits, what is not built yet.
+
+**TL;DR:** You can keep a tool's logic and window outside the game and
+load only a small, stable DLL inside it that reads, writes and calls on
+request. That works for values that change over seconds, not for anything
+that must happen inside a frame. Expect about one request per host tick
+and one client at a time.
+
+The console is one such program; this page is for the others.
 
 ## The idea
 
@@ -22,7 +27,7 @@ tick or two after the question.
 | Read, write, same-tick batches (held requests) | [protocol](protocol.md#exchange), [memory commands](commands/memory.md) |
 | Guarded writes; pins that hold a value every tick and expire on their own; trial writes that restore themselves | [memory commands](commands/memory.md) |
 | References that refuse a replaced object; engine calls | the [Unreal pack](commands/unreal.md) |
-| No hooks, no threads of its own, no drawing | [design](design.md#principles) |
+| No code hooks, no threads of its own, no drawing (the opt-in pointer swaps: [design](design.md#principles)) | [design](design.md#principles) |
 | A client library the program links | [clients](client.md) |
 | A host that ticks the core | [hosting](hosting.md); the DLL, its entry and its tick source are the host author's |
 
@@ -38,8 +43,9 @@ JSON mode instead of linking the client, as the Python client does.
   and an outside program cannot run together.
 - **No drawing.** Visuals are drawn in the program's own window, never over
   the game.
-- **Engine access needs the engine's thread.** A host ticking elsewhere
-  offers memory commands only ([host thread](hosting.md#host-thread)).
+- **Engine calls need the game thread.** A host ticking elsewhere offers
+  memory commands and, if it opts in, object reads; calls only after
+  `game-thread on` moves its tick there ([host thread](hosting.md#host-thread)).
 - **Same build.** Host and program are built from one revision; the layout
   check refuses a mismatched pair ([handshake](protocol.md#handshake)).
 
@@ -49,7 +55,7 @@ JSON mode instead of linking the client, as the Python client does.
 |---|---|
 | Values that change over seconds: settings, economy, inventory, timers | Anything that tracks fast movement frame by frame |
 | Tools and dashboards in their own window | Overlays drawn over the game |
-| Holding a value with a pin, or one guarded write | Logic that must run inside a frame (it needs the frame hook a mod owns) |
+| Holding a value with a pin, or one guarded write | Logic that must run inside a frame: the Draw tick (`game-thread`) puts requests on the game thread, but each still waits for a tick, so frame-exact logic stays in a mod |
 | Prototyping logic before it moves into a mod | |
 
 A mod that already works in-process gains little by moving out: "inject
@@ -61,15 +67,13 @@ frame-critical ones last, by measurement.
 
 Each waits for a real program that needs it:
 
-- a minimal client example ([backlog](ideas.md#20--example-client-and-sdk-guide)); the example host exists
-  ([own-thread example](hosting.md#own-thread-example));
+- a minimal client example ([backlog](ideas.md#20--example-client)); both
+  example hosts exist ([own-thread](hosting.md#own-thread-example),
+  [Unreal](hosting.md#unreal-example));
 - throughput measurements with the example client, then, if needed,
   registered per-tick reads: the client names ranges once, the agent
   samples them every tick (`watch` is the start), and they expire when the
   client's heartbeat stops;
 - a second channel, so the console and a program run together: the core's
   state moves into a per-channel context. The one case so far (a long
-  capture holding the console) was solved by `watch-start`;
-- one Unreal pack binary for every Unreal game, decoupled from SDK headers;
-- a "bring your own SDK" guide for using the Unreal pack in another game
-  (the same backlog entry).
+  capture holding the console) was solved by `watch-start`.

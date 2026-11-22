@@ -1,6 +1,13 @@
 # Protocol
 
-The wire format between the agent (inside the target process) and a client.
+*Home of:* the wire format between agent and client: the shared section, exchange and hold, handshake, op numbers, request and response, statuses, limits.
+
+**TL;DR:** The agent and its client talk through one named shared-memory
+block in the target process: one request, one response, no sockets and no
+process handle. You need this page only to write a client or change an op;
+everyone else uses the console. Agent and client must come from the same
+revision: the layout check refuses a mismatched pair.
+
 Definitions: `core/protocol.h`, Unreal additions `packs/ue/protocol_ue.h`.
 
 ## Section
@@ -119,6 +126,12 @@ stays inside its slot.
 Ops not in the host's command table are answered with `unsupported op`.
 Adding an op does not change the layout sum: the `ops` list advertises it,
 and an older agent answers `unsupported op`.
+
+`game-thread` takes its action in `request.flags` (`GameThreadAction`:
+0 status, 1 on, 2 off; no data) and answers a `GameThreadState`: the mode
+(`GameThreadMode`: off, waiting, conflict, on, stopped), the game thread's
+id, the viewport client, its Draw interface's own table, the game's Draw,
+and the state as one line of text (0 for what is not known yet).
 
 `read-batch` takes the range count in `length` and that many `ReadSpan`
 records in `data`. A successful response carries the execution heartbeat
@@ -291,8 +304,8 @@ For a map or set, a record carries the key (a set's element) in the
 element members, a map's value type, size, offset and struct, and the
 element's `stride` (key, value and the two `int32` hash links). The layout
 comes from the property itself: UE5's `FScriptMapLayout` at `mapLayout`
-(0x80) or `FScriptSetLayout` at `setLayout` (0x78) of the engine layout
-(`engine_layout.h`), not from the SDK, which does not describe them. `ContainerLayoutValid` checks every
+or `FScriptSetLayout` at `setLayout` of the engine layout
+(`engine_layout.h`), not from an SDK, which does not describe them. `ContainerLayoutValid` checks every
 layout (key at 0, the value after it, adjacent hash links, the stride at
 most 512 bytes); a failed check leaves `stride` 0 and the console shows the
 raw header.

@@ -1,4 +1,5 @@
-"""The docs rules (docs/contributing.md#docs): links resolve, INDEX lists every page, no host names.
+"""The docs rules (docs/contributing.md#docs): links resolve, INDEX lists every page, no host names,
+every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
 
 Usage: test_docs.py [--forbid WORD ...]. A host passes its own and its
 game's names, so the library never has to spell them.
@@ -18,6 +19,12 @@ EXPLICIT = re.compile(r'<a id="([^"]+)"')
 FENCE = re.compile(r'^\s*(```|~~~)')
 
 FORBID = []
+HEADER_LINES = 15
+SKILL_MAX_LINES = 110
+SKILL = os.path.join('.claude', 'skills', 'reagentlive')
+GENERATED = {'docs/commands/results.md'}
+ORCHESTRATORS = {'README.md', 'docs/INDEX.md', 'docs/agent-setup.md'}
+REPO_URL = 'https://github.com/Krixx1337/ReAgentLive/blob/main/'  # the skill links repo files by URL
 
 
 def files(root, suffixes):
@@ -68,10 +75,12 @@ def check_links(root):
         where = os.path.relpath(path, root).replace('\\', '/')
         for number, line in prose(text):
             for target in LINK.findall(re.sub(r'`[^`]*`', '', line)):
-                if re.match(r'[a-z]+:', target):
+                local = target.startswith(REPO_URL)
+                if re.match(r'[a-z]+:', target) and not local:
                     continue
-                name, _, frag = target.partition('#')
-                dest = os.path.normpath(os.path.join(os.path.dirname(path), name)) if name else path
+                name, _, frag = target[len(REPO_URL):].partition('#') if local else target.partition('#')
+                base = root if local else os.path.dirname(path)
+                dest = os.path.normpath(os.path.join(base, name)) if name else path
                 if not os.path.exists(dest):
                     problems.append(f'{where}:{number}: {target}: no such file')
                     continue
@@ -92,6 +101,62 @@ def check_index(root):
         listed = {os.path.normpath(os.path.join(docs, t.partition('#')[0])) for t in LINK.findall(file.read())}
     return [f'{os.path.relpath(p, root)}: not listed in docs/INDEX.md'.replace('\\', '/')
             for p in files(docs, ('.md',)) if p != index and os.path.normpath(p) not in listed]
+
+
+def listed_pages(root):
+    """docs/INDEX.md and every Markdown page it links, as root-relative paths."""
+    docs = os.path.join(root, 'docs')
+    index = os.path.join(docs, 'INDEX.md')
+    if not os.path.exists(index):
+        return []
+    with open(index, encoding='utf-8') as file:
+        targets = {t.partition('#')[0] for t in LINK.findall(file.read())}
+    pages = {'docs/INDEX.md'}
+    for target in targets:
+        if target.endswith('.md') and not re.match(r'[a-z]+:', target):
+            path = os.path.normpath(os.path.join(docs, target))
+            if os.path.exists(path):
+                pages.add(os.path.relpath(path, root).replace('\\', '/'))
+    return sorted(pages)
+
+
+def is_orchestrator(page):
+    return page in ORCHESTRATORS or re.fullmatch(r'examples/[^/]+/README\.md', page) is not None
+
+
+def check_headers(root):
+    """Every listed page has **TL;DR:** in its first lines; SSOT pages also *Home of:* (contributing.md#docs)."""
+    problems = []
+    for page in listed_pages(root):
+        if page in GENERATED or page.startswith('.claude/'):
+            continue  # generated pages and skill files carry no header
+        with open(os.path.join(root, page), encoding='utf-8') as file:
+            head = file.read().split('\n')[:HEADER_LINES]
+        if not any(line.startswith('**TL;DR:**') for line in head):
+            problems.append(f'{page}: no **TL;DR:** in its first {HEADER_LINES} lines')
+        if not is_orchestrator(page) and not any(line.startswith('*Home of:*') for line in head):
+            problems.append(f'{page}: no *Home of:* line in its first {HEADER_LINES} lines')
+    return problems
+
+
+def check_skill(root):
+    """SKILL.md stays an orchestrator: at most SKILL_MAX_LINES lines, linking every reference file."""
+    skill = os.path.join(root, SKILL)
+    main = os.path.join(skill, 'SKILL.md')
+    if not os.path.exists(main):
+        return []
+    with open(main, encoding='utf-8') as file:
+        text = file.read()
+    problems = []
+    lines = len(text.rstrip('\n').split('\n'))
+    if lines > SKILL_MAX_LINES:
+        problems.append(f'SKILL.md: {lines} lines, over {SKILL_MAX_LINES}')
+    linked = {os.path.normpath(os.path.join(skill, t.partition('#')[0]))
+              for _, line in prose(text) for t in LINK.findall(line)}
+    for path in files(os.path.join(skill, 'references'), ('.md',)):
+        if os.path.normpath(path) not in linked:
+            problems.append(f'{os.path.relpath(path, skill)}: not linked from SKILL.md'.replace('\\', '/'))
+    return problems
 
 
 def check_names(root, words):
@@ -135,8 +200,20 @@ class Docs(unittest.TestCase):
     def test_no_host_or_game_names(self):
         self.assertEqual(check_names(ROOT, FORBID), [])
 
+    def test_every_listed_page_has_its_header(self):
+        self.assertEqual(check_headers(ROOT), [])
+
+    def test_the_skill_stays_short_and_reaches_every_reference(self):
+        self.assertEqual(check_skill(ROOT), [])
+
     def test_a_missing_file_or_anchor_fails(self):
         with Tree({'docs/a.md': '# A\n\n## Two words\n\n[ok](#two-words) [bad](#nope) [gone](b.md)\n'}) as root:
+            self.assertEqual(len(check_links(root)), 2)
+
+    def test_repo_urls_are_checked_as_local_files(self):
+        url = REPO_URL + 'docs/a.md'
+        with Tree({'docs/a.md': '# A\n\n## Two words\n',
+                   'skill/s.md': f'[ok]({url}#two-words) [bad]({url}#nope) [gone]({REPO_URL}docs/b.md)\n'}) as root:
             self.assertEqual(len(check_links(root)), 2)
 
     def test_slugs_match_github(self):
@@ -154,6 +231,41 @@ class Docs(unittest.TestCase):
     def test_a_forbidden_name_fails_in_any_case(self):
         with Tree({'core/x.h': '// for SomeGame only\n'}) as root:
             self.assertEqual(len(check_names(root, ['somegame'])), 1)
+
+    def test_a_page_without_a_tldr_or_home_fails(self):
+        index = '**TL;DR:** routes.\n\n[a](a.md) [b](b.md) [r](commands/results.md) [s](agent-setup.md)\n'
+        with Tree({'docs/INDEX.md': index,
+                   'docs/a.md': '# A\n\n*Home of:* a.\n\n**TL;DR:** fine.\n',
+                   'docs/b.md': '# B\n\nNo header.\n',
+                   'docs/commands/results.md': '# Generated\n',
+                   'docs/agent-setup.md': '# Setup\n\n**TL;DR:** steps.\n'}) as root:
+            self.assertEqual(check_headers(root), ['docs/b.md: no **TL;DR:** in its first 15 lines',
+                                                   'docs/b.md: no *Home of:* line in its first 15 lines'])
+
+    def test_a_tldr_below_the_header_lines_fails(self):
+        late = '# A\n\n*Home of:* a.\n' + '\n' * 20 + '**TL;DR:** late.\n'
+        with Tree({'docs/INDEX.md': '**TL;DR:** x.\n[a](a.md)\n', 'docs/a.md': late}) as root:
+            self.assertEqual(check_headers(root), ['docs/a.md: no **TL;DR:** in its first 15 lines'])
+
+    def test_the_index_itself_needs_a_tldr(self):
+        with Tree({'docs/INDEX.md': '# Index\n'}) as root:
+            self.assertEqual(check_headers(root), ['docs/INDEX.md: no **TL;DR:** in its first 15 lines'])
+
+    def test_orchestrators_need_no_home_line(self):
+        index = '**TL;DR:** x.\n[r](../README.md) [e](../examples/one/README.md) [s](../.claude/s/SKILL.md)\n'
+        with Tree({'docs/INDEX.md': index, 'README.md': '# R\n\n**TL;DR:** pitch.\n', '.claude/s/SKILL.md': 'x\n',
+                   'examples/one/README.md': '# E\n\n**TL;DR:** build.\n'}) as root:
+            self.assertEqual(check_headers(root), [])
+
+    def test_a_long_skill_or_an_unlinked_reference_fails(self):
+        skill = '.claude/skills/reagentlive/'
+        refs = {skill + 'references/w.md': 'w\n', skill + 'references/unreal/n.md': 'n\n'}
+        body = '[w](references/w.md) [n](references/unreal/n.md#top)\n'
+        with Tree({skill + 'SKILL.md': body, **refs}) as root:
+            self.assertEqual(check_skill(root), [])
+        with Tree({skill + 'SKILL.md': '[w](references/w.md)\n' + 'x\n' * 110, **refs}) as root:
+            self.assertEqual(check_skill(root), ['SKILL.md: 111 lines, over 110',
+                                                 'references/unreal/n.md: not linked from SKILL.md'])
 
 
 if __name__ == '__main__':

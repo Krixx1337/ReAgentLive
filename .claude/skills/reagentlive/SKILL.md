@@ -1,188 +1,80 @@
 ---
 name: reagentlive
-description: Investigate a running game with ReAgentLive, an in-process agent driven by a console - find objects and UObject instances, read reflected and native fields, decode FName and gameplay tag indices, call engine getters, capture runtime behaviour, read live code (disasm, xrefs, signatures) and turn findings into evidence-backed changes. Use for any runtime question about game data, engine objects or a mod's behaviour, before guessing from an SDK dump.
+description: Investigate a running game with ReAgentLive, an in-process agent driven by MCP tools, a console or Python - find objects and UObject instances, read reflected and native fields, decode FName and gameplay tag indices, call engine getters on the game thread, capture runtime behaviour, read live code (disasm, xrefs, signatures) and turn findings into evidence-backed changes. Use for any runtime question about game data, engine objects or a mod's behaviour, before guessing from an SDK dump; also to read which tier a target gives and to climb it.
 ---
 
 # ReAgentLive investigations
 
-ReAgentLive is a small agent inside the game process, run by a host (a mod
-or a DLL), that executes commands on the thread the host ticks it on. A
-console exe sends them over shared memory. Nothing touches the game except
-through the agent. Reference docs: `docs/INDEX.md` in the ReAgentLive
-project (every command, its page and a glossary).
+An agent inside the target process, ticked by a host (a mod or a DLL), runs
+the verbs every interface sends. Reference docs: [INDEX](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/INDEX.md).
+Read the project's host notes first (console name, host verbs, build and
+approval rules); they win over this skill.
 
-Before the first command, read the project's host notes if it has any (a
-host skill or doc): the console's name, host commands, build and approval
-rules. They win over this skill.
+## First command: `status`, then your tier
+
+`status` prints no tier ([full reading](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/tiers.md#read-your-tier-from-status)):
+`packs` empty: T0. `packs: ["ue"]`, `host_thread` `own`/`borrowed`: T1, T2
+once `fields Vector` answers. `host_thread: engine`: T3. Real serials (not `:0`): T4.
+
+- T0: Unreal verbs need a host with the pack ([tiers](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/tiers.md#the-ladder)).
+- T1 (`fields Vector` refused with a layout-group check): load `references/unreal/new-game.md`.
+- T2: `game-thread on` (approval); load `references/unreal/game-thread.md`.
+- T3: T4 is a host built with the SDK ([hosting](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/hosting.md)).
+- What answers below T3: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#off-the-engines-thread).
+  A refusal `not on the game thread` means: climb, or answer it by reads.
+- Below T3 a tick is not a game moment: values from separate reads need not line up.
 
 ## Rules
 
 - Reads need no approval: every verb `help` does not mark `writes`, `each`
-  over field paths, and pure getters (`GetSocketTransform`) through `each` or
-  `call-pure` (say what you call).
-- Ask the user first for any `write`, `pin`, and any `call` that could change
-  game state or crash: give the address, current bytes, new bytes and expected
-  effect (for a call, its `call --dry` output). One approval covers one write.
-- Start a session with `status` and read `host_thread` and `packs`. On a
-  host that is not `engine`, a tick is a frame, not a game moment: confirm a
-  value with a second read before relying on two values lining up. Without
-  `ue` in `packs`, work with the core (memory, fast lane, native objects):
-  Unreal pack commands are refused.
-- Only the user's live session is evidence; synthetic tests are not. Record
-  live results where the project keeps them, stating what is and is not
-  established. If the project's own rules differ from these, theirs win.
+  over field paths, and pure getters through `call-pure` or an `each`
+  column (say what you call).
+- Except the first call on a new host or in a new game (the known-answer
+  call, `call-pure` included): ask first, since a wrong engine layout can
+  crash the game.
+- Ask the user first for any `write`, `pin`, `calls-start`, `game-thread on`
+  (it writes one pointer in the viewport object) and any `call` that could
+  change state or crash; `trial` as the host's rules say. Give the address,
+  the bytes now, the bytes new and the expected effect; for a call, its
+  `call --dry` output. One approval covers one write.
+- Never guess a flag or a result key: `help <verb>` (no target needed).
+  Behaviour and guards: the verb's page under [commands](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/INDEX.md#commands).
+- Rely on literal refs (`0x<address>#<index>:<serial>`). Values that must
+  line up come from one `get`, `read-batch` or `batch`; check `spans_ticks`.
+- Only the user's live session is evidence; synthetic tests are not.
+  Record live results where the project keeps them, stating what is and is
+  not established.
 
-## Commands
+## Pick the interface
 
-**Ask the console what a command takes and returns; never guess a flag or
-a result key.** `<console> -c help` lists every verb with its usage (no
-game needed), and `<console> -c "help <verb>"` shows that verb's arguments,
-flags and the exact keys of its result. Keys follow one convention: a
-result's list is `rows`, a page carries `from` and `next_cursor`, a key
-that does not apply is absent (never null). A usage error ends with the
-verb's usage line. Behaviour and guards: the command pages in `docs/`.
+MCP tools are the default. Python when the next step is a loop or a
+computation over results. The console when MCP is absent or for a human.
+Mapping, gaps and what MCP leaves out: load `references/interfaces.md`.
 
-| Command | For |
+## Load when
+
+| When you... | Load |
 |---|---|
-| `find [text] [--cls C] [--live]` | Objects by name and/or class (any case); 24 per page; `--live` drops `Default__` and archetype objects |
-| `census [--cls C] [--match T] [--limit N] [--start N]` / `census-diff` (same flags) | Live instances per class, with sample refs / only the classes whose count differs since the last census. Pages of 100: `--start <next_cursor>` for the next, no rescan; `--limit 0` for all |
-| `each <Class> <Path>... \| <Owner:Fn> [--where F~text] [--limit N]` | A table over every instance: up to 16 field paths (structs, pointers) or one pure getter; `rows` of `{ref, values}`, failed cells in `errors`. One scan, so ask for every column at once. 100 rows unless `--limit` |
-| `dump <obj> [--match T] [--nonzero] [--own] [--changed]` | Every reflected field: `name` (readable where recovered, `raw` beside it), `offset`, `value`; `--own` drops inherited fields, `--meta` adds the layout |
-| `get <obj> <Field.Path>...` | Typed values along pointer and struct paths: rows in the order asked, `value` and `address`, or `error` in place |
-| `batch { cmd; cmd; ... }` | Many commands in as few ticks as possible |
-| `fields <obj\|class>` / `describe <ref>` | Field layout / an object's name, class and ref |
-| `name <index>...` / `name-find <text>` | FName index to text / text to index |
-| `enum <obj\|Enum>` | An enum's names and values: what a byte or enum field's number means |
-| `read <addr>[->0x10->0x8] [n] [--type cstr\|wstr\|"<layout>"]` / `read-batch` / `search` | Raw memory, through a pointer chain (each `->off` but the last reads a pointer; one `->off` alone is refused), as strings or a mixed-type block; same-tick ranges; addresses holding a value |
-| `entries <obj> <Field> [--start N]` | Every element of an array, set or map field, paged; maps as key and value |
-| `rows <table> [--match T] [--fields a,b.c]` | A data table's rows (the unreflected `RowMap`), decoded with its row struct |
-| `peek <addr> [count]` | What qwords hold: object, `module`+`rva`, heap pointer or value (with a name hint) |
-| `disasm <addr> [n] [--function] [--follow]` | Instructions from live bytes: targets, string hints, address fields; `--function` uses the exception table's bounds |
-| `xrefs <addr> [--module M]` | What points here: calls, jumps, RIP-relative lea/load/store, stored pointers, each with its function |
-| `search text "<s>" [--wide]` | Where a string lives, quoted for spaces (then `xrefs` on it) |
-| `vtable <obj> [n] [--offset N] [--resolve]` / `rtti <obj>` | A native object's virtual table, slots until one is not code / its MSVC class and bases |
-| `region <addr>` | What memory is: `code`, `rodata`, `data` (with section), `mapped`, `private`, `free` |
-| `sig-check <pattern>` / `sig-file <file>` / `sig-bytes <addr>` | Is a byte signature unique and does it land there / several at once / live bytes with address fields masked |
-| `func` / `funcs <obj> [text]` / `params` / `script` | A UFunction's entry / functions matching text / its parameter block / a Blueprint function's bytecode names |
-| `call <obj> Owner:Fn <hex\|Name=value> [--dry] [--fields a,b.c]` / `call-pure` | ProcessEvent; the block after the call. Names and tags go by text (`Tag=A.B.C`); a returned array comes as decoded rows, paged. `--dry` only builds it; `call-pure` refuses anything not const or pure |
-| `layout-export <file> <Class>...` / `layout-check <file>` | Fields to a file / only the lines that no longer hold (after a patch) |
-| `write` / `pin` / `trial` | Change memory once / every tick / once with an automatic undo (approval). `help` marks every verb that writes or calls into the game with `writes` |
-| `watch` / `watch-start` / `record` / `snap` then `dump --changed` / `mem-snap` and `mem-diff` | Values over time or across an action (capture reference) |
-| `label <obj> <off> <type> <Name>` | Name an unreflected member for good |
-| `status` / `base` / `modules` | Agent build and tick rate; exe and module ranges |
+| need the verb for a task, or one you have not used this session | [references/commands-by-task.md](references/commands-by-task.md) |
+| start an investigation, or a capture shows no change | [references/workflow.md](references/workflow.md) |
+| plan more than a few calls, see a `digest`, or end a session | [references/efficiency.md](references/efficiency.md) |
+| choose MCP, Python or the console, loop over many objects (`each` first), or need a verb's tool or function name | [references/interfaces.md](references/interfaces.md) |
+| drive the console or Python by hand: quoting, parsing JSON Lines, generating the module | [references/console-driving.md](references/console-driving.md) |
+| sample a value over time, record a function's calls, or see what changes across an action (one that resets at once, like a jump, too) | [references/capture-and-timing.md](references/capture-and-timing.md) |
+| send any `call` (pure getters too), `write`, `pin` or `trial` | [references/calls-and-writes.md](references/calls-and-writes.md) |
+| read an object with no reflection, hunt padding or native state, or `search` memory | [references/hidden-state.md](references/hidden-state.md) |
+| disassemble, follow a native getter, read Blueprint bytecode, cross to a static tool, or make or check a signature | [references/native-code.md](references/native-code.md) |
+| rebuild, reinject, or see an attach, layout or `busy` error | [references/reinjecting.md](references/reinjecting.md) |
+| ask about tags, attributes, effects, "why can't I do X", data tables, maps, traces or replication (Unreal) | [references/unreal/gameplay-systems.md](references/unreal/gameplay-systems.md) |
+| ask about poses, anim layers or nodes, aiming, lean, camera or bones (Unreal) | [references/unreal/animation-and-camera.md](references/unreal/animation-and-camera.md) |
+| work in an Unreal game with no dump, or a reflected verb is refused with a layout-group check | [references/unreal/new-game.md](references/unreal/new-game.md) |
+| find one layout group's offsets (struct, field, property, typed, class, function, enum, interface, containers, call) | [references/unreal/layout-groups.md](references/unreal/layout-groups.md) |
+| `host_thread` is not `engine`, or a verb is refused `not on the game thread` | [references/unreal/game-thread.md](references/unreal/game-thread.md) |
+| end a session, hit a limit, or edit this skill | [references/maintaining.md](references/maintaining.md) |
 
-## Refs
+## Limits and upkeep
 
-`$N` comes from the last `find`, `census`, `each`, `dump` or `describe`. The
-printed literal `0x<address>#<index>:<serial>` survives between runs and is
-refused once the object is replaced; prefer it for anything you rely on. A
-raw `read` of an old address still returns bytes: it checks memory, not
-identity.
-
-Code and static data: addresses inside a module print `module` and `rva`,
-and `<module>+<rva>` (`game.exe+0x1a2b3c`) works as an address. Use the RVA
-to cross to the static tool (native-code reference).
-
-## Workflow
-
-1. **Question first.** Write the runtime question ("which field drops when I
-   fire?") and what would answer it. Read what the project's docs record.
-2. **Locate.** `find --cls <Class>` lists instances; add name text to narrow.
-   Name text is a substring match anywhere, so short text floods the page; use
-   a distinctive suffix or a class.
-3. **Navigate.** `dump` an owner object and follow the printed refs instead of
-   computing offsets.
-4. **Decode.** Names print as text; `name` resolves a leftover `#N`. Readable names for
-   obfuscated fields are hints; trust offsets, sizes and types.
-5. **Observe change.** `snap`, the user acts, `dump --changed`; or `record`
-   for sequences. Pick the object that owns the data: no changed rows usually means
-   the wrong object (position lives on a scene component, not the pawn).
-6. **Cross-check.** Confirm data with a second, independent source (asset
-   value vs measured behaviour, computed point vs bone transform). One source
-   is a hypothesis.
-7. **Ship and verify.** When a finding changes code: `layout-export` every
-   class it reads (the file backs its offset checks; `layout-check` after a
-   patch), pure logic with unit tests, then a live capture that proves the
-   new code path ran (a case only the new logic explains), then the evidence record.
-
-## Efficiency
-
-- One-shot runs: `<console> -c 'find X; dump $1'`; exit code 1 on any error.
-  A cache file keeps class refs, field tables and the last `$N` list for the
-  same agent instance; a re-injection or restart empties it.
-- Fewer tool calls beat faster ones: put everything for the next decision in
-  one `batch { ... }` or one `get` with several paths.
-- Filter `dump` (`--match`, `--nonzero`, `--changed`) instead of reading all
-  of it; never `each` or `find` a whole class unfiltered (`--where`, `--cls`,
-  `--outer` for one asset's subobjects).
-- Separate commands read separate ticks; what must line up goes in one
-  `get`, `read-batch` or `batch` (read its `spans_ticks`).
-- `--timing` shows a line's round trips.
-- **A `digest` means run its `next`** (or read its `file`: that call may
-  have changed state, so never repeat it). Raise `budget` only for what
-  `next` cannot narrow.
-- **Measure the session, don't recall it.** `stats` (also with no target)
-  ranks this session's verbs by output and marks `unfiltered`, `repeated`
-  and `refused` calls: check it before a long step and act on the marks.
-  End the final report with its totals (`out_by_caller.tool` is the context
-  cost, `saved` what digests kept out) and the two or three costliest habits.
-- One console per agent: a second one is refused as `busy`.
-
-## Pitfalls that bite any session
-
-- **Refs go stale.** Respawns and reloads replace objects: look refs up again.
-- **Native members may be absent from reflection.** `dump` can show a
-  DataTable's row struct while omitting its native `RowMap` (`rows` reads it).
-- **UI names differ from internal names.** Map through item tags, not by
-  guessing.
-- **Settings confound captures.** Ask the user to turn off host features that
-  touch what you measure, and to keep still. Before blaming the code, read
-  the saved settings file: a test may have run with the feature off.
-- **Interactive tests.** Give the user exact steps and wait for one "ready";
-  a timed background capture expires before they read your message.
-- **Locale.** Formatted numbers may use commas; parse values from raw bytes.
-- **Empty session.** With no second player, behaviour that needs one cannot
-  be observed; verify on the local character and record what stays unmeasured.
-
-## Read when
-
-| Before you... | Read |
-|---|---|
-| write a script or loop, compare or intersect results, parse output, or use PowerShell or Python | `references/console-driving.md` |
-| sample a value over time, or see what changes across an action (`watch`, `record`, `snap` then `dump --changed`) | `references/capture-and-timing.md` |
-| send any `call` (pure getters too: block layout, leaks), `write` or `pin` | `references/calls-and-writes.md` |
-| ask about tags, attributes, effects, "why can't I do X", data tables, maps, traces, or why an object is missing on a client (Unreal) | `references/unreal/gameplay-systems.md` |
-| ask about poses, anim layers or nodes, aiming down sights, lean, camera or bones (Unreal) | `references/unreal/animation-and-camera.md` |
-| follow a native getter, read a Blueprint function's bytecode, disassemble, find the code using an offset, or make or check a byte signature | `references/native-code.md` |
-| hunt unreflected state or padding, read an object with no reflection, or use `search` | `references/hidden-state.md` |
-| rebuild, reinject, or see an attach or layout error | `references/reinjecting.md` |
-| work in an Unreal game with no dump: find the engine layout (struct, field, property, function, enum, call offsets) live and in a static tool | `references/unreal/new-game.md` |
-
-## When ReAgentLive hits a limit
-
-Add the missing piece instead of working around it twice (`find --cls` and
-`find --live` came from real investigations): engine- and game-agnostic,
-tested, documented, and the backlog (`docs/ideas.md`) re-ranked with the evidence.
-
-## Keeping this skill current
-
-At the end of every session, read `stats` and ask what would have saved
-time (`stats --all`: patterns across sessions, verbs nobody uses;
-`stats --sessions` to compare one session with the ones before):
-
-- **Scope first.** A lesson that would hold in another game goes here,
-  worded without the game (an Unreal-only one under `references/unreal/`).
-  One about driving one host's console goes to that project's host notes.
-  Something learned about the game is a finding: it goes to the project's
-  docs, not a skill. This skill never names a game or host; the
-  `reagentlive.docs` test checks.
-- A new lesson goes to the matching reference, symptom or question first. It
-  goes in this file only if every session needs it before its first command.
-- This file stays under about 180 lines; a reference past about 150 lines
-  splits by sub-topic, with a new row in the read-when table.
-- A lesson that fits no reference starts a new one only when there are three
-  or more such lessons; until then it goes to the closest file.
-- References do not link to each other.
-- Code written twice goes into the console (a verb or a flag, so the generated
-  functions and tools get it) with a test, not into the skill.
-- Rewrite or delete stale lessons; no dated logs.
+- A missing verb or flag: add it instead of working around it twice
+  ([references/maintaining.md](references/maintaining.md)).
+- At the end of every session and before any edit to this skill: load
+  `references/maintaining.md`.

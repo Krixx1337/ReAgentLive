@@ -1,23 +1,26 @@
 # ReAgentLive agent setup
 
-These are instructions for an AI coding agent. They set up ReAgentLive so you
-can investigate a running Windows x64 process: build it, register its MCP
-tools with your client, install its skill and check it works.
+**TL;DR:** Instructions for an AI coding agent. Ask which kind of target,
+build the matching example, point the MCP server at that example's
+console, install the skill folder and check the agent answers `status`.
 
-Run every step yourself. Ask the user only where a step says to. Use
-PowerShell. Replace `<dir>` with the folder you clone into (default
-`$HOME\ReAgentLive`).
+These steps set up ReAgentLive so you can investigate a running Windows
+x64 process. Run every step yourself. Ask the user only where a step says
+to. Use PowerShell. Replace `<dir>` with the folder you clone into
+(default `$HOME\ReAgentLive`), and `<build>`, `<console>` and `<dll>` with
+the values step 2 picks.
 
 Steps:
 
 1. Check prerequisites
-2. Clone and build
-3. Generate the typed functions
+2. Choose the example
+3. Clone and build
 4. Register the MCP server
-5. Install the skill
-6. Verify
-7. (Optional) Get an injector
-8. Report
+5. (Optional) Generate the typed functions
+6. Install the skill
+7. Verify
+8. (Optional) Get an injector
+9. Report
 
 ---
 
@@ -36,15 +39,25 @@ without asking the user.
 | Python 3.10 or newer | `python --version` | ask |
 | The MCP Python SDK | `python -c "import mcp"` | `python -m pip install mcp` (ask first) |
 
-Check CMake and Ninja again inside the developer shell (step 2) before you
+Check CMake and Ninja again inside the developer shell (step 3) before you
 report them missing.
 
-## 2. Clone and build
+## 2. Choose the example
 
-Clone, then load the x64 Visual Studio environment and build the
-own-thread example. It is a host DLL that works in any x64 process, and
-the `reagentlive.exe` console. The build fetches its dependencies, so it
-needs network access.
+Ask the user: "Is the target any Windows x64 process, or an Unreal Engine 5
+game?" Then use that row's values in every later step:
+
+| Target | Example | `<build>` | `<console>` | `<dll>` | Starts at |
+|---|---|---|---|---|---|
+| Any x64 process | [`examples/own_thread`](../examples/own_thread/README.md) | `build\own-thread` | `reagentlive.exe` | `reagentlive-own-thread.dll` | T0 |
+| A UE5 game (no dump, no mod needed) | [`examples/unreal`](../examples/unreal/README.md) | `build\unreal` | `reagentlive-ue.exe` | `reagentlive-unreal.dll` | T1-T2; T3 after `game-thread on` |
+
+What each tier can do: [tiers](tiers.md).
+
+## 3. Clone and build
+
+Clone, then load the x64 Visual Studio environment and build the chosen
+example. The build fetches its dependencies, so it needs network access.
 
 ```powershell
 git clone https://github.com/Krixx1337/ReAgentLive.git <dir>
@@ -52,40 +65,41 @@ cd <dir>
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
 Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
+# Any x64 process:
 cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_PACKS=
 cmake --build build/own-thread
+# Or, a UE5 game:
+cmake -S examples/unreal -B build/unreal -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/unreal
 ```
 
 Run the dev shell and both `cmake` commands in one PowerShell call: the
 environment does not carry over to a new shell. The build writes
-`build/own-thread/reagentlive.exe` and
-`build/own-thread/reagentlive-own-thread.dll`.
+`<build>\<console>` and `<build>\<dll>`.
 
-`REAGENTLIVE_PACKS` empty leaves out the Unreal pack's tools. The
-own-thread host cannot run them, and leaving them out keeps the tool list
-small. For a UE5 game, build the [Unreal example](../examples/unreal/README.md)
-instead (`cmake -S examples/unreal -B build/unreal ...`, then point the
-tools at `build/unreal/reagentlive-ue.exe`): the whole Unreal pack with no
-dump, engine calls after `game-thread on`. Or build a host into the user's
-own mod ([hosting](hosting.md)).
-
-## 3. Generate the typed functions
-
-```powershell
-python src/reagentlive/frontends/python/reagentlive_gen.py --console build/own-thread/reagentlive.exe -o build/own-thread/console_api.py
-```
-
-It prints the number of verbs and the table hash. Scripts use this
-module; the MCP server makes its own from the console each time it
-starts, so a rebuilt console needs no new module for it.
+For the own-thread example, `REAGENTLIVE_PACKS` empty leaves out the
+Unreal pack's tools: its host cannot run them, and leaving them out keeps
+the tool list small. The Unreal example needs the pack, which is the
+default.
 
 ## 4. Register the MCP server
+
+MCP tools are your default way to drive the agent; when to use Python or
+the console instead is the skill's
+[`interfaces.md`](../.claude/skills/reagentlive/references/interfaces.md).
 
 Use absolute paths. The server is the same for every client:
 
 - command: `python`
 - args: `<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py`,
-  `--console`, `<dir>\build\own-thread\reagentlive.exe`
+  `--console`, `<dir>\<build>\<console>`
+
+`--console` must be the console of the example you built: each console
+reaches only its own example's agent (they open different shared-memory
+names), so `reagentlive.exe` cannot reach the Unreal example's agent, and
+the reverse.
+Optional server flags (`--read-only`, `--families`):
+[MCP tools](client.md#mcp-tools).
 
 Register it under the name `reagentlive` in the user's scope, using the
 section for your client. If an entry with that name exists, replace it.
@@ -93,13 +107,13 @@ section for your client. If an entry with that name exists, replace it.
 ### Claude Code
 
 ```powershell
-claude mcp add reagentlive --scope user -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\build\own-thread\reagentlive.exe"
+claude mcp add reagentlive --scope user -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\<build>\<console>"
 ```
 
 ### Codex
 
 ```powershell
-codex mcp add reagentlive -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\build\own-thread\reagentlive.exe"
+codex mcp add reagentlive -- python "<dir>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<dir>\<build>\<console>"
 ```
 
 ### Cursor, GitHub Copilot and other clients
@@ -113,56 +127,86 @@ Add this under `"mcpServers"` in the client's MCP config file, for example
   "command": "python",
   "args": [
     "<dir>/src/reagentlive/frontends/mcp/reagentlive_mcp.py",
-    "--console", "<dir>/build/own-thread/reagentlive.exe"
+    "--console", "<dir>/<build>/<console>"
   ]
 }
 ```
 
 Tools that write memory or call into the process are marked destructive,
-so the client asks before running them. Read-only tools are marked as
-such, and the user may allow them.
+so the client asks before running them; read-only tools may be allowed.
+`ue_game_thread` asks even to read its mode. Which writes need the user's
+approval is the skill's rule, not the client's.
 
-## 5. Install the skill
+## 5. (Optional) Generate the typed functions
 
-The `reagentlive` skill teaches the investigation method: rules, workflow
-and pitfalls.
+Only for Python scripts; the MCP server needs no module (it reads the
+console's table each time it starts).
 
-- **Claude Code:** copy `<dir>\.claude\skills\reagentlive` to
-  `$HOME\.claude\skills\reagentlive`, replacing an older copy.
+```powershell
+python <dir>\src\reagentlive\frontends\python\reagentlive_gen.py --console <dir>\<build>\<console> -o <dir>\<build>\console_api.py
+```
+
+It prints the number of verbs and the table hash. Generate it again after
+a rebuild that changes a verb. How scripts use it:
+[generated functions](client.md#generated-python-functions).
+
+## 6. Install the skill
+
+The `reagentlive` skill is one folder: `SKILL.md` (first command, tiers,
+rules, which interface) and `references/`, which `SKILL.md` names and says
+when to read. It links the docs by URL, so a copy works on its own.
+
+- **Claude Code:** delete `$HOME\.claude\skills\reagentlive` if it exists,
+  then copy the whole `<dir>\.claude\skills\reagentlive` folder there, so
+  no file from an older copy stays.
 - **Other agents:** add this line to the user-level instructions file, for
   example `$HOME\.codex\AGENTS.md` for Codex:
 
   ```
-  Before investigating a running process with the reagentlive tools, read <dir>/.claude/skills/reagentlive/SKILL.md and follow it.
+  Before investigating a running process with the reagentlive tools, read <dir>/.claude/skills/reagentlive/SKILL.md and the references it names, and follow them.
   ```
 
 For every agent, add this line to the same user-level instructions file
 (`$HOME\.claude\CLAUDE.md` for Claude Code):
 
 ```
-ReAgentLive docs: <dir>/docs/INDEX.md (every command, its page and a glossary).
+ReAgentLive docs: <dir>/docs/INDEX.md (tiers, every command, its page and a glossary).
 ```
 
-## 6. Verify
+## 7. Verify
 
 Load the host DLL into a throwaway Python process and ask it for its
-status:
+status. Any x64 process:
 
 ```powershell
-Start-Process python -ArgumentList '-c', '"import ctypes,time; ctypes.WinDLL(r''<dir>\build\own-thread\reagentlive-own-thread.dll''); time.sleep(20)"' -WindowStyle Hidden
+Start-Process python -ArgumentList '-c', '"import ctypes,time; ctypes.WinDLL(r''<dir>\<build>\<dll>''); time.sleep(20)"' -WindowStyle Hidden
 Start-Sleep 2
-& "<dir>\build\own-thread\reagentlive.exe" -c "status"
+& "<dir>\<build>\<console>" -c "status"
 ```
 
-No pid: the console finds the one process with the agent (the pid
+For the Unreal example, run `-c "status; help game-thread; game-thread"`
+instead (`game-thread` with no argument only reads the mode).
+
+No pid: the console finds the one process with its agent (the pid
 `Start-Process` returns can be a launcher's, such as the Microsoft Store
 Python's, which has already exited). The Python process ends by itself.
 
-Pass when the result has `"ok":true`, `"ticking":true` and
-`"host_thread":"own"`. If it fails, report the output; do not work around
-it.
+| Example | Pass when |
+|---|---|
+| own-thread | `status` has `"ok":true`, `"ticking":true`, `"host_thread":"own"` and `"packs":[]` |
+| Unreal | the same with `"packs":["ue"]`; `help game-thread` answers `ok` (the console has the verb) and `game-thread` answers `"mode":"off"` (the DLL has the Draw tick; `unsupported` means the wrong DLL) |
 
-## 7. (Optional) Get an injector
+Do not run Unreal commands such as `find` in the Python process: there is
+no engine, so they are refused. Never run `game-thread on` as a check. If
+a check fails, report the output; do not work around it.
+
+In the real target, `status` tells you the tier
+([how to read it](tiers.md#read-your-tier-from-status)). In a UE5 game,
+`game-thread` (no argument) reports the tick's mode; `game-thread on`
+moves the agent onto the game thread for engine calls, and needs the
+user's approval first.
+
+## 8. (Optional) Get an injector
 
 ReAgentLive does not load itself into a process. Any DLL loader works;
 a command-line one lets you load it without the user's help. Ask the user
@@ -189,30 +233,32 @@ tell the user and skip this step.
 Load the host into a process by name or by pid:
 
 ```powershell
-& "<injector.exe>" --process-name <target.exe> --inject "<dir>\build\own-thread\reagentlive-own-thread.dll"
-& "<injector.exe>" --process-id <pid> --inject "<dir>\build\own-thread\reagentlive-own-thread.dll"
+& "<injector.exe>" --process-name <target.exe> --inject "<dir>\<build>\<dll>"
+& "<injector.exe>" --process-id <pid> --inject "<dir>\<build>\<dll>"
 ```
 
 Inject only into a process the user names. Never pick a target yourself.
 The host is never unloaded, so do not use `--eject` on it. Restart the
-process instead.
+process instead. In a UE5 game, the first Unreal command stalls the game
+once ([before the first command](commands/unreal.md#before-the-first-command)).
 
-Add this line to the user-level instructions file from step 5:
+Add this line to the user-level instructions file from step 6:
 
 ```
-ReAgentLive host: <dir>/build/own-thread/reagentlive-own-thread.dll; load it with <injector.exe> --process-name <name> --inject <dll>, only into a process the user names.
+ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it with <injector.exe> --process-name <name> --inject <dll>, only into a process the user names.
 ```
 
-## 8. Report
+## 9. Report
 
 Tell the user:
 
 ```
 ┌─ ReAgentLive setup complete ──────────────────────────┐
-│  ✓ Built     <dir>\build\own-thread                   │
+│  ✓ Built     <dir>\<build> (<example>)                │
 │  ✓ MCP       reagentlive (<client>)                   │
 │  ✓ Skill     <path>                                   │
-│  ✓ Check     status ok, ticking                       │
+│  ✓ Check     status ok, ticking, packs <packs>        │
+│  ✓ Tier      <T0, or T1-T2 (T3 after game-thread on)> │
 │  ✓ Injector  <path, or "skipped">                     │
 │                                                       │
 │  ⚡ Restart your agent to load the MCP tools           │
@@ -221,5 +267,5 @@ Tell the user:
 └───────────────────────────────────────────────────────┘
 ```
 
-Then say in one line that their own mod can host ReAgentLive instead, for
-Unreal objects by name ([hosting](hosting.md)).
+Then say in one line that for a UE5 game they mod with its SDK, the mod
+itself can host ReAgentLive for T4 ([hosting](hosting.md)).

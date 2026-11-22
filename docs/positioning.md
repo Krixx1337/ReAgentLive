@@ -1,6 +1,14 @@
 # ReAgentLive positioning
 
-What ReAgentLive is for, what makes it different, and how to describe it.
+*Home of:* what ReAgentLive is for and how to describe it: the pitch, its role among other tools, ways to host it, low footprint, the safety model and what it is not.
+
+**TL;DR:** ReAgentLive is the live, in-process part of a reversing kit:
+it answers "what is true in the running game right now, and is it safe to
+try this?" and leaves whole-program analysis to static tools. It works in
+any Windows process, and in any UE5 game it also knows objects by name,
+with no dump. It is not an injector, a renderer, a debugger or a way
+around protection.
+
 The README is the short, benefits-first pitch built from it; the detail
 lives here. It states the
 direction; [design](design.md) holds the decisions and
@@ -98,19 +106,23 @@ calls its tick; that something is the host, and it can be small.
 |---|---|---|
 | An internal mod | the mod itself | the mod already runs on the game's thread; ReAgentLive reuses its thread and object checks |
 | An external tool or mod | a small DLL its author writes, that only ticks the core | the external tool keeps working from outside and uses the core for what needs the inside |
-| No mod at all | the own-thread example host, unchanged ([try it](hosting.md#own-thread-example)) | memory commands and the fast lane in any process; no engine access, not tick-accurate |
+| No mod at all, any process | the own-thread example host, unchanged ([try it](hosting.md#own-thread-example)) | memory commands and the fast lane; no engine access, not tick-accurate |
+| No mod at all, a UE5 game | the Unreal example host, unchanged ([try it](hosting.md#unreal-example)) | objects and fields by name with no dump; engine calls after `game-thread on` |
 
-What the host's thread allows decides what works:
+What each setup reaches is the [tier ladder](tiers.md). What the host's
+thread allows decides what works:
 
 - **Memory commands** (read, search, watch, guarded writes, the fast lane)
   are safe from any thread the host ticks on.
-- **Engine calls and object walks** need the thread the engine expects. A
-  host that cannot tick there offers the memory commands and refuses the
-  rest; the agent's operation list tells the console which.
+- **Object lookups and reads** answer from another thread when the host
+  opts in; **engine calls** need the game thread, which a host has by
+  ticking there or gets with `game-thread on`
+  ([which commands](commands/unreal.md#off-the-engines-thread)).
 
-The first and last setups exist today. ReAgentLive ships the library and
-one example host; a real host's DLL, entry and tick source are its
-author's to write ([hosting](hosting.md), [clients](client.md)).
+The internal mod and both example setups exist today. ReAgentLive ships
+the library and two example hosts; a real host's DLL, entry and tick
+source are its author's to write ([hosting](hosting.md),
+[clients](client.md)).
 
 ## Two layers
 
@@ -130,13 +142,15 @@ deferred until an investigation and an outside program must run together
 ReAgentLive answers when asked and otherwise stays out of the process's
 way:
 
-- **No code hooks.** The core never patches code or swaps a vtable or
-  import pointer; where the tick comes from is the host's business. The
-  one swap it can make is opt-in: the call recorder replaces a
-  `UFunction`'s native pointer, heap data, while a recording runs.
+- **No code hooks.** The core never patches code or writes the game's
+  vtables or imports; where the tick comes from is the host's business.
+  Two swaps are opt-in, both a pointer in heap data: the call recorder
+  replaces a `UFunction`'s native pointer while a recording runs, and the
+  host helper `reagentlive::ue-draw` points the game viewport object at a
+  private copy of its interface table on `game-thread on`.
 - **No threads of its own.** It runs on a thread the host already has.
-  The own-thread example adds exactly one, its tick; background search
-  adds a worker only when the host allows it.
+  Each example host adds exactly one, its tick; background search adds a
+  worker only when the host allows it.
 - **No process handle.** The client never opens the target process: no
   `OpenProcess`, no `ReadProcessMemory`, no debugger. Requests travel
   through one named shared-memory section.
@@ -156,8 +170,9 @@ hidden: see [what it is not](#what-it-is-not).
 - **Changes that end on their own.** Pins expire; a trial write restores
   the original bytes when it expires or is cleared, and stops writing as
   soon as its owner is replaced.
-- **Engine calls only on the engine's thread.** A host that ticks
-  elsewhere gets memory commands, and engine commands are refused
+- **Engine calls only on the game thread.** A host that ticks elsewhere
+  gets memory commands and, if it opts in, object reads; engine calls are
+  refused until the tick is on the game thread
   ([host thread](hosting.md#host-thread)).
 - **Approval stays the user's.** Anything that can change state is a
   separate, explicit command, and its MCP tool is marked destructive
@@ -167,13 +182,15 @@ hidden: see [what it is not](#what-it-is-not).
 
 - **Not a standalone injector.** It needs a host inside the process that
   calls its tick; how that host gets loaded is the user's business.
-- **Not "any game" out of the box.** The core works in any Windows process
-  that hosts it. Objects, fields, calls and bytecode need an engine pack;
-  today there is one, for Unreal. That pack is compiled against the host's
-  generated SDK headers and assumes Unreal Engine 5 layouts, so another
-  game needs its own SDK dump and a check of those layouts.
+- **Not every engine out of the box.** The core works in any Windows
+  process that hosts it. Objects, fields, calls and bytecode need an
+  engine pack; today there is one, for Unreal. It works in any stock UE5
+  game with no dump, checking each part of the layout on known objects;
+  an engine that differs refuses the parts that fail its checks rather
+  than guess ([without an SDK](commands/unreal.md#without-an-sdk)).
 - **Not a renderer, and the probe is not a mod's runtime.** Nothing in
-  ReAgentLive draws or hooks a frame. The console, the Python client and the
+  ReAgentLive draws; the opt-in Draw tick only borrows the game's Draw as a
+  game-thread tick. The console, the Python client and the
   skill are development tools: one client, a request at a time. The core
   underneath is a different matter; see "Two layers".
 - **Not a debugger, a disassembler suite or a signature maker.** Those
@@ -204,7 +221,10 @@ export, the fast lane (`disasm`, `xrefs`, `sig-check`;
 [design](design.md#fast-lane)), the AI-facing console and Python client.
 
 Native objects without an engine pack (`vtable`, pointer chains, strings,
-`region`; [design](design.md#native-objects)) have shipped too. Planned,
+`region`; [design](design.md#native-objects)) have shipped too, and so has
+Unreal with no dump (every op, each layout group checked on known objects)
+with a game-thread tick for hosts that tick elsewhere (`game-thread`).
+Planned,
 so not yet true: calling native functions
 ([backlog](ideas.md#17--call-native-caution)). Use the pitch above in public only for
 what has shipped.
@@ -214,10 +234,9 @@ what has shipped.
 - ✅ A licence: MIT, and every dependency is MIT too (README).
 - ✅ A benefits-first README with an [agent setup](agent-setup.md) prompt
   an AI agent follows on its own.
-- What lets someone else use the core: the host and client guides and the
-  own-thread example host exist ([hosting](hosting.md),
-  [clients](client.md)); still missing are a minimal client example and a
-  "bring your own SDK" guide ([backlog](ideas.md#20--example-client-and-sdk-guide)).
+- What lets someone else use the core: the host and client guides and both
+  example hosts exist ([hosting](hosting.md), [clients](client.md)); still
+  missing is a minimal client example ([backlog](ideas.md#20--example-client)).
 - ✅ A plain statement of the [safety model](#safety-model).
 - A plain statement of intended use (a development tool).
 - The docs stay free of any one game; the `reagentlive.docs` test checks

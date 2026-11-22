@@ -1,5 +1,13 @@
 # Memory commands
 
+*Home of:* the core memory commands and their guards: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, `mem-snap`/`mem-diff`, typed layouts.
+
+**TL;DR:** Read, search and change raw memory in any process the agent
+runs in, with no engine pack (tier T0). Every write is guarded and can
+require the old bytes first; pins and trials undo themselves when they
+expire. Writes change the running game: they are separate commands
+marked `writes`, so a client asks before running them.
+
 Core commands: they work in any host, with or without an engine pack.
 Wire details: [protocol](../protocol.md). Each command's flags and result
 keys: `help <verb>` or [result shapes](results.md).

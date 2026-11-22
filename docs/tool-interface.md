@@ -1,8 +1,13 @@
 # Tool interface for scripts and agents
 
-How the console describes itself and how scripts and AI agents call it:
-the verb table, `help --json`, the generated Python functions and the MCP
-tools. Part of the [design](design.md); use: [clients](client.md).
+*Home of:* the decisions behind the self-describing console and the tool interface (the verb table, `help --json`, JSON calls, the generated Python functions, the MCP adapter), with their rejected alternatives and measurements.
+
+**TL;DR:** Why the console describes itself and why scripts and AI agents
+call it the way they do. One verb table in the console is the source of
+every argument and result shape; Python functions and MCP tools are made
+from it, never written by hand. This page is the decision record: how to
+use each interface is [clients](client.md), how to drive the console is
+[console](commands/console.md).
 
 ## Self-describing console
 
@@ -126,9 +131,10 @@ defines what the table did not.
   line flags (`--meta`, `--timing`, or a call's `meta` and `timing`);
   the main loop, a `batch`'s items and the no-target mode share that one
   reader.
-- **Literal refs only in JSON calls.** `$N` is refused: "the last `find`"
-  is session state a picked argument should not depend on. A call takes
-  the `ref` a result carries, and the ids of pins, trials and captures.
+- **Literal refs only in JSON calls.** `$N` is refused: "result N of the
+  last command that listed refs" is session state a picked argument should
+  not depend on. A call takes the `ref` a result carries, and the ids of
+  pins, trials and captures.
 - **Typed Python functions, generated per console** (`reagentlive_gen.py`)
   from its `help --json`, so a host's verbs are included. One method per
   verb, positionals then keyword-only flags, typed from the row; results
@@ -149,11 +155,20 @@ defines what the table did not.
   console as a JSON call with the row's keys, since those are the tool's
   argument names. No tool and no JSON Schema is written by hand or
   exported from the console, and there is no module file to go stale.
-  Verbs marked `blocks` and `quit` are left out; `batch` takes a list of
-  calls and runs them held. Every tool also takes `budget` (the console's
+  Verbs marked `blocks` and `quit` are left out (a call would outlast a
+  client's timeout; the generated Python functions keep them, since a
+  script may wait). `batch` takes a list of calls and runs them held.
+  Every tool also takes `budget` (the console's
   [output budget](commands/console.md#fewer-round-trips), 25,000 characters
   by default); a result past it comes back as `{digest}` with a text block
   naming the call to make next, and the output schema allows either.
+- **`batch` carries reads only.** Its row is not marked `writes`, so its
+  tool is read-only and a client may allow it unasked; a write, call, pin
+  or `game-thread` inside it would then run with no prompt. The adapter
+  refuses a batch holding any verb marked `writes` and names it, so that
+  verb goes as its own tool and is approved. Rejected: marking `batch`
+  destructive (every same-tick read would ask), and leaving it to the
+  approval rules (the client never shows the inner call).
 - **Two readers of the type vocabulary, both strict.** The generator maps
   the argument and result types to Python annotations, the adapter to
   JSON Schema. A type either lacks stops it with the type's name, never a
@@ -235,7 +250,11 @@ Rejected:
 
 **A smaller tool list.** Measured, result schemas were about two thirds of
 the list (about 72 KB of 112), and every result of 18 sessions together
-was smaller than the list. So:
+was smaller than the list. Measured once after the change, as the
+serialized tool list: about 58 KB for the own-thread example's console
+(core and pack verbs) with compact schemas; on one host's console with two
+host verbs, before the adapter made schemas from the rows, about 45 KB with
+`off` and 30 KB with `--families core --read-only`. So:
 
 - **Compact result schemas by default:** each result's top-level keys and
   JSON types, widened, never narrowed, so a console result always

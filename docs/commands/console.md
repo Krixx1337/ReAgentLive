@@ -1,8 +1,11 @@
 # Console
 
-How to drive any ReAgentLive console: the command line, JSON calls,
-addresses and refs, keeping round trips down, one-shot runs, the usage log
-and `stats`, and the JSON Lines output.
+*Home of:* how to drive any ReAgentLive console: typed lines, JSON calls, addresses, `$N` and refs, holds and `batch`, output budgets and digests, the cache file, one-shot runs and console arguments, the usage log and `stats`, the JSON Lines output.
+
+**TL;DR:** The console is the command line every interface ends in: type
+`help`, then `<console> -c "find Pawn; dump $1"`, and read one JSON object
+per command. `$N` (the Nth object the previous command listed) works only in typed
+lines; JSON calls, Python and MCP take the literal `ref` a result printed.
 What each command does lives in its area page ([index](../INDEX.md#commands));
 what each takes and returns, in [result shapes](results.md) and in `help`.
 
@@ -49,7 +52,8 @@ the MCP tools all read it, so none of them can disagree with the console.
   spaced or packed (`01 02 ff`, `0102ff`).
 - **`--timing`** and **`--meta`** go at the end of any line
   ([fewer round trips](#fewer-round-trips)).
-- `<addr>` and `<object>` accept `$N`, result N of the last `find`.
+- `<addr>` and `<object>` accept `$N` in a typed line
+  ([addresses and refs](#addresses-and-refs)).
 
 ## JSON calls
 
@@ -85,6 +89,12 @@ string.
 
 ## Addresses and refs
 
+- **`$N`** is result N of the last command that lists refs, in a typed
+  line only. `find`, `census`, `census-diff` and `each` set the list to
+  their rows; `describe` sets it to its one object (`describe X; funcs $1`);
+  `dump`, `get` and `entries` add the objects their pointer values name.
+  The list persists for the agent instance in the
+  [cache file](#fewer-round-trips), so a later `-c` run can use it.
 - **Address bridge to a static-analysis tool.** Addresses also accept
   `$N+offset`, `base+offset` (the exe) and `<module>+offset`
   (`game.exe+0x1a2b3c`, name ignoring case; the offset must lie inside the
@@ -130,7 +140,7 @@ request costs up to a host tick. The console cuts both:
 - **`batch { <command>; ... }`** runs up to 64 command lines held and prints
   one envelope with `rows` (each command's own envelope), `all_ok`,
   `same_tick`, `first_tick` and `last_tick`. Each line is parsed just before
-  it runs, so a `$N` from an earlier `find` in the same batch works; a value
+  it runs, so a `$N` set by an earlier line in the same batch works; a value
   read in the batch cannot feed a later line (console syntax has no
   variables). Not allowed inside: `batch`, `watch` (the blocking one; the
   capture verbs are fine), `record`, `status`, `help`, `quit`,
@@ -196,9 +206,8 @@ request costs up to a host tick. The console cuts both:
     When the file cannot be written, the result prints whole.
 
   A batch item past the budget gets its own digest; the batch's result
-  goes to a file when any item may have changed state. The MCP tools pass
-  the digest as text naming the tool call to make next, and take `budget`
-  as an argument.
+  goes to a file when any item may have changed state. How the MCP tools
+  hand a digest on: [clients](../client.md#mcp-tools).
 - **Compact values.** A decoded struct prints as `{Name: value, ...}`,
   nested structs the same way: `{"X": 1.5, "Y": -2, "Z": 3}`, with a
   member's readable name where the [names file](unreal.md#readable-names) has one.
@@ -257,7 +266,11 @@ baseline until EOF or `quit`.
 
 Console arguments: `[pid] [-c "..."] [--names <file>] [--caller
 tool|script|shell] [--session <id>] [--no-usage]`; the last three are the
-[usage log](#usage-log-and-stats)'s.
+[usage log](#usage-log-and-stats)'s. `--names <file>` loads a
+[names file](unreal.md#readable-names). `<console> --replay <file>`, alone,
+shows a recorded capture with no target
+([capture and replay](capture.md)); it needs a console built with the
+Unreal pack.
 
 `help --hash` answers the verb table's hash alone (`{rows: [],
 table_hash}`), with no target: a program that keeps a table reads it to

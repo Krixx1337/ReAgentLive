@@ -1,9 +1,13 @@
 # Own-thread example
 
-ReAgentLive in any x64 process, with no mod and no SDK: a DLL that ticks
-the agent on its own thread, and the console that talks to it. Memory
-commands and the fast lane work; object commands and engine calls need a
-real host. What it can and cannot do, and why:
+**TL;DR:** ReAgentLive in any Windows x64 process, with no mod and no SDK:
+a DLL that ticks the agent on its own thread, and the console that talks to
+it. Memory, code and native-object questions work; no Unreal objects or
+engine calls. For a UE5 game, start from [`examples/unreal`](../unreal/README.md)
+instead.
+
+**Which tier this gives you:** T0 Core ([tiers](../../docs/tiers.md)).
+What it can and cannot do, and why:
 [hosting](../../docs/hosting.md#own-thread-example).
 
 | File | What |
@@ -44,6 +48,8 @@ several it lists their pids on stderr and needs one. `status` shows
   it links to.
 - **MCP tools for an AI agent:** [agent setup](../../docs/agent-setup.md)
   (it builds this example and registers the server).
-- **Your own host,** on the engine's thread and with a pack:
-  [hosting](../../docs/hosting.md#host-checklist). This example is a
+- **Unreal objects by name and engine calls (T1-T3):** the
+  [Unreal example](../unreal/README.md).
+- **Your own host,** with a pack and on the engine's thread (T4 with an
+  SDK): [hosting](../../docs/hosting.md#host-checklist). This example is a
   starting point, not a supported host.

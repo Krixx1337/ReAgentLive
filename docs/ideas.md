@@ -1,8 +1,13 @@
 # ReAgentLive backlog
 
-What may come next, each waiting for the trigger it names, and what is
-deliberately out. Numbers are stable ids, not ranks. Decisions behind the
-"no" answers: [design](design.md).
+*Home of:* the backlog: ideas waiting for a named trigger, what shipped from it, and what is deliberately out.
+
+**TL;DR:** A list of features that may come next, each with the event
+that would justify building it. Check here before proposing something:
+it may be waiting, done, or ruled out on purpose. Numbers are stable ids,
+not ranks, so a link to an idea never breaks.
+
+Decisions behind the "no" answers: [design](design.md).
 
 ## Pull forward when an investigation needs it
 
@@ -51,29 +56,6 @@ ticks, after a dry run.
   ask with its output, read a plain field instead of calling its getter),
   and each host's docs say whether it enables it.
 
-### 18 · Best-effort pack reads off the engine's thread
-
-On a host that ticks on a borrowed thread, let the Unreal pack answer
-reads while still refusing calls. **Built behind the opt-in for measuring**
-(`Context::offThreadReads`, [unreal](commands/unreal.md#off-the-engines-thread));
-it moves to [design](design.md) only if the measurement below is clean,
-and is removed otherwise.
-
-- Opt-in per host, off by default. Lookups and reads only: `find`,
-  `describe`, `fields`, object range reads, container entries, names.
-  Never `call`, never `each` with a function, never anything that runs
-  engine code.
-- Every handler runs under a fault guard off the engine's thread, so a
-  freed page is a refusal, not a crash; the object's identity is checked
-  before and after the read, and a mismatch discards the result.
-- Results carry `tick_accurate: false` and may still be torn (a value can
-  change between two fields of one read); the docs say so.
-- **Measure first:** walking the object table and reflection data while
-  the engine's thread runs has not been tried. Run the read handlers
-  off-thread in a live session under load (level change, garbage
-  collection) and record faults, refusals and wrong answers. If that is not
-  clean, this stays out.
-
 ### 19 · Checks for native members (`label --verify`)
 
 Waits for the first game patch that moves a labelled offset. Native lines
@@ -83,23 +65,18 @@ a..b`, or `--check equals <Owner:Getter>`, a pure getter returning the same
 value); `label --verify <Class>` runs them on a live instance and, when all
 pass, rewrites the timestamp. Tests: a check passing and one failing.
 
-### 20 · Example client and SDK guide
+### 20 · Example client
 
-What else lets someone host the core and drive it from outside
+What else lets someone drive the core from an outside program
 ([outside programs](outside-programs.md)); the host checklist, client
-guide and own-thread example host already exist ([hosting](hosting.md),
-[clients](client.md)). Build it on the first of two triggers: a public
-release, or ReAgentLive wanted in a second Unreal game.
+guide and both example hosts already exist ([hosting](hosting.md),
+[clients](client.md)), and any UE5 game needs no SDK
+(`examples/unreal`). Build it on a public release.
 
 - **Minimal client** (`examples/minimal_client.cpp`): attaches, reads a
   value, holds one with a pin, exits cleanly; built and run by the tests
   against the own-thread host.
-- **"Bring your own SDK" guide** (docs only): which generated SDK headers
-  the Unreal pack needs, which UE5 layout constants to verify in a new
-  game, and how to verify each with the memory commands. Finding a tick on
-  the engine's thread stays the host author's work.
-- Done when: the docs alone are enough to write a client and to host the
-  Unreal pack in another game.
+- Done when: the docs and that example alone are enough to write a client.
 
 ### 21 · Other engine packs (Unity, Source 2)
 
@@ -177,7 +154,8 @@ when sessions keep making four to six calls for one function.
 ### 29 · CI and a fake-engine target
 
 No CI runs the tests, and the Unreal agent handlers have no automated
-tests. Shape: a Windows build and `ctest` on every push; a small test
+tests against engine data (the Unreal example's test loads its DLL with
+no engine). Shape: a Windows build and `ctest` on every push; a small test
 process with a synthetic object table and name pool so `find`, `fields`,
 `dump` and `each` run end to end; prebuilt console and own-thread
 binaries.
@@ -200,14 +178,66 @@ and `RemoteRole`, relevance and cull distance in metres; location from the
 root component's fields, no engine call. Pull forward when a second
 investigation asks the same.
 
+### 33 · Layout profile loading
+
+The agent reads `StockUE5` or a compiled-in SDK; it cannot load a layout,
+so an engine that is not stock gets refusals for the groups that fail
+([without an SDK](commands/unreal.md#without-an-sdk)) even after the
+skill's investigation has found the right offsets. Shape: the agent loads
+a profile in `ProfileJson`'s format (`engine_layout.h`, which already
+writes one), checks every group on the same known objects before using it,
+and reports each group's source (`stock`, `sdk`, `profile`) and state in
+`status`; a failed check keeps the group off, never a guess. This fills the
+gap between T2 and T4 ([tiers](tiers.md#the-gap)). Pull forward with the
+first engine whose groups fail where the skill found the offsets.
+
+### 34 · `offset-find`: which offsets hold known values
+
+`offset-find <object>... --<type> <value>...`: which offsets in each
+object hold the given values, and which agree across all of them. Core,
+plain guarded reads, game-agnostic: a dumper's offset finder as one verb.
+Pull forward when finding a layout group by hand (the skill's new-game
+work) shows `read-batch` probing as the slow part, or with #33.
+
+### 35 · A `tier` key in `status`
+
+`status` prints `packs` and `host_thread` but no tier, so an agent reads
+its tier off several keys and a first Unreal command
+([tiers](tiers.md#read-your-tier-from-status)); an SDK host (T4) has no
+signal but real serials in refs. Shape: `tier` (`T0`..`T4`) and the
+layout's source (`stock`, `sdk`, later `profile`), with the failed group
+when one refused. Pull forward when an agent misreads its tier, or with
+idea 33, which needs the layout source in `status` anyway.
+
+### 36 · `game-thread status` as a read
+
+The `game-thread` row is marked `writes` as a whole, so an MCP client asks
+for approval even to read the mode. Shape: split the read (`status`) from
+the actions, as a separate read-only verb or a mark that depends on the
+action (the verb table has no per-argument marks today,
+[design](design.md#unreal-pack) on `call-pure`). Pull forward when the
+prompt for a status read gets in the way of a session.
+
+## Done
+
+- **18 · Best-effort pack reads off the engine's thread:** shipped behind
+  the host opt-in `Context::offThreadReads`, on in `examples/unreal` and
+  used by library hosts; the list of what answers is in
+  [unreal](commands/unreal.md#off-the-engines-thread), the decision in
+  [design](design.md#unreal-pack).
+- **30 · Fields without an SDK:** every op runs with no SDK, each layout
+  group checked on known objects
+  ([design](design.md#without-an-sdk-the-stock-layout-checked-per-group-on-known-objects)).
+
 ## Not ideas
 
 Deliberately out of scope, see [design](design.md#not-now): other transports,
 async client calls, plugin DLLs, other engines before a project needs them.
-Also drawing of any kind (a draw list, an overlay, a frame hook): the core
-reads, writes and calls, and stays free of hooks and renderers. A tool that
-wants visuals draws in its own window
-([positioning](positioning.md#what-it-is-not)).
+Also drawing of any kind (a draw list, an overlay, a frame hook to draw
+in): the core reads, writes and calls, and stays free of renderers. The
+opt-in Draw tick (`reagentlive::ue-draw`) only borrows Draw as a
+game-thread tick source and draws nothing. A tool that wants visuals draws
+in its own window ([positioning](positioning.md#what-it-is-not)).
 Also more `search` modes or filters: it finds addresses that hold a known
 value, and that is its whole job. Narrowing by change over one range is
 `mem-diff` ([memory](commands/memory.md#mem-snap-and-mem-diff)); anything
@@ -233,12 +263,4 @@ Also renaming result keys so they can be guessed: the keys are documented
 and the Python client hides them; a rename moves the problem.
 Also reloading the host without restarting the game: the image stays loaded
 by the host's rule, not a ReAgentLive matter.
-Also fields without an SDK (was #30): `reagentlive::ue-base` stays the
-lookup tier ([without an SDK](commands/unreal.md#without-an-sdk)): `find`,
-`census`, names and raw object reads, enough to tell what a game holds and
-whether it is worth a dump. Fields, containers and calls stay with the SDK.
-Probing `Children`, `ChildProperties` and the `FField`/`FProperty` layout
-(types, inner types, bool masks, enums) is where engines differ most: more
-code to keep right across versions, for what a Dumper-7 dump already gives,
-checked against the engine's own reflection. The lookup tier needs only the
-object header and two class offsets, the engine's most stable parts.
+

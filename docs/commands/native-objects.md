@@ -1,5 +1,13 @@
 # Native objects
 
+*Home of:* reading a native (non-reflected) object with no engine pack: `vtable`, `rtti`, pointer chains, `region`, C strings.
+
+**TL;DR:** When a game has no engine pack, or an object is plain C++ that
+reflection does not list, these commands still say what it is: its
+vtable and the functions in it, its MSVC class name, what kind of memory
+an address is, and the strings it points to. They only read; names they
+report are hints to confirm, not proof.
+
 What the engine-agnostic side says about a native object, with no engine
 pack ([design](../design.md#native-objects)).
 

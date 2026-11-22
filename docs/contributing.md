@@ -1,7 +1,12 @@
 # Contributing
 
-Where code goes, how it is tested, the rules the code keeps, and where each
-kind of fact is written down. Read it before adding a command or a doc.
+*Home of:* where code goes (layers, source layout, adding a command or a pack), the tests, the code rules, and where each fact is written down (the docs and skill rules).
+
+**TL;DR:** Read this before adding a command, a file or a doc. Code goes
+by layer, every command starts as a row in the verb table, and the tests
+check the layering and the docs. Each fact has exactly one home: look it
+up in [where each fact goes](#where-each-fact-goes) before writing it, and
+link instead of repeating it.
 
 ## Layers
 
@@ -14,7 +19,7 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 |---|---|---|---|
 | Core agent | wire protocol, shared section, tick and dispatch, `read`/`write`/`modules`/`search`/`xrefs`/`region`/`pin`/`watch` | `core/agent.*`, `core/protocol.h` | Windows, standard library |
 | Core client | typed C++ API: attach, read, write, modules, search, xrefs, region, pointer chains, supported ops, raw `Send` | `core/client.*` | protocol |
-| Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls over a Dumper-7 SDK; lookups, names and census also without one (`ue-base`) | `packs/ue/` | core; agent side (except `ue-base`) also the host's `SDK/` headers |
+| Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls, every one with no SDK (`ue-base`, layouts through `engine_layout.h`); the opt-in game-thread tick for hosts (`host_draw.*`, `ue-draw`) | `packs/ue/` | core; only `reagentlive::ue` also the host's `SDK/` headers (`engine_layout_sdk.h`, `agent_ue_globals.cpp`) |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |
 | Python, MCP, IDA | session client, the generator of typed functions, the MCP adapter (tools from the table's rows); label importer | `frontends/python/`, `frontends/mcp/`, `frontends/ida/` | the console's JSON calls and `help --json` (MCP: the MCP Python SDK), its label file |
 | Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch --follow` | the host's code ([hosting](hosting.md)) | core, packs |
@@ -152,19 +157,27 @@ one file:
 | `syntax/command.h`, `syntax/text.h` | the parsed `Command` and its limits; token, number, ref and address parsing |
 | `syntax/parse.cpp` | `Parse` (declared in `parse.h`): help, status, quit, `batch`, then the areas below |
 | `syntax/parse_memory.cpp`, `parse_code.cpp`, `packs/ue/cli/syntax/parse_unreal.cpp` | the verbs of each area; each answers nothing for a verb not its own |
-| `packs/ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, `name`) and the shared helpers with their caches; SDK-free (`agent_ue_base.h`) |
-| `agent_ue_globals.cpp` | locating the globals and the object layout (the SDK's, or stock shapes and probes without one); SDK-free |
-| `agent_ue_census.cpp` | the cached table and pool scans that need no SDK: `census`, `name-find` |
+| `packs/ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, `name`) and the shared helpers with their caches |
+| `agent_ue_globals.cpp` | locating the globals and the object layout (stock shapes and probes, or the SDK's under `REAGENTLIVE_UE_SDK`); the off-thread gate (`PackReady`) |
+| `agent_ue_check.cpp` | the layout groups: each checked once on known objects before its ops run |
+| `agent_ue_census.cpp` | the cached table and pool scans: `census`, `name-find` |
 | `agent_ue_entries.cpp` | array previews and `entries` |
-| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, `fields`, parameters and the function lookup |
-| `agent_ue_scan.cpp` | the cached SDK scans: `each`, `exec-entries` |
+| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, `fields`, parameters, `enum` and the function lookup |
+| `agent_ue_scan.cpp` | the cached scans: `each`, `exec-entries` |
+| `agent_ue_script.cpp` | Blueprint bytecode: `script`, `refs` |
+| `agent_ue_calls.cpp` | the call recorder: `calls-start`, `calls-read`, `calls-stop` |
+| `engine_layout.h`, `engine_layout_sdk.h` | the one home of engine offsets (`StockUE5`, the profile groups), and the layout an SDK describes (`offsetof`) |
+| `globals.h`, `name_pool.h` | finding the object table and name pool; walking the pool's entry blocks (pure, tested) |
+| `host_draw.h`, `host_draw.cpp` | `reagentlive::ue-draw`: the game-thread tick through the viewport's Draw and the `game-thread` op |
 
 - Shared helpers live in a `detail` namespace (console) or the pack's
   namespace, declared in an internal header (`console/internal.h`,
-  `packs/ue/cli/console/internal_ue.h`, `agent_ue_base.h` for the SDK-free
-  files, `agent_ue_internal.h` for the SDK ones); a helper used by one
-  file stays anonymous there. The SDK-free files never include `SDK/`:
-  they read objects at the located layout's offsets.
+  `packs/ue/cli/console/internal_ue.h`, `agent_ue_base.h` and
+  `agent_ue_internal.h` for the agent files); a helper used by one file
+  stays anonymous there. No agent file includes `SDK/` except
+  `agent_ue_globals.cpp` under `REAGENTLIVE_UE_SDK` and
+  `engine_layout_sdk.h`: the others read objects through `EngineLayout`.
+  Engine offsets are defined only in their homes (`reagentlive.engine-layout`).
 - Agent files keep the mapped-image limits: constant-initialised globals,
   each defined in one file and declared `extern` in the internal header.
 - New files join `target_sources`; hosts need no change.
@@ -199,14 +212,16 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |
 | `reagentlive.python-session`, `reagentlive.python-mcp`, `reagentlive.ida-labels` (`tests/python/`) | the session client and a module generated from the real table, against a scripted fake console (`fake_console.py`) that serves it (strict results, a method per verb, JSON calls, canned replies checked against their types); the MCP tools made from that table, through an in-memory client (skipped without the MCP SDK); and the IDA label importer |
-| `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack |
-| `reagentlive.consumer` (`tests/consumer/`) | an agent-only host project built in its own tree: no downloads with the console off, and nothing past `src/` reachable through the include path |
+| `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack; with the Unreal pack, the Unreal example's DLL the same way (`unreal_tests.cpp`, no engine: the `ue` pack listed, `game-thread` answering) |
+| `reagentlive.consumer` (`tests/consumer/`) | host projects built in their own tree: an agent-only host (no downloads with the console off, nothing past `src/` reachable through the include path) and an Unreal host with no SDK (`host_ue_base.cpp`: `ue-base` builds with no `SDK/` on the path) |
+| `reagentlive.engine-layout` (`tests/python/`) | engine offsets defined only in their homes (`engine_layout.h`, `engine_layout_sdk.h`, `globals.h`, `name_pool.h`) |
 | `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help --json` has core rows only, none marked `needsPack`, each the same as in the full table, and the module generated from it no pack verb |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
-| `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, and no host or game name appears in the library |
+| `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, INDEX lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, and no host or game name appears in the library |
 
 The Unreal agent handlers need a live object table, so hosts check them in
-their own live sessions.
+their own live sessions; the Unreal example's DLL is tested in-process,
+with no engine, for what needs none.
 
 ## Code rules
 
@@ -224,18 +239,60 @@ Docs say what code cannot: behaviour, decisions and their rejected
 alternatives, constraints, evidence. Each fact has one home; others link
 to it.
 
-| Fact | Home |
-|---|---|
-| What a command does, its guards and syntax | its page under `commands/` |
-| What a command takes and its result keys | the verb table in code; [commands/results.md](commands/results.md) is generated from it, never edited |
-| Wire format, op numbers, statuses, limits | [protocol.md](protocol.md) |
-| What a host provides and how it ticks | [hosting.md](hosting.md) |
-| Client library and Python client | [client.md](client.md) |
-| Why it is built this way, what was rejected | [design.md](design.md) |
-| What may come next, and what will not | [ideas.md](ideas.md) |
-| How to describe it | [positioning.md](positioning.md) |
-| Where code goes, tests, these rules | this page |
-| How an AI agent investigates: method, pitfalls, lessons | the [`reagentlive` skill](../.claude/skills/reagentlive/SKILL.md) (its own rules for lessons) |
+**Docs and skill, one job each.** The docs say *what it is and how it
+works* (command behaviour, protocol, hosting, design, contributing), for
+people who host, extend or need the exact reference. The
+[`reagentlive` skill](../.claude/skills/reagentlive/SKILL.md) says *how
+to use it well* (method, order, judgement, approvals, pitfalls), for the
+AI agent investigating. The skill never restates a command's behaviour (it
+links `help` or the docs page); the docs give no investigation advice
+beyond a command's guards. The skill keeps its own maintenance rules.
+
+**Two kinds of page, never mixed.** *Orchestrators* route: one line of
+what and why per topic, a link to its home, and when to read it; no fact
+stated in full (`README.md`, `docs/INDEX.md`, `docs/agent-setup.md`, the
+example READMEs, the skill's `SKILL.md`). *SSOT pages* own facts: each
+fact stated once, in full, in exactly one page.
+
+### Where each fact goes
+
+Check this table before adding a fact; if it has a home, link there.
+
+| Fact | Home | Not here |
+|---|---|---|
+| The tier ladder, what stops each rung, which artifact gives it | [tiers.md](tiers.md) | README and skill: picture plus a link |
+| Reading your tier from `status` (the full table) | [tiers.md](tiers.md#read-your-tier-from-status) | skill: its operational rule plus a link |
+| What the agent does next at each tier (climb, approvals) | the skill's `SKILL.md` | docs |
+| What each interface offers (MCP tools, console, Python, C++ client) and its API | [client.md](client.md) | README: one line each |
+| Which interface to pick for a task; verb → MCP tool → Python function | the skill's `references/interfaces.md` | docs |
+| A verb's arguments, flags, result keys | the verb table in code (`help <verb>`); [commands/results.md](commands/results.md) is generated from it, never edited | everything else |
+| A verb's behaviour and guards | its page under `commands/` | skill (links only) |
+| Which Unreal commands need the game thread | [commands/unreal.md](commands/unreal.md#off-the-engines-thread) | everywhere else (links) |
+| Console mechanics: lines, refs, `$N`, budgets, cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
+| Approval rules, evidence rules | the skill's `SKILL.md` | docs (links) |
+| Investigation method, pitfalls, per-question advice | the skill's `references/` | docs |
+| Hosting, CMake targets, the examples' internals, the host API | [hosting.md](hosting.md) | README (links) |
+| Wire format, op numbers, statuses, limits | [protocol.md](protocol.md) | elsewhere |
+| Why it is built this way, what was rejected | [design.md](design.md) | elsewhere |
+| Why the console, generated functions and MCP tools are shaped as they are | [tool-interface.md](tool-interface.md) | elsewhere |
+| Engine layout offsets | `packs/ue/engine_layout.h` (code) and [unreal.md](commands/unreal.md#without-an-sdk) | skill (links) |
+| What may come next, and what will not | [ideas.md](ideas.md) | elsewhere |
+| How to describe it | [positioning.md](positioning.md) | README: the short pitch |
+| Where code goes, tests, these rules | this page | |
+
+The skill ships apart from the docs (copied into an agent's skills
+folder), so it may carry the minimum an agent needs before its first
+command (the operational status rule, approval rules) and links every
+other fact by absolute URL (`https://github.com/Krixx1337/ReAgentLive/blob/main/<path>`);
+the docs own the full statements.
+
+**Page header.** Every page INDEX lists opens with its title, then (SSOT
+pages only) a `*Home of:*` line naming the facts it owns, then a
+`**TL;DR:**` of two to four plain sentences: what it is, when it matters,
+the one thing not to get wrong. Orchestrators carry only the TL;DR;
+`commands/results.md` (generated) and skill files carry neither. The
+TL;DR is for a person new to the project: plain words, jargon defined or
+linked. The docs test checks both lines within a page's first 15 lines.
 
 - Pages describe the current state. Rewrite stale text; no dated
   "update" sections and no history beyond a rejected alternative.

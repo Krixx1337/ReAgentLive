@@ -1,5 +1,14 @@
 # Capture and replay
 
+*Home of:* which command answers which question about change, and `snap`, `record` and replay.
+
+**TL;DR:** To see what changes when something happens in the game, pick
+the command by the question: one object's fields across an action
+(`snap`, then `dump --changed`), named fields over time (`record`), raw
+bytes every tick (`watch`), or every instance of a class (`each`,
+`census-diff`). These read and change nothing, except `watch --then` and
+`each` with a function, which call into the game.
+
 Which command for which question about change:
 
 | Question | Command |

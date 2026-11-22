@@ -2,35 +2,33 @@
 
 **Let your AI agent look inside a running game.**
 
+**TL;DR:** ReAgentLive is a small DLL you load into a running Windows game;
+your AI agent (or you, at a console) asks it questions and gets answers from
+the live process in milliseconds. What it can do depends on your tier: raw
+memory and code in any process, objects by name in any UE5 (Unreal Engine 5)
+game, engine calls on the game's main thread. Pins and trial writes undo
+themselves, and every write asks you first.
+
 Your agent can read code. It can't see what the game is doing right now.
-ReAgentLive runs inside the process and gives the agent live answers:
-where a value lives, what the code at an address does, what happens if it
-changes a byte. These answers take milliseconds, and every change undoes
-itself.
+ReAgentLive closes that gap: you load it into the game with any DLL loader,
+and it waits for questions from outside: where a value lives, what the code
+at an address does, what happens if a byte changes. Your agent asks through
+its tools; you can ask from a command line.
 
-## Set it up with your agent
-
-Paste this into Claude Code, Codex, Cursor or any coding agent:
+## What you can do, by tier
 
 ```text
-Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agent-setup.md and follow it.
+T4 SDK host        + layout from your mod's SDK dump, your mod's own commands  (your mod hosts it)
+T3 Game thread     + call the game's own functions          (after one command moves it onto the game's main thread)
+T2 Reflection      + read fields and values by name, from the engine's own type info  (any UE5 game, no dump)
+T1 Unreal located  + find objects by name, count instances of a class    (any UE5 game, no dump)
+T0 Core              memory, code, signatures, trial writes               (any x64 process)
 ```
 
-The agent builds ReAgentLive, registers its MCP tools, installs the
-skill that teaches it the method, and checks the result. If you want, it
-also fetches a command-line injector, so it can load ReAgentLive into the
-process you name. You need
-Windows x64, Visual Studio's C++ tools and Python.
-Doing it by hand: [agent setup](docs/agent-setup.md).
-
-## What it changes
-
-| You ask your agent | Without it | With it |
-|---|---|---|
-| "Where's the player's health?" | guesses from a dump, or you scan by hand in a memory scanner | finds the object and reads the field in the running game |
-| "What uses this string?" | waits hours for the disassembler's analysis to finish | every reference and the code around it, in milliseconds |
-| "Does this offset still work after the patch?" | rebuild, inject, hope | checks the offset and signature against live bytes |
-| "What if this flag were 1?" | a raw write, a crash, a restart | a trial write that restores itself |
+Each rung adds to the one below. An *SDK dump* is a set of C++ headers a
+dumper tool generates from a game; a *signature* is a byte pattern that
+finds code; a *trial write* changes a value and restores it by itself.
+What each rung needs and what stops it: [tiers](docs/tiers.md).
 
 ## What it looks like
 
@@ -53,17 +51,63 @@ in the running game:
 
 A few seconds, with no dump to guess from, no rebuild, and nothing left
 changed. This is an example: the tools are real, and the game and its
-names are made up. Addresses come back as `module` + `rva`, ready for IDA
-or Ghidra.
+names are made up. The tools are the agent's MCP tools (Model Context
+Protocol, how AI agents call tools); this run needs T3. Addresses come back
+as `module` + `rva` (module and offset), ready for IDA or Ghidra.
 
-## Where it works
+## Why it's faster
 
-- **Any x64 Windows process:** memory, code questions and native objects.
-  Load one DLL and go.
-- **Unreal Engine games:** work by name. Find objects, follow fields,
-  call functions and list every instance of a class. This needs a
-  [Dumper-7](https://github.com/Encryqed/Dumper-7) SDK and your own mod
-  as the host ([hosting](docs/hosting.md)).
+| You ask your agent | Without it | With it |
+|---|---|---|
+| "Where's the player's health?" | guesses from a dump (headers generated from the game), or you scan by hand in a memory scanner | finds the object and reads the field in the running game |
+| "What uses this string?" | waits hours for the disassembler's analysis to finish | every reference and the code around it, in milliseconds |
+| "Does this offset still work after the patch?" | rebuild, inject, hope | checks the offset and signature (a byte pattern that finds code) against live bytes |
+| "What if this flag were 1?" | a raw write, a crash, a restart | a trial write that restores itself |
+
+## Use cases
+
+- **Find a value you can see on screen.** Ammo, health, a cooldown: ask
+  where it lives and what code changes it, instead of scanning by hand.
+- **Check your mod after a game update.** Test every offset and signature
+  against the running game in one go, before you rebuild.
+- **Learn how a feature works.** Start from a string or an address and see
+  its references and code from live bytes, with no full disassembly.
+- **Try a change safely.** Flip a flag or hold a value for 30 seconds; the
+  original comes back by itself.
+- **Explore an Unreal Engine game with no dump.** List every object of a
+  class, read their fields by name and, on the game thread, call the
+  game's own getters.
+
+## Pick your start
+
+| Your target | Start from | Tier |
+|---|---|---|
+| Any Windows x64 process | [`examples/own_thread`](examples/own_thread/README.md) | T0 |
+| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 after `game-thread on` |
+| A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
+
+## Ways to drive it
+
+The same commands through four interfaces ([clients](docs/client.md)):
+
+- **MCP tools** (Model Context Protocol): your AI agent's default, one tool per command.
+- **Console:** a command line for you, or quick checks ([console](docs/commands/console.md)).
+- **Python:** generated functions for loops and comparisons over results.
+- **C++ client:** for your own tools and outside programs.
+
+## Set it up with your agent
+
+Paste this into Claude Code, Codex, Cursor or any coding agent:
+
+```text
+Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agent-setup.md and follow it.
+```
+
+The agent builds the example for your target, registers its MCP tools,
+installs the skill (instructions it reads before investigating) and checks
+the result. If you want, it also fetches a command-line DLL loader, so it
+can load ReAgentLive into the process you name. You need Windows x64,
+Visual Studio's C++ tools and Python. By hand: each example's README above.
 
 ## Safe by default
 
@@ -94,8 +138,8 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
 
 ## Learn more
 
-- **Docs:** [docs/INDEX.md](docs/INDEX.md), with pages by task, every
-  command and a glossary.
+- **Docs:** [docs/INDEX.md](docs/INDEX.md): tiers first, then pages by
+  task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
   [design](docs/design.md).
 - **Status:** version 0.3.0 ([changelog](CHANGELOG.md)). It is usable,

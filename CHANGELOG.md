@@ -7,6 +7,16 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **MCP `batch` carries reads only:** a batch holding a writing verb
+  (`write`, `pin`, `call`, ...) is refused; send that verb as its own tool,
+  so it is approved. `batch` stays marked read-only.
+- **Docs and skill restructured:** the tier ladder (`docs/tiers.md`), a
+  beginner README, one home per fact (the map in `contributing.md`), TL;DRs
+  on every page; the skill's `SKILL.md` is a short router over its
+  references (`interfaces.md`, `workflow.md`, `efficiency.md`,
+  `commands-by-task.md`, `maintaining.md`, `unreal/layout-groups.md`,
+  `unreal/game-thread.md`), and its links into the repo are absolute URLs so
+  an installed copy keeps them.
 - **Unreal example** (`examples/unreal/`): one DLL for any UE5 game with
   no dump: the whole Unreal pack on its own thread, engine calls after
   `game-thread on`, and its console `reagentlive-ue.exe`.

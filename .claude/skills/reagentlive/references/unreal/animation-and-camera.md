@@ -27,7 +27,7 @@
 
 - Before snapping a few anim nodes, scan them all read-only: list every
   node's alpha source, bool blend times and interp speeds from one raw
-  snapshot plus the SDK offsets, and cross with a hip-vs-aim diff. A node
+  snapshot plus the offsets `fields` gives, and cross with a hip-vs-aim diff. A node
   that differs between two states may smooth something else too (look sway):
   snapping it can make the gun shake. Ship such snaps behind a session-only
   testing switch first.
@@ -36,8 +36,9 @@
   trailing padding.
 - "Where does this anim-graph input come from?": `__CustomProperty_<Pin>_<GUID>`
   fields feed a node (often a Control Rig). `find <GUID>` gives its
-  `EvaluateGraphExposedInputs` function. Its bytecode (`UStruct` script array
-  at +0x60) calls the ubergraph at an entry offset (`0x46 <func> 0x1d
-  <int32>`). Read the ubergraph bytecode there and resolve the pointer
-  operands: `FField` name at +0x20, `FProperty` offset at +0x44; `01` =
-  instance variable, `00` = local, `0f` = assign.
+  `EvaluateGraphExposedInputs` function. `script` on it first; for the raw
+  bytecode, its script array (`Script` in the engine layout,
+  [`src/reagentlive/packs/ue/engine_layout.h`](https://github.com/Krixx1337/ReAgentLive/blob/main/src/reagentlive/packs/ue/engine_layout.h)) calls the ubergraph at an
+  entry offset (`0x46 <func> 0x1d <int32>`). Read the ubergraph bytecode
+  there and resolve the pointer operands by the layout's `FField.Name` and
+  property `Offset`; `01` = instance variable, `00` = local, `0f` = assign.

@@ -1,5 +1,13 @@
 # Fast lane
 
+*Home of:* one-address code questions from live bytes: `disasm`, `xrefs`, `touches`, `search text`, the signature commands, and the lane's fence.
+
+**TL;DR:** Ask about one address and get an answer from the code as it is
+loaded right now, in well under a second, with no disassembler database:
+its instructions, who references it, which code touches a field, whether
+a byte signature still matches. It answers one address at a time; whole
+functions, types and call graphs stay with a static tool.
+
 Questions about one address, answered from live bytes in well under a
 second with no database. Use it while the static tool has no analysed
 database for this build, or for a quick check; switch to the static tool

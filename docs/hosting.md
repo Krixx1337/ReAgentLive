@@ -1,20 +1,30 @@
 # Hosting the agent
 
-How to put the agent into a process: adding the library to a project, build
-targets, the host checklist, the `Tick` call, which thread to tick on, and
-logging. Code rules the library
-keeps for injected images: [contributing](contributing.md#code-rules).
+*Home of:* putting the agent into a process: the two examples' internals, the host checklist, CMake targets and options, the `Tick` call, the host thread, the game-thread tick host API (`reagentlive::ue-draw`), host verbs and logging.
+
+**TL;DR:** The agent only runs when something inside the target calls its
+`Tick`: that code is the host. Start from an example DLL (any process, or
+any UE5 game); write your own host when you want an SDK's layout and your
+own commands. The one thing not to get wrong: say truthfully which thread
+you tick on, because Unreal calls are only safe on the game thread.
+
+Code rules the library keeps for injected images:
+[contributing](contributing.md#code-rules). Which tier each host gives:
+[tiers](tiers.md).
 
 ## Unreal example
 
 The same shape for any UE5 game with no dump: `examples/unreal/host.cpp`
 ticks the whole Unreal pack on its own thread (`reagentlive::ue-base`, the
-stock UE5 layout checked on known objects) and links
-`reagentlive::ue-draw`, so `game-thread on` moves the tick to the game
-viewport's Draw, where engine calls work. Its console is
-`reagentlive-ue.exe`, section `Local\reagentlive-ue-<pid>`; its
+stock UE5 layout checked on known objects, `Context::offThreadReads` on)
+and links `reagentlive::ue-draw`, so `game-thread on` moves the tick to the
+game viewport's Draw, where the game-thread commands work
+([game-thread tick](#game-thread-tick)). Its console is
+`reagentlive-ue.exe`, section `Local\reagentlive-ue-<pid>` (the generic
+`reagentlive.exe` cannot see it); its
 [README](../examples/unreal/README.md) is the quick start. Like the
 own-thread example it is a starting point, loaded with any DLL loader.
+Which tier it gives: [tiers](tiers.md#the-ladder).
 
 ## Own-thread example
 
@@ -40,10 +50,10 @@ reagentlive -c "status; modules; region <module>+0x1000"
 - **Works:** [memory commands](commands/memory.md), the
   [fast lane](commands/fast-lane.md) and
   [native objects](commands/native-objects.md).
-- **Not included:** object commands and engine calls: they need a pack and a
-  host on the engine's thread (the [Unreal example](#unreal-example) for
-  UE5 games). The console refuses them with a message
-  saying the host has no Unreal pack. `status` says `host_thread: own` and
+- **Not included:** the Unreal pack: the host refuses its commands with a
+  message saying it has no Unreal pack. For a UE5 game, use the
+  [Unreal example](#unreal-example). Which tier it gives:
+  [tiers](tiers.md#the-ladder). `status` says `host_thread: own` and
   `packs: []`; reads can be torn and a write can race the game. Configure
   with `-DREAGENTLIVE_PACKS=` for a console (and tools) without the
   pack's verbs.
@@ -75,14 +85,22 @@ A host is whatever code inside the target calls `Tick`. It provides:
   the image to scan (`Context::image`, default the process's exe); the pack
   finds and checks both globals itself
   ([before the first command](commands/unreal.md#before-the-first-command)).
-  `Context::offThreadReads` (off by default, being measured) lets lookups
-  and reads run off the engine's thread
-  ([off the engine's thread](commands/unreal.md#off-the-engines-thread)).
+  `Context::offThreadReads` (off by default; `examples/unreal` turns it on)
+  lets lookups and reads run off the game thread
+  ([which commands](commands/unreal.md#off-the-engines-thread)).
   `Context::scanMicroseconds` (default 1000, at most 50 000) is how long
   each tick an object-table scan (`find --cls`, `census`, `each`, `refs`,
   label export) may run: more is fewer ticks per scan and a longer stall
   in each. A host that ticks at 100 Hz and can spare 4 ms finishes a
   370 000-object scan about four times sooner.
+- **Unreal helpers for hosts:** `reagentlive::ue::FirstLiveInstance(className)`
+  (`packs/ue/agent_ue.h`) returns the first live instance (no class default
+  or archetype object) of a class or a subclass, by name; null until the
+  pack has located the object table (its first command does). It walks the
+  whole table on the calling thread: call it rarely, from the thread that
+  ticks the agent. `reagentlive::ue-draw` finds the viewport with it; for a
+  game-thread tick without a hook of your own:
+  [game-thread tick](#game-thread-tick).
 - **Optional:** a log callback ([logging](#logging)), hold budgets
   ([protocol](protocol.md#exchange)), `Host::backgroundSearch`, and named
   roots for `watch --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).
@@ -102,8 +120,9 @@ include(FetchContent)
 FetchContent_Declare(reagentlive GIT_REPOSITORY <repository> GIT_TAG <release tag>)
 FetchContent_MakeAvailable(reagentlive)
 
-target_link_libraries(my-mod PRIVATE reagentlive::ue)         # agent: core + Unreal pack
-# or, with no SDK: reagentlive::ue-base (stock UE5 layout, checked at run time)
+target_link_libraries(my-mod PRIVATE reagentlive::ue-base)    # agent: core + the whole Unreal pack, no SDK
+# or reagentlive::ue: the same, with your Dumper-7 SDK as the layout;
+# add reagentlive::ue-draw for the game-thread tick through Draw
 target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal calls + CLI
 ```
 
@@ -111,7 +130,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 |---|---|---|
 | `REAGENTLIVE_CONSOLE` | `ON` | Defines `reagentlive::console`, which needs nlohmann/json and Zydis. Off: an agent-only host configures with no downloads |
 | `REAGENTLIVE_PACKS` | `ue` | The engine packs to define, by folder under `src/reagentlive/packs/`; each defines its targets, and the console and `reagentlive::cli` carry the listed one (one at most: configure fails on two, or on an unknown id). Empty: no pack targets, and the console's verb table, and so `help`, the generated functions and the MCP tools, hold core and host rows only; core verbs that need a pack (`trial`) are left out, an object-relative pin or watch is refused, `peek` names no objects. For a target that is not Unreal |
-| `REAGENTLIVE_BUILD_TESTS` | on when top-level | Builds the library's tests (label `reagentlive`); needs the console with the pack (they build the pack-less one beside it) |
+| `REAGENTLIVE_BUILD_TESTS` | on when top-level | Builds the library's tests (label `reagentlive`) and the examples they test (`examples/unreal` with the Unreal pack); needs the console with the pack (they build the pack-less one beside it) |
 | `REAGENTLIVE_HOST_SOURCES` | empty | The host's files that include the console; the layout test checks them |
 | `REAGENTLIVE_FORBIDDEN_NAMES` | empty | Words the docs test refuses anywhere in the library (a host's and its game's names) |
 | `REAGENTLIVE_AGENT_TARGETS` (global property) | the agent targets | Append the host's agent-carrying targets; configure fails if one links the decoder |
@@ -137,7 +156,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | `reagentlive::core` | `core/agent.cpp`, include root, C++23 |
 | `reagentlive::ue-base` | every Unreal pack agent file, `packs/ue/agent_ue*.cpp` (defined with `ue` in `REAGENTLIVE_PACKS`), links `core`; no SDK: the stock UE5 layout, each group checked on known objects before its ops run ([without an SDK](commands/unreal.md#without-an-sdk)) |
 | `reagentlive::ue-draw` | opt-in host helper, links `ue-base`: a game-thread tick through the game viewport's Draw and the `game-thread` op (`packs/ue/host_draw.h`) |
-| `reagentlive::ue` | links `ue-base` and builds it with the host's SDK as the layout (`REAGENTLIVE_UE_SDK`, every group on); the consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
+| `reagentlive::ue` | links `ue-base` and builds it with the host's SDK as the layout (`REAGENTLIVE_UE_SDK`, every group on without checks); it adds no op. The consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
 | `reagentlive::client` | `core/client.cpp` |
 | `reagentlive::ue-client` | `packs/ue/client_ue.cpp`, links `client`; no SDK needed |
 | `reagentlive::cli` | `frontends/cli/syntax/`: the parser, without nlohmann/json |
@@ -153,6 +172,10 @@ A host's console includes only `frontends/cli/console/console.h` and
 `REAGENTLIVE_HOST_SOURCES` ([options](#using-it-in-your-project)).
 
 ## The tick
+
+An SDK host (T4) ticking on the game thread, with a short command table;
+`examples/unreal/host.cpp` has the full Unreal table and an own-thread
+tick beside a Draw tick.
 
 ```cpp
 #include "reagentlive/core/agent.h"
@@ -200,7 +223,9 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   Where `Tick` runs is the host's decision and its responsibility. A host that
   sets `Host::backgroundSearch` lets `search --background` run on one
   agent-owned worker thread (started on first use, kept for the process);
-  each search still opts in.
+  each search still opts in. The two opt-in swaps are the call recorder (a
+  host that lists its ops) and `reagentlive::ue-draw` (a host that links it,
+  on `game-thread on`); neither writes code or the game's tables.
 - **Held requests** make the agent spin briefly on the host's thread for the
   client's next request and run it in the same tick, bounded by the host's
   budgets ([protocol](protocol.md#exchange)).
@@ -219,7 +244,11 @@ refuses to open without it). `status` prints it as `host_thread`:
 | `host_thread` | Memory commands | Unreal pack (reads and calls) | `same_tick` means |
 |---|---|---|---|
 | `engine` | yes | yes | the same moment of the game |
-| `borrowed` (a thread the game runs for something else, such as the frame present) or `own` | yes | refused: the pack's thread check says no | the same host tick, nothing more |
+| `borrowed` (a thread the game runs for something else, such as the frame present) or `own` | yes | reads with `Context::offThreadReads`, else refused; calls refused ([which](commands/unreal.md#off-the-engines-thread)) | the same host tick, nothing more |
+
+A host off the game thread that links `reagentlive::ue-draw` moves its
+tick onto the game thread with `game-thread on` and states `engine` for
+those Draw ticks ([game-thread tick](#game-thread-tick)).
 
 Off the engine's thread, `status` adds `tick_note` saying so once, and the
 results that carry `same_tick` (`batch`, `get`) add `tick_accurate:
@@ -228,6 +257,35 @@ The kind is the host's statement; the core does not verify it. The pack's
 required thread check ([Unreal pack](commands/unreal.md)) remains the guard for
 engine calls. Nothing that works today is refused because of the kind.
 Why the kind is stated rather than detected: [design](design.md#unreal-pack).
+
+## Game-thread tick
+
+`reagentlive::ue-draw` (`packs/ue/host_draw.h`, namespace
+`reagentlive::ue::draw`) gives a host that ticks elsewhere (its own thread,
+a frame hook) a tick on the game thread with no per-build address: it finds
+the game viewport client with `FirstLiveInstance` and points its Draw
+interface at a private copy of the vtable with Draw swapped. What the
+command does and refuses: [`game-thread`](commands/unreal.md); why this
+way: [design](design.md#a-game-thread-tick-through-the-viewports-draw).
+The host API, as `examples/unreal/host.cpp` uses it:
+
+| Call | When | Does |
+|---|---|---|
+| `Configure(tick, log)` | once, before `Poll` | the host's tick (run from Draw on the game thread, at most once per frame) and where state changes are logged (may be null) |
+| `Arm()` | the host wants it without the command | arms the install, as `game-thread on` does; clears a refused install so it is tried again |
+| `Poll()` | every host tick, before the agent ticks, on the host's thread | installs once armed and the viewport is found (the pack must have located the object table: any Unreal command does); cheap otherwise |
+| `Live()` | every host tick | a Draw tick ran in the last 500 ms: skip the host's own tick |
+| `OnGameThread()` | inside the Draw tick | the host's `Context::gameThread` for that tick (with `HostThread::Engine`) |
+| `Disable()` | to stop ticking on Draw | puts the viewport's table back if it still holds the copy (`Arm` arms again); the copy stays allocated, since a Draw inside the hook keeps forwarding |
+| `Shutdown()` | the host is stopping | `Disable`, for good |
+| `State()` | any time | the `GameThreadState` the command reports (mode, thread, viewport, table, Draw) |
+| `GameThread` | the host's command table | the op behind `game-thread` (`ue::op::GameThread`) |
+
+Two threads then tick the same agent (the host's own and Draw), so the
+host lets one tick run at a time (the example uses an interlocked flag)
+and builds its `Context` and `Host` per tick: `OnGameThread` and
+`HostThread::Engine` in the Draw tick, its own check and kind elsewhere.
+A host with a stop path calls `Shutdown` in it.
 
 ## Logging
 
@@ -260,10 +318,10 @@ mismatch is an `internal` error). Why rows:
 
 ## AI agents
 
-The `reagentlive` skill (`.claude/skills/reagentlive/` in this project)
-teaches an AI agent the investigation method. It is a plain `SKILL.md`, so
-any agent that reads `.claude/skills` picks it up when started in this
-project. In a host project, point the agent at it from the host's own
-instructions, and keep what only that host adds (console name, host
-commands, build and approval rules) in a host skill or doc of its own,
-which the `reagentlive` skill tells the agent to read first.
+The `reagentlive` skill (`.claude/skills/reagentlive/`: `SKILL.md` and its
+`references/`) teaches an AI agent the investigation method; installing it
+is a step of [agent setup](agent-setup.md). In a host project, point the
+agent at it from the host's own instructions, and keep what only that host
+adds (console name, host commands, build and approval rules) in a host
+skill or doc of its own, which the `reagentlive` skill tells the agent to
+read first.

@@ -1,33 +1,42 @@
 # Unreal pack
 
-Requires a host that calls `Tick` on the game thread, and for most
-commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
-`census` and object range reads also work without one
-([without an SDK](#without-an-sdk)). Each command's flags and result keys:
-`help <verb>` or [result shapes](results.md).
+*Home of:* what each Unreal pack command does and its guards, which commands answer off the game thread and which need it, the layout groups checked without an SDK, and locating the engine's globals.
+
+**TL;DR:** The Unreal pack finds objects, reads their fields by name and
+calls the game's own functions in any UE5 game, with or without a dump.
+Lookups and reads work from any thread the host ticks on; calls and
+everything that runs engine code need the game thread ([the list](#off-the-engines-thread)),
+which the host gives by ticking there or after `game-thread on`. Without a
+dump, each part of the engine layout is checked on objects every UE5 game
+has before its commands run, so a non-stock engine refuses instead of
+guessing. Where this sits in the ladder: [tiers](../tiers.md).
+
+Every op works without an SDK ([without an SDK](#without-an-sdk)); a host's
+SDK, when it has one, only supplies the layout. Each command's flags and
+result keys: `help <verb>` or [result shapes](results.md).
 
 | Command | Guard |
 |---|---|
 | `find [text] [--cls C] [--live] [--start N]` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `C` (case-insensitive; `--cls Character` includes vendors); `--live` skips class default and archetype objects as `census` does (`FindLive`); pages of 24 from the object-table slot `N` and the next page's cursor; at most 1 ms of scanning per tick (`Progress::Continue`; the host may allow more, `Context::scanMicroseconds`, up to 50 ms). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
 | `call <object> <[Class:]Function> [hex]` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns. **Faults:** `ProcessEvent` runs under a fault guard; an access fault inside the engine answers `access faulted` ("call faulted: the target may be in a bad state", `detail` = the object) instead of ending the process, and a fresh kept block is dropped. Nothing else is caught, and a fault can leave engine state half-changed: treat the session as suspect afterwards. **`--dry`** (console only) resolves the function and builds the block, raw or typed, and calls nothing: `mode: dry`, `hex` is the block that would be sent, with `exec` and `pure` (const or blueprint-pure). Show it when asking for approval |
-| `call-pure <object> <[Class:]Function> [hex\|Name=value]` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill says which to call freely |
+| `call-pure <object> <[Class:]Function> [hex\|Name=value]` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill's approval rules say which to call freely (not the first call on a new host or in a new game, the known-answer call, since a wrong engine layout can crash the game) |
 | `release <object> <[Class:]Function> [hex]` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
-| `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection on the game thread. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (UE5 `UClass+0x1E0`, `{UClass*, int32 PointerOffset}` entries, read live). The offset is not in the SDK, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
+| `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (`EngineLayout::interfaces` in `packs/ue/engine_layout.h`, `{UClass*, int32 PointerOffset}` entries, read live). An SDK does not describe it, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
 | `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, then those declared on each native interface the class (or a parent) implements, each interface once, marked `via: "interface"`, with a case-insensitive substring filter and a next-page cursor. Interface rows use the same plausibility check as `func`; an implausible interfaces array lists none. An interface row is never callable on the object (`call` refuses it); use `func Interface:Function` for its implementation |
 | `params <object\|class> <[Owner:]Function>` | resolves the function as for `func`, then reads its reflected parameters, directions and block size |
 | `fields <object>` | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
-| Object range read | used by `snap` and `record`; checks the game thread and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
-| `describe <address\|$N>` | checks the game thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
-| `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the game thread; an undecodable index returns empty |
-| Array preview | used by `dump`; resolves the instance on the game thread, reads the array header and a bounded prefix of its backing storage on the same tick |
+| Object range read | used by `snap` and `record`; checks the thread ([off-thread](#off-the-engines-thread)) and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
+| `describe <address\|$N>` | checks the thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
+| `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the thread; an undecodable index returns empty |
+| Array preview | used by `dump`; resolves the instance, reads the array header and a bounded prefix of its backing storage on the same tick |
 | `census [--cls C] [--outer O]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
 | `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)) |
 | `each <Class> <Path\|[Owner:]Function>...` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
-| `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>` at `+0x60` in UE5) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
+| `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>`, `EngineLayout::script`) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). Not a disassembler: control flow and operands of other opcodes are not decoded |
 | `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
 | `rows <object> [--match T] [--fields a,b.c] [--start N] [--limit N] [--nonzero]` | console only, over object and range reads: a data table's rows ([rows](#rows)) |
 | `trace <start> <end> [--channel C] [--simple] [--ignore A]` | console only, no agent op of its own: `KismetSystemLibrary.LineTraceSingle` through `call` on `Default__KismetSystemLibrary`, its hit decoded by the pure `GameplayStatics.BreakHitResult` (`call-pure`). Both signatures are checked by parameter type and order before anything is written; a mismatch is refused. Parameters are matched by position, never by name (games obfuscate names). `BreakHitResult` has 18 outputs in UE5 and 16 in UE4 (no `BoneName`, `ElementIndex`); both are mapped. `bone` is `HitBoneName`, the bone hit. Ends are a point `x,y,z` in cm, an object's location (`GetCameraLocation`, `K2_GetComponentLocation` or `K2_GetActorLocation`, the first the object has; a camera manager is also an actor, whose own location is not the view point, all through `call-pure`) or `object@Socket` (`SceneComponent.GetSocketLocation`, the name looked up as text). The trace runs in `--ignore`'s world with `bIgnoreSelf` (that actor and its components are skipped), else in an end object's world, skipping nothing; two points need `--ignore`. Complex collision unless `--simple`; `--channel` is the trace type query (0 visibility, 1 camera in a stock project). No debug drawing. The row is not `writes`: a line trace changes no state |
-| `game-thread [on\|off\|status]` | the host's game-thread tick through the game viewport's Draw (`reagentlive::ue-draw`, `packs/ue/host_draw.h`), for a host that ticks elsewhere. `on` arms it; the host installs on its next tick once the pack has located the engine: the first live `GameViewportClient`'s Draw interface (UObject `+0x28`) gets a private copy of its vtable with entry 4 (Draw) swapped, one pointer written in the viewport object. The hook forwards every call, then ticks the agent only for that viewport on the process's first thread; `status` then says `host_thread: engine` and engine calls work. A table outside the game's image, or entry 4 not in its code, is refused (`conflict`). `off` puts the viewport's table back if it still holds the copy. Reports the mode, the game thread, the viewport, its table and the game's Draw (module, RVA). Confirm Draw per game first (the skill's new-game page). Marked `writes`. Agents whose host does not link `ue-draw` answer unsupported |
+| `game-thread [on\|off\|status]` | the host's game-thread tick through the game viewport's Draw (`reagentlive::ue-draw`, `packs/ue/host_draw.h`), for a host that ticks elsewhere. `on` arms it; the host installs on its next tick once the pack has located the engine: the first live `GameViewportClient` (found with `FirstLiveInstance`) has its Draw interface (`ViewportInterfaceOffset` in `engine_layout.h`) pointed at a private copy of its vtable with the Draw entry (`ViewportDrawIndex`) swapped: one pointer written in the viewport object, the game's code and tables untouched. The hook forwards every call, then ticks the agent only for that viewport on the process's first thread; `status` then says `host_thread: engine` and the [game-thread commands](#off-the-engines-thread) work. A table outside the game's image, or the Draw entry not in its code, is refused (`conflict`). `off` puts the viewport's table back if it still holds the copy. Modes: `off`, `waiting` (armed, not installed yet), `conflict`, `on`, `stopped`; also the game thread, the viewport, its table and the game's Draw (module, RVA). How an agent confirms Draw per game: the skill's [game-thread page](../../.claude/skills/reagentlive/references/unreal/game-thread.md). Marked `writes`, `status` included, so an MCP client asks before reading the mode. Agents whose host does not link `reagentlive::ue-draw` answer unsupported. Host side: [hosting](../hosting.md#game-thread-tick) |
 | `enum <object\|Enum>` | an enum's names and values in its order, named in one `name` request. The agent reads `UEnum::Names` as the SDK has it (pairs of FName and int64) or, as UE 5.6 and later keep them, as two arrays (FNames and int64 values, bit 0 of each pointer a dynamic-allocation tag, at `Names - 8` and `Names`) and an int32 count at `Names + 8`; a layout counts only when every name decodes, else the enum is refused. A Blueprint enum's names are its stored `NewEnumeratorN`, not its display names. Byte and enum properties print numbers; this says what they mean. An enum by name is an exact find under `Enum` (user-defined enums included) |
 | `refs <name\|#index>` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). Text must match a pooled name exactly (the console resolves it through `name-find`) |
 
@@ -36,9 +45,11 @@ commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
   address.
 - **Host hooks:** `Context::object` validates every object the pack touches;
   `Context::gameThread` is required and must return true before any pack
-  handler runs. A context without it is refused by every handler (`host
-  gave no engine-thread check`), never treated as being on the right
-  thread; one returning false is refused as `not on the game thread`.
+  handler runs, except the reads a host opts into with
+  `Context::offThreadReads` ([below](#off-the-engines-thread)). A context
+  without it is refused by every handler (`host gave no engine-thread
+  check`), never treated as being on the right thread; one returning false
+  is refused as `not on the game thread`.
 - **Faults inside engine calls** (`call`, `call-pure`, `each` with a
   function): an access fault is caught and answered `access faulted`; the
   engine may be left in a bad state. Other exceptions are not caught.
@@ -55,11 +66,10 @@ commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
 
 ## Before the first command
 
-The pack takes layouts from the SDK (object, class, field and table types)
-but never addresses, so a dump made before a game patch still works once
-the globals are found again
-([design](../design.md#unreal-pack)). The first pack command, on the
-engine's thread, locates them:
+The pack never takes addresses from an SDK, only (with `reagentlive::ue`)
+its layouts, so a dump made before a game patch still works once the
+globals are found again ([design](../design.md#unreal-pack)). The first
+pack command, on whichever thread ticks the agent, locates them:
 
 1. **Object table:** the host's guess (`Context::objectsGuess`), else every
    8-byte aligned address in the image's writable sections whose bytes look
@@ -93,9 +103,11 @@ name; wide characters above 0x7f read `?`.
 
 `reagentlive::ue-base` builds every op with no SDK
 ([hosting](../hosting.md#cmake-targets)): one prebuilt agent for any UE5
-game, with no dump. Engine types are read at the offsets of the engine
-layout (`packs/ue/engine_layout.h`): a host's SDK when it has one
-(`reagentlive::ue`), else `StockUE5`.
+game, with no dump (`examples/unreal` is one). Engine types are read at
+the offsets of the engine layout (`packs/ue/engine_layout.h`, the one home
+of every engine offset): a host's SDK when it links `reagentlive::ue`,
+else `StockUE5`. Members an SDK does not describe (the interfaces array,
+container layouts, `Script`, the frame) are `StockUE5` in both.
 
 **Layout groups.** Without an SDK, the first op that needs a group checks
 it once on objects every UE5 game has, and the group's ops run only if it
@@ -115,15 +127,18 @@ passes; otherwise they are refused with the check that failed (e.g.
 
 `FFrame` offsets (the recorder) and the set, map and interface layouts are
 not checked up front: the recorder needs the call group, and each container
-and interface array is validated where it is read. A host that ticks off the
-engine's thread still gets only the read ops (below). Finding a layout for an
-engine that is not stock: the skill's `references/unreal/new-game.md`.
+and interface array is validated where it is read. A passing group does not
+lift the thread rule: a host off the game thread still gets only the
+[off-thread commands](#off-the-engines-thread). Finding a layout for an
+engine that is not stock: the skill's [new-game page](../../.claude/skills/reagentlive/references/unreal/new-game.md) (the
+agent cannot load a layout profile yet:
+[ideas](../ideas.md#33--layout-profile-loading)).
 
 The table, header and two struct offsets come from the engine, checked like the globals:
 
 - **Table and object header:** UE5's chunked table (64K items per chunk)
-  and header (flags `+0x08`, index `+0x0C`, class `+0x10`, name `+0x18`,
-  outer `+0x20`), with the item in one of three shapes (24 bytes with the
+  and object header (flags, index, class, name, outer: the `object` members
+  of `StockUE5`), with the item in one of three shapes (24 bytes with the
   object first or after an 8-byte field, or 16 bytes). Each is tried at
   every candidate address; the table check above decides, so a wrong shape
   is refused, never used. An engine that moved the header turns the pack
@@ -132,28 +147,35 @@ The table, header and two struct offsets come from the engine, checked like the 
   the class of classes whose chain reads `Struct`, `Field`, `Object`, then
   null. Unknown, `find --cls` and `census --cls` match the exact class only.
 - **`UStruct::Size`:** the int32 after `SuperStruct` that holds the header
-  size (0x28) in `Object` and one pointer more in `Field`. Unknown,
+  size in `Object` and one pointer more in `Field`. Unknown,
   `describe` reports no class size.
 - **Serials** are not known: every ref carries serial 0, which agrees with
-  any serial, so a ref is checked by slot and address only.
-- **The first command scans:** there are no address guesses without an
-  SDK, so the first pack command scans the image's writable sections for
-  both globals, a stall of up to seconds on the ticking thread.
+  any serial, so a ref is checked by slot and address only. A ref with a
+  real serial is the sign of an SDK host.
+- **The first command scans** unless the host gives address guesses
+  (`Context::objectsGuess`, `namesGuess`; an SDK host usually takes them
+  from its dump). A host that gives none, as `examples/unreal`, scans the
+  image's writable sections for both globals on its first pack command, a
+  stall of up to seconds on the ticking thread.
 
 ## Off the engine's thread
 
-A host that ticks elsewhere (a borrowed frame thread) may set
-`Context::offThreadReads`. Being measured
-([backlog 18](../ideas.md#18--best-effort-pack-reads-off-the-engines-thread)):
-it stays only if a live run under load is clean.
+This section is the one list of which commands need the game thread; other
+pages link here. A host that ticks elsewhere (its own thread, as
+`examples/unreal`, or a borrowed frame thread such as Present) may set
+`Context::offThreadReads`; then:
 
-- **Answered:** `find`, `describe` (and its batch form), `fields`, object
-  range reads (`read` of an object ref, `dump`, `get`), array previews,
-  `entries`, `names`, `census` and `name-find` (the same header and pool
-  reads as `find`). Locating the globals also runs there.
-- **Still refused** (`not on the game thread`): `call`, `each`, `script`,
-  `refs`, `exec-entries`, `funcs`, `func`, `params`: they run engine code
-  or walk tables this has not measured.
+| Answer off the game thread (with `offThreadReads`) | Need the game thread |
+|---|---|
+| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `dump`, `get`, `snap`, array previews), `fields`, `entries`, `enum`, `func`, `funcs` | `call`, `call-pure`, `release`, `params`, `each` (every form, fields included), `script`, `refs`, `exec entries` (and `export-labels`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `trace` and text values |
+
+Commands that need the game thread are refused off it with `not on the
+game thread`. A host gets onto the game thread by ticking there (an SDK
+host on the engine's own tick) or, with `reagentlive::ue-draw`, by
+`game-thread on`, after which `status` says `host_thread: engine`.
+Locating the globals runs on either thread. Without `offThreadReads`, a
+host off the game thread gets no pack command at all.
+
 - **Guards:** each answered handler runs under a fault guard, so memory
   freed mid-read is the refusal `fault during an off-thread read` (also a
   log warning), never a crash. The object's identity (slot and serial) is
@@ -220,7 +242,7 @@ records a reflected function's calls; `calls-read` returns them so far,
 `calls-stop` ends it early. A host offers it by listing the three ops; the
 start is a write the host approves.
 
-- **What is written:** `UFunction::Func` (UE5 `+0xD8`), the function's
+- **What is written:** `UFunction::Func` (`EngineLayout::execFunction`), the function's
   native pointer, swapped by compare-and-swap for one of 8 fixed thunks.
   No code, vtable or import. At the end (time limit, at most 60 s;
   `calls-stop`; host stop) the original goes back only if the pointer
@@ -240,10 +262,12 @@ start is a write the host approves.
   the row has the object only (`via: vm`). Direct C++ calls never reach
   the pointer and are not seen. A Blueprint event with an event-graph
   redirect runs the graph function, not the event's pointer.
-- **Layout:** `FFrame::Node` `+0x10`, `::Locals` `+0x28` and
-  `UFunction::ReturnValueOffset` `+0xB8` are UE5 values, not in the SDK;
-  confirmed in `UObject::ProcessEvent`, the `FFrame` constructor and
-  `UFunction::Invoke` of one build. Reads of them are fault-guarded.
+- **Layout:** `FFrame::Node`, `::Locals` and
+  `UFunction::ReturnValueOffset` (`frameNode`, `frameLocals`,
+  `returnValueOffset` in `engine_layout.h`) are stock UE5 values an SDK
+  does not describe; confirmed in `UObject::ProcessEvent`, the `FFrame`
+  constructor and `UFunction::Invoke` of one build. Reads of them are
+  fault-guarded.
 - **Bounds:** 8 recordings at once, 256 rows each (older ones are dropped
   and counted), parameter blocks up to 1 KiB. Rows carry the sequence,
   milliseconds since the start, thread id and the calling object (named
@@ -268,8 +292,7 @@ starting with `Default__` is that default object (an exact find, any
 class), so `dump Default__Character` dumps the object. The lookup is an exact `find` (`FindExact`): the
 agent stops at the first match instead of scanning and counting the whole
 table, so a class costs the slots up to it; only a name that is no class
-costs a full scan. An agent built before it treats the name as a substring
-and counts, as before: slower, the same answer.
+costs a full scan.
 
 ## Layouts in bulk
 

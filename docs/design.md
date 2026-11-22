@@ -1,8 +1,14 @@
 # ReAgentLive design
 
-Why ReAgentLive is built the way it is: principles, decisions with their
-rejected alternatives, and what is deliberately not built. Current
-behaviour lives in the [command pages](INDEX.md#commands),
+*Home of:* why ReAgentLive is built this way: principles, decisions with their rejected alternatives, and what is deliberately not built.
+
+**TL;DR:** Read this before proposing a change: most "why not just..."
+ideas were tried or weighed here, and the entry says why they lost. Each
+decision states what was chosen, what was rejected and the evidence. It
+describes reasons, not behaviour: what a command does lives on its command
+page.
+
+Current behaviour lives in the [command pages](INDEX.md#commands),
 [protocol](protocol.md) and [hosting](hosting.md); the ranked backlog in
 [ideas](ideas.md). Anything marked *planned* is a proposal.
 
@@ -13,15 +19,19 @@ behaviour lives in the [command pages](INDEX.md#commands),
   `search --background`, allowed only by `Host::backgroundSearch`: a single
   worker thread that reads memory (no engine calls) while the host tick
   only polls.
-- **One opt-in data hook: the call recorder.** The Unreal pack's
+- **Two opt-in pointer swaps, never code.** The Unreal pack's
   `calls-start` swaps one `UFunction`'s native pointer (heap data) for a
   fixed thunk that records and forwards each call, and puts it back with a
   compare-and-swap; a pointer something else replaced since is left alone
-  and the thunk keeps forwarding. Code, vtables and imports are never
-  written. A host opts in by listing the ops; each recording is a write
-  the host approves. Taken because "what did the game pass to this
-  function" has no read-only route, a watch sees only state, and the swap
-  touches nothing the engine does not itself rewrite.
+  and the thunk keeps forwarding. A host opts in by listing the ops; each
+  recording is a write the host approves. Taken because "what did the game
+  pass to this function" has no read-only route, a watch sees only state,
+  and the swap touches nothing the engine does not itself rewrite. The
+  second is the host helper `reagentlive::ue-draw`: on `game-thread on` it
+  writes one pointer in the game viewport object, pointing it at a private
+  copy of its interface vtable
+  ([decision](#a-game-thread-tick-through-the-viewports-draw)). Code, the
+  game's own vtables and imports are never written by either.
 - **Extensible by static tables, not plugins:** agent handlers and CLI verbs
   are constant arrays; op ranges separate core, packs and games.
 - **One command layer:** the console. It sits on the C++ client API,
@@ -282,8 +292,10 @@ trials against a host.
                                              │ shared memory
    ── process boundary ──────────────────────┼──────────────────────
                                    reagentlive::agent   dispatch + core handlers
-                                   reagentlive::ue      Unreal handlers
-                                   host glue            Tick() from a safe thread
+                                   reagentlive::ue-base Unreal handlers, stock layout checked
+                                     (reagentlive::ue   the same, a host's SDK as the layout)
+                                   reagentlive::ue-draw opt-in game-thread tick through Draw
+                                   host glue            Tick() from the thread it states
 ```
 
 ```text
@@ -292,7 +304,7 @@ core/              no engine, no game, no UI
   agent.h/.cpp     Tick, dispatch, core handlers, the agent's end of the section
   client.h/.cpp    C++ API: attach, read, write, modules, Send; the client's end
 packs/<id>/        one engine pack each, with its pack.cmake
-  ue/              Unreal over a Dumper-7 SDK
+  ue/              Unreal: every op with no SDK; an SDK optional, as the layout
     protocol_ue.h, agent_ue.h/.cpp
     client_ue.h/.cpp Find, Fields (paging hidden), Call
     cli/<layer>/   the pack's part of each CLI layer
@@ -342,14 +354,18 @@ tools, with their decisions and rejected alternatives:
 
 ## Unreal pack
 
-- **Compile model:** compiled inside the host against its Dumper-7 SDK
-  (`UObject`, `TUObjectArray`, `UStruct`, `FField`, `FProperty`, `UFunction`,
-  `ProcessEvent`, `EClassCastFlags`). Those names are consistent across
-  Dumper-7 dumps of UE4 and UE5 games, so no abstract engine interface.
-- **Layouts from the SDK, addresses found at run time.** A game patch moves
-  the object table and the name pool but rarely the engine's types, and
-  right after a patch is when the tool is needed most. So the pack takes
-  only types from the SDK, locates both globals itself (host guess, then a
+- **Compile model:** compiled inside the host, from its sources. Every
+  handler reads engine types through one layout (`EngineLayout`,
+  `packs/ue/engine_layout.h`, the one home of engine offsets): `StockUE5`
+  checked at run time (`reagentlive::ue-base`), or a host's Dumper-7 SDK
+  read with `offsetof` (`reagentlive::ue`, `engine_layout_sdk.h`). Only that
+  header and `agent_ue_globals.cpp` see `SDK/`, so no abstract engine
+  interface and no second copy of the handlers.
+- **Layouts from the SDK or the stock layout, addresses found at run
+  time.** A game patch moves the object table and the name pool but rarely
+  the engine's types, and right after a patch is when the tool is needed
+  most. So the pack never takes addresses from an SDK (at most a guess it
+  checks), locates both globals itself (host guess, then a
   shape scan of the image's writable sections) and checks them before its
   first command: index equals slot, one class of classes, `None` and
   `Class` decode ([before the first command](commands/unreal.md#before-the-first-command)).
@@ -365,11 +381,10 @@ tools, with their decisions and rejected alternatives:
 - **Lookups without an SDK.** The table, the object header and two
   UStruct offsets are all `find`, `census` and names need, and UE5 keeps
   them in a few known shapes, so `ue-base` tries those and probes the
-  rest from the engine's own class tree, under the same checks
-  ([without an SDK](commands/unreal.md#without-an-sdk)). The same files
-  build with an SDK, which then is the layout's only source. Rejected:
-  copying a dumper's offset finder for every type (most of the work is
-  fields and properties, which this part does not need).
+  rest from the engine's own class tree, under the same checks as the
+  globals ([without an SDK](commands/unreal.md#without-an-sdk)). Every
+  other op reads the stock layout once its group passes
+  ([decision](#without-an-sdk-the-stock-layout-checked-per-group-on-known-objects)).
 - **String type:** the pack only uses `.c_str()` and `.size()` on SDK strings,
   so stock `std::string` dumps and adapted string types both compile.
 - **Three thread kinds, stated by the host.** `Host::thread` is `engine`,
@@ -378,17 +393,28 @@ tools, with their decisions and rejected alternatives:
   host says. The core publishes it (`status`, `tick_accurate`) and the pack
   enforces the engine-call rule; neither verifies the other. On the
   engine's thread everything works and a tick is a moment of the game;
-  elsewhere memory commands work, pack handlers are refused, and a tick is
-  a host tick. Rejected: detecting the kind (the core cannot know which
-  thread is the engine's, and a wrong guess is worse than a required
-  statement); getting onto the engine's thread for the host (game-specific
-  work); running engine calls off the engine's thread behind a flag
-  (unsafe in a way no guard fixes); queuing requests from a borrowed thread
-  to the engine's (that needs the second tick source such a host lacks).
-  Best-effort pack reads off the engine's thread are built behind a host
-  opt-in for measuring, still a
-  [backlog](ideas.md#18--best-effort-pack-reads-off-the-engines-thread) item
-  until that is clean.
+  elsewhere memory commands work, pack reads answer when the host opts in
+  (`Context::offThreadReads`), everything that runs engine code is refused
+  ([the list](commands/unreal.md#off-the-engines-thread)), and a tick is a
+  host tick. A host that wants calls from there moves its tick onto the
+  game thread with `reagentlive::ue-draw`
+  ([decision](#a-game-thread-tick-through-the-viewports-draw)). Rejected:
+  detecting the kind (the core cannot know which thread is the engine's,
+  and a wrong guess is worse than a required statement); running engine
+  calls off the engine's thread behind a flag (unsafe in a way no guard
+  fixes); queuing requests from a borrowed thread to the engine's (that
+  needs a second tick source, which is what the Draw tick is).
+- **Best-effort pack reads off the engine's thread, behind a host
+  opt-in.** Lookups and reads (`find`, `fields`, object reads, `entries`,
+  `enum`, `func`, ...) read memory the engine owns but call none of its
+  code, so a host ticking on its own thread can answer them under a fault
+  guard, checking the object's identity before and after each read; values
+  may tear between two fields, and the console marks such results
+  `tick_accurate: false`. Shipped on in `examples/unreal` and used by
+  library hosts; live-tested on a UE 5.7 game. `params` stays on the game
+  thread with the calls. Rejected: on by default (a host must accept torn
+  values knowingly); answering calls the same way (no guard makes an
+  engine call off its thread safe).
 - **The engine-thread check is required.** Every pack handler reads engine
   state, so each asks `Context::gameThread` first. A host that leaves it
   out is refused, not trusted: a host ticking off the engine's thread with
@@ -448,6 +474,73 @@ tools, with their decisions and rejected alternatives:
   It stays because resolving a live object's implementation needs it in one
   request; the console's decoder ([fast lane](#fast-lane)) is where it
   would move. Any other stub shape reports a null slot.
+
+### Without an SDK: the stock layout, checked per group on known objects
+
+**Decision.** `reagentlive::ue-base` reads every engine type at the offsets
+of `StockUE5` (`engine_layout.h`) and checks them in groups (class, struct,
+field, property, typed, function, enum, call) on objects every UE5 game
+has: the cast flags of `Class`, `Struct`, `Field`, `Object`; the chain
+`Class` > `Struct` > `Field` > `Object`; `Vector`'s and `Guid`'s members,
+sizes and flags; every bool on `Actor`; `KismetMathLibrary:Add_IntInt`;
+`ENetRole`; `UObject`'s `ProcessEvent` slot. The first op that needs a
+group runs its check once; a failed group refuses its ops with the check
+that failed, and the others still run
+([groups](commands/unreal.md#without-an-sdk)). With `reagentlive::ue` a
+host's SDK is the layout and no group is checked.
+
+**Why.** One prebuilt agent then works in any stock UE5 game with no dump,
+including right after a patch, and a non-stock engine refuses instead of
+reading garbage. Evidence: live-tested on a UE 5.7 game with no dump.
+
+**Rejected.**
+- *SDK only:* a dump per game and per patch before the first lookup, and
+  nothing right after a patch, when the tool is needed most.
+- *A probe framework* searching each member's offset per engine version:
+  much more code to keep right per version, and a search finds a wrong but
+  plausible offset as readily as the right one; a known answer on a known
+  object either holds or it does not.
+- *An in-agent probe* that guesses a non-stock layout at run time: the
+  same wrong-but-plausible risk inside the target, with no one to check
+  the guess. Finding a non-stock layout stays the agent's (the skill's)
+  investigation, read-only and checked.
+
+**Consequences.** A non-stock engine gets the groups that pass and refusals
+for the rest; filling the gap needs a layout profile the agent can load
+([ideas](ideas.md#33--layout-profile-loading)). Refs carry serial 0
+without an SDK (serials are not known).
+
+### A game-thread tick through the viewport's Draw
+
+**Decision.** `reagentlive::ue-draw` gives a host that ticks off the game
+thread a tick on it, with no per-build address: on `game-thread on` it
+finds the first live `GameViewportClient` with `FirstLiveInstance`, copies
+the vtable of its Draw interface (`ViewportInterfaceOffset`, entry
+`ViewportDrawIndex` in `engine_layout.h`, confirmed per game before the
+first `on`), swaps Draw in the copy and writes one pointer, that
+interface's vtable pointer inside the viewport object, to the copy. The hook forwards every call first, then
+ticks the host only for that viewport and only on the process's first
+thread. `off` restores the pointer only if it still holds the copy; the
+copy stays allocated. Host API: [hosting](hosting.md#game-thread-tick).
+
+**Why.** Calls, `each`, `script`, `refs` and the recorder need the game
+thread, and a host on its own thread (`examples/unreal`) has none. Draw
+runs once per frame on the game thread in every UE5 game, and a private
+table copy touches nothing shared.
+
+**Rejected.**
+- *Writing the game's vtable entry:* read-only data, shared by every
+  instance of the class, and a clash with any other owner hooking it.
+- *A per-build profile* of a game-thread function to hook: a signature or
+  RVA per game and per patch, the work a stock-layout agent avoids.
+- *Hooking `ProcessEvent`:* code or a shared vtable entry again, on the
+  engine's hottest path, ticking far more often than once a frame.
+- *An inline code hook on Draw* or a present/graphics hook: patches code,
+  or ticks on a render thread with a graphics-API dependency.
+
+**Consequences.** `game-thread` is marked `writes` (one pointer in a heap
+object), so a client asks before it; the host must allow only one tick at
+a time, since its own thread and Draw both tick the agent.
 
 ### Light reversing
 
@@ -646,6 +739,7 @@ The layout itself and its rules are in
 - Plugin DLLs or runtime loading of packs.
 - Protocol negotiation beyond the layout hash and supported-op list.
 - Packs for other engines until a real project needs one.
-- Its own repository, until a second project needs it; then a git
-  submodule or copied sources with a pinned revision. Tests and their
-  framework already live in the folder.
+- Package-manager packaging (`install()`, `find_package`): the library is
+  its own repository, consumed as a submodule or with `FetchContent` at a
+  pinned tag, and each consumer compiles its sources with its own flags
+  ([hosting](hosting.md#using-it-in-your-project)).
