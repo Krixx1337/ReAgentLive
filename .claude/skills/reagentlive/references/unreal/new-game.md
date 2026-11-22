@@ -3,12 +3,33 @@
 The pack's reflected ops (`fields`, `dump`, `get`, `each`, `entries`,
 `enum`, `func`, `params`, `call`) need the engine layout:
 `packs/ue/engine_layout.h` (`EngineLayout`, one member per offset, grouped
-by profile group). With no SDK, find each group live, or in a static tool
-(IDA or Ghidra) where live data can't settle it, and write the result as a
+by profile group).
+
+## Try the commands first
+
+Without an SDK the agent reads with `StockUE5` and checks each layout group
+on known objects before its ops run ([without an SDK](../../../../../docs/commands/unreal.md#without-an-sdk)).
+Most UE 5.x games are stock: run `fields Vector`, `enum ENetRole` and
+`funcs` on any object. If they answer, the layout is done; nothing below is
+needed. Follow this page only for a group that refuses: the refusal names
+the check that failed ("field: Vector members are not X, Y, Z"), which is
+where to start. Find that group's offsets live, and write them down as a
 profile (`ProfileJson` format: `{"groups": {group: {member: "0x.."}}}`).
 
-Start from `StockUE5`: most UE 5.x games match it. Confirm every member
-anyway; never ship a value only because it is stock.
+## A static tool is optional
+
+Live reads settle every group except `call`'s frame offsets (`FFrame`
+`Node` and `Locals`), which only code shows without making a call. Even the
+ProcessEvent slot and the engine version come from live disassembly
+(`vtable`, `disasm`) and the exe file's strings. So:
+
+- **Not needed** for a stock game, or for any group short of `call`.
+- **Worth it** for a modified engine (offsets not where `StockUE5` has
+  them), and to confirm the `FFrame` offsets before calls: decompile the
+  `FFrame` constructor and `UFunction::Invoke`.
+- **Never wait for it.** A large exe takes hours to analyse; start it in
+  the background and do the live groups meanwhile. Opening a database while
+  the user's tool is still analysing it gets in their way: ask first.
 
 ## Rules
 
@@ -29,13 +50,14 @@ anyway; never ship a value only because it is stock.
 
 - Inject the SDK-free host. Run `status`. The object table and name pool
   are located at the first Unreal command (one freeze of up to seconds).
-- Note the module and both globals' RVAs, and label them in the static tool.
+- Note the module and both globals' RVAs (label them in the static tool, if one is in use).
 - `find Class`, `find Struct`, `find Field`, `find Object`: the core classes
   every recipe below starts from. `describe` each.
 
-## 1. Engine version and variants (static first)
+## 1. Engine version and variants
 
-- Strings: `++UE5+Release-5.x`, engine source paths in asserts
+- Strings in the exe file, no static tool needed: `Unreal Engine 5.x.y`,
+  `++UE5+Release-5.x`, engine source paths in asserts
   (`Runtime/CoreUObject/...`), the build string. Often UTF-16: search both.
 - The version tells you what to expect:
   - 4.25 and later use `FField`/`FProperty`. Earlier: `UProperty`, a
@@ -169,10 +191,10 @@ pointers (stock: set 0x78, map 0x80). Static: `FSetProperty`'s and
 pack's `ContainerLayoutValid` (key at 0, value after it, adjacent hash
 links, stride ≤ 512) must hold on every map and set property you try.
 
-### call (static)
+### call (live slot, static frame)
 
-Data alone is guesswork here, and a wrong call crashes. Every member needs
-static evidence.
+A wrong call crashes, so every member needs code evidence, not data. The
+slot comes from live disassembly; the frame offsets from a static tool.
 
 - **ProcessEvent slot.** In `UObject`'s vtable (from any object's first
   qword, `vtable`), the slot whose function tests `UFunction::FunctionFlags`
