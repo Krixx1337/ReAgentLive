@@ -46,7 +46,7 @@ several it lists their pids on stderr and needs one. `status` shows
 
 - **Commands:** [console](../../docs/commands/console.md) and the pages
   it links to.
-- **MCP tools for an AI agent:** [agent setup](../../docs/agent-setup.md)
+- **MCP tools for an AI agent:** [agent setup](../../docs/agents/setup.md)
   (it builds this example and registers the server).
 - **Unreal objects by name and engine calls (T1-T3):** the
   [Unreal example](../unreal/README.md).

@@ -23,7 +23,7 @@ approval rules); they win over this skill.
   `main`, which may describe a newer build: trust `help`.
 - `skill_install` is `copy` and its `skill_commit` differs from `status`'s
   `commit` (without `-dirty`): tell the user once to update
-  (`docs/updating.md`).
+  (`docs/agents/update.md`).
 
 ## First command: `status`, then your tier
 

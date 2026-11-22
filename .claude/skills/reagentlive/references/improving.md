@@ -108,7 +108,7 @@ it over when they replace a copied skill. Read it if present.
   upstream as issue or PR text. The user decides; `dev` makes it a real
   change.
 - Prune a lesson once it is promoted upstream, or once an updated skill
-  covers it (`docs/updating.md` asks for this).
+  covers it (`docs/agents/update.md` asks for this).
 
 ## Safeguards
 

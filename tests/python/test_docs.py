@@ -26,7 +26,8 @@ HEADER_LINES = 15
 SKILL_MAX_LINES = 110
 SKILL = os.path.join('.claude', 'skills', 'reagentlive')
 GENERATED = {'docs/commands/results.md'}
-ORCHESTRATORS = {'README.md', 'docs/INDEX.md', 'docs/agent-setup.md'}
+ORCHESTRATORS = {'README.md', 'docs/INDEX.md'}
+AGENT_PROCEDURES = 'docs/agents/'  # pages an agent runs: no TL;DR or Home of line
 LOCAL_LESSONS = os.path.join(SKILL, 'references', 'local-lessons.md')  # the user's, git-ignored
 CODE = re.compile(r'`([^`]+)`')
 CODE_PATH = re.compile(r'(docs|src|examples|tests|cmake)/[\w./#-]+')
@@ -136,11 +137,12 @@ def is_orchestrator(page):
 
 
 def check_headers(root):
-    """Every listed page has **TL;DR:** in its first lines; SSOT pages also *Home of:* (contributing.md#docs)."""
+    """Every listed page has **TL;DR:** in its first lines; SSOT pages also *Home of:* (contributing.md#docs).
+    Agent procedures under docs/agents/ are exempt; links, the index and names still apply to them."""
     problems = []
     for page in listed_pages(root):
-        if page in GENERATED or page.startswith('.claude/'):
-            continue  # generated pages and skill files carry no header
+        if page in GENERATED or page.startswith(('.claude/', AGENT_PROCEDURES)):
+            continue  # generated pages, skill files and agent procedures carry no header
         with open(os.path.join(root, page), encoding='utf-8') as file:
             head = file.read().split('\n')[:HEADER_LINES]
         if not any(line.startswith('**TL;DR:**') for line in head):
@@ -314,14 +316,24 @@ class Docs(unittest.TestCase):
             self.assertEqual(len(check_names(root, ['somegame'])), 1)
 
     def test_a_page_without_a_tldr_or_home_fails(self):
-        index = '**TL;DR:** routes.\n\n[a](a.md) [b](b.md) [r](commands/results.md) [s](agent-setup.md)\n'
+        index = '**TL;DR:** routes.\n\n[a](a.md) [b](b.md) [r](commands/results.md)\n'
         with Tree({'docs/INDEX.md': index,
                    'docs/a.md': '# A\n\n*Home of:* a.\n\n**TL;DR:** fine.\n',
                    'docs/b.md': '# B\n\nNo header.\n',
-                   'docs/commands/results.md': '# Generated\n',
-                   'docs/agent-setup.md': '# Setup\n\n**TL;DR:** steps.\n'}) as root:
+                   'docs/commands/results.md': '# Generated\n'}) as root:
             self.assertEqual(check_headers(root), ['docs/b.md: no **TL;DR:** in its first 15 lines',
                                                    'docs/b.md: no *Home of:* line in its first 15 lines'])
+
+    def test_agent_procedures_need_no_header_but_keep_the_other_checks(self):
+        index = '**TL;DR:** x.\n[r](agents/README.md) [s](agents/setup.md)\n'
+        with Tree({'docs/INDEX.md': index,
+                   'docs/agents/README.md': '# Agents\n\nFor agents. [s](setup.md)\n',
+                   'docs/agents/setup.md': '# Setup\n\nFor agents. [gone](missing.md) SomeGame\n',
+                   'docs/agents/update.md': '# Update\n\nUnlisted.\n'}) as root:
+            self.assertEqual(check_headers(root), [])
+            self.assertEqual(check_links(root), ['docs/agents/setup.md:3: missing.md: no such file'])
+            self.assertEqual(check_index(root), ['docs/agents/update.md: not listed in docs/INDEX.md'])
+            self.assertEqual(len(check_names(root, ['somegame'])), 1)
 
     def test_a_tldr_below_the_header_lines_fails(self):
         late = '# A\n\n*Home of:* a.\n' + '\n' * 20 + '**TL;DR:** late.\n'

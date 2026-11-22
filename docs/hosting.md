@@ -235,7 +235,7 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   replaced. An agent its host has stopped no longer ticks: clear trials
   before stopping it. This holds only for a build with the same protocol:
   after a protocol change the section keeps the old layout, so restart the
-  process instead ([updating](updating.md#7-running-targets)).
+  process instead ([the update procedure](agents/update.md#7-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.
 
 ## Host thread
@@ -322,7 +322,7 @@ mismatch is an `internal` error). Why rows:
 
 The `reagentlive` skill (`.claude/skills/reagentlive/`: `SKILL.md` and its
 `references/`) teaches an AI agent the investigation method; installing it
-is a step of [agent setup](agent-setup.md). In a host project, point the
+is a step of [agent setup](agents/setup.md). In a host project, point the
 agent at it from the host's own instructions, and keep what only that host
 adds (console name, host commands, build and approval rules) in a host
 skill or doc of its own, which the `reagentlive` skill tells the agent to

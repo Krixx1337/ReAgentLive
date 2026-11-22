@@ -1,16 +1,13 @@
 # ReAgentLive agent setup
 
-**TL;DR:** Instructions for an AI coding agent. Ask which kind of target,
-build the matching example, point the MCP server at that example's
-console, link the skill folder into the clone, check the agent answers
-`status`, and write a setup record so updates need no questions. Later
-updates: [updating](updating.md).
+Instructions an AI agent follows to set up ReAgentLive on the user's machine;
+humans: see the [README](../../README.md).
 
 These steps set up ReAgentLive so you can investigate a running Windows
 x64 process. Run every step yourself. Ask the user only where a step says
 to. Use PowerShell. Replace `<dir>` with the folder you clone into
 (default `$HOME\ReAgentLive`), and `<build>`, `<console>` and `<dll>` with
-the values step 2 picks.
+the values step 2 picks. Later updates: [the update procedure](update.md).
 
 Steps:
 
@@ -53,10 +50,10 @@ game?" Then use that row's values in every later step:
 
 | Target | Example | `<build>` | `<console>` | `<dll>` | Starts at |
 |---|---|---|---|---|---|
-| Any x64 process | [`examples/own_thread`](../examples/own_thread/README.md) | `build\own-thread` | `reagentlive.exe` | `reagentlive-own-thread.dll` | T0 |
-| A UE5 game (no dump, no mod needed) | [`examples/unreal`](../examples/unreal/README.md) | `build\unreal` | `reagentlive-ue.exe` | `reagentlive-unreal.dll` | T1-T2; T3 after `game-thread on` |
+| Any x64 process | [`examples/own_thread`](../../examples/own_thread/README.md) | `build\own-thread` | `reagentlive.exe` | `reagentlive-own-thread.dll` | T0 |
+| A UE5 game (no dump, no mod needed) | [`examples/unreal`](../../examples/unreal/README.md) | `build\unreal` | `reagentlive-ue.exe` | `reagentlive-unreal.dll` | T1-T2; T3 after `game-thread on` |
 
-What each tier can do: [tiers](tiers.md).
+What each tier can do: [tiers](../tiers.md).
 
 ## 3. Clone and build
 
@@ -90,7 +87,7 @@ default.
 
 MCP tools are your default way to drive the agent; when to use Python or
 the console instead is the skill's
-[`interfaces.md`](../.claude/skills/reagentlive/references/interfaces.md).
+[`interfaces.md`](../../.claude/skills/reagentlive/references/interfaces.md).
 
 Use absolute paths. The server is the same for every client:
 
@@ -103,7 +100,7 @@ reaches only its own example's agent (they open different shared-memory
 names), so `reagentlive.exe` cannot reach the Unreal example's agent, and
 the reverse.
 Optional server flags (`--read-only`, `--families`):
-[MCP tools](client.md#mcp-tools).
+[MCP tools](../client.md#mcp-tools).
 
 Register it under the name `reagentlive` in the user's scope, using the
 section for your client. If an entry with that name exists, replace it.
@@ -152,7 +149,7 @@ python <dir>\src\reagentlive\frontends\python\reagentlive_gen.py --console <dir>
 
 It prints the number of verbs and the table hash. Generate it again after
 a rebuild that changes a verb. How scripts use it:
-[generated functions](client.md#generated-python-functions).
+[generated functions](../client.md#generated-python-functions).
 
 ## 6. Install the skill
 
@@ -261,7 +258,7 @@ no engine, so they are refused. Never run `game-thread on` as a check. If
 a check fails, report the output; do not work around it.
 
 In the real target, `status` tells you the tier
-([how to read it](tiers.md#read-your-tier-from-status)). In a UE5 game,
+([how to read it](../tiers.md#read-your-tier-from-status)). In a UE5 game,
 `game-thread` (no argument) reports the tick's mode; `game-thread on`
 moves the agent onto the game thread for engine calls, and needs the
 user's approval first.
@@ -300,7 +297,7 @@ Load the host into a process by name or by pid:
 Inject only into a process the user names. Never pick a target yourself.
 The host is never unloaded, so do not use `--eject` on it. Restart the
 process instead. In a UE5 game, the first Unreal command stalls the game
-once ([before the first command](commands/unreal.md#before-the-first-command)).
+once ([before the first command](../commands/unreal.md#before-the-first-command)).
 
 Add this line to the user-level instructions file from step 6:
 
@@ -311,7 +308,7 @@ ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it 
 ## 9. Choose the improvement mode
 
 The skill keeps notes on what slowed it down and proposes fixes after a
-task ([the improvement guide](../.claude/skills/reagentlive/references/improving.md)).
+task ([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
 Ask the user: "Do you use ReAgentLive as a user or as a developer?"
 
 | Answer | `improvement` | The skill may |
@@ -323,7 +320,7 @@ Ask the user: "Do you use ReAgentLive as a user or as a developer?"
 ## 10. Write the setup record
 
 One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
-[updating](updating.md) need no questions:
+[the update procedure](update.md) need no questions:
 
 | Field | Value |
 |---|---|
@@ -334,7 +331,7 @@ One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 | `skill_install` | `junction`, `symlink`, `plugin`, `copy` (step 6), or `instructions` for an instructions line |
 | `skill_commit` | copy installs only: the commit copied |
 | `improvement` | `user`, `dev` or `off` (step 9) |
-| `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [updating](updating.md) sets it to the new commit |
+| `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [the update procedure](update.md) sets it to the new commit |
 
 ```powershell
 $commit = git -C "<dir>" rev-parse --short=12 HEAD
@@ -373,6 +370,6 @@ Tell the user:
 ```
 
 Then say in one line that for a UE5 game they mod with its SDK, the mod
-itself can host ReAgentLive for T4 ([hosting](hosting.md)), and in one
+itself can host ReAgentLive for T4 ([hosting](../hosting.md)), and in one
 line that to update later they paste the update prompt from the README
-(it runs [updating](updating.md)).
+(it runs [the update procedure](update.md)).

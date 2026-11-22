@@ -50,7 +50,7 @@ build/unreal/reagentlive-ue.exe -c "status; fields Vector; enum ENetRole"
 - A game whose engine layout is not stock refuses the affected commands
   with the check that failed; memory commands still work.
 - Never unloaded.
-- **MCP tools for an AI agent:** [agent setup](../../docs/agent-setup.md)
+- **MCP tools for an AI agent:** [agent setup](../../docs/agents/setup.md)
   (it builds this example and registers the server).
 
 ## Tests

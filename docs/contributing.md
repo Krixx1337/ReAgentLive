@@ -248,9 +248,17 @@ AI agent investigating. The skill never restates a command's behaviour (it
 links `help` or the docs page); the docs give no investigation advice
 beyond a command's guards. The skill keeps its own maintenance rules.
 
+**Agent procedures, a third audience.** Pages under `docs/agents/` are
+procedures an AI agent runs once on the user's machine (install, update),
+fetched from a URL; the skill is method while investigating. They are
+imperative numbered steps with exact commands and end with a report block;
+their first line is one sentence for a human who lands there. They carry
+no TL;DR and no *Home of* line; `docs/agents/README.md` routes between
+them and restates nothing.
+
 **Two kinds of page, never mixed.** *Orchestrators* route: one line of
 what and why per topic, a link to its home, and when to read it; no fact
-stated in full (`README.md`, `docs/INDEX.md`, `docs/agent-setup.md`, the
+stated in full (`README.md`, `docs/INDEX.md`, `docs/agents/README.md`, the
 example READMEs, the skill's `SKILL.md`). *SSOT pages* own facts: each
 fact stated once, in full, in exactly one page.
 
@@ -278,8 +286,8 @@ Check this table before adding a fact; if it has a home, link there.
 | Engine layout offsets | `packs/ue/engine_layout.h` (code) and [unreal.md](commands/unreal.md#without-an-sdk) | skill (links) |
 | What may come next, and what will not | [ideas.md](ideas.md) | elsewhere |
 | How to describe it | [positioning.md](positioning.md) | README: the short pitch |
-| Updating an install: the procedure | [updating.md](updating.md) | README: the prompt only |
-| The setup record's fields | [agent-setup.md](agent-setup.md#10-write-the-setup-record) | the skill reads it, never restates it |
+| Agent procedures (install, update) | [agents/](agents/README.md): [setup.md](agents/setup.md), [update.md](agents/update.md) | README: the prompts only |
+| The setup record's fields | [agents/setup.md](agents/setup.md#10-write-the-setup-record) | the skill and agents/README.md read it, never restate it |
 | When and how an agent reviews a session and proposes skill lessons (modes, scratch file, rubric) | the skill's `references/improving.md` | docs |
 | The user's own skill lessons | the skill's `references/local-lessons.md` (git-ignored, the user's) | anything tracked |
 | Where code goes, tests, these rules | this page | |
@@ -297,7 +305,8 @@ path exists and that no `blob/main` URL is left in the skill.
 pages only) a `*Home of:*` line naming the facts it owns, then a
 `**TL;DR:**` of two to four plain sentences: what it is, when it matters,
 the one thing not to get wrong. Orchestrators carry only the TL;DR;
-`commands/results.md` (generated) and skill files carry neither. The
+`commands/results.md` (generated), `docs/agents/` pages and skill files
+carry neither. The
 TL;DR is for a person new to the project: plain words, jargon defined or
 linked. The docs test checks both lines within a page's first 15 lines.
 
@@ -312,7 +321,7 @@ linked. The docs test checks both lines within a page's first 15 lines.
 - **CHANGELOG:** every entry that changes the wire protocol (an op, a
   struct or a constant in `core/protocol.h` or a pack's `protocol_*.h`)
   ends with the exact phrase `Protocol change: rebuild and re-inject.` on
-  one line. [Updating](updating.md#2-show-what-is-coming) searches for it
+  one line. [The update procedure](agents/update.md#2-show-what-is-coming) searches for it
   to tell the user a running target needs the new DLL.
 - Examples use placeholders (`game.exe`, `mygame-dev-1234`) and stock
   engine classes, never one game's names.

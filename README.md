@@ -100,7 +100,7 @@ The same commands through four interfaces ([clients](docs/client.md)):
 Paste this into Claude Code, Codex, Cursor or any coding agent:
 
 ```text
-Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agent-setup.md and follow it.
+Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/setup.md and follow it.
 ```
 
 The agent builds the example for your target, registers its MCP tools,
@@ -112,7 +112,7 @@ Visual Studio's C++ tools and Python. By hand: each example's README above.
 To update later (pull, rebuild, re-inject, check), paste:
 
 ```text
-Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/updating.md and follow it.
+Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.
 ```
 
 ## Safe by default

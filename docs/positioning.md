@@ -232,7 +232,7 @@ what has shipped.
 ## Before a public release
 
 - ✅ A licence: MIT, and every dependency is MIT too (README).
-- ✅ A benefits-first README with an [agent setup](agent-setup.md) prompt
+- ✅ A benefits-first README with an [agent setup](agents/setup.md) prompt
   an AI agent follows on its own.
 - What lets someone else use the core: the host and client guides and both
   example hosts exist ([hosting](hosting.md), [clients](client.md)); still

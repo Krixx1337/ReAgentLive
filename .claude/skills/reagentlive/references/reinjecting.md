@@ -17,7 +17,7 @@
 
 - Agent and host changes need the new DLL; console-only changes don't.
 - A protocol layout change makes a mismatched console refuse to attach
-  ("agent layout differs"); after an update, `docs/updating.md` step 7.
+  ("agent layout differs"); after an update, `docs/agents/update.md#7-running-targets`.
   Restart the target, then inject: never load a DLL with a changed
   protocol into a process that runs the old agent.
 - A console that finds the agent taken by another client is refused as

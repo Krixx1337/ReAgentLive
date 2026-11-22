@@ -1,17 +1,11 @@
 # Updating ReAgentLive
 
-*Home of:* the update procedure for a clone set up by [agent setup](agent-setup.md): what to read first, what to rebuild, what each skill install and the MCP server need, re-injecting, and the checks after.
-
-**TL;DR:** Instructions for an AI coding agent. Read the setup record,
-check the clone is a clean `main`, show the user what is coming, pull,
-rebuild the same example, then restart running targets and inject the new
-DLL (never into the old process after a protocol change) and check
-`status` reports the new `commit`. A linked skill and the MCP server follow the clone by
-themselves; a copied skill is copied again.
+Instructions an AI agent follows to update a ReAgentLive clone on the user's
+machine; humans: see the [README](../../README.md).
 
 Run every step yourself. Ask the user only where a step says to. Use
 PowerShell. `<dir>`, `<build>`, `<console>` and `<dll>` mean the same as
-in [agent setup](agent-setup.md#2-choose-the-example).
+in [agent setup](setup.md#2-choose-the-example).
 
 Steps:
 
@@ -25,6 +19,7 @@ Steps:
 8. Local lessons
 9. Verify
 10. Update the setup record
+11. Report
 
 A host project that carries ReAgentLive as a submodule follows
 [its own section](#host-projects-with-a-submodule) instead.
@@ -34,14 +29,12 @@ A host project that carries ReAgentLive as a submodule follows
 ## 1. Read the setup record
 
 Read `%LOCALAPPDATA%\reagentlive\setup.json`
-([its fields](agent-setup.md#10-write-the-setup-record)). It names `dir`,
+([its fields](setup.md#10-write-the-setup-record)). It names `dir`,
 the `examples` built, the `client`, whether `python_functions` were
 generated, the `skill_install` and the `improvement` mode.
 
-No record: the clone was set up before the record existed. Follow
-[installs from before the setup record](#installs-from-before-the-setup-record)
-first, then come back to step 2. `<dir>` has no `.git`: it is not a
-clone; set it up again with [agent setup](agent-setup.md).
+No record: run [the setup procedure](setup.md) again. `<dir>` has no
+`.git`: it is not a clone; set it up again the same way.
 
 ## 2. Show what is coming
 
@@ -76,7 +69,7 @@ git -C <dir> diff HEAD origin/main -- CHANGELOG.md
   user.
 - Flag a protocol change when either holds: a new CHANGELOG line carries
   `Protocol change: rebuild and re-inject`
-  ([the convention](contributing.md#docs)), or this prints any path:
+  ([the convention](../contributing.md#docs)), or this prints any path:
 
   ```powershell
   git -C <dir> diff --name-only <old>..origin/main -- src/reagentlive/core/protocol.h "src/reagentlive/packs/*/protocol_*.h"
@@ -129,7 +122,7 @@ python <dir>\src\reagentlive\frontends\python\reagentlive_gen.py --console <dir>
 |---|---|
 | `junction` or `symlink` | nothing: the link points into the clone, and the client reads the skill each session |
 | `plugin` (a local marketplace, loaded in place) | ask the user to run `/reload-plugins` in Claude Code |
-| `copy` | copy it again as [agent setup](agent-setup.md#6-install-the-skill) does; its snippet keeps `references/local-lessons.md` (the copy's file wins over the clone's). Set `skill_commit` in step 10. Offer the junction instead (setup step 6, option 1): later updates then need nothing here |
+| `copy` | copy it again as [agent setup](setup.md#6-install-the-skill) does; its snippet keeps `references/local-lessons.md` (the copy's file wins over the clone's). Set `skill_commit` in step 10. Offer the junction instead (setup step 6, option 1): later updates then need nothing here |
 | `instructions` (other agents) | nothing: the line points into the clone |
 
 ## 6. MCP server
@@ -154,14 +147,14 @@ Code, Codex) or reload its MCP servers (other clients).
 A process that loaded the old DLL still runs the old agent. Ask the user
 to restart each such target (close it and start it again), then load the
 new `<dir>\<build>\<dll>` into the fresh process (the injector from
-setup, if any: [agent setup](agent-setup.md#8-optional-get-an-injector)).
+setup, if any: [agent setup](setup.md#8-optional-get-an-injector)).
 
 After a protocol change (step 2) the restart is required: never load the
 new DLL into a process that already runs the old one. The old agent's
 shared section stays mapped with the old layout, so the new agent cannot
 take it over safely. Only when step 2 found no protocol change may the new
 DLL go into the same process (the newer agent takes over and the old one
-stops ticking, [protocol](protocol.md#section)); host copies stack, so a
+stops ticking, [protocol](../protocol.md#section)); host copies stack, so a
 restart is still cleaner.
 
 After a protocol change the new console refuses an old agent: every
@@ -177,12 +170,12 @@ when the skill is a plugin installed from a remote marketplace (a cached
 copy under `~/.claude/plugins/cache`, never edited). No file: skip this
 step. Propose dropping each lesson the skill now
 covers, one line each; the user decides. How the file works:
-[the improvement guide](../.claude/skills/reagentlive/references/improving.md#local-lessons).
+[the improvement guide](../../.claude/skills/reagentlive/references/improving.md#local-lessons).
 
 ## 9. Verify
 
 With a target running the new DLL (or the throwaway Python process from
-[agent setup](agent-setup.md#7-verify), same commands and pass checks):
+[agent setup](setup.md#7-verify), same commands and pass checks):
 
 ```powershell
 & "<dir>\<build>\<console>" -c "status"
@@ -193,7 +186,7 @@ With a target running the new DLL (or the throwaway Python process from
 | Commit | `commit` is the new `git -C <dir> rev-parse --short=12 HEAD` (no `-dirty`); it is the console's commit |
 | Agent | when the update changed the agent core, `build` (the agent core's build time, unless the host sets its own label) is from step 3: the target runs the new DLL. It stays the same when only the console or a pack changed |
 | Verb table | `table_hash` differs from before when step 2 listed verb changes; the same hash after verb changes means the console was not rebuilt |
-| Example | the example's row in [agent setup](agent-setup.md#7-verify) passes |
+| Example | the example's row in [agent setup](setup.md#7-verify) passes |
 
 `replaced_agents` above 0 means the new DLL was loaded into a process
 that already had an agent (step 7).
@@ -204,41 +197,24 @@ Write the record back with `setup_commit` set to the new commit (the
 baseline for the next update), `skill_commit` to the same value for a
 copy install, and `skill_install` to what step 5 left (`junction` after
 replacing a copy). Write it the way
-[agent setup](agent-setup.md#10-write-the-setup-record) does.
+[agent setup](setup.md#10-write-the-setup-record) does.
 
-Tell the user in a few lines: from `<old>` to the new commit, what
-changed for them, what they must still do (restart a session, re-inject a
-target).
+## 11. Report
 
-## Installs from before the setup record
+Tell the user:
 
-A clone set up before the record existed has no `setup.json`, and its
-Claude Code skill is usually a copy. Fill in the record's fields, then
-continue at step 2:
-
-1. Ask the user for `<dir>` and which example(s) they built (`examples`).
-2. `client`: the client whose MCP config names `reagentlive_mcp.py`
-   (`claude mcp list` for Claude Code, `codex mcp list` for Codex, else
-   the config files in [agent setup](agent-setup.md#4-register-the-mcp-server)).
-3. `python_functions`: true when `<dir>\<build>\console_api.py` exists.
-4. `skill_install`:
-
-   ```powershell
-   $link = "$HOME\.claude\skills\reagentlive"
-   if (Test-Path $link) { (Get-Item $link -Force).LinkType } else { "absent" }
-   ```
-
-   `Junction` or `SymbolicLink`: `junction` or `symlink`. Empty: a copy.
-   `absent`: another agent's instructions line (`instructions`) or none.
-5. A copy: offer to replace it with the junction. Yes: run
-   [agent setup step 6](agent-setup.md#6-install-the-skill), whose snippet
-   carries the copy's `references/local-lessons.md` into the clone first
-   (the file may not exist); record `junction`. No: keep `copy`; step 5
-   copies it again.
-6. `improvement`: ask the question of
-   [agent setup step 9](agent-setup.md#9-choose-the-improvement-mode).
-
-Step 10 writes the record with these fields.
+```
+┌─ ReAgentLive update complete ─────────────────────────┐
+│  ✓ Commit    <old> → <new>                            │
+│  ✓ Built     <dir>\<build> (<example>)                │
+│  ✓ Changes   <a few bullets from step 2>              │
+│  ✓ Check     status ok, commit <new>                  │
+│  ✓ Record    %LOCALAPPDATA%\reagentlive\setup.json    │
+│                                                       │
+│  ⚡ Still to do: <restart the session, re-inject a     │
+│     target, or "nothing">                             │
+└───────────────────────────────────────────────────────┘
+```
 
 ## Host projects with a submodule
 

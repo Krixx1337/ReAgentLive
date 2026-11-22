@@ -21,8 +21,7 @@ are under `src/reagentlive/`.
 | Pick how to drive it (MCP tools, console, Python, C++ client) | [clients](client.md) |
 | Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
 | Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
-| Have an AI agent set it all up | [agent setup](agent-setup.md) (build, MCP tools, skill, check) |
-| Update a clone, its build and skill | [updating](updating.md) (pull, rebuild, re-inject, check `commit`) |
+| Have an AI agent set it all up, or update it | [for AI agents](#for-ai-agents) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
 | Any UE5 game, no dump (T1-T2; T3 after `game-thread on`) | [Unreal example](../examples/unreal/README.md) |
 | Put the agent into a process, or host it in a mod (T4) | [hosting](hosting.md) |
@@ -34,14 +33,26 @@ are under `src/reagentlive/`.
 | Describe the project | [positioning](positioning.md) |
 | Let an AI agent investigate a live game | the [`reagentlive` skill](../.claude/skills/reagentlive/SKILL.md) (method, pitfalls, references by question) |
 
+## For AI agents
+
+Procedures an agent runs on the user's machine, in [agents/](agents/README.md);
+the README's paste prompts send an agent there.
+
+| Procedure | What |
+|---|---|
+| [which one](agents/README.md) | which procedure when, the rules they share |
+| [setup](agents/setup.md) | first install: build, MCP tools, skill, check, setup record |
+| [update](agents/update.md) | update a clone: pull, rebuild, skill, MCP server, re-inject, check `commit` |
+
 ## Pages
 
 | Page | What |
 |---|---|
 | [../README.md](../README.md) | the pitch: tiers at a glance, a demo, use cases, where to start, the setup and update prompts |
 | [tiers.md](tiers.md) | the tier ladder T0-T4: what each gives, needs and ships in; reading your tier from `status` |
-| [agent-setup.md](agent-setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
-| [updating.md](updating.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
+| [agents/README.md](agents/README.md) | which agent procedure when, and the rules every procedure shares |
+| [agents/setup.md](agents/setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
+| [agents/update.md](agents/update.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
@@ -115,7 +126,7 @@ offers (`packs`). **T3** commands also need the game thread
 | Layout group | one set of engine offsets (class, struct, field, property, typed, function, enum, call) checked together on objects every UE5 game has, before its commands run ([without an SDK](commands/unreal.md#without-an-sdk)) |
 | Reflection | the engine's own description of its classes, fields and functions, which lets the pack work by name |
 | UObject | the base of every Unreal engine object; the pack finds them in the engine's object table |
-| DLL loader, injector | any tool that loads a DLL into a running process; ReAgentLive ships none ([agent setup](agent-setup.md) can fetch one) |
+| DLL loader, injector | any tool that loads a DLL into a running process; ReAgentLive ships none ([agent setup](agents/setup.md) can fetch one) |
 | MCP, MCP tools | the Model Context Protocol, how AI agents call tools; the server makes one tool per console verb ([MCP tools](client.md#mcp-tools)) |
 | Interface | one of the four ways to send commands: MCP tools, console, Python, C++ client ([clients](client.md)) |
 | Skill | the `reagentlive` folder of instructions an AI agent reads before investigating ([skill](../.claude/skills/reagentlive/SKILL.md)) |

@@ -10,9 +10,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **`status` reports `commit`:** the console's source commit (12 hex
   digits, `-dirty` for local edits, `unknown` without git), stamped on
   every build.
-- **Updating:** `docs/updating.md` (and a README prompt) walks an agent
+- **Agent procedures in `docs/agents/`:** setup and update moved to
+  `docs/agents/setup.md` and `docs/agents/update.md`, routed by
+  `docs/agents/README.md`; the old `docs/` paths are gone, so paste the
+  new README prompts.
+- **Updating:** `docs/agents/update.md` (and a README prompt) walks an agent
   through an update from a setup record (`%LOCALAPPDATA%\reagentlive\setup.json`,
-  written by agent-setup). The skill installs as a junction into the clone
+  written by the setup procedure). The skill installs as a junction into the clone
   by default, so a `git pull` updates it.
 - **Skill:** repository files are named as paths resolved against the
   clone the skill lives in, the setup record's clone or the console's

@@ -31,7 +31,7 @@ game thread and which need it is stated once, in
 | **T3 Game thread** | the game's own functions: `call`, `call-pure`, `release`, `params`, `each`, `script`, `refs`, `trace`, the [call recorder](commands/unreal.md#call-recorder) ([full list](commands/unreal.md#off-the-engines-thread)); `same_tick` means one moment of the game | the agent ticking on the game thread: `game-thread on` in the Unreal example, or a host that ticks there | `game-thread` answers `conflict` (the viewport's Draw is not where it expects), or unsupported in a host without `reagentlive::ue-draw` | [`examples/unreal`](../examples/unreal/README.md) after `game-thread on`; a mod's own host |
 | **T4 SDK host** | the layout from the game's SDK dump (every group trusted), refs with real serials, the globals' addresses given so the first command does not scan, host verbs of the mod's own | a mod built with `reagentlive::ue` and its SDK, ticking on the game thread | a game patch until the SDK is dumped again | a mod's own host ([hosting](hosting.md)) |
 
-An AI agent can build either example for you: [agent setup](agent-setup.md).
+An AI agent can build either example for you: [agent setup](agents/setup.md).
 
 Words used here: an *SDK* or *dump* is a set of C++ headers a dumper tool
 generates from a game; the *game thread* is the engine's own thread, the
