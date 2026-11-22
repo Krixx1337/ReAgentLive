@@ -1,5 +1,8 @@
 """The docs rules (docs/contributing.md#docs): links resolve, INDEX lists every page, no host names,
 every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
+The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
+every such path must exist, and no skill file links GitHub's main branch. The user's own git-ignored
+references/local-lessons.md is skipped by every check.
 
 Usage: test_docs.py [--forbid WORD ...]. A host passes its own and its
 game's names, so the library never has to spell them.
@@ -24,15 +27,23 @@ SKILL_MAX_LINES = 110
 SKILL = os.path.join('.claude', 'skills', 'reagentlive')
 GENERATED = {'docs/commands/results.md'}
 ORCHESTRATORS = {'README.md', 'docs/INDEX.md', 'docs/agent-setup.md'}
-REPO_URL = 'https://github.com/Krixx1337/ReAgentLive/blob/main/'  # the skill links repo files by URL
+LOCAL_LESSONS = os.path.join(SKILL, 'references', 'local-lessons.md')  # the user's, git-ignored
+CODE = re.compile(r'`([^`]+)`')
+CODE_PATH = re.compile(r'(docs|src|examples|tests|cmake)/[\w./#-]+')
+MAIN_URL = re.compile(r'github\.com/\S*?/blob/main\b')
+
+
+def is_local_lessons(path):
+    return os.path.normpath(path).endswith(os.path.normpath(LOCAL_LESSONS))
 
 
 def files(root, suffixes):
     for base, dirs, names in os.walk(root):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in sorted(names):
-            if name.endswith(suffixes):
-                yield os.path.join(base, name)
+            path = os.path.join(base, name)
+            if name.endswith(suffixes) and not is_local_lessons(path):
+                yield path
 
 
 def prose(text):
@@ -75,12 +86,12 @@ def check_links(root):
         where = os.path.relpath(path, root).replace('\\', '/')
         for number, line in prose(text):
             for target in LINK.findall(re.sub(r'`[^`]*`', '', line)):
-                local = target.startswith(REPO_URL)
-                if re.match(r'[a-z]+:', target) and not local:
+                if re.match(r'[a-z]+:', target):
                     continue
-                name, _, frag = target[len(REPO_URL):].partition('#') if local else target.partition('#')
-                base = root if local else os.path.dirname(path)
-                dest = os.path.normpath(os.path.join(base, name)) if name else path
+                name, _, frag = target.partition('#')
+                dest = os.path.normpath(os.path.join(os.path.dirname(path), name)) if name else path
+                if is_local_lessons(dest):
+                    continue  # absent in a clean clone
                 if not os.path.exists(dest):
                     problems.append(f'{where}:{number}: {target}: no such file')
                     continue
@@ -159,6 +170,42 @@ def check_skill(root):
     return problems
 
 
+def check_code_paths(root):
+    """Every inline code path in the skill (`docs/...`, `src/...`) exists, with its anchor in a .md file."""
+    problems, cache = [], {}
+    for path in files(os.path.join(root, SKILL), ('.md',)):
+        with open(path, encoding='utf-8') as file:
+            text = file.read()
+        where = os.path.relpath(path, root).replace('\\', '/')
+        for number, line in prose(text):
+            for code in CODE.findall(line):
+                if not CODE_PATH.fullmatch(code) or '...' in code:
+                    continue  # not a repo path, or a placeholder
+                name, _, frag = code.partition('#')
+                dest = os.path.normpath(os.path.join(root, name))
+                if not os.path.exists(dest):
+                    problems.append(f'{where}:{number}: {code}: no such file')
+                    continue
+                if frag and dest.endswith('.md'):
+                    if dest not in cache:
+                        cache[dest] = anchors(dest)
+                    if frag not in cache[dest]:
+                        problems.append(f'{where}:{number}: {code}: no such anchor')
+    return problems
+
+
+def check_main_urls(root):
+    """No skill file links GitHub's main branch: it can run ahead of the user's build."""
+    problems = []
+    for path in files(os.path.join(root, SKILL), ('.md',)):
+        with open(path, encoding='utf-8') as file:
+            for number, line in enumerate(file, 1):
+                if MAIN_URL.search(line):
+                    where = os.path.relpath(path, root).replace('\\', '/')
+                    problems.append(f'{where}:{number}: links blob/main; use a repo path')
+    return problems
+
+
 def check_names(root, words):
     problems = []
     if not words:
@@ -206,15 +253,49 @@ class Docs(unittest.TestCase):
     def test_the_skill_stays_short_and_reaches_every_reference(self):
         self.assertEqual(check_skill(ROOT), [])
 
+    def test_the_skills_repo_paths_exist(self):
+        self.assertEqual(check_code_paths(ROOT), [])
+
+    def test_the_skill_never_links_main(self):
+        self.assertEqual(check_main_urls(ROOT), [])
+
     def test_a_missing_file_or_anchor_fails(self):
         with Tree({'docs/a.md': '# A\n\n## Two words\n\n[ok](#two-words) [bad](#nope) [gone](b.md)\n'}) as root:
             self.assertEqual(len(check_links(root)), 2)
 
-    def test_repo_urls_are_checked_as_local_files(self):
-        url = REPO_URL + 'docs/a.md'
-        with Tree({'docs/a.md': '# A\n\n## Two words\n',
-                   'skill/s.md': f'[ok]({url}#two-words) [bad]({url}#nope) [gone]({REPO_URL}docs/b.md)\n'}) as root:
-            self.assertEqual(len(check_links(root)), 2)
+    def test_a_missing_code_path_or_anchor_fails(self):
+        skill = '.claude/skills/reagentlive/'
+        body = ('`docs/a.md#two-words` `src/x.h` `examples/one` `docs/a.md#nope` `src/gone.h`\n'
+                '`docs/...` `docs/<page>` `status` `--every` `src/x.h#not-checked`\n'
+                '```\n`docs/fenced.md`\n```\n')
+        with Tree({'docs/a.md': '# A\n\n## Two words\n', 'src/x.h': '', 'examples/one/README.md': '',
+                   skill + 'references/r.md': body}) as root:
+            self.assertEqual(check_code_paths(root), [
+                '.claude/skills/reagentlive/references/r.md:1: docs/a.md#nope: no such anchor',
+                '.claude/skills/reagentlive/references/r.md:1: src/gone.h: no such file'])
+
+    def test_a_main_branch_url_in_the_skill_fails(self):
+        skill = '.claude/skills/reagentlive/'
+        main = 'https://github.com/Owner/Repo/blob/main/docs/a.md'
+        with Tree({skill + 'SKILL.md': f'[a]({main})\n`https://github.com/Owner/Repo/blob/<commit>/<path>`\n',
+                   skill + 'references/r.md': f'see `{main}#x`\n',
+                   'docs/a.md': f'[a]({main})\n'}) as root:
+            self.assertEqual(check_main_urls(root), [
+                '.claude/skills/reagentlive/SKILL.md:1: links blob/main; use a repo path',
+                '.claude/skills/reagentlive/references/r.md:1: links blob/main; use a repo path'])
+            self.assertEqual(check_links(root), [])  # an absolute URL is not a local link
+
+    def test_local_lessons_are_skipped_by_every_check(self):
+        skill = '.claude/skills/reagentlive/'
+        lessons = ('[gone](missing.md) `docs/missing.md` SomeGame\n'
+                   'https://github.com/Owner/Repo/blob/main/x\n')
+        body = '[w](references/w.md) `references/local-lessons.md` [l](references/local-lessons.md)\n'
+        base = {skill + 'SKILL.md': body, skill + 'references/w.md': 'w\n'}
+        with Tree(base) as root:  # absent, as in a clean clone
+            self.assertEqual(check_links(root) + check_skill(root), [])
+        with Tree({**base, skill + 'references/local-lessons.md': lessons}) as root:
+            self.assertEqual(check_links(root) + check_skill(root) + check_code_paths(root)
+                             + check_main_urls(root) + check_names(root, ['somegame']), [])
 
     def test_slugs_match_github(self):
         self.assertEqual(slug('17 · `call-native` (caution)'), '17--call-native-caution')

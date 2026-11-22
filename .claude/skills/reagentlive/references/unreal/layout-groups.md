@@ -1,14 +1,14 @@
 # Layout groups: known answers per group
 
 Step 2 of the new-game procedure. Per group: who leads, known answers, the
-check. Stock offsets: `StockUE5` in [`src/reagentlive/packs/ue/engine_layout.h`](https://github.com/Krixx1337/ReAgentLive/blob/main/src/reagentlive/packs/ue/engine_layout.h);
+check. Stock offsets: `StockUE5` in `src/reagentlive/packs/ue/engine_layout.h`;
 compare every candidate with it. The new-game rules apply (every sample
 agrees; more than one fit: stop; hashed names: structure).
 
 ## object (found at attach)
 
 The header and table shape are found and checked at the first Unreal verb
-([without an SDK](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#without-an-sdk)).
+(without an SDK: `docs/commands/unreal.md#without-an-sdk`).
 Copy them into the profile.
 
 ## struct (live)

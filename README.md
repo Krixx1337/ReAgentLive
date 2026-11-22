@@ -109,6 +109,12 @@ the result. If you want, it also fetches a command-line DLL loader, so it
 can load ReAgentLive into the process you name. You need Windows x64,
 Visual Studio's C++ tools and Python. By hand: each example's README above.
 
+To update later (pull, rebuild, re-inject, check), paste:
+
+```text
+Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/updating.md and follow it.
+```
+
 ## Safe by default
 
 - **Writes check first:** a write is refused if the bytes changed.

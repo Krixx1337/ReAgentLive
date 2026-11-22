@@ -30,7 +30,9 @@ the MCP tools all read it, so none of them can disagree with the console.
   into it, `blocks` on one that holds the console for seconds by design
   (`watch`, `record`).
 - **`status`** reports the agent's pid, ticks per second since attach or the
-  last status (at least 100 ms), the answering agent's build time, replaced
+  last status (at least 100 ms), the answering agent's build time, the
+  library `version`, `commit` (the git commit the console was built from:
+  12 hex digits, `-dirty` with local edits, `unknown` without git), replaced
   agents, `host_thread` ([host thread](../hosting.md#host-thread)), `roots`,
   `packs` (the engine packs the host offers; a pack's verbs are refused
   without it) and `table_hash`. The hash changes when any verb's arguments

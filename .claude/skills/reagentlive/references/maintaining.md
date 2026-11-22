@@ -5,17 +5,20 @@
 - **Skill = how to use it well:** method, order, judgement, approvals,
   pitfalls. **Docs = what it is and how it works:** verb semantics, guards,
   protocol, hosting, design.
-- Never restate a verb's arguments, flags, result keys or behaviour here:
-  link `help <verb>` or its docs page. One home per fact; the registry is
-  the "where each fact goes" map in
-  [contributing](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/contributing.md).
-- The skill ships apart from the docs (copied into an agent's skills
-  folder): it carries only the minimum an agent needs before its first
-  command (the operational status rule, approval rules) and links every
-  other fact by URL; the docs own the full statements.
-- Links to repo files outside the skill (`docs/`, `src/`, `examples/`) are
-  absolute: `https://github.com/Krixx1337/ReAgentLive/blob/main/<path>`,
-  anchors kept. Links between skill files stay relative.
+- Never restate a verb's argument list, what a flag takes or does, result
+  keys or behaviour here: link `help <verb>` or its docs page. A verb
+  named with a flag as a worked example (`find --cls`) is allowed; the
+  agent confirms it with `help <verb>` before relying on it. A result key
+  is not: say what to check and route to `help <verb>`. One home per fact; the registry is
+  the "where each fact goes" map in contributing (`docs/contributing.md`).
+- The skill carries only the minimum an agent needs before its first
+  command (the operational status rule, approval rules) and what no build
+  changes; anything that changes with a build is `help <verb>`'s, every
+  other fact is a docs path.
+- Repo files outside the skill (`docs/`, `src/`, `examples/`) are inline
+  code paths, anchors kept (`docs/tiers.md#the-ladder`), never URLs:
+  SKILL.md's resolver rule maps them to the user's build. Links between
+  skill files stay relative.
 - Facts the skill owns: the operational status rule and how to climb
   (SKILL.md; the full status-to-tier table is `docs/tiers.md`'s), approval
   and evidence rules (SKILL.md), which interface for which task and the
@@ -52,17 +55,20 @@
 
 ## End of session
 
-- Read `stats`; ask what would have saved time (`stats --all`,
-  `stats --sessions`).
-- Put each lesson in its home: this skill (method), the docs (behaviour),
-  the host notes (one host), the project's docs (findings).
+- The improvement reference runs the end-of-task review (when, rubric,
+  proposals, modes); this file only says where each lesson goes.
+- Homes: this skill (method), the docs (behaviour), the host notes (one
+  host), the project's docs (findings). In `user` mode only
+  `local-lessons.md` is written; the rest are suggestions to the user.
+- `references/local-lessons.md` is the user's (git-ignored, never
+  committed); the improvement reference owns how lessons are written there.
 
 ## When ReAgentLive hits a limit
 
 - Add the missing verb or flag instead of working around it twice
   (`find --cls` and `find --live` came from real investigations):
   engine- and game-agnostic, tested, documented, and the backlog
-  ([ideas](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/ideas.md)) re-ranked with the evidence.
+  (ideas: `docs/ideas.md`) re-ranked with the evidence.
 - Code written twice goes into the console (a verb or a flag, so the
   generated functions and tools get it) with a test, not into the skill.
 - Editing the C++: `near` and `far` are Windows macros, bad variable

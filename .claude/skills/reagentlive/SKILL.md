@@ -6,21 +6,36 @@ description: Investigate a running game with ReAgentLive, an in-process agent dr
 # ReAgentLive investigations
 
 An agent inside the target process, ticked by a host (a mod or a DLL), runs
-the verbs every interface sends. Reference docs: [INDEX](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/INDEX.md).
+the verbs every interface sends. Reference docs: `docs/INDEX.md`.
 Read the project's host notes first (console name, host verbs, build and
 approval rules); they win over this skill.
 
+## Before the first command: setup record and repo paths
+
+- Read `%LOCALAPPDATA%\reagentlive\setup.json` if present: `dir` (the
+  user's clone), `improvement` (mode; none: `user`), `skill_install`.
+- Repo paths in this skill (`docs/...`, `src/...`) resolve, first match:
+  the clone this skill folder lives in (a junction or symlink target, a
+  submodule, or the folder an instructions line names; `docs/INDEX.md`
+  three levels up); else `dir`; else
+  `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
+  `commit` from `status` (strip `-dirty`); `commit` `unknown` or absent:
+  `main`, which may describe a newer build: trust `help`.
+- `skill_install` is `copy` and its `skill_commit` differs from `status`'s
+  `commit` (without `-dirty`): tell the user once to update
+  (`docs/updating.md`).
+
 ## First command: `status`, then your tier
 
-`status` prints no tier ([full reading](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/tiers.md#read-your-tier-from-status)):
+`status` prints no tier (full reading: `docs/tiers.md#read-your-tier-from-status`):
 `packs` empty: T0. `packs: ["ue"]`, `host_thread` `own`/`borrowed`: T1, T2
 once `fields Vector` answers. `host_thread: engine`: T3. Real serials (not `:0`): T4.
 
-- T0: Unreal verbs need a host with the pack ([tiers](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/tiers.md#the-ladder)).
+- T0: Unreal verbs need a host with the pack (tiers: `docs/tiers.md#the-ladder`).
 - T1 (`fields Vector` refused with a layout-group check): load `references/unreal/new-game.md`.
 - T2: `game-thread on` (approval); load `references/unreal/game-thread.md`.
-- T3: T4 is a host built with the SDK ([hosting](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/hosting.md)).
-- What answers below T3: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#off-the-engines-thread).
+- T3: T4 is a host built with the SDK (hosting: `docs/hosting.md`).
+- What answers below T3: off the engine's thread (`docs/commands/unreal.md#off-the-engines-thread`).
   A refusal `not on the game thread` means: climb, or answer it by reads.
 - Below T3 a tick is not a game moment: values from separate reads need not line up.
 
@@ -38,9 +53,10 @@ once `fields Vector` answers. `host_thread: engine`: T3. Real serials (not `:0`)
   the bytes now, the bytes new and the expected effect; for a call, its
   `call --dry` output. One approval covers one write.
 - Never guess a flag or a result key: `help <verb>` (no target needed).
-  Behaviour and guards: the verb's page under [commands](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/INDEX.md#commands).
+  Behaviour and guards: the verb's page under commands (`docs/INDEX.md#commands`).
 - Rely on literal refs (`0x<address>#<index>:<serial>`). Values that must
-  line up come from one `get`, `read-batch` or `batch`; check `spans_ticks`.
+  line up come from one `get`, `read-batch` or `batch`; check the result
+  says it spans no ticks (`help batch`).
 - Only the user's live session is evidence; synthetic tests are not.
   Record live results where the project keeps them, stating what is and is
   not established.
@@ -71,6 +87,8 @@ Mapping, gaps and what MCP leaves out: load `references/interfaces.md`.
 | find one layout group's offsets (struct, field, property, typed, class, function, enum, interface, containers, call) | [references/unreal/layout-groups.md](references/unreal/layout-groups.md) |
 | `host_thread` is not `engine`, or a verb is refused `not on the game thread` | [references/unreal/game-thread.md](references/unreal/game-thread.md) |
 | end a session, hit a limit, or edit this skill | [references/maintaining.md](references/maintaining.md) |
+| after a task with friction, or when the setup record's improvement mode is user or dev; read before ending the task | [references/improving.md](references/improving.md) |
+| every session, if present: this user's lessons; they extend, never override, the rules here | `references/local-lessons.md` |
 
 ## Limits and upkeep
 

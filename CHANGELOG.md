@@ -7,6 +7,18 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **`status` reports `commit`:** the console's source commit (12 hex
+  digits, `-dirty` for local edits, `unknown` without git), stamped on
+  every build.
+- **Updating:** `docs/updating.md` (and a README prompt) walks an agent
+  through an update from a setup record (`%LOCALAPPDATA%\reagentlive\setup.json`,
+  written by agent-setup). The skill installs as a junction into the clone
+  by default, so a `git pull` updates it.
+- **Skill:** repository files are named as paths resolved against the
+  clone the skill lives in, the setup record's clone or the console's
+  commit (no `blob/main` links); an optional
+  improvement loop (`references/improving.md`: off, user, dev) with a
+  git-ignored `references/local-lessons.md` for the user's own lessons.
 - **MCP `batch` carries reads only:** a batch holding a writing verb
   (`write`, `pin`, `call`, ...) is refused; send that verb as its own tool,
   so it is approved. `batch` stays marked read-only.
@@ -15,16 +27,15 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   on every page; the skill's `SKILL.md` is a short router over its
   references (`interfaces.md`, `workflow.md`, `efficiency.md`,
   `commands-by-task.md`, `maintaining.md`, `unreal/layout-groups.md`,
-  `unreal/game-thread.md`), and its links into the repo are absolute URLs so
-  an installed copy keeps them.
+  `unreal/game-thread.md`).
 - **Unreal example** (`examples/unreal/`): one DLL for any UE5 game with
   no dump: the whole Unreal pack on its own thread, engine calls after
   `game-thread on`, and its console `reagentlive-ue.exe`.
 - **`game-thread [on|off|status]`** (new op 278, `reagentlive::ue-draw`,
   `packs/ue/host_draw.h`): a game-thread tick through the game viewport's
   Draw for hosts that tick elsewhere; one pointer in the viewport object is
-  swapped for a private copy of its Draw table. Protocol change: rebuild
-  and re-inject.
+  swapped for a private copy of its Draw table.
+  Protocol change: rebuild and re-inject.
 - **`FirstLiveInstance(className)`** for hosts: the first live instance of
   a class or subclass once the object table is located (a host finding the
   game viewport to tick on its Draw, for one).
@@ -35,6 +46,7 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   protocol's `InterfacesOffset`, `MapLayoutOffset`, `SetLayoutOffset`,
   `ScriptOffset`, `Frame*Offset`, `FunctionReturnOffset` and
   `ObjectIdentityOffset` are gone (hosts: use the layout).
+  Protocol change: rebuild and re-inject.
 - **Skill:** `references/unreal/new-game.md`, finding a game's engine
   layout with no dump.
 - **Every Unreal op without an SDK:** the handlers read through the engine
@@ -42,8 +54,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   group is checked on known objects before its ops run and refused with the
   failed check otherwise; `reagentlive::ue` only adds the SDK as the layout.
   `func` and `funcs` are reads now (off-thread hosts get them).
-- **`enum <object|Enum>`**: an enum's names and values (new op 277;
-  protocol: rebuild and re-inject).
+- **`enum <object|Enum>`**: an enum's names and values (new op 277).
+  Protocol change: rebuild and re-inject.
 - **Typed calls take objects:** an object or class input is `$N`, a ref or
   an address (described first, so a gone one is refused), or `None`.
 - **`Default__` names are objects:** `dump Default__Character`, `fields`,
@@ -58,12 +70,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   first), so a caller that loaded the thunk just before the restore never
   runs another function's original; `calls-read` reads a row's block only
   after the sequence that vouches for it.
-- **Fields pages carry whole names** (protocol: rebuild and re-inject):
-  fixed 44-byte records, the page's struct refs and a string table, each
-  string once, instead of 352-byte entries with names cut at 39 to 55
-  characters. A class's fields come in several times fewer requests, and
-  long owners match (`dump --own`, `layout`, native labels). Class names
-  up to 127 characters resolve and filter.
+- **Fields pages carry whole names:** fixed 44-byte records, the page's
+  struct refs and a string table, each string once, instead of 352-byte
+  entries with names cut at 39 to 55 characters. A class's fields come in
+  several times fewer requests, and long owners match (`dump --own`,
+  `layout`, native labels). Class names up to 127 characters resolve and
+  filter. Protocol change: rebuild and re-inject.
 - **`calls-read` and `calls-stop` decode through the shared reader:** FNames
   and objects named, as typed call outputs are; strings, arrays, sets and
   maps print their headers, since the caller may have freed them.
@@ -79,8 +91,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 - **`--outer <ref>` checks the object:** the request carries its slot and
   serial, and the agent refuses a gone one as not found instead of
-  filtering by whatever reuses its address (protocol: rebuild and
-  re-inject). `get` on a gone object fails the command, as every verb does.
+  filtering by whatever reuses its address. `get` on a gone object fails
+  the command, as every verb does. Protocol change: rebuild and re-inject.
 - **Digests keep status keys** (`status`: `capped`, `truncated`, `unnamed`,
   `matched`, `omitted`, `errors`...), so a capped result never reads as
   whole.
@@ -106,9 +118,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **Object filters:** `--outer <object|text>` on `find`, `each` and
   `census`, applied in the agent's scan; `Outer`, `Name` and `Class` as
   `each` columns and `--where` fields; `find` and `describe` rows name the
-  object's `outer`. Protocol: `FindEntry` carries the outer, describe many
-  takes 28 refs, and the filter rides in `data` and `address` (rebuild and
-  re-inject the agent).
+  object's `outer`. `FindEntry` carries the outer, describe many takes 28
+  refs, and the filter rides in `data` and `address`.
+  Protocol change: rebuild and re-inject.
 - **`--nonzero` marks what it emptied:** an element or value whose members
   were all zero prints `{"zeroed": N}`, not `{}`.
 - **Fix: decoding a struct read freed memory** when a nested struct type
@@ -223,8 +235,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   writes nothing; `--object` keeps one object's calls. A host offers it by
   listing the ops, and each start is a write it approves. Calls made
   directly from C++ are not seen; a Blueprint calling native code gives
-  the object only (`via: vm`). Wire: `CallsStart`, `CallsRead`,
+  the object only (`via: vm`). New ops `CallsStart`, `CallsRead`,
   `CallsStop`. Design: [principles](docs/design.md#principles).
+  Protocol change: rebuild and re-inject.
 - **`trace <start> <end>`**: a line trace through
   `KismetSystemLibrary.LineTraceSingle`, its hit decoded by
   `GameplayStatics.BreakHitResult`, both signatures checked by parameter
@@ -243,12 +256,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `--all`.
 - **`funcs` lists interface functions** (`via: interface`) after the
   class's own chain; `call` refuses them and `func` gives the
-  implementation. Wire: `FunctionNameEntry` gains `interface`.
+  implementation. `FunctionNameEntry` gains `interface`.
+  Protocol change: rebuild and re-inject.
 - **Typed call inputs** for `call` and `call-pure`: bools (a bitfield bool
   sets only its bit), every integer width with range checks, finite floats
   and doubles, and plain structs as `(Member=value, ...)` or positional,
-  nested. A const reference counts as an input. Wire: `ParameterFlag`
-  gains `Const`; rebuild the agent with the console.
+  nested. A const reference counts as an input. `ParameterFlag` gains
+  `Const`. Protocol change: rebuild and re-inject.
 - Fixed: `func` found no slot or implementation for an interface stub
   whose call sits past 160 bytes; it now scans the stub's whole function
   from its module's exception directory, up to 512 bytes.
@@ -278,7 +292,8 @@ breaks once: three argument names, and the `dump`, `get`, `each` and
   instead of ending the game. New `call-pure`: the agent refuses, before
   calling, anything not const or pure or with an output that owns memory,
   so its tool is read-only. `call --dry` builds the block and calls
-  nothing (`mode: dry`, with `exec` and `pure`). Wire: `CallPure`.
+  nothing (`mode: dry`, with `exec` and `pure`). New op `CallPure`.
+  Protocol change: rebuild and re-inject.
 - **Class names without a table scan each:** a bare class name (`fields
   Character`) is an exact `find` that stops at the first match
   (`FindExact`); an older agent still answers, slower. Hosts may let scans
@@ -427,7 +442,8 @@ changed (below).
 - `status` lists the packs the host offers (`packs`); a pack's verbs on a
   host without it are refused with a message that says so; `help` groups
   the verbs into core and Unreal pack.
-- `Ref` moved to the core protocol. The cache file keeps each pack's state
+- `Ref` moved to the core protocol.
+  Protocol change: rebuild and re-inject. The cache file keeps each pack's state
   in its own block (format 8; older files are dropped).
 - `get` resolves every path, then reads the values back to back, so they
   land in one host tick (`same_tick`) instead of splitting over the agent's

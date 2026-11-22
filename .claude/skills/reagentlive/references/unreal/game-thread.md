@@ -2,13 +2,13 @@
 
 Trigger: `host_thread` is not `engine`, or a verb is refused `not on the
 game thread`. Which verbs need it:
-[off the engine's thread](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#off-the-engines-thread).
+off the engine's thread (`docs/commands/unreal.md#off-the-engines-thread`).
 `game-thread` arguments and modes: `help game-thread`.
 
 ## Before asking
 
 - `status` shows `host_thread: engine`: already on it; nothing here.
-- `game-thread` answers `unsupported`: the host does not link
+- `game-thread` answers unsupported: the host does not link
   `reagentlive::ue-draw`. Use the host's own switch if its notes name one;
   else stay at reads and tell the user.
 - Can reads answer the question (`get`, `dump`, `fields`, `entries`, a
@@ -18,7 +18,7 @@ game thread`. Which verbs need it:
 
 The tick runs through the game viewport's Draw: entry
 `ViewportDrawIndex` of the table at `ViewportInterfaceOffset` in the
-viewport client ([`src/reagentlive/packs/ue/engine_layout.h`](https://github.com/Krixx1337/ReAgentLive/blob/main/src/reagentlive/packs/ue/engine_layout.h)). Confirm it
+viewport client (`src/reagentlive/packs/ue/engine_layout.h`). Confirm it
 in every new game before the first `on`:
 
 1. `find --cls GameViewportClient --live` (games subclass it); read the
@@ -37,9 +37,10 @@ in every new game before the first `on`:
   table swapped for a private copy). State the viewport address, the table
   pointer now, and the effect.
 - After `on`: `game-thread` shows the mode and the hooked Draw's RVA;
-  `status` shows `host_thread: engine` once it ticks. `waiting`: armed,
+  `status` shows `host_thread: engine` once it ticks. Waiting: armed,
   installs on a later host tick (any Unreal verb locates the viewport).
-  `conflict`: not installed; report its `text`, do not retry.
+  A conflict: not installed; report its text, do not retry. Modes:
+  `help game-thread`.
 - **Known-answer call**, the first call on a new host or in a new game:
   ask the user first (SKILL.md rules), then `call-pure
   Default__KismetMathLibrary Add_IntInt A=2 B=3` returns 5. Only then

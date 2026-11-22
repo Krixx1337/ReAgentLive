@@ -1,7 +1,7 @@
 # Hidden state and unreflected objects
 
-Verb behaviour: [native objects](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/native-objects.md),
-[memory](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/memory.md).
+Verb behaviour: native objects (`docs/commands/native-objects.md`),
+memory (`docs/commands/memory.md`).
 
 ## An unreflected object
 
@@ -74,9 +74,9 @@ No reflection, no engine pack, or a native member behind a reflected one:
 
 ## Searching memory
 
-- Long searches: `--background` keeps the game smooth when the host allows
-  it; `--heap` for structs (search a vtable pointer to find every copy),
-  `--module` for code and static data.
+- Narrow long searches (`help search`): the heap for structs (search a
+  vtable pointer to find every copy), one module for code and static data,
+  in the background when the host allows it, to keep the game smooth.
 - `search` matches exact bytes. For a value that moves, search while it
   rests at a known value (full, zero), or search the exact bytes a getter
   returned in the same `batch`.

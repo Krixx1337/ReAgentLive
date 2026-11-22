@@ -2,7 +2,9 @@
 
 **TL;DR:** Instructions for an AI coding agent. Ask which kind of target,
 build the matching example, point the MCP server at that example's
-console, install the skill folder and check the agent answers `status`.
+console, link the skill folder into the clone, check the agent answers
+`status`, and write a setup record so updates need no questions. Later
+updates: [updating](updating.md).
 
 These steps set up ReAgentLive so you can investigate a running Windows
 x64 process. Run every step yourself. Ask the user only where a step says
@@ -20,7 +22,9 @@ Steps:
 6. Install the skill
 7. Verify
 8. (Optional) Get an injector
-9. Report
+9. Choose the improvement mode
+10. Write the setup record
+11. Report
 
 ---
 
@@ -154,17 +158,73 @@ a rebuild that changes a verb. How scripts use it:
 
 The `reagentlive` skill is one folder: `SKILL.md` (first command, tiers,
 rules, which interface) and `references/`, which `SKILL.md` names and says
-when to read. It links the docs by URL, so a copy works on its own.
+when to read. It reads the docs from the clone, so install it as a link
+into `<dir>`: then `git pull` updates skill, docs and build together. Use
+the first option that works and remember which (`skill_install` in step
+10).
 
-- **Claude Code:** delete `$HOME\.claude\skills\reagentlive` if it exists,
-  then copy the whole `<dir>\.claude\skills\reagentlive` folder there, so
-  no file from an older copy stays.
-- **Other agents:** add this line to the user-level instructions file, for
-  example `$HOME\.codex\AGENTS.md` for Codex:
+**Claude Code.** The link is `$HOME\.claude\skills\reagentlive`. First
+remove an old one: a link only loses the link (`cmd /c rmdir` never
+touches the folder it points to); an old copy is deleted after its
+`references/local-lessons.md` (the user's own lessons, if any) moves into
+the clone's skill folder, where it is git-ignored and every option below
+finds it:
 
-  ```
-  Before investigating a running process with the reagentlive tools, read <dir>/.claude/skills/reagentlive/SKILL.md and the references it names, and follow them.
-  ```
+```powershell
+$link = "$HOME\.claude\skills\reagentlive"
+$skill = "<dir>\.claude\skills\reagentlive"
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+if (Test-Path $link) {
+  if ((Get-Item $link -Force).LinkType) { cmd /c rmdir "$link" }
+  else {
+    if (Test-Path "$link\references\local-lessons.md") {
+      Move-Item "$link\references\local-lessons.md" "$skill\references\" -Force
+    }
+    Remove-Item $link -Recurse -Force
+  }
+}
+```
+
+1. **Junction** (`junction`, the default; no admin rights):
+
+   ```powershell
+   New-Item -ItemType Junction -Path $link -Target "<dir>\.claude\skills\reagentlive"
+   ```
+
+   or from `cmd`: `mklink /J "%USERPROFILE%\.claude\skills\reagentlive" "<dir>\.claude\skills\reagentlive"`.
+2. **Symlink** (`symlink`), if the junction fails, or the skill is missing
+   from Claude Code after the restart (step 11): it needs Developer Mode
+   or an elevated shell. Remove the junction as above, then:
+
+   ```powershell
+   New-Item -ItemType SymbolicLink -Path $link -Target "<dir>\.claude\skills\reagentlive"
+   ```
+
+   Then set `skill_install` to `symlink` in the record (step 10), also
+   when the record was already written.
+
+3. **Local plugin** (`plugin`): reserved until the repo ships
+   `<dir>\.claude-plugin\marketplace.json`; skip it while that file is
+   absent. When present: ask the user to run `/plugin marketplace add <dir>`
+   in Claude Code and install the plugin it lists. It loads in place from
+   the clone, named `reagentlive:reagentlive`; updates need
+   `/reload-plugins`. Set `skill_install` to `plugin` in the record. (A
+   plugin from a remote marketplace is a cached copy under
+   `~/.claude/plugins/cache`, never edited; its lessons live at
+   `%LOCALAPPDATA%\reagentlive\local-lessons.md`. Setup does not offer it.)
+4. **Copy** (`copy`), the last resort:
+   `Copy-Item $skill $link -Recurse` (it takes a moved
+   `local-lessons.md` along). A copy does not follow the clone; record its commit (`skill_commit`,
+   `git -C <dir> rev-parse --short=12 HEAD`) so the skill can tell when it
+   is older than the build.
+
+**Other agents** (`instructions`): add this line to the user-level
+instructions file, for example `$HOME\.codex\AGENTS.md` for Codex. It
+points into the clone, so it never goes stale:
+
+```
+Before investigating a running process with the reagentlive tools, read <dir>/.claude/skills/reagentlive/SKILL.md and the references it names, and follow them.
+```
 
 For every agent, add this line to the same user-level instructions file
 (`$HOME\.claude\CLAUDE.md` for Claude Code):
@@ -193,7 +253,7 @@ Python's, which has already exited). The Python process ends by itself.
 
 | Example | Pass when |
 |---|---|
-| own-thread | `status` has `"ok":true`, `"ticking":true`, `"host_thread":"own"` and `"packs":[]` |
+| own-thread | `status` has `"ok":true`, `"ticking":true`, `"host_thread":"own"`, `"packs":[]` and a `commit` equal to `git -C <dir> rev-parse --short=12 HEAD` |
 | Unreal | the same with `"packs":["ue"]`; `help game-thread` answers `ok` (the console has the verb) and `game-thread` answers `"mode":"off"` (the DLL has the Draw tick; `unsupported` means the wrong DLL) |
 
 Do not run Unreal commands such as `find` in the Python process: there is
@@ -248,7 +308,50 @@ Add this line to the user-level instructions file from step 6:
 ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it with <injector.exe> --process-name <name> --inject <dll>, only into a process the user names.
 ```
 
-## 9. Report
+## 9. Choose the improvement mode
+
+The skill keeps notes on what slowed it down and proposes fixes after a
+task ([the improvement guide](../.claude/skills/reagentlive/references/improving.md)).
+Ask the user: "Do you use ReAgentLive as a user or as a developer?"
+
+| Answer | `improvement` | The skill may |
+|---|---|---|
+| user (the default, also when unsure) | `user` | write one file only: its git-ignored `references/local-lessons.md` (`%LOCALAPPDATA%\reagentlive\local-lessons.md` for a remote plugin's cached copy); anything else (docs or code problems, host notes, findings) becomes a suggestion or issue text the user may act on |
+| developer | `dev` | propose changes to the skill, docs and ReAgentLive code; code changes on a branch with the build and tests run, never committed unasked |
+| neither ("off", "no") | `off` | nothing |
+
+## 10. Write the setup record
+
+One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
+[updating](updating.md) need no questions:
+
+| Field | Value |
+|---|---|
+| `dir` | `<dir>`, absolute |
+| `examples` | the example folders built: `["own_thread"]`, `["unreal"]` or both |
+| `client` | `claude-code`, `codex`, `cursor`, `copilot` or the client's name |
+| `python_functions` | `true` when step 5 ran |
+| `skill_install` | `junction`, `symlink`, `plugin`, `copy` (step 6), or `instructions` for an instructions line |
+| `skill_commit` | copy installs only: the commit copied |
+| `improvement` | `user`, `dev` or `off` (step 9) |
+| `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [updating](updating.md) sets it to the new commit |
+
+```powershell
+$commit = git -C "<dir>" rev-parse --short=12 HEAD
+$record = [ordered]@{
+  dir = "<dir>"; examples = @("<example>"); client = "<client>"
+  python_functions = $false; skill_install = "junction"
+  improvement = "user"; setup_commit = $commit
+}
+# Copy installs only: $record.skill_commit = $commit
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\reagentlive" | Out-Null
+[IO.File]::WriteAllText("$env:LOCALAPPDATA\reagentlive\setup.json", ($record | ConvertTo-Json))
+```
+
+`WriteAllText` writes UTF-8 without a byte order mark, which every JSON
+reader accepts. Replace an existing record.
+
+## 11. Report
 
 Tell the user:
 
@@ -256,10 +359,12 @@ Tell the user:
 ┌─ ReAgentLive setup complete ──────────────────────────┐
 │  ✓ Built     <dir>\<build> (<example>)                │
 │  ✓ MCP       reagentlive (<client>)                   │
-│  ✓ Skill     <path>                                   │
+│  ✓ Skill     <path> (<skill_install>)                 │
 │  ✓ Check     status ok, ticking, packs <packs>        │
 │  ✓ Tier      <T0, or T1-T2 (T3 after game-thread on)> │
 │  ✓ Injector  <path, or "skipped">                     │
+│  ✓ Mode      <user, dev or off>                       │
+│  ✓ Record    %LOCALAPPDATA%\reagentlive\setup.json    │
 │                                                       │
 │  ⚡ Restart your agent to load the MCP tools           │
 │  Then name a process and ask:                         │
@@ -268,4 +373,6 @@ Tell the user:
 ```
 
 Then say in one line that for a UE5 game they mod with its SDK, the mod
-itself can host ReAgentLive for T4 ([hosting](hosting.md)).
+itself can host ReAgentLive for T4 ([hosting](hosting.md)), and in one
+line that to update later they paste the update prompt from the README
+(it runs [updating](updating.md)).

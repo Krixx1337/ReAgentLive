@@ -2,7 +2,7 @@
 
 Which verb answers which question. Arguments, flags and result keys:
 `help <verb>`. Behaviour and guards: the linked page. Which verbs need the
-game thread: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#off-the-engines-thread).
+game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-thread`).
 
 ## Session
 
@@ -10,10 +10,10 @@ game thread: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/
 |---|---|
 | Which packs, which thread, which build, tick rate | `status` |
 | Exe and module ranges | `base`, `modules` |
-| What this session cost | `stats` ([usage log](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md#usage-log-and-stats)) |
-| Many reads in one tick | `batch` ([fewer round trips](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md#fewer-round-trips)) |
+| What this session cost | `stats` (usage log: `docs/commands/console.md#usage-log-and-stats`) |
+| Many reads in one tick | `batch` (fewer round trips: `docs/commands/console.md#fewer-round-trips`) |
 
-## Objects and reflection ([Unreal pack](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md))
+## Objects and reflection (Unreal pack: `docs/commands/unreal.md`)
 
 | Question | Verb |
 |---|---|
@@ -42,7 +42,7 @@ game thread: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/
 | What the game passed to a function | `calls-start`, `calls-read`, `calls-stop` (approval) |
 | Get the game-thread tick | `game-thread` (approval for `on`) |
 
-## Memory ([memory](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/memory.md), [native objects](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/native-objects.md))
+## Memory (`docs/commands/memory.md`, `docs/commands/native-objects.md`)
 
 | Question | Verb |
 |---|---|
@@ -55,7 +55,7 @@ game thread: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/
 | A native object's class, bases, virtual table | `rtti`, `vtable` |
 | Change memory once / every tick / once with an undo | `write` / `pin` / `trial` (approval); `pin-list`, `pin-clear`, `trial-list`, `trial-clear` |
 
-## Over time ([memory: watch](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/memory.md#watch), [capture](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/capture.md))
+## Over time (`docs/commands/memory.md#watch`, `docs/commands/capture.md`)
 
 | Question | Verb |
 |---|---|
@@ -63,7 +63,7 @@ game thread: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/
 | An object's fields before and after an action | `snap`, then `dump --changed` |
 | Every tick for a few seconds, holding the caller | `watch`, `record` (blocking; interfaces reference) |
 
-## Native code ([fast lane](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/fast-lane.md))
+## Native code (fast lane: `docs/commands/fast-lane.md`)
 
 | Question | Verb |
 |---|---|
@@ -78,7 +78,7 @@ game thread: [off the engine's thread](https://github.com/Krixx1337/ReAgentLive/
 
 - Pass the literal ref a result prints (`<ref>` in this skill).
 - Addresses inside a module print `module` and `rva`; `<module>+<rva>`
-  works as an address ([addresses and refs](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md#addresses-and-refs)).
+  works as an address (addresses and refs: `docs/commands/console.md#addresses-and-refs`).
 - `name` takes many indices on one line. `name-find` can return binary
   junk beside real names: skip rows with control characters, confirm with
   `name <index>`.

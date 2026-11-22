@@ -1,6 +1,6 @@
 # Native code
 
-Verb behaviour: [fast lane](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/fast-lane.md).
+Verb behaviour: fast lane (`docs/commands/fast-lane.md`).
 
 ## Fast lane first
 
@@ -32,8 +32,8 @@ Answer one-address questions live, with no database:
 - **Names for the static tool:** with SDK-generator IDA mappings, import
   those first, then `export-labels <file> --kinds interface,global`;
   without them, a full `export-labels <file>`. Never a full export after
-  mappings. Import with [`src/reagentlive/frontends/ida/import_labels.py`](https://github.com/Krixx1337/ReAgentLive/blob/main/src/reagentlive/frontends/ida/import_labels.py)
-  ([labels](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#labels-for-a-static-tool)).
+  mappings. Import with `src/reagentlive/frontends/ida/import_labels.py`
+  (labels: `docs/commands/unreal.md#labels-for-a-static-tool`).
 - After a game patch: a new database (the RVAs change), then export and
   import the labels again. The first auto-analysis of a large Unreal image
   is slow: start it early. Decompiling from a session needs the tool
@@ -49,14 +49,14 @@ Answer one-address questions live, with no database:
 
 ## Native interface getters
 
-- **Never `call` a function declared on a native interface** (a `funcs` row
-  with `via: "interface"`): its stub calls a vtable slot without adjusting
+- **Never `call` a function declared on a native interface** (`funcs`
+  marks the row; `help funcs`): its stub calls a vtable slot without adjusting
   `this`, so it runs the wrong function. Code that looks it up by name on
   the class gets null: the symptom to recognise.
-- `func <object> <Interface>:<Fn>`, then open `implementation_rva` in the
-  static tool. A trivial getter is a field read: `movss xmm0, [rcx + X];
+- `func <object> <Interface>:<Fn>`, then open its implementation's RVA in
+  the static tool (keys: `help func`). A trivial getter is a field read: `movss xmm0, [rcx + X];
   ret` means the value lives at `object + offset + X`; read or capture it.
-- `slot` absent: open the stub (`rva`) and read the vtable at
+- No slot in the result: open the stub (`rva`) and read the vtable at
   `object + offset` yourself.
 - `func` refused with "interfaces array implausible": the engine's `UClass`
   layout differs. Find the array by hand: a `TArray` in the class whose
@@ -88,7 +88,7 @@ this for every table is a Python script, not a command.
 ## Making a signature
 
 You make the signature; ReAgentLive checks it against the live image
-([signatures](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/fast-lane.md#signatures)).
+(signatures: `docs/commands/fast-lane.md#signatures`).
 
 1. Read the function in the static tool with bytes shown, at the RVA
    (`func` gives a reflected function's native entry).
@@ -105,16 +105,17 @@ You make the signature; ReAgentLive checks it against the live image
    `--expect` set to the target. A `call rel32` at match offset C is
    `--resolve C+5,C+1`; `lea rcx, [rip+d]` at C is `C+7,C+3`.
 6. `sig-check <pattern> --expect <module>+<rva>` after every attempt; act on
-   it: `mismatches` (a typo or slipped byte count), `diverges_at` /
-   `unique_at_length` (how much longer; the extra bytes must be ones you
-   would keep fixed), `warnings` (a fixed field holds an address: wildcard).
+   what it reports (keys: `help sig-check`): mismatches (a typo or slipped
+   byte count), where it diverges or turns unique (how much longer; the
+   extra bytes must be ones you would keep fixed), warnings (a fixed field
+   holds an address: wildcard).
 7. Prefer the shortest unique pattern, then the most fixed bytes. Try
    several candidates in one `sig-file`. Then hand it to the host's checks.
 
 Without a static database: `disasm <entry> --function` for instruction
 boundaries, `sig-bytes <boundary> 96` for `suggested` masks, and
 `xrefs <entry>` for callers to build a reference signature from. Check
-`decoded` covers the pattern.
+the decoded length covers the pattern.
 
 ## Reading Blueprint logic
 
@@ -126,7 +127,7 @@ boundaries, `sig-bytes <boundary> 96` for `suggested` masks, and
 - `script` is an anchored scan, not a disassembler. To prove a returned
   value is used unchanged, read the bytecode near the end by hand: the
   function's script array (`Script` in the engine layout,
-  [`src/reagentlive/packs/ue/engine_layout.h`](https://github.com/Krixx1337/ReAgentLive/blob/main/src/reagentlive/packs/ue/engine_layout.h)); look for `EX_Let` 0x0F,
+  `src/reagentlive/packs/ue/engine_layout.h`); look for `EX_Let` 0x0F,
   `EX_LocalOutVariable` 0x48, `EX_Cast` 0x38.
 - With an SDK dump: the parameter struct's `CallFunc_*` locals name every
   call the function makes (any math node in between shows); `grep` the

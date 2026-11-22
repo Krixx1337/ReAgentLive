@@ -2,8 +2,8 @@
 
 Every interface sends the same verbs with the same argument keys and gets
 the same result keys. APIs, setup and options:
-[clients](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/client.md); console mechanics:
-[console](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md).
+clients (`docs/client.md`); console mechanics:
+console (`docs/commands/console.md`).
 
 ## Which one
 
@@ -57,11 +57,11 @@ for building tools, not for investigating.
   the rest read-only. Marked `writes` though the skill treats some uses as
   reads: `each` (field paths are reads; a getter column calls) and
   `game-thread` (even `status` prompts). `call-pure` is read-only, but its first call on a new host or in a new game still needs approval (SKILL.md rules).
-- **`batch` refuses writing verbs inside it** (`write`, `pin`, `trial`,
-  `call`, `each`, `calls-start`, `game-thread`, ...): send each as its own
-  tool so it is approved. Use `batch` for reads at one moment.
-- **Blocking verbs are left out** (`watch`, `record`, a host's countdown
-  capture): use `watch-start` / `watch-read` / `watch-stop`; for `record`
+- **`batch` refuses writing verbs inside it** (every verb `help` marks
+  `writes`, so `each` and `game-thread` too): send each as its own tool so
+  it is approved. Use `batch` for reads at one moment.
+- **Blocking verbs are left out** (`help` marks them `blocks`: `watch`,
+  `record`, a host's countdown capture): use `watch-start` / `watch-read` / `watch-stop`; for `record`
   use Python or the console.
 - **Each call is its own console run.** Nothing holds state between calls
   but literal refs, pin, trial and capture ids, and the console's cache
@@ -72,7 +72,7 @@ for building tools, not for investigating.
 ## Python
 
 - Generate the module once per console build; setup recipe in the
-  console-driving reference, API in [clients](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/client.md#generated-python-functions).
+  console-driving reference, API in clients (`docs/client.md#generated-python-functions`).
 - JSON calls refuse `$N`: take `rows[0]['ref']` and pass it on.
 - Results are strict records: a wrong key raises at once. Never wrap result
   access in `try`/`except` or a default.
@@ -85,5 +85,5 @@ for building tools, not for investigating.
 ## Console
 
 - Typed lines or JSON calls; `$N` works in typed lines only
-  ([addresses and refs](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md#addresses-and-refs)).
+  (addresses and refs: `docs/commands/console.md#addresses-and-refs`).
 - Quoting, parsing and one-shot use: console-driving reference.

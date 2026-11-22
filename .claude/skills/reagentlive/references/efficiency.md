@@ -1,7 +1,7 @@
 # Efficiency: fewer calls, smaller output
 
 Budgets, digests and `stats` keys:
-[console](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md#usage-log-and-stats).
+console (`docs/commands/console.md#usage-log-and-stats`).
 
 ## Fewer calls
 
@@ -16,10 +16,9 @@ Budgets, digests and `stats` keys:
 
 ## Smaller output
 
-- Filter `dump` (`--match`, `--nonzero`, `--changed`, `--own`) instead of
-  reading all of it.
-- Never `each`, `find` or `census` a whole class unfiltered: `--cls`,
-  `--where`, `--outer` for one asset's subobjects, `--limit`.
+- Filter `dump` instead of reading all of it (its filters: `help dump`).
+- Never `each`, `find` or `census` a whole class unfiltered: narrow by
+  class, value, owner (one asset's subobjects) or a limit (`help <verb>`).
 - Read only the keys you need; `help <verb>` lists them.
 
 ## Digests
@@ -31,9 +30,9 @@ Budgets, digests and `stats` keys:
 ## Measure the session
 
 - `stats` (also with no target) ranks this session's verbs by output and
-  marks `unfiltered`, `repeated` and `refused` calls. Check it before a long
-  step and act on the marks.
+  marks wasteful calls (unfiltered, repeated, refused; `help stats`). Check
+  it before a long step and act on the marks.
 - End the final report with its totals (context cost and what digests
   saved) and the two or three costliest habits.
-- `stats --all` shows patterns across sessions and verbs nobody calls;
-  `stats --sessions` compares this session with earlier ones.
+- `stats` also reads across sessions: patterns, verbs nobody calls, this
+  session against earlier ones (`help stats`).

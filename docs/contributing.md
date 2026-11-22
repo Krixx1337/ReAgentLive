@@ -278,13 +278,20 @@ Check this table before adding a fact; if it has a home, link there.
 | Engine layout offsets | `packs/ue/engine_layout.h` (code) and [unreal.md](commands/unreal.md#without-an-sdk) | skill (links) |
 | What may come next, and what will not | [ideas.md](ideas.md) | elsewhere |
 | How to describe it | [positioning.md](positioning.md) | README: the short pitch |
+| Updating an install: the procedure | [updating.md](updating.md) | README: the prompt only |
+| The setup record's fields | [agent-setup.md](agent-setup.md#10-write-the-setup-record) | the skill reads it, never restates it |
+| When and how an agent reviews a session and proposes skill lessons (modes, scratch file, rubric) | the skill's `references/improving.md` | docs |
+| The user's own skill lessons | the skill's `references/local-lessons.md` (git-ignored, the user's) | anything tracked |
 | Where code goes, tests, these rules | this page | |
 
-The skill ships apart from the docs (copied into an agent's skills
-folder), so it may carry the minimum an agent needs before its first
-command (the operational status rule, approval rules) and links every
-other fact by absolute URL (`https://github.com/Krixx1337/ReAgentLive/blob/main/<path>`);
-the docs own the full statements.
+The skill may be installed apart from the docs (a link into the clone, or
+a copy), so it carries the minimum an agent needs before its first command
+(the operational status rule, approval rules) and names every other fact
+as a repository path (`docs/tiers.md#...`), resolved by one rule in
+`SKILL.md`: the clone the skill folder lives in (through its link, a
+submodule or an instructions line), else the setup record's clone, else
+the console's commit on GitHub, else `main`. The docs own the full statements; the docs test checks every
+path exists and that no `blob/main` URL is left in the skill.
 
 **Page header.** Every page INDEX lists opens with its title, then (SSOT
 pages only) a `*Home of:*` line naming the facts it owns, then a
@@ -302,5 +309,10 @@ linked. The docs test checks both lines within a page's first 15 lines.
   Split a page by subject once it covers two or passes about 500 lines.
 - Plans are their own file, deleted when they ship: the decision moves to
   design, the behaviour to its page.
+- **CHANGELOG:** every entry that changes the wire protocol (an op, a
+  struct or a constant in `core/protocol.h` or a pack's `protocol_*.h`)
+  ends with the exact phrase `Protocol change: rebuild and re-inject.` on
+  one line. [Updating](updating.md#2-show-what-is-coming) searches for it
+  to tell the user a running target needs the new DLL.
 - Examples use placeholders (`game.exe`, `mygame-dev-1234`) and stock
   engine classes, never one game's names.

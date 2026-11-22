@@ -22,6 +22,7 @@ are under `src/reagentlive/`.
 | Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
 | Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
 | Have an AI agent set it all up | [agent setup](agent-setup.md) (build, MCP tools, skill, check) |
+| Update a clone, its build and skill | [updating](updating.md) (pull, rebuild, re-inject, check `commit`) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
 | Any UE5 game, no dump (T1-T2; T3 after `game-thread on`) | [Unreal example](../examples/unreal/README.md) |
 | Put the agent into a process, or host it in a mod (T4) | [hosting](hosting.md) |
@@ -37,9 +38,10 @@ are under `src/reagentlive/`.
 
 | Page | What |
 |---|---|
-| [../README.md](../README.md) | the pitch: tiers at a glance, a demo, use cases, where to start, the setup prompt |
+| [../README.md](../README.md) | the pitch: tiers at a glance, a demo, use cases, where to start, the setup and update prompts |
 | [tiers.md](tiers.md) | the tier ladder T0-T4: what each gives, needs and ships in; reading your tier from `status` |
-| [agent-setup.md](agent-setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill and check |
+| [agent-setup.md](agent-setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
+| [updating.md](updating.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |

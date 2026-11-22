@@ -2,7 +2,7 @@
 
 Every `write`, `pin` and state-changing `call` needs the user's approval
 first (SKILL.md rules). Call semantics and named inputs:
-[named calls](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#named-calls).
+named calls (`docs/commands/unreal.md#named-calls`).
 
 ## Calling functions
 
@@ -17,15 +17,16 @@ first (SKILL.md rules). Call semantics and named inputs:
   pure, or keeps an owned result: it needs approval and `call`.
 - Before asking for a `call`, put its `--dry` output in the request: the
   function, its `exec` address, `pure`, and the exact block.
-- A call that answers `access faulted` was caught inside the engine; the
+- A call refused as faulted was caught inside the engine; the
   game may now be unstable. Tell the user, and confirm later readings with
   a second read.
-- A `funcs` row with `via: "interface"`: never `call` it; follow the
-  native-interface method in the native-code reference.
+- A `funcs` row declared only on a native interface (`help funcs`): never
+  `call` it; follow the native-interface method in the native-code reference.
 - Static library functions: call them on the library's `Default__` object.
 - To cross-check a typed getter against a raw call, compare the complete
-  `result.hex` blocks on a stable target before relying on decoded output.
-- **Owned results** (`kept: true`): `release <object> <Fn>` once when done.
+  result blocks on a stable target before relying on decoded output.
+- **Owned results** (the result says it kept them; `help call`):
+  `release <object> <Fn>` once when done.
   Verify on the handle's control block with `read` (+8 shared, +12 weak
   count): the count stays flat across repeats and drops after `release`.
 - Getters that return a large engine struct by value (a stats struct of a

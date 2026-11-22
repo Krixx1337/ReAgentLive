@@ -25,7 +25,7 @@ by name and never opens the target process itself.
 | `heartbeat` | agent | incremented every `Tick`; a client derives the tick rate |
 | `requestSeq` | client | bumped after writing `request` |
 | `responseSeq` | agent | set to the handled `requestSeq` after writing `response` |
-| `owner` | agent | id of the agent instance that answers; a newer agent in the same process takes over and the older one stops ticking, after restoring its active trials once under their guards |
+| `owner` | agent | id of the agent instance that answers; a newer agent of the same protocol in the same process takes over and the older one stops ticking, after restoring its active trials once under their guards |
 | `takeovers` | agent | how many agents in this process were replaced |
 | `build` | agent | the loaded build as the host names it (`Host::build`, such as the image's link time), else the agent library's compile time, which an incremental build can leave stale (text, up to 47 characters) |
 | `request`, `response` | client, agent | one slot each |

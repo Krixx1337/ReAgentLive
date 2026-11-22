@@ -233,7 +233,9 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   takes the section over (`Section::owner`) and earlier ones stop answering.
   `status` reports the answering agent's build time and how many it
   replaced. An agent its host has stopped no longer ticks: clear trials
-  before stopping it.
+  before stopping it. This holds only for a build with the same protocol:
+  after a protocol change the section keeps the old layout, so restart the
+  process instead ([updating](updating.md#7-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.
 
 ## Host thread

@@ -1,9 +1,9 @@
 # A new Unreal game with no dump
 
 Engine offsets: `EngineLayout` and `StockUE5` in
-[`src/reagentlive/packs/ue/engine_layout.h`](https://github.com/Krixx1337/ReAgentLive/blob/main/src/reagentlive/packs/ue/engine_layout.h) (one member per offset, grouped
+`src/reagentlive/packs/ue/engine_layout.h` (one member per offset, grouped
 by profile group). What each group checks and which verbs it gates:
-[without an SDK](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#without-an-sdk).
+without an SDK (`docs/commands/unreal.md#without-an-sdk`).
 
 ## Try the verbs first
 
@@ -54,7 +54,7 @@ ProcessEvent slot and the engine version come from live `vtable`,
 
 - Inject an SDK-free host: `examples/unreal`, or any host linking
   `reagentlive::ue-base`. Run `status`. The first Unreal verb locates the
-  object table and name pool ([before the first command](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/unreal.md#before-the-first-command)).
+  object table and name pool (before the first command: `docs/commands/unreal.md#before-the-first-command`).
 - Note the module and both globals' RVAs (label them in the static tool if
   one is in use).
 - `find Class`, `find Struct`, `find Field`, `find Object`: the core

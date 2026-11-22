@@ -1,8 +1,8 @@
 # Driving the console and Python by hand
 
 API of the session and the generated functions:
-[clients](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/client.md); console arguments, one-shot use and
-the cache file: [console](https://github.com/Krixx1337/ReAgentLive/blob/main/docs/commands/console.md#one-shot-use).
+clients (`docs/client.md`); console arguments, one-shot use and
+the cache file: console (`docs/commands/console.md#one-shot-use`).
 
 ## Console lines
 
@@ -45,8 +45,8 @@ with Session(r'<console exe>') as s:
 - Never wrap result access in `try`/`except` or a default: a check that
   cannot run must fail, not pass.
 - Page with the console's cursor: follow `next_cursor` with `start`, or the
-  verb's limit flag. Check `capped` on `each`, `refs`, `xrefs` and
-  `touches`: the list was cut.
+  verb's limit flag. A list a verb can cut says so (`help <verb>`): check
+  it before treating the list as complete.
 - Stop after three identical refusals and fix the call; a loop that retries
   the same refusal only spends output.
 - Never parse console JSON by hand or write your own session loop: hand
