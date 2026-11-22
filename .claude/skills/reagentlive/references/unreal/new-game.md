@@ -16,6 +16,14 @@ the check that failed ("field: Vector members are not X, Y, Z"), which is
 where to start. Find that group's offsets live, and write them down as a
 profile (`ProfileJson` format: `{"groups": {group: {member: "0x.."}}}`).
 
+**The agent cannot load a profile yet.** A group that differs from
+`StockUE5` stays off until profile loading exists; the profile is the
+evidence for it, and for a host that builds its own layout. Say so to the
+user instead of working around a refused group.
+
+Reads answering is not the end: calls need the game thread too (see
+[calls in a new game](#calls-in-a-new-game)).
+
 ## A static tool is optional
 
 Live reads settle every group except `call`'s frame offsets (`FFrame`
@@ -209,7 +217,35 @@ slot comes from live disassembly; the frame offsets from a static tool.
   `call-pure Default__KismetMathLibrary Add_IntInt A=2 B=3` returns 5.
   Only then turn on `call`, `each` with functions, and the recorder.
 
-### Reading names while probing
+## Calls in a new game
+
+Calls, `each` with functions, `script`, `refs` and the recorder run only
+when the host ticks the agent on the engine's game thread (`status`:
+`host_thread: engine`). A host that ticks on a frame thread (`borrowed`)
+answers reads only; it needs a game-thread tick first, which is the host's
+job, not the pack's.
+
+A common game-thread tick is the game viewport's Draw: Draw takes the
+viewport client's `FViewportClient` part (UObject `+0x28`) as `this`, and
+Draw is entry 4 of that part's vtable in stock UE5 (destructor, `Precache`,
+`RedrawRequested`, `RequestInvalidateHitProxy`, `Draw`). Before a host
+hooks it in a new game, confirm the target, read-only:
+
+1. `find --cls GameViewportClient --live` (games subclass it); `read
+   <ref>+0x28` gives the interface's table; read its first entries.
+2. Every entry, and the table itself, lies in the game's image; entry 2 is
+   often an empty function (`RedrawRequested`'s default body).
+3. Decompile entry 4: a large function taking `(this, Viewport, Canvas)`
+   that names `CanvasObject` and `DebugCanvasObject` is
+   `UGameViewportClient::Draw`. Anything else: do not hook it; report what
+   entry 4 is.
+
+Then the user switches the host to the game-thread tick, `status` shows
+`host_thread: engine`, and the known-answer call (`call` group above, with
+the user's approval) proves the rest. Ask the user to test the host's stop
+(it must put back whatever the hook replaced) before ending the session.
+
+## Reading names while probing
 
 Query each comparison index with its own `name` command. A garbage index
 (any pointer or flag word read as an index) can misalign the other names in
@@ -217,7 +253,8 @@ the same `name` reply.
 
 ## 3. Finish
 
-- Write the profile beside the host (`<game>.layout.json`).
+- Write the profile beside the host (`<game>.layout.json`), even when every
+  group matched `StockUE5`: it is the record of what was checked.
 - Compare every group again on a second set of objects (e.g. after a level
   change). A value that moved is not an engine offset.
 - Record which groups are in, which are out, and why.
