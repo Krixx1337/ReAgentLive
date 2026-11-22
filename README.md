@@ -17,13 +17,13 @@ its tools; you can ask from a command line.
 
 ## What you can do, by tier
 
-```text
-T4 SDK host        + layout from your mod's SDK dump, your mod's own commands  (your mod hosts it)
-T3 Game thread     + call the game's own functions          (after one command moves it onto the game's main thread)
-T2 Reflection      + read fields and values by name, from the engine's own type info  (any UE5 game, no dump)
-T1 Unreal located  + find objects by name, count instances of a class    (any UE5 game, no dump)
-T0 Core              memory, code, signatures, trial writes               (any x64 process)
-```
+| Tier | Adds | Works on |
+|---|---|---|
+| **T4** SDK host | Layout from your mod's SDK dump; your mod's own commands | Your mod hosts it |
+| **T3** Game thread | Call the game's own functions | One command moves it onto the game's main thread |
+| **T2** Reflection | Read fields and values by name, from the engine's own type info | Any UE5 game, no dump |
+| **T1** Unreal located | Find objects by name; count instances of a class | Any UE5 game, no dump |
+| **T0** Core | Memory, code, signatures, trial writes | Any x64 process |
 
 Each rung adds to the one below. An *SDK dump* is a set of C++ headers a
 dumper tool generates from a game; a *signature* is a byte pattern that
