@@ -71,6 +71,8 @@ Progress Script(const Request&, Response&, bool first, const Host&);
 Progress Refs(const Request&, Response&, bool first, const Host&);
 // One page of an array, set or map field's elements (header and elements in one tick).
 Progress Entries(const Request&, Response&, bool first, const Host&);
+// An enum's names and values, one page.
+Progress Enum(const Request&, Response&, bool first, const Host&);
 // Every native function's exec entry (multi-tick scan, cached pages).
 Progress ExecEntries(const Request&, Response&, bool first, const Host&);
 // The call recorder (protocol_ue.h): opt-in by listing these ops. Each

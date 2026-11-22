@@ -564,8 +564,58 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
     return Progress::Done;
 }
 
+// UEnum::Names, a TArray of {FName, int64}, one page from args[1]. The
+// array is checked before any pair is read, and each pair is copied under
+// the fault guard.
+Progress EnumBody(const Request& request, Response& response, bool, const Host& host) {
+    const Context& pack = Pack(host);
+    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
+    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    const SDK::UObject* object = ResolveRequestObject(request, pack);
+    if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
+    if (!object->IsA(SDK::EClassCastFlags::Enum) || !host.readable(object, sizeof(SDK::UEnum))) {
+        Refuse(response, Status::BadRequest, "not an enum");
+        return Progress::Done;
+    }
+    const Ref before = Identify(object, pack);
+    const auto& field = static_cast<const SDK::UEnum*>(object)->Names;
+    static_assert(sizeof(field) == sizeof(ArrayHeader));
+    ArrayHeader names{};
+    memcpy(&names, &field, sizeof(names));
+    if (names.count < 0 || static_cast<uint32_t>(names.count) > MaxEnumEntries || names.capacity < names.count ||
+        (names.count && !names.data)) {
+        Refuse(response, Status::Refused, "the enum's names do not look like an array");
+        return Progress::Done;
+    }
+    // A pair is the FName, then the int64 at the next 8-byte boundary.
+    constexpr size_t ValueOffset = (sizeof(SDK::FName) + 7) & ~size_t{7}, PairSize = ValueOffset + sizeof(int64_t);
+    const uint32_t numberOffset = Layout().shape.nameNumberOffset;
+    const auto total = static_cast<uint32_t>(names.count);
+    const uint32_t first = request.args[1] < total ? static_cast<uint32_t>(request.args[1]) : total;
+    const uint32_t shown = static_cast<uint32_t>(std::min<size_t>(total - first, MaxEnumPerPage));
+    auto* entries = reinterpret_cast<EnumEntry*>(response.data);
+    for (uint32_t i = 0; i < shown; ++i) {
+        uint8_t pair[PairSize];
+        if (!GuardedCopy(pair, reinterpret_cast<const uint8_t*>(names.data) + size_t{first + i} * PairSize, PairSize)) {
+            Refuse(response, Status::NotReadable, "the enum's names are unreadable");
+            return Progress::Done;
+        }
+        EnumEntry& entry = entries[i];
+        memcpy(&entry.name, pair, sizeof(entry.name));
+        memcpy(&entry.number, pair + numberOffset, sizeof(entry.number));
+        memcpy(&entry.value, pair + ValueOffset, sizeof(entry.value));
+    }
+    response.length = shown * static_cast<uint32_t>(sizeof(EnumEntry));
+    response.detail = FindDetail(total, first + shown < total ? first + shown : 0);
+    StillSame(before, pack, response);
+    return Progress::Done;
+}
+
 // Off the engine's thread (Context::offThreadReads) these run under a fault guard.
 Progress Fields(const Request& request, Response& response, bool first, const Host& host) {
     return GuardedRead(&FieldsBody, request, response, first, host);
+}
+Progress Enum(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&EnumBody, request, response, first, host);
 }
 }

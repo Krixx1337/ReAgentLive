@@ -73,6 +73,12 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no class or struct named " + name});
 }
 
+// A bare name where an object or a class goes: a default object by its
+// name (Default__Class), else a class or struct.
+Result<Ref> ResolveObjectOrClass(Session& session, const std::string& name) {
+    return name.starts_with("Default__") ? DefaultObject(session, name) : ResolveClass(session, name);
+}
+
 // A default object (Default__Class) by exact name, kept for the session.
 Result<Ref> DefaultObject(Session& session, const std::string& name) {
     auto& known = Ue(session).defaultObjects;
@@ -85,6 +91,46 @@ Result<Ref> DefaultObject(Session& session, const std::string& name) {
             return object.ref;
         }
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no object named " + name});
+}
+
+// enum <object|Enum>: the names and values, named in one names request.
+void RunEnum(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    if (!client.Supports(ue::op::Enum)) return JsonError(session, jsonCommand, "unsupported", "agent does not support enum");
+    Ref object = ue::GetRef(command.request);
+    if (!command.className.empty()) {
+        auto found = ue::Find(client, command.className, {"Enum", 0, true});
+        if (!found) return CommandError(session, jsonCommand, found.error());
+        const auto match = std::ranges::find_if(found->objects, [&](const ue::Object& o) {
+            return ue::SameWireName(o.name, command.className, ue::FindNameBytes);
+        });
+        if (match == found->objects.end())
+            return CommandError(session, jsonCommand,
+                Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no enum named " + command.className});
+        object = match->ref;
+    }
+    auto described = ue::Describe(client, object);
+    if (!described) return CommandError(session, jsonCommand, described.error());
+    auto entries = ue::EnumEntries(client, object);
+    if (!entries) return CommandError(session, jsonCommand, entries.error());
+    std::vector<int32_t> indices;
+    for (const auto& entry : *entries) indices.push_back(entry.name);
+    std::vector<std::string> names;
+    if (!indices.empty()) {
+        auto found = ue::Names(client, indices);
+        if (!found) return CommandError(session, jsonCommand, found.error());
+        names = std::move(*found);
+    }
+    shape::Enum out;
+    out.ref = ReusableRef(described->ref);
+    out.name = described->name;
+    for (size_t i = 0; i < entries->size(); ++i) {
+        const auto& entry = (*entries)[i];
+        std::string name = i < names.size() && !names[i].empty() ? names[i] : "#" + std::to_string(entry.name);
+        if (entry.number) name += "_" + std::to_string(entry.number - 1);
+        out.rows.push_back({std::move(name), entry.value});
+    }
+    Emit(session, jsonCommand, std::move(out));
 }
 
 // A pooled name's comparison index by text, kept for the session.

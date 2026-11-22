@@ -7,6 +7,18 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **`enum <object|Enum>`**: an enum's names and values (new op 277;
+  protocol: rebuild and re-inject).
+- **Typed calls take objects:** an object or class input is `$N`, a ref or
+  an address (described first, so a gone one is refused), or `None`.
+- **`Default__` names are objects:** `dump Default__Character`, `fields`,
+  `func`, `label` and `calls-start` take a default object by name.
+- **`calls-start` notes a Blueprint function:** calls from other
+  Blueprints never reach its pointer.
+- **Python `Session`** resolves a relative console path and says where it
+  looked when nothing is there.
+- **A dump preview's header** is not marked truncated.
+
 - **Call recorder slots wait a second before reuse** (oldest restore
   first), so a caller that loaded the thunk just before the restore never
   runs another function's original; `calls-read` reads a row's block only

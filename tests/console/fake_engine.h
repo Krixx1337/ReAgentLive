@@ -91,6 +91,7 @@ struct World {
     std::vector<Object> objects;                // By slot.
     std::vector<std::string> names{"None"};     // The FName pool, by comparison index.
     std::deque<Function> functions;             // The last one is the recording calls-read reads.
+    std::vector<std::pair<int32_t, std::vector<std::pair<std::string, int64_t>>>> enums; // By the enum's slot.
 
     uint8_t* Alloc(size_t size) {
         memory.emplace_back(std::max<size_t>(size, 16), uint8_t{0});
@@ -442,6 +443,27 @@ inline Progress Parameters(const Request& request, Response& response, bool, con
     return Progress::Done;
 }
 
+// An enum's names and values, one page.
+inline Progress EnumOp(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    auto& world = TheWorld();
+    const Object* object = world.Resolve(ue::GetRef(request));
+    const auto found = object ? std::ranges::find(world.enums, object->ref.index, &decltype(world.enums)::value_type::first)
+                              : world.enums.end();
+    if (found == world.enums.end()) { reagentlive::Refuse(response, Status::BadRequest, "not an enum"); return Progress::Done; }
+    const auto& entries = found->second;
+    const auto total = static_cast<uint32_t>(entries.size());
+    const auto first = static_cast<uint32_t>(std::min<uint64_t>(request.args[1], total));
+    const auto shown = static_cast<uint32_t>(std::min<size_t>(total - first, ue::MaxEnumPerPage));
+    for (uint32_t i = 0; i < shown; ++i) {
+        const ue::EnumEntry entry{entries[first + i].second, world.Name(entries[first + i].first), 0};
+        memcpy(response.data + size_t{i} * sizeof(entry), &entry, sizeof(entry));
+    }
+    response.length = shown * static_cast<uint32_t>(sizeof(ue::EnumEntry));
+    response.detail = ue::FindDetail(total, first + shown < total ? first + shown : 0);
+    return Progress::Done;
+}
+
 // The recorder: the last function's calls, after the sequence asked for.
 inline Progress CallsRead(const Request& request, Response& response, bool, const Host&) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -496,6 +518,7 @@ constexpr reagentlive::Command Commands[] = {
     {ue::op::Function, "function", &FunctionOp},
     {ue::op::Parameters, "parameters", &Parameters},
     {ue::op::CallsRead, "calls read", &CallsRead},
+    {ue::op::Enum, "enum", &EnumOp},
 };
 
 inline std::wstring SectionPrefix() { return L"Local\\reagentlive-fake-"; }

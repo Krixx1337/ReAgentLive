@@ -60,8 +60,9 @@
 - A data table's rows: `rows <table> --match <row> --fields <a,b.c>`; the
   row struct comes from `RowStruct`. Text fields (`DisplayName`) show their
   string in `get`, `each` and `dump`.
-- Obfuscated enum value names are missing from the name pool; read the enum
-  in the SDK headers instead.
+- A byte or enum field prints a number: `enum <EnumName>` lists the names
+  and values. Obfuscated enum value names are missing from the name pool
+  (`enum` then shows `#index`); read the enum in the SDK headers instead.
 
 ## Collision and traces
 

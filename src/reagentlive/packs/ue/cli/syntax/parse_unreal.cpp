@@ -207,6 +207,15 @@ Parsed Script(const Args& args, const ParseContext& context) {
     return FunctionTarget(args, context, ue::op::Function, Kind::Script);
 }
 
+// enum <object|Enum>: an enum's names and values.
+Parsed Enum(const Args& args, const ParseContext& context) {
+    Command command;
+    if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("enum must be $N, an address or an enum name");
+    command.kind = Kind::Enum;
+    command.request.op = ue::op::Enum;
+    return command;
+}
+
 Parsed Params(const Args& args, const ParseContext& context) {
     return FunctionTarget(args, context, ue::op::Parameters, Kind::Remote);
 }

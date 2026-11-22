@@ -634,6 +634,21 @@ TEST_CASE("a name cut by a wire field equals the full name as far as the field r
     CHECK_FALSE(ue::SameWireName("Thing", "Things", ue::FindNameBytes));
 }
 
+TEST_CASE("enum requests take a ref and a bounded start") {
+    Request request{};
+    request.op = ue::op::Enum;
+    request.address = 0x1000;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.args[1] = ue::MaxEnumEntries + 1;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.args[1] = 0;
+    request.length = 4;
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request = {};
+    request.op = ue::op::Enum;
+    CHECK(ue::Check(request) == Status::BadRequest);
+}
+
 TEST_CASE("a finished recording slot is reused only after its grace, oldest first") {
     using State = ue::CallsSlotState;
     constexpr int64_t now = 10000;

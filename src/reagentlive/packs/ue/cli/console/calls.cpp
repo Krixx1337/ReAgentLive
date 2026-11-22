@@ -101,8 +101,30 @@ bool PackName(Session& session, std::string_view value, int32_t& index, uint32_t
 }
 
 
+namespace {
+// An object or class pointer input: $N or a literal ref, an address, or
+// None. The object is described first, so a gone one is refused. Empty, or
+// why the input is refused.
+std::string PackObject(Session& session, std::string_view text, std::span<const Ref> refs, std::span<uint8_t> out) {
+    std::fill(out.begin(), out.end(), uint8_t{0});
+    if (text == "None" || text == "null" || text == "0") return {};
+    Ref ref{};
+    uint64_t address = 0;
+    if (!text::Reference(text, refs, ref)) {
+        if (!text::Number(text, address) || !address) return "takes an object ($N, a ref or an address) or None";
+        ref = ue::AddressRef(address);
+    }
+    auto described = ue::Describe(session.client, ref);
+    if (!described) return described.error().message;
+    const uint64_t pointer = described->ref.address;
+    memcpy(out.data(), &pointer, 8);
+    return {};
+}
+}
+
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
-                  const ue::Signature& signature, StructCache& structs, std::string_view jsonCommand) {
+                  const ue::Signature& signature, StructCache& structs, std::span<const Ref> refs,
+                  std::string_view jsonCommand) {
     Client& client = session.client;
     // A const or pure function runs again to narrow a large result; any
     // other keeps it in a file (output budgets).
@@ -134,13 +156,20 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         const auto argument = std::ranges::find_if(arguments, matches);
         if (argument == arguments.end()) return fail("missing parameter: " + parameter.name);
         if (std::count_if(argument, arguments.end(), matches) != 1) return fail("duplicate parameter: " + parameter.name);
+        const auto value = std::string_view(*argument).substr(key.size());
+        if ((parameter.type == "ObjectProperty" || parameter.type == "ClassProperty") && parameter.size == 8) {
+            if (auto why = PackObject(session, value, refs, std::span(bytes).subspan(parameter.offset, 8));
+                !why.empty())
+                return fail(parameter.name + ": " + why);
+            continue;
+        }
         // Bools, integers, floats, enums, names, tags and plain structs
         // ("(X=1,Y=2,Z=3)" or "(1,2,3)").
         std::string missing;
         const auto nameOf = [&](std::string_view text, int32_t& index, uint32_t& number) {
             return PackName(session, text, index, number, missing);
         };
-        if (!pack_input::PackValue(parameter, std::string_view(*argument).substr(key.size()),
+        if (!pack_input::PackValue(parameter, value,
             std::span(bytes).subspan(parameter.offset, parameter.size),
             [&](const Ref& type) { return structs(type); }, nameOf))
             return fail(missing.empty() ? "invalid or unsupported input: " + parameter.name :

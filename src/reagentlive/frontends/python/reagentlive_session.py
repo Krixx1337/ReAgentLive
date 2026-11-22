@@ -45,6 +45,8 @@ retrying are the console's (flags and cursors), not Python's.
 Standard library only.
 """
 import json
+import os
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -200,10 +202,17 @@ class Session:
     'tool' (an agent reads every result, as through the MCP adapter).
     `table`: a `help --json` result already read from this console; the
     session then asks only for its hash (`help --hash`) and reads the whole
-    table again only when it changed.
+    table again only when it changed. `console` is a path (relative to the
+    current directory) or a name on PATH.
     """
 
     def __init__(self, console, args=(), caller='script', table=None):
+        console = os.fspath(console)
+        found = shutil.which(console) if not os.path.dirname(console) else None
+        path = os.path.abspath(found or console)
+        if not os.path.isfile(path):
+            raise ReAgentLiveError('start', {'message': f'no console at {path}', 'kind': 'startup'})
+        console = path
         # stderr goes to a file, read only when the start fails: a pipe nobody reads could fill and stall the console.
         self._stderr = tempfile.TemporaryFile('w+', encoding='utf-8', errors='replace')
         self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,

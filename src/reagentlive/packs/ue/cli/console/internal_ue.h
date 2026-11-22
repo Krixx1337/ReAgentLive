@@ -112,11 +112,14 @@ void PrintFunction(Session& session, const Ref& ref, std::string_view name, std:
 void PrintParameters(Session& session, const ue::FunctionInfo& function, const ue::Signature& signature, const Ref& object);
 // A typed call (or with --dry its block only); the request's flags go to the agent (CallPure).
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
-                  const ue::Signature& signature, StructCache& structs, std::string_view jsonCommand);
+                  const ue::Signature& signature, StructCache& structs, std::span<const Ref> refs,
+                  std::string_view jsonCommand);
 Result<Ref> ResolveClass(Session& session, const std::string& name);
+Result<Ref> ResolveObjectOrClass(Session& session, const std::string& name);
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand);
 void RunEntries(Session& session, const Command& command, std::string_view jsonCommand);
+void RunEnum(Session& session, const Command& command, std::string_view jsonCommand);
 // rows: a data table's RowMap, each row decoded with its RowStruct.
 void RunRows(Session& session, const Command& command, StructCache& structs, std::string_view jsonCommand);
 void RunExportLabels(Session& session, const Command& command, std::string_view jsonCommand);

@@ -27,6 +27,7 @@ commands a Dumper-7 SDK; `find`, `describe`, `name`, `name-find`,
 | `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `fields` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
 | `rows <object> [--match T] [--fields a,b.c] [--start N] [--limit N] [--nonzero]` | console only, over object and range reads: a data table's rows ([rows](#rows)) |
 | `trace <start> <end> [--channel C] [--simple] [--ignore A]` | console only, no agent op of its own: `KismetSystemLibrary.LineTraceSingle` through `call` on `Default__KismetSystemLibrary`, its hit decoded by the pure `GameplayStatics.BreakHitResult` (`call-pure`). Both signatures are checked by parameter type and order before anything is written; a mismatch is refused. Parameters are matched by position, never by name (games obfuscate names). `BreakHitResult` has 18 outputs in UE5 and 16 in UE4 (no `BoneName`, `ElementIndex`); both are mapped. `bone` is `HitBoneName`, the bone hit. Ends are a point `x,y,z` in cm, an object's location (`GetCameraLocation`, `K2_GetComponentLocation` or `K2_GetActorLocation`, the first the object has; a camera manager is also an actor, whose own location is not the view point, all through `call-pure`) or `object@Socket` (`SceneComponent.GetSocketLocation`, the name looked up as text). The trace runs in `--ignore`'s world with `bIgnoreSelf` (that actor and its components are skipped), else in an end object's world, skipping nothing; two points need `--ignore`. Complex collision unless `--simple`; `--channel` is the trace type query (0 visibility, 1 camera in a stock project). No debug drawing. The row is not `writes`: a line trace changes no state |
+| `enum <object\|Enum>` | an enum's names and values in its order (`UEnum::Names`, the SDK's member: pairs of FName and int64), named in one `name` request. Byte and enum properties print numbers; this says what they mean. An enum by name is an exact find under `Enum` (user-defined enums included) |
 | `refs <name\|#index>` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). Text must match a pooled name exactly (the console resolves it through `name-find`) |
 
 - **Object identity:** an object-table slot plus its serial. Serial 0 means
@@ -158,7 +159,9 @@ Supported inputs:
 - floats and doubles in decimal or exponent form, finite only;
 - plain structs as `(Member=value, ...)` or `(value, ...)` in member order,
   nesting up to four levels: `Location=(X=1,Y=2,Z=3)`. Members left out
-  stay zero.
+  stay zero;
+- object and class pointers as `$N`, a literal ref or an address (the
+  object is described first, so a gone one is refused), or `None`.
 
 Use `--typed` for a call with no inputs. Inputs must be plain single
 values; outputs may own memory (an array, a string): they start zeroed, as
@@ -167,7 +170,7 @@ marks it `OutParm`, so the agent passes its `ConstParm` and the console
 counts it as an input, not an output. Other references are refused.
 Return and out values are formatted by name, structs member by member,
 FNames resolved. Host approval rules still apply. Use the raw hex form for
-other input layouts (strings, arrays, object pointers).
+other input layouts (strings, arrays, weak pointers).
 
 **Returned arrays** (the return value or an out parameter) come as rows:
 `{count, capacity, address, rows, next_cursor}`, each element read from
@@ -227,6 +230,10 @@ start is a write the host approves.
   `before`): FNames and objects are named, but strings, arrays, sets and
   maps print their headers, since the caller may have freed that memory
   after the call; text is not converted.
+- **Blueprint functions:** a call from another Blueprint runs the callee's
+  bytecode without its pointer, so it is not seen; `calls-start` says so in
+  `note` when the function is not native. Record a native function it
+  calls, or an event that enters it.
 
 ## Class names
 
@@ -234,7 +241,9 @@ start is a write the host approves.
 struct name (`fields Character`). The console finds the object of
 that exact name under `Struct` once per agent instance and reuses its ref
 through the cache file. Names up to 127 characters: the agent compares the
-whole name, and the reply's name (cut at 63) is compared that far. The lookup is an exact `find` (`FindExact`): the
+whole name, and the reply's name (cut at 63) is compared that far. A name
+starting with `Default__` is that default object (an exact find, any
+class), so `dump Default__Character` dumps the object. The lookup is an exact `find` (`FindExact`): the
 agent stops at the first match instead of scanning and counting the whole
 table, so a class costs the slots up to it; only a name that is no class
 costs a full scan. An agent built before it treats the name as a substring

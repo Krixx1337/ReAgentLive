@@ -281,6 +281,12 @@ const Extras& TheExtras() {
             wide.fields.push_back(field);
         }
         out.wide = &wide;
+        // An enum past one page, and a default object.
+        Object& response = world.Add("EBallisticResponse", "Enum", 64);
+        std::vector<std::pair<std::string, int64_t>> values;
+        for (int64_t i = 0; i < 300; ++i) values.push_back({"EBallisticResponse::Value" + std::to_string(i), i * 2});
+        world.enums.push_back({response.ref.index, std::move(values)});
+        world.Instance("Default__Wide", wide);
         // Thing:TakeDamage(Instigator, Bone, Label, Amount), called once by Thing_0.
         Object& function = world.Add("TakeDamage", "Function", 64);
         Function recorded;
@@ -330,6 +336,26 @@ TEST_CASE("dump --own keeps the fields a 51-character class declares") {
     const auto dumped = Result("dump " + TheExtras().armor + " --own");
     REQUIRE(dumped["rows"].size() == 1);
     CHECK(dumped["rows"][0]["name"] == "Durability");
+}
+
+TEST_CASE("enum names an enum's values, past one page") {
+    TheExtras();
+    const auto named = Result("enum EBallisticResponse");
+    CHECK(named["name"] == "EBallisticResponse");
+    REQUIRE(named["rows"].size() == 300);
+    CHECK(named["rows"][0] == Json{{"name", "EBallisticResponse::Value0"}, {"value", 0}});
+    CHECK(named["rows"][299] == Json{{"name", "EBallisticResponse::Value299"}, {"value", 598}});
+    const auto records = RunLines("enum Wide");
+    REQUIRE(records.size() == 1);
+    CHECK_FALSE(records[0]["ok"].get<bool>()); // A class is no enum.
+}
+
+TEST_CASE("a bare Default__ name is the default object, not a class") {
+    TheExtras();
+    const auto fields = Result("fields Default__Wide");
+    CHECK(fields["rows"].size() == 120);
+    const auto dumped = Result("dump Default__Wide --match Field_7");
+    CHECK(dumped["rows"].size() > 0);
 }
 
 TEST_CASE("a class's fields come in few pages") {

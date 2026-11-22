@@ -126,7 +126,7 @@ void RunCalls(Session& session, const Command& original, std::string_view jsonCo
         return JsonError(session, jsonCommand, "unsupported", "this host does not offer the call recorder");
     if (command.target == "start") {
         if (!command.className.empty()) {
-            auto type = ResolveClass(session, command.className);
+            auto type = ResolveObjectOrClass(session, command.className);
             if (!type) return CommandError(session, jsonCommand, type.error());
             ue::SetRef(command.request, *type);
         }
@@ -145,6 +145,12 @@ void RunCalls(Session& session, const Command& original, std::string_view jsonCo
         if (filter) out.object = filter;
         out.seconds = static_cast<double>(request.args[1]) / 1000.0;
         out.dry = dry;
+        // A Blueprint function runs through the shared script entry: a call
+        // from another Blueprint never goes through its pointer.
+        if (auto info = ue::Function(client, ue::GetRef(request), request.text);
+            info && !(info->flags & ue::flags::FunctionNative))
+            out.note = "a Blueprint function: calls from other Blueprints are not seen; events through ProcessEvent are. "
+                       "To see it used, record a native function it calls.";
         return Emit(session, jsonCommand, std::move(out));
     }
     if (command.target == "stop") {

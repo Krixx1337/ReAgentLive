@@ -304,6 +304,30 @@ Result<CensusResult> Census(Client& client, std::string_view className, OuterFil
     }
 }
 
+Result<std::vector<EnumEntry>> EnumEntries(Client& client, const Ref& object) {
+    std::vector<EnumEntry> entries;
+    Request request{};
+    request.op = op::Enum;
+    SetRef(request, object);
+    for (;;) {
+        request.args[1] = entries.size();
+        auto response = client.Send(request);
+        if (!response) return std::unexpected(response.error());
+        if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+        const size_t count = response->length / sizeof(EnumEntry);
+        const uint32_t total = FindTotal(response->detail), next = FindNext(response->detail);
+        if (response->length % sizeof(EnumEntry) || count > MaxEnumPerPage || entries.size() + count > total ||
+            (next && next != entries.size() + count) || (!next && entries.size() + count != total))
+            return std::unexpected(BadResponse("invalid enum page"));
+        for (size_t i = 0; i < count; ++i) {
+            EnumEntry entry;
+            memcpy(&entry, response->data + i * sizeof(entry), sizeof(entry));
+            entries.push_back(entry);
+        }
+        if (!next) return entries;
+    }
+}
+
 Result<ScriptResult> Script(Client& client, const Ref& function) {
     ScriptResult result{0, {}};
     Request request{};

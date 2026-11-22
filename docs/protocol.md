@@ -112,6 +112,8 @@ stays inside its slot.
 | Describe many | 271 | Unreal pack |
 | Exec entries | 272 | Unreal pack |
 | `entries` | 273 | Unreal pack |
+| `calls-start`, `calls-read`, `calls-stop` | 274, 275, 276 | Unreal pack |
+| `enum` | 277 | Unreal pack |
 
 Ops not in the host's command table are answered with `unsupported op`.
 Adding an op does not change the layout sum: the `ops` list advertises it,

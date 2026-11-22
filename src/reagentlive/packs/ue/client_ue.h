@@ -118,6 +118,8 @@ Result<EntriesPage> Entries(Client& client, const Ref& ref, uint32_t offset, Con
                             uint32_t first);
 // FName comparison indices to base names (no _N suffix); empty when undecodable.
 Result<std::vector<std::string>> Names(Client& client, std::span<const int32_t> indices);
+// An enum's entries in its order (names as FName indices), all pages.
+Result<std::vector<EnumEntry>> EnumEntries(Client& client, const Ref& object);
 // Returns the parameter block after the call (outputs and return value).
 // `flags`: CallRelease drops the function's kept result. `kept`: set when the
 // agent kept this block (outputs that own memory; see protocol_ue.h).

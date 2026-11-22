@@ -52,6 +52,7 @@ verb's usage line. Behaviour and guards: the command pages in `docs/`.
 | `batch { cmd; cmd; ... }` | Many commands in as few ticks as possible |
 | `fields <obj\|class>` / `describe <ref>` | Field layout / an object's name, class and ref |
 | `name <index>...` / `name-find <text>` | FName index to text / text to index |
+| `enum <obj\|Enum>` | An enum's names and values: what a byte or enum field's number means |
 | `read <addr>[->0x10->0x8] [n] [--type cstr\|wstr\|"<layout>"]` / `read-batch` / `search` | Raw memory, through a pointer chain (each `->off` but the last reads a pointer; one `->off` alone is refused), as strings or a mixed-type block; same-tick ranges; addresses holding a value |
 | `entries <obj> <Field> [--start N]` | Every element of an array, set or map field, paged; maps as key and value |
 | `rows <table> [--match T] [--fields a,b.c]` | A data table's rows (the unreflected `RowMap`), decoded with its row struct |

@@ -40,7 +40,8 @@ constexpr uint32_t DescribeMany = Find + 15;
 constexpr uint32_t ExecEntries = Find + 16;
 constexpr uint32_t Entries = Find + 17;
 constexpr uint32_t CallsStart = Find + 18, CallsRead = Find + 19, CallsStop = Find + 20;
-static_assert(CallsStop < reagentlive::op::PackSlot(1), "the Unreal pack's ops stay in its slot");
+constexpr uint32_t Enum = Find + 21;
+static_assert(Enum < reagentlive::op::PackSlot(1), "the Unreal pack's ops stay in its slot");
 }
 
 // A UObject ref: core's Ref, with the object-table index and its serial.
@@ -636,6 +637,18 @@ struct ExecEntry {
 constexpr size_t MaxExecPerPage = MaxRead / sizeof(ExecEntry);
 constexpr uint32_t MaxExecEntries = 1u << 20;
 
+// Enum: an enum object's ref; args[1] = the first entry of this page. The
+// reply is one EnumEntry per name in the enum's order (UEnum::Names: each
+// value's FName and int64), as many as MaxRead holds; detail =
+// FindDetail(entries, next entry or 0). The client names them with Names.
+struct EnumEntry {
+    int64_t value;
+    int32_t name;       // FName comparison index.
+    uint32_t number;    // FName instance number.
+};
+constexpr uint32_t MaxEnumEntries = 65536;
+constexpr size_t MaxEnumPerPage = MaxRead / sizeof(EnumEntry);
+
 // The call recorder. A host opts in by listing these ops. CallsStart swaps
 // one UFunction's native pointer (UFunction::Func, a heap field: no code,
 // vtable or import is written) for one of MaxCallsSlots fixed thunks that
@@ -712,6 +725,7 @@ constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + si
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
     sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + sizeof(CallsState) * 97 + sizeof(CallsRow) * 103 +
+    sizeof(EnumEntry) * 113 +
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);
 
 namespace detail {
@@ -789,6 +803,8 @@ inline Status Check(const Request& request) {
             request.length <= MaxParams && !(request.flags & ~(CallRelease | CallPure)) ? Status::Ok : Status::BadRequest;
     case op::Script:
         return request.address && !request.length && request.args[1] <= MaxScriptEntries ? Status::Ok : Status::BadRequest;
+    case op::Enum:
+        return request.address && !request.length && request.args[1] <= MaxEnumEntries ? Status::Ok : Status::BadRequest;
     case op::Entries: {
         const uint32_t offset = EntriesOffset(request.args[1]);
         const auto kind = static_cast<ContainerKind>(request.flags);

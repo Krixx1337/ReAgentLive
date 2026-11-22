@@ -53,6 +53,7 @@ Parsed Release(const Args& args, const ParseContext& context);
 Parsed Funcs(const Args& args, const ParseContext& context);
 Parsed Func(const Args& args, const ParseContext& context);
 Parsed Script(const Args& args, const ParseContext& context);
+Parsed Enum(const Args& args, const ParseContext& context);
 Parsed Params(const Args& args, const ParseContext& context);
 Parsed Name(const Args& args, const ParseContext& context);
 Parsed Describe(const Args& args, const ParseContext& context);

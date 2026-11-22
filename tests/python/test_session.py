@@ -242,6 +242,11 @@ class SessionTests(unittest.TestCase):
         self.assertIn('exit code 3', message)
         self.assertIn('cannot attach: no target', message)
 
+    def test_a_missing_console_says_where_it_looked(self):
+        with self.assertRaises(dl.ReAgentLiveError) as caught:
+            dl.Session(os.path.join('no-such-folder', 'console.exe'))
+        self.assertIn(os.path.abspath(os.path.join('no-such-folder', 'console.exe')), str(caught.exception))
+
     def test_every_verb_has_a_generated_method_named_by_origin(self):
         for verb, row in self.rows.items():
             if verb == 'quit':

@@ -90,9 +90,10 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         return JsonError(session, jsonCommand, "unsupported", "agent does not support this operation");
     if (command.kind == Kind::Each) return RunEach(session, command, refs, structs, jsonCommand);
     if (!command.className.empty()) {
-        auto type = ResolveClass(session, command.className);
+        auto type = ResolveObjectOrClass(session, command.className);
         if (!type) return CommandError(session, jsonCommand, type.error());
         ue::SetRef(command.request, *type);
+        if (command.className.starts_with("Default__")) command.className.clear(); // An object, not a class target.
     }
     if (command.kind == Kind::Dump) return PrintDump(session, ue::GetRef(request), refs, structs, command, baseline);
     if (command.kind == Kind::Script) {
@@ -146,7 +147,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         auto signature = ue::Parameters(client, function->address);
         if (!signature) return CommandError(session, jsonCommand, signature.error());
         if (command.kind == Kind::TypedCall)
-            return RunTypedCall(session, command, *function, *signature, structs, jsonCommand);
+            return RunTypedCall(session, command, *function, *signature, structs, refs, jsonCommand);
         return PrintParameters(session, *function, *signature, object);
     }
     if (request.op == ue::op::Call && command.dry) {
@@ -293,7 +294,7 @@ bool PackCommand(const Command& command) {
     switch (command.kind) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Record: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
-    case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows:
+    case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -307,7 +308,7 @@ bool PackHeld(const Command& command) {
     switch (command.kind) {
     case Kind::Dump: case Kind::Snap: case Kind::Get: case Kind::TypedCall: case Kind::Release:
     case Kind::Script: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: case Kind::Layout:
-    case Kind::Trace: case Kind::Calls: case Kind::Rows: return true;
+    case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum: return true;
     case Kind::Each: return !command.seconds;
     case Kind::Remote: break;
     default: return false;
@@ -344,6 +345,10 @@ void RunPackCommand(Session& session, const Command& command, std::string_view j
     }
     if (command.kind == Kind::Entries) {
         RunEntries(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::Enum) {
+        RunEnum(session, command, jsonCommand);
         return;
     }
     if (command.kind == Kind::Rows) {

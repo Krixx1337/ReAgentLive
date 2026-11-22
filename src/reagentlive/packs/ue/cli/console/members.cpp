@@ -56,8 +56,10 @@ void RunLabel(Session& session, const Command& command, std::string_view jsonCom
     if (Ue(session).nativeFile.empty()) return fail("no native file: the console's path is unknown");
     if (!client.Supports(ue::op::Fields)) return JsonError(session, jsonCommand, "unsupported", "label needs an agent with fields");
     Ref object = ue::GetRef(command.request);
+    // A class by name is a class target; a Default__ name is an object, as a ref is.
+    const std::string className = command.className.starts_with("Default__") ? std::string() : command.className;
     if (!command.className.empty()) {
-        auto type = ResolveClass(session, command.className);
+        auto type = ResolveObjectOrClass(session, command.className);
         if (!type) return CommandError(session, jsonCommand, type.error());
         object = *type;
     }
@@ -66,11 +68,11 @@ void RunLabel(Session& session, const Command& command, std::string_view jsonCom
     auto field = layout::ParseField(command.target + " " + command.match, true);
     if (!field || field->type.empty()) return fail(field ? "a member needs a type" : field.error());
     field->offset = static_cast<uint32_t>(command.offset);
-    NativeMember member{NativeOwner(*fields, field->offset, command.className), *field, ExeTimestamp(session), 0};
+    NativeMember member{NativeOwner(*fields, field->offset, className), *field, ExeTimestamp(session), 0};
     if (member.owner.empty()) return fail("no reflected field to file the member under");
     if (!member.timestamp) return fail("the main image's PE timestamp is unreadable");
     uint32_t classSize = 0;
-    if (command.className.empty())
+    if (className.empty())
         if (auto described = ue::Describe(client, object); described) classSize = described->size;
     if (auto check = CheckNative(member, *fields, classSize, member.timestamp); !check.problem.empty())
         return fail(member.field.name + " " + check.problem);

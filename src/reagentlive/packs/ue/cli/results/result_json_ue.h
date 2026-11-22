@@ -364,6 +364,26 @@ struct Rows {
     }
 };
 
+// enum: the names and values in the enum's order.
+struct EnumRow {
+    std::string name;
+    int64_t value = 0;
+    template<class V> static void Describe(V& v) {
+        v("name", &EnumRow::name);
+        v("value", &EnumRow::value);
+    }
+};
+struct Enum {
+    RefId ref;
+    std::string name;
+    std::vector<EnumRow> rows;
+    template<class V> static void Describe(V& v) {
+        v("ref", &Enum::ref);
+        v("name", &Enum::name);
+        v("rows", &Enum::rows);
+    }
+};
+
 // script: a Blueprint function's confirmed anchored entries by kind.
 // `offset` is the first opcode's offset in the bytecode, `count` how often it occurs.
 struct ScriptName {
@@ -681,6 +701,7 @@ struct CallsStart {
     std::optional<Addr> object;
     double seconds = 0;
     bool dry = false;
+    std::optional<std::string> note;    // What the recording will not see, when that is known up front.
     template<class V> static void Describe(V& v) {
         v("function", &CallsStart::function);
         v("slot", &CallsStart::slot);
@@ -690,6 +711,7 @@ struct CallsStart {
         v("object", &CallsStart::object);
         v("seconds", &CallsStart::seconds);
         v("dry", &CallsStart::dry);
+        v("note", &CallsStart::note);
     }
 };
 // One parameter of a recorded call, decoded by reflection.
