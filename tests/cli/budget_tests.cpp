@@ -259,6 +259,22 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     CHECK_FALSE((*none)["digest"].contains("status"));
 }
 
+TEST_CASE("digest: nothing to narrow offers the same line with a budget it fits") {
+    Json properties = Json::array();
+    for (int i = 0; i < 300; ++i) properties.push_back({{"property", "DoubleProperty Value_" + std::to_string(i)}, {"count", i}});
+    Json record = {{"command", "script"}, {"ok", true}, {"result", {{"function", "F"}, {"properties", std::move(properties)}}}};
+    const size_t chars = Text(record).size();
+    budget::Line line;
+    line.verb = &Row("script");
+    line.args = TypedArgs(Row("script"), "script 0x10#1:2 F");
+    line.limit = 2000;
+    const auto digest = budget::Replace(record, chars, line, [](const std::string&) { return std::string(); });
+    REQUIRE(digest);
+    const auto next = (*digest)["digest"]["next"].get<std::string>();
+    CHECK(next.starts_with("script 0x10#1:2 F --budget "));
+    CHECK(std::stoull(next.substr(next.rfind(' ') + 1)) >= chars);
+}
+
 TEST_CASE("digest: kept results are per target pid and agent owner") {
     CHECK(budget::ResultsName(123, 456) == "reagentlive-123-456.results");
     CHECK(budget::ResultsName(123, 456).starts_with(budget::ResultsPrefix(123)));

@@ -183,7 +183,9 @@ request costs up to a host tick. The console cuts both:
     list's members that fit go in `--fields` (whole members where they
     fit, else their own members), `--limit` shrinks to the rows that fit,
     or `--nonzero` (then `--own`) is added; `$N` becomes the literal ref.
-    A line whose verb has no flag that would help gets none. It is for a
+    A line whose verb has no flag that would help comes back with a
+    `--budget` it fits (the result's size plus a tenth, in thousands), so
+    a digest is never a dead end. It is for a
     line that only reads: reads, `each`, `call-pure`, and a typed `call`
     on a const or pure function.
   - `file`: a line that may have changed state (a write, `trial`, `pin`,

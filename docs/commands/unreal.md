@@ -372,7 +372,11 @@ generated wrapper, so follow it separately when locating native game logic.
   number. Compact values read arrays, sets and maps nested inside structs
   (8 elements, `--elements N` up to 256, 3 deep), show a tag container as
   its tags and name pointers ([compact values](console.md#fewer-round-trips));
-  with `--meta` they show their headers.
+  with `--meta` they show their headers. An `FString` is its text (UTF-16
+  read and printed as UTF-8, up to 4096 characters). A soft object or class
+  pointer is `{path, object}`: the asset path, and the loaded object named
+  or null. An instanced struct (`FInstancedStruct`) is `{struct, value}`:
+  its struct type named, its memory decoded with that struct's members.
 - With agent support for `describe`, `dump` names single object, class and
   weak object pointers. It looks up at most 32 distinct pointers in field
   order, and 32 more among array elements: one describe-many request each

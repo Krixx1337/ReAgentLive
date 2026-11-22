@@ -47,10 +47,12 @@ const Fixture& TheFixture() {
             Field("Friend", "ObjectProperty", 16, 8), MapField("Scores", 24, scoreKey, scoreValue, 24, 8),
             ArrayField("Boxes", 104, "StructProperty", 48, &box), StructField("Tag", 120, tag),
             StructField("Zero", 128, vector)};
+        Type& instanced = world.AddType("InstancedStruct", 16, true);
         Type& thingType = world.AddType("Thing", 0x400, false, "Object");
         thingType.fields = {StructField("Info", 0x30, info), ArrayField("Boxes", 0x100, "StructProperty", 48, &box),
             MapField("Scores", 0x110, scoreKey, scoreValue, 24, 8), ArrayField("Crowd", 0x160, "ObjectProperty", 8),
-            Field("Health", "FloatProperty", 0x170, 4)};
+            Field("Health", "FloatProperty", 0x170, 4), StructField("Payload", 0x178, instanced),
+            Field("Asset", "SoftObjectProperty", 0x188, 40), Field("Label", "StrProperty", 0x1b0, 16)};
 
         Object& package = world.Add("Package_Things", "Package", 64);
         const Ref packageRef = package.ref;
@@ -84,6 +86,16 @@ const Fixture& TheFixture() {
         SetSparse(bytes + 0x110, AsBytes(scores), 3, 24);
         const float health = 87.5f;
         memcpy(bytes + 0x170, &health, 4);
+        // An instanced struct holding a Box, and a soft pointer to Buddy, loaded.
+        uint8_t* payload = world.Alloc(sizeof(BoxBytes));
+        memcpy(payload, &boxes[0], sizeof(BoxBytes));
+        const uint64_t instancedParts[2] = {world.TypeRef(box).address, reinterpret_cast<uint64_t>(payload)};
+        memcpy(bytes + 0x178, instancedParts, 16);
+        const int32_t softParts[6] = {buddyRef.index, buddyRef.serial, world.Name("/Game/Things/Buddy"), 0,
+            world.Name("Buddy"), 0};
+        memcpy(bytes + 0x188, softParts, sizeof(softParts));
+        const char16_t label[] = u"Rifle \u00e9";
+        SetArray(bytes + 0x1b0, {reinterpret_cast<const uint8_t*>(label), sizeof(label)}, static_cast<uint32_t>(std::size(label)));
         // The crowd: more distinct objects than one command names.
         std::vector<uint64_t> crowd;
         for (int i = 0; i < 150; ++i) crowd.push_back(world.Instance("Extra_" + std::to_string(i), vector).ref.address);
@@ -148,6 +160,24 @@ TEST_CASE("one member, one JSON: get, each and dump agree") {
     // each reads the members one column each.
     for (const char* member : {"Scores", "Boxes", "Tag", "Zero", "Owner", "Stale", "Friend"})
         CHECK_MESSAGE(Each(std::string("Info.") + member) == info[member], member);
+}
+
+TEST_CASE("instanced structs and soft pointers decode alike in get, each and dump") {
+    const Json payload = Get("Payload");
+    CHECK(payload["struct"]["name"] == "Box");
+    CHECK(payload["value"]["Name"] == "hand_r_box");
+    CHECK(payload["value"]["Owner"]["name"] == "Buddy");
+    CHECK(DumpRow("Payload") == payload);
+    CHECK(Each("Payload") == payload);
+    const Json asset = Get("Asset");
+    CHECK(asset["path"] == "/Game/Things/Buddy.Buddy");
+    CHECK(asset["object"]["name"] == "Buddy");
+    CHECK(DumpRow("Asset") == asset);
+    CHECK(Each("Asset") == asset);
+    const Json label = Get("Label");
+    CHECK(label == "Rifle \xC3\xA9"); // UTF-8 bytes: the test build is not /utf-8.
+    CHECK(DumpRow("Label") == label);
+    CHECK(Each("Label") == label);
 }
 
 TEST_CASE("--nonzero agrees across verbs") {

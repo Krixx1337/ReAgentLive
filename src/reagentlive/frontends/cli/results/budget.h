@@ -403,6 +403,18 @@ std::optional<Json> Replace(Json& record, size_t chars, const Line& line, Keep&&
         } else if (!changes.empty()) {
             next = TypedLine(*line.verb, *line.args, changes, line.refs);
             if (next && !line.flags.empty()) *next += " " + line.flags;
+        } else {
+            // Nothing narrows it: the same line with a budget it fits, so the
+            // digest is never a dead end.
+            const size_t fits = (chars + chars / 10 + 999) / 1000 * 1000;
+            if (line.call) {
+                Json call = *line.call;
+                call["budget"] = fits;
+                next = call.dump(-1, ' ', true, Json::error_handler_t::replace);
+            } else if ((next = TypedLine(*line.verb, *line.args, {}, line.refs))) {
+                if (!line.flags.empty()) *next += " " + line.flags;
+                *next += " --budget " + std::to_string(fits);
+            }
         }
     }
     Json out = {{"command", record["command"]}, {"ok", true},

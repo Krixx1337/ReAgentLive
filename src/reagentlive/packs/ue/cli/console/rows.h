@@ -4,6 +4,7 @@
 // For packs/ue/cli/console/ only.
 #pragma once
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <iterator>
@@ -80,6 +81,7 @@ inline bool IsContainer(std::string_view type) { return type == "SetProperty" ||
 inline bool IsPointer(std::string_view type) {
     return type == "ObjectProperty" || type == "ClassProperty" || type == "WeakObjectProperty";
 }
+inline bool IsSoftPointer(std::string_view type) { return type == "SoftObjectProperty" || type == "SoftClassProperty"; }
 
 // An array's element as a field of its own.
 inline ue::Field Element(const ue::Field& array) {
@@ -248,6 +250,11 @@ public:
         if (IsContainer(field.type) && depth < MaxDepth) return Container(field, bytes, paths, names, truncated, depth + 1);
         if (IsPointer(field.type) && bytes.size() == 8 && (depth || nest || topPointers_))
             return Pointer(field.type, bytes, JsonFieldValue(field, bytes, structs_, names, truncated, style, 1));
+        if (field.type == "StrProperty" && bytes.size() == sizeof(ue::ArrayHeader)) return String(bytes, truncated);
+        if (IsSoftPointer(field.type) && (bytes.size() == 40 || bytes.size() == 48))
+            return SoftPointer(bytes, names, truncated);
+        if (field.type == "StructProperty" && field.structName == "InstancedStruct" && bytes.size() == 16 && nest < MaxStructs)
+            return Instanced(field, bytes, paths, names, truncated, depth, nest);
         const auto* members = field.type == "StructProperty" && nest < MaxStructs ? structs_(field.structType) : nullptr;
         if (!members || members->empty() || pack_input::LoneName(*members))
             return JsonFieldValue(field, bytes, structs_, names, truncated, style, 1);
@@ -366,6 +373,92 @@ private:
         Json weak = {{"index", target.index}, {"serial", target.serial}};
         weak[TickAccurate(session_) ? "gone" : "unverified"] = true;
         return weak;
+    }
+
+    // An FString: its UTF-16 characters read from the engine, as UTF-8 text.
+    // Past MaxStringChars the text is cut and the value marked truncated.
+    static constexpr int32_t MaxStringChars = 4096;
+    Json String(std::span<const uint8_t> bytes, bool& truncated) {
+        ue::ArrayHeader header{};
+        memcpy(&header, bytes.data(), sizeof(header));
+        if (!header.data || header.count <= 1) return "";
+        if (header.count < 0 || header.count > header.capacity) return nullptr;
+        const int32_t chars = std::min(header.count - 1, MaxStringChars); // Without the terminator.
+        const auto* data = Elements(header.data, size_t(chars) * 2);
+        if (!data) { truncated = true; return nullptr; }
+        if (chars < header.count - 1) truncated = true;
+        std::string text;
+        for (size_t i = 0; i + 1 < data->size(); i += 2) {
+            const uint32_t c = (*data)[i] | (*data)[i + 1] << 8;
+            if (c < 0x80) text += static_cast<char>(c);
+            else if (c < 0x800) { text += static_cast<char>(0xC0 | c >> 6); text += static_cast<char>(0x80 | (c & 0x3F)); }
+            else if (c >= 0xD800 && c < 0xE000) text += '?'; // A surrogate half: not paired here.
+            else { text += static_cast<char>(0xE0 | c >> 12); text += static_cast<char>(0x80 | (c >> 6 & 0x3F));
+                   text += static_cast<char>(0x80 | (c & 0x3F)); }
+        }
+        return text;
+    }
+
+    // A soft object or class pointer (FSoftObjectPtr): a weak pointer to the
+    // loaded object, then the asset path (package and asset names, a sub-path
+    // string). UE5.4 drops the tag before the path, so 40 bytes or 48.
+    // {path, object}: object null while the asset is not loaded; null when
+    // the path is empty.
+    template<class Names>
+    Json SoftPointer(std::span<const uint8_t> bytes, const Names& names, bool& truncated) {
+        const size_t at = bytes.size() == 48 ? 16 : 8;
+        ue::Field name{};
+        name.type = "NameProperty";
+        name.size = 8;
+        const ValueStyle style{false, &session_.names};
+        const auto text = [&](size_t offset) {
+            const Json value = JsonFieldValue(name, bytes.subspan(offset, 8), structs_, names, truncated, style, 1);
+            return value.is_string() && value != "None" ? value.get<std::string>() : std::string();
+        };
+        std::string path = text(at);
+        if (const auto asset = text(at + 8); !asset.empty()) path += (path.empty() ? "" : ".") + asset;
+        ue::ArrayHeader sub{};
+        memcpy(&sub, bytes.data() + at + 16, sizeof(sub));
+        if (sub.data && sub.count > 1 && sub.count <= 1024)
+            if (const auto* chars = Elements(sub.data, size_t(sub.count - 1) * 2)) {
+                path += ':';
+                for (size_t i = 0; i + 1 < chars->size(); i += 2)
+                    path += static_cast<char>((*chars)[i + 1] ? '?' : (*chars)[i]);
+            }
+        if (path.empty()) return nullptr;
+        Json object = Pointer("WeakObjectProperty", bytes.first(8), nullptr);
+        if (object.is_object() && (object.contains("gone") || object.contains("unverified"))) object = nullptr;
+        return {{"path", std::move(path)}, {"object", std::move(object)}};
+    }
+
+    // An instanced struct (FInstancedStruct): the struct type and a pointer to
+    // its memory. {struct, value}: the type named as pointers are, the memory
+    // read and decoded with that struct's members; null when it holds none.
+    template<class Names>
+    Json Instanced(const ue::Field& field, std::span<const uint8_t> bytes, const RowPaths& paths, const Names& names,
+                   bool& truncated, unsigned depth, unsigned nest) {
+        uint64_t type = 0, data = 0;
+        memcpy(&type, bytes.data(), 8);
+        memcpy(&data, bytes.data() + 8, 8);
+        if (!type) return nullptr;
+        char address[24];
+        snprintf(address, sizeof(address), "0x%llx", static_cast<unsigned long long>(type));
+        Json out = {{"struct", Pointer("ObjectProperty", bytes.first(8), address)}, {"value", nullptr}};
+        const Ref typeRef = PointerRef("ObjectProperty", bytes.first(8));
+        const auto* members = structs_(typeRef);
+        if (!data || !members || members->empty()) return out;
+        size_t size = 0;
+        for (const auto& member : *members) size = std::max<size_t>(size, size_t{member.offset} + member.size);
+        if (!size || size > 0x10000) return out;
+        const auto* memory = Elements(data, size);
+        if (!memory) { truncated = true; return out; }
+        ue::Field inner{};
+        inner.name = field.name;
+        inner.type = "StructProperty";
+        inner.size = static_cast<uint32_t>(size);
+        inner.structType = typeRef;
+        out["value"] = Value(inner, std::span<const uint8_t>(*memory), paths, names, truncated, depth, nest + 1);
+        return out;
     }
 
     // A tag container: every member an array of single-name structs (its
