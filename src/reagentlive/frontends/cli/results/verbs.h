@@ -162,7 +162,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions (--function: up to 2048)", "24"}},
             {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},
              {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},
-             {"--save", Takes::One, "path", "file", "with --function: write the function and its read-only data for a static tool"},
+             {"--save", Takes::One, "path", "file", "with --function: write the function and its read-only data for a static tool, not the rows"},
              {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
             Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
             "value a read-only [rip + disp] load reads; the listing names the module once. --meta adds each row's module "
@@ -171,19 +171,24 @@ inline const std::vector<Verb>& CoreVerbs() {
             "first row; --meta for full rows) and strings: each string referenced, with the rows using it. Where no "
             "exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch "
             "passes: stop \"walk end\", no function key. Strings built at run time, reached through a pointer, or held as "
-            "names are not seen."},
+            "names are not seen. --save leaves rows and strings out of the result (the file holds them) and adds saved "
+            "and saved_rows."},
         {"xrefs", "core", "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", One, "addr", at}},
             {{"--module", Takes::One, "str", "name", "scan another loaded module"},
              {"--all", Takes::Nothing, "bool", "", "also list unknown hits (likely chance bytes)"}},
-            Of<shape::Xrefs>, parse::Xrefs},
+            Of<shape::Xrefs>, parse::Xrefs, "A code row outside every exception-table entry carries unlisted, its "
+            "function the piece holding it, cut as touches cuts unlisted code (between returns and int3 padding, within "
+            "16 KB each side): a function with several returns spans several pieces, and junk bytes may lead one. "
+            "Entries under 4 bytes (a packed image's decoys) bound nothing."},
         {"touches", "core", "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", One, "addr", at}, {"offsets", "offset", Some, "int", "a struct offset to look for, per offset"}},
             {{"--range", Takes::One, "int", "N", "bytes each side of addr", "0x80000"},
              {"--reads", Takes::Nothing, "bool", "", "rank by offsets read; drop rows writing every offset they read"}},
             Of<shape::Touches>, parse::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
             "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
-            "those rows carry unlisted, their bounds the piece's. --reads leaves out struct copies and constructors."},
+            "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
+            "unlisted code. --reads leaves out struct copies and constructors."},
         {"vtable", "core", "an object's virtual table: slots until the first entry that is not code",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many slots at most"}},
             {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},

@@ -659,6 +659,30 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(xr["kinds"]["call"] == 1);
     CHECK(xr["rows"][0]["rva"] == "0x2000");
     CHECK(Checked(MakeXrefs(Base, modules[0], hits, functions, true, false, 0, modules))["rows"].size() == 3);
+    CHECK_FALSE(xr["rows"][0].contains("unlisted"));
+
+    // A code row no entry holds gets the piece holding it; the pointer row gets none.
+    const std::vector<xref::Hit> loose{{Base + 0x5001, "call", Base + 0x5000}, {Base + 0x6000, "pointer", std::nullopt}};
+    const std::vector<std::optional<unwind::Function>> none(2);
+    const std::vector<std::optional<touch::Piece>> pieces{touch::Piece{Base + 0x4ff0, Base + 0x5020}, std::nullopt};
+    const auto unlisted = Checked(MakeXrefs(Base + 0x1000, modules[0], loose, none, false, false, 0, modules, pieces));
+    CHECK(unlisted["rows"][0]["unlisted"] == true);
+    CHECK(unlisted["rows"][0]["function"]["start"] == "0x140004ff0");
+    CHECK(unlisted["rows"][0]["function"]["end"] == "0x140005020");
+    CHECK_FALSE(unlisted["rows"][1].contains("function"));
+    CHECK_FALSE(unlisted["rows"][1].contains("unlisted"));
+
+    // --save: the file holds the listing, the result its summary.
+    auto saved = MakeDisasm(Base + 0x1000, more, function, modules, false, true);
+    const auto listed = saved.rows.size();
+    KeepSaveSummary(saved, "fn.jsonl");
+    const auto summary = Checked(std::move(saved));
+    CHECK(summary["rows"].empty());
+    CHECK_FALSE(summary.contains("strings"));
+    CHECK(summary["saved"] == "fn.jsonl");
+    CHECK(summary["saved_rows"] == listed);
+    CHECK(summary["next"] == "0x14000100a");
+    CHECK(summary.contains("function"));
 }
 
 TEST_CASE("a saved function holds its code, the read-only data it reads and its import names") {
@@ -879,6 +903,46 @@ TEST_CASE("touches cuts unlisted code at returns and int3 padding, and --reads d
     CHECK(pieces[0].end == Base + 0x1007);
     CHECK(pieces[1].start == Base + 0x100a);
     CHECK(pieces[1].end == Base + 0x1011);
+    const auto second = touch::PieceAt(code, Base + 0x1000, Base + 0x100a);
+    REQUIRE(second);
+    CHECK(second->start == Base + 0x100a);
+    CHECK(second->end == Base + 0x1011);
+    CHECK_FALSE(touch::PieceAt(code, Base + 0x1000, Base + 0x1008));   // Padding.
+
+    // From a call inside a function: junk after the previous return (it decodes
+    // to a return of its own) is skipped, and a c3 byte inside an instruction
+    // does not cut the piece.
+    const auto junk = Join({
+        {0xc3},                                           // the previous function's ret
+        {0xad, 0xc3},                                     // junk: lodsd; ret
+        {0x48, 0x8b, 0xc4},                               // mov rax, rsp: the function starts here
+        {0x8b, 0xc3},                                     // mov eax, ebx
+        {0xe8, 0x00, 0x00, 0x00, 0x00},                   // call: the hit
+        {0xc3},
+    });
+    const auto caller = touch::PieceAt(junk, Base + 0x2000, Base + 0x2008);
+    REQUIRE(caller);
+    CHECK(caller->start == Base + 0x2003);
+    CHECK(caller->end == Base + 0x200e);
+
+    // The window around one address: its section, clipped at the entries on either side.
+    const std::vector<touch::Piece> entries{{Base + 0x1000, Base + 0x1100}, {Base + 0x1800, Base + 0x1900}};
+    const auto window = touch::Window(Base + 0x1400, Base, Base + 0x10000, entries);
+    REQUIRE(window);
+    CHECK(window->start == Base + 0x1100);
+    CHECK(window->end == Base + 0x1800);
+    CHECK_FALSE(touch::Window(Base + 0x1050, Base, Base + 0x10000, entries));   // An entry holds it.
+    // One-byte decoy entries (a packed image's) clip nothing.
+    const std::vector<touch::Piece> decoys{{Base + 0x1300, Base + 0x1301}, {Base + 0x1500, Base + 0x1501}};
+    const auto past = touch::Window(Base + 0x1400, Base + 0x1100, Base + 0x1800, decoys);
+    REQUIRE(past);
+    CHECK(past->start == Base + 0x1100);
+    CHECK(past->end == Base + 0x1800);
+    const auto reach = touch::Window(Base + 0x8000, Base + 0x7000, Base + 0x20000, {}, 0x100);
+    REQUIRE(reach);
+    CHECK(reach->start == Base + 0x7f00);
+    CHECK(reach->end == Base + 0x8100);
+    CHECK(touch::Window(Base + 0x7010, Base + 0x7000, Base + 0x20000, {}, 0x100)->start == Base + 0x7000);
 
     const touch::Use read{Base, 0x538, false, {}}, write{Base, 0x538, true, {}}, other{Base, 0x540, false, {}};
     std::vector<touch::Row> rows(4);

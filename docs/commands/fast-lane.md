@@ -35,7 +35,13 @@ entries per `read-batch` while the range is wide, then one window of 340.
 Sampled entries are kept for the console run, and the directory's location
 goes in the cache file. With no entry, `function` is absent: a leaf function,
 code a packed or protected image leaves out of its directory, data, or
-chance bytes. Bounds are never guessed from padding or prologues.
+chance bytes. Function bounds are never guessed from padding or prologues;
+a code row of `xrefs` or `touches` outside the directory carries `unlisted`
+instead, with the bounds of the piece holding it (code cut at returns and
+int3 padding), which may start with junk bytes. Entries under 4 bytes
+bound no unlisted code: a function with unwind data holds at least a stack
+adjustment and a return, and some packed images fill the directory with
+one-byte decoys at a fixed stride that would cut it into slivers.
 
 ## disasm
 
@@ -96,7 +102,9 @@ of one is unreadable, up to the page end and on from there.
 
 `disasm <addr> --function --save <file>` also writes the listed function
 for a static tool, so it decompiles that one function without analysing
-the whole image. The result names the file in `saved`. JSON lines:
+the whole image. The result names the file in `saved` and counts its
+instructions in `saved_rows`; it leaves out `rows` and `strings`, which
+the file holds. JSON lines:
 
 | `row` | Keys |
 |---|---|
@@ -115,6 +123,26 @@ the imports.
 Calls into code that was not saved stay bare addresses; writable globals
 are not saved (their values change). The `rva`s cross back to a full
 database of the same build.
+
+- **Install name.** Any file name in the loaders folder works; IDA offers
+  every loader there. After updating ReAgentLive, compare the installed
+  copy with the repo's: a stale loader still loads, with old behaviour.
+- **Which loader ran.** The loader claims the file by its first line (a
+  `function` row), not by its extension. It ran when the function is
+  named `fn_<rva>` and carries a `reagentlive: <module>+<rva>` comment;
+  a database with one segment at 0 came from IDA's own binary loader
+  (the loader is missing or failed: its warning says why).
+- **Start at the function's start.** Saved from a mid-function address
+  (a call site in a function the exception table leaves out), the file
+  holds only the rest of the function and decompiles as a fragment. Find
+  the start first: an `xrefs` row marked `unlisted` gives the piece
+  holding the call, whose start may sit behind junk bytes
+  ([disasm](#disasm)); then save from it.
+- **From an automated session** (an IDA bridge with Python): open the
+  saved file, then
+  `str(ida_hexrays.decompile(ida_funcs.get_func(<start>)))`. Each saved
+  file is its own database: close it once read, and before opening a new
+  save under the same name delete the database files beside it.
 
 ## xrefs
 
@@ -139,8 +167,13 @@ tick slices, resident pages only:
   `call`, `jmp`, `jcc`, `lea`, `load` and `store`, whose length before the
   field is fixed (none for `rip`: a linear decoder cannot walk backwards;
   `disasm --function` shows it in place), `module` and `rva` of the
-  instruction (else the field), and `function` for that address. A row
-  other than `pointer` without `function` may be chance bytes.
+  instruction (else the field), and `function` for that address. Where
+  no entry holds a code row, `function` is the piece of unlisted code
+  holding it and the row carries `unlisted`: cut as `touches` cuts such
+  code (between returns and int3 padding, within 16 KB each side), so a
+  function with several returns spans several pieces. A row other than
+  `pointer` without `function` lies outside the executable sections or in
+  no piece: likely chance bytes.
 - `kinds` counts every hit per kind, listed or not; `capped` when a cap
   cut a scan; `scan_ms` for both scans.
 - An agent without the op answers `unsupported`.

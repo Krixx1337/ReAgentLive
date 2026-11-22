@@ -123,7 +123,8 @@ struct Disasm {
     std::optional<Addr> next;
     std::vector<Instruction> rows;
     std::optional<std::vector<DisasmString>> strings;
-    std::optional<std::string> saved;    // --save: the file written.
+    std::optional<std::string> saved;    // --save: the file written; rows and strings are left out.
+    std::optional<uint64_t> savedRows;   // --save: the instructions the file holds.
     std::optional<FunctionBounds> function;
     std::optional<DisasmEnd> end;
     std::optional<std::vector<DisasmHop>> followed;
@@ -137,6 +138,7 @@ struct Disasm {
         v("rows", &Disasm::rows);
         v("strings", &Disasm::strings);
         v("saved", &Disasm::saved);
+        v("saved_rows", &Disasm::savedRows);
         v("function", &Disasm::function);
         v("end", &Disasm::end);
         v("followed", &Disasm::followed);
@@ -150,12 +152,14 @@ struct XrefRow {
     std::optional<Addr> instruction;
     Location where;
     std::optional<FunctionBounds> function;
+    std::optional<bool> unlisted;   // True: code outside every exception-table entry, bounds the piece's.
     template<class V> static void Describe(V& v) {
         v("kind", &XrefRow::kind, "call|jmp|jcc|lea|load|store|rip|pointer|unknown");
         v("field", &XrefRow::field);
         v("instruction", &XrefRow::instruction);
         v.flat("", &XrefRow::where);
         v("function", &XrefRow::function);
+        v("unlisted", &XrefRow::unlisted);
     }
 };
 // xrefs: hits per kind over every hit, and the rows (unknown ones only with
@@ -428,9 +432,19 @@ inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
     return out;
 }
 
+// disasm --save: the file holds the listing, so the result keeps what it says
+// about it (bounds, size, why it stopped, the instruction count) and no rows.
+inline void KeepSaveSummary(shape::Disasm& out, std::string file) {
+    out.savedRows = out.rows.size();
+    out.rows.clear();
+    out.strings.reset();
+    out.saved = std::move(file);
+}
+
 inline shape::Xrefs MakeXrefs(uint64_t address, const Module& scanned, std::span<const xref::Hit> hits,
                               std::span<const std::optional<unwind::Function>> functions, bool all, bool capped,
-                              int64_t milliseconds, std::span<const Module> modules) {
+                              int64_t milliseconds, std::span<const Module> modules,
+                              std::span<const std::optional<touch::Piece>> pieces = {}) {
     shape::Xrefs out;
     out.address = address;
     out.where = Locate(address, modules);
@@ -446,6 +460,10 @@ inline shape::Xrefs MakeXrefs(uint64_t address, const Module& scanned, std::span
         if (hit.instruction) row.instruction = Addr(*hit.instruction);
         row.where = Locate(hit.instruction.value_or(hit.field), modules);
         row.function = MakeFunction(i < functions.size() ? functions[i] : std::nullopt, modules);
+        if (!row.function && i < pieces.size() && pieces[i]) {
+            row.function = shape::FunctionBounds{pieces[i]->start, pieces[i]->end, Locate(pieces[i]->start, modules), {}};
+            row.unlisted = true;
+        }
         out.rows.push_back(std::move(row));
     }
     out.capped = capped;

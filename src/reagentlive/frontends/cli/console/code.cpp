@@ -165,10 +165,50 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
     }
     auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
-    if (!command.file.empty()) out.saved = command.file;
+    if (!command.file.empty()) KeepSaveSummary(out, command.file);
     Emit(session, jsonCommand, std::move(out));
 }
 
+namespace {
+// The piece of code no exception-table entry lists that holds `address`, cut
+// as touches cuts such code (at returns and int3 padding), swept from the
+// window's start. Empty when an entry holds it or it lies outside the
+// executable sections.
+std::expected<std::optional<touch::Piece>, std::string> UnlistedPiece(Session& session, const Module& module,
+                                                                      uint64_t address) {
+    auto layout = LayoutOf(session, module);
+    if (!layout) return std::unexpected(layout.error());
+    const auto* section = (*layout)->At(address - module.base);
+    if (!section || !section->Exec()) return std::nullopt;
+    const uint64_t start = module.base + section->rva, end = start + section->size;
+    auto& table = session.unwindTables[module.base];
+    if (!table) table = std::make_unique<unwind::Table>(AgentRead(session), module, (*layout)->exception);
+    const uint64_t from = std::max(start, address - std::min(address, touch::PieceReach));
+    auto ranges = table->Between(from, std::min(end, address + touch::PieceReach));
+    if (!ranges) return std::unexpected(ranges.error());
+    std::vector<touch::Piece> entries;
+    for (const auto& range : *ranges) entries.push_back({range.start, range.end});
+    // An entry that began before the window and runs into it.
+    if (auto first = FunctionAt(session, from); first && *first) {
+        const auto& held = (*first)->chunk ? *(*first)->chunk : (*first)->range;
+        entries.push_back({held.start, held.end});
+    }
+    const auto window = touch::Window(address, start, end, entries);
+    if (!window) return std::nullopt;
+    // Unreadable parts stay int3 and decode to nothing.
+    std::vector<uint8_t> code(static_cast<size_t>(window->end - window->start), 0xcc);
+    const auto read = AgentRead(session);
+    for (uint64_t at = window->start; at < window->end;) {
+        std::vector<ReadSpan> spans{{at, std::min<uint64_t>(MaxRead - sizeof(Status), window->end - at)}};
+        at += spans[0].length;
+        auto items = read(spans);
+        if (!items) return std::unexpected(items.error());
+        if (!items->empty() && (*items)[0])
+            std::copy((*items)[0]->begin(), (*items)[0]->end(), code.begin() + (spans[0].address - window->start));
+    }
+    return touch::PieceAt(code, window->start, address);
+}
+} // namespace
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Xrefs) || !client.Supports(op::Search) || !client.Supports(op::ReadBatch))
@@ -239,8 +279,16 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
         if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
         functions[i] = *function;
     }
+    // Code hits no entry lists: the piece holding the instruction, as touches gives it.
+    std::vector<std::optional<touch::Piece>> pieces(hits.size());
+    for (size_t i = 0; i < hits.size(); ++i) {
+        if (functions[i] || hits[i].kind == "unknown" || hits[i].kind == "pointer") continue;
+        auto piece = UnlistedPiece(session, module, hits[i].instruction.value_or(hits[i].field));
+        if (!piece) return JsonError(session, jsonCommand, "unwind", piece.error());
+        pieces[i] = *piece;
+    }
     Emit(session, jsonCommand, MakeXrefs(target, module, hits, functions, command.all,
-        fields->second || pointers->second, ms, LoadedModules(session)));
+        fields->second || pointers->second, ms, LoadedModules(session), pieces));
 }
 void RunTouches(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
@@ -271,7 +319,9 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
     // and runs into it is skipped like a listed one.
     std::vector<unwind::Range> gaps;
     {
-        std::vector<unwind::Range> covered = *ranges;
+        std::vector<unwind::Range> covered;
+        for (const auto& range : *ranges)
+            if (touch::Bounds(range.start, range.end)) covered.push_back(range);
         if (auto first = FunctionAt(session, from); first && *first) {
             const auto& held = (*first)->chunk ? *(*first)->chunk : (*first)->range;
             covered.push_back({from, held.end});
@@ -313,6 +363,7 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
     }
     std::map<uint64_t, touch::Row> functions;
     for (const auto& range : *ranges) {
+        if (!touch::Bounds(range.start, range.end)) continue; // A decoy: its byte is scanned with the unlisted code.
         auto uses = touch::InCode(std::span(code).subspan(static_cast<size_t>(range.start - low),
             static_cast<size_t>(range.end - range.start)), range.start, command.offsets);
         if (uses.empty()) continue;

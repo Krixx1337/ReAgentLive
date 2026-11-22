@@ -38,6 +38,18 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **`disasm --save` returns a summary, not the listing:** the file holds the
+  rows, so the result keeps `saved`, the new `saved_rows`, the bounds and
+  why it stopped, and leaves out `rows` and `strings`
+  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+- **`xrefs` bounds callers outside the exception directory:** a code row
+  with no entry carries `unlisted`, its `function` the piece holding it,
+  cut as `touches` cuts unlisted code
+  ([xrefs](docs/commands/fast-lane.md#xrefs)).
+- **One-byte decoy entries no longer slice unlisted code:** `xrefs` and
+  `touches` ignore exception entries under 4 bytes when bounding it, so a
+  packed image's decoys stop cutting pieces every few dozen bytes
+  ([function bounds](docs/commands/fast-lane.md#function-bounds)).
 - **`touches` finds code outside the exception directory:** leaf functions
   and the code packed images leave unlisted are scanned too, marked
   `unlisted`; `--reads` ranks by offsets read and drops struct copies

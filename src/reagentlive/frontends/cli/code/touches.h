@@ -9,6 +9,7 @@
 #include <Zydis/Zydis.h>
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -87,6 +88,38 @@ inline std::vector<Piece> Pieces(std::span<const uint8_t> code, uint64_t address
     }
     close(code.size());
     return pieces;
+}
+
+// Entries shorter than this bound no unlisted code: a function with unwind
+// data holds at least a stack adjustment and a return. Some packed images fill
+// the directory with one-byte decoys, which would cut that code into slivers.
+constexpr uint64_t MinEntryBytes = 4;
+inline bool Bounds(uint64_t start, uint64_t end) { return end - start >= MinEntryBytes; }
+
+// Where to cut the pieces around one address no entry lists: up to `reach`
+// bytes each side, inside its section [low, high), clipped at the nearest
+// entries before and after. Empty when an entry holds the address.
+constexpr uint64_t PieceReach = 0x4000;
+inline std::optional<Piece> Window(uint64_t address, uint64_t low, uint64_t high, std::span<const Piece> entries,
+                                   uint64_t reach = PieceReach) {
+    low = std::max(low, address - std::min(address, reach));
+    high = std::min(high, address + reach);
+    for (const auto& entry : entries) {
+        if (!Bounds(entry.start, entry.end)) continue;
+        if (entry.end <= address) low = std::max(low, entry.end);
+        else if (entry.start > address) high = std::min(high, entry.start);
+        else return std::nullopt;
+    }
+    if (address < low || address >= high) return std::nullopt;
+    return Piece{low, high};
+}
+
+// The piece of `code` (at `address`, a boundary such as an entry's end) that
+// holds `at`, cut as Pieces cuts it.
+inline std::optional<Piece> PieceAt(std::span<const uint8_t> code, uint64_t address, uint64_t at) {
+    for (const auto& piece : Pieces(code, address))
+        if (piece.start <= at && at < piece.end) return piece;
+    return std::nullopt;
 }
 
 // One function's uses, ranked by how many of the asked offsets it touches.

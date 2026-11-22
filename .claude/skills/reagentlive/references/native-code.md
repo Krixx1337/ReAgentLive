@@ -50,11 +50,11 @@ Answer one-address questions live, with no database:
   that one function in seconds; decompile it there. Calls out of it stay
   bare addresses: save each callee you need the same way
   (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`).
-  The loader is installed once in IDA's user loaders folder (ask: it is
-  outside the repo). A headless IDA bridge opens the saved file directly;
-  before opening a new save under the same name, close it and delete the
-  database files beside it. A member read through a typed pointer shows as
-  an index (`p[27]` on a `float *`): the offset is index × element size.
+  Install the loader once in IDA's user loaders folder (ask: outside the
+  repo). Save from the function's start, never a call site; check the
+  loader ran (`fn_<rva>` name), decompile, close each database; the
+  bridge recipe and checks are on that page. A member read through a typed
+  pointer shows as an index (`p[27]` on a `float *`): offset = index × size.
 
 ## Following a native getter
 
@@ -102,8 +102,8 @@ Walk references one address at a time; check each answer before the next.
 5. **The global → the functions returning it.** `xrefs <global>`: `load`
    and `lea` rows; `peek` it for the live value.
 
-Rows without `function` other than `pointer` may be chance bytes. Doing
-this for every table is a Python script, not a command.
+`unlisted` rows: code no entry lists, `function` its piece (junk may lead).
+No `function`, not `pointer`: likely chance bytes. Every table: a script.
 
 ## Making a signature
 
