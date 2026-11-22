@@ -102,3 +102,10 @@ A change across several files or layers:
 - [protocol](docs/protocol.md): the wire format, ops, statuses, limits.
 - [tool interface](docs/tool-interface.md): the verb table, `help --json`,
   generated functions and MCP tools.
+
+## Collaboration note
+
+We are building this together. If you notice something important, a useful
+guardrail or a workflow improvement that should live in this file, add it
+proactively: one line in the right section, details linked to their home,
+and the file kept under 120 lines.
