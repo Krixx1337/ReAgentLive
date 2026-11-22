@@ -94,7 +94,8 @@ inline const std::vector<ue::Field>* StructCache::operator()(const Ref& type) {
 size_t DumpEnd(std::span<const ue::Field> fields);
 std::span<const uint8_t> FieldBytes(std::span<const uint8_t> bytes, const ue::Field& field);
 std::string FieldValue(const ue::Field& field, std::span<const uint8_t> bytes, StructCache& structs);
-void PrintFields(Session& session, const Ref& object, bool instance, std::string_view jsonCommand);
+// `match`: keep fields whose name or readable label contains it, any case (--match).
+void PrintFields(Session& session, const Ref& object, bool instance, std::string_view match, std::string_view jsonCommand);
 void RememberRef(std::vector<Ref>& refs, const Ref& object);
 Ref PointerRef(std::string_view type, std::span<const uint8_t> bytes);
 void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, StructCache& structs, const Command& command,

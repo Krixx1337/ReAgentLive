@@ -58,7 +58,7 @@ void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs,
             if (const auto problem = CensusBaselineProblem(Ue(session).census, filter); !problem.empty())
                 return JsonError(session, jsonCommand, "validation", problem);
         const auto started = Clock::now();
-        auto scanned = ue::Census(session.client, className, {command.outerText, command.outerAddress});
+        auto scanned = ue::Census(session.client, className, {command.outerText, command.outerRef});
         if (!scanned) return CommandError(session, jsonCommand, scanned.error());
         ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
         census = std::move(*scanned);
@@ -168,7 +168,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         const std::string_view className = request.length ? reinterpret_cast<const char*>(request.data) : "";
         const auto from = static_cast<uint32_t>(request.args[1]);
         auto found = ue::Find(client, request.text, {className, from, false, (request.flags & ue::FindLive) != 0,
-            {command.outerText, command.outerAddress}});
+            {command.outerText, command.outerRef}});
         if (!found) return CommandError(session, jsonCommand, found.error());
         refs.clear();
         for (const auto& object : found->objects) refs.push_back(object.ref);
@@ -196,7 +196,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         }
         return Emit(session, jsonCommand, std::move(record));
     }
-    case ue::op::Fields: return PrintFields(session, ue::GetRef(request), command.className.empty(), jsonCommand);
+    case ue::op::Fields: return PrintFields(session, ue::GetRef(request), command.className.empty(), command.match, jsonCommand);
     case ue::op::Names: {
         std::vector<int32_t> indices(request.length / 4);
         memcpy(indices.data(), request.data, request.length);

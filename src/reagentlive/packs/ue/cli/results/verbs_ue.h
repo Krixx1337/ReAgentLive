@@ -17,26 +17,33 @@ inline const std::vector<Verb>& UnrealVerbs() {
     constexpr std::string_view objectOrClass = "an object ($N, a literal ref, an address), or a class or struct by name";
     constexpr std::string_view function = "the function, with its declaring class where the name is ambiguous";
     constexpr std::string_view path = "a file path (quote one with spaces)";
+    // Flags several verbs take, written once so their help cannot drift apart.
+    static const Flag cls{"--cls", Takes::One, "str", "Class", "instances of the class or a subclass"};
+    static const Flag outer{"--outer", Takes::One, "str", "object|text",
+        "objects with this object up their outer chain (a ref, address or $N), or an outer whose name contains text"};
+    static const Flag nonzero{"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside values (0, false, empty, None)"};
+    static const Flag elements{"--elements", Takes::One, "int", "N", "elements shown per array, set or map (1..256)", "8"};
+    static const Flag cursor{"--start", Takes::One, "int", "N", "a page's next_cursor"};
     static const std::vector<Verb> verbs = {
         {"find", "ue", "objects whose name contains text and/or instances of a class; 24 per page",
             {{"text", "text", Any, "text", "part of the object's name, any case"}},
-            {{"--cls", Takes::One, "str", "Class", "instances of the class or a subclass"},
+            {cls,
              {"--live", Takes::Nothing, "bool", "", "live instances only: no Default__ or archetype objects"},
-             {"--outer", Takes::One, "str", "object|text", "objects with this object up their outer chain (a ref, address or $N), or an outer whose name contains text"},
-             {"--start", Takes::One, "int", "N", "a page's next_cursor"}},
+             outer,
+             cursor},
             Of<shape::Find>, parse::Find, "The rows become $1..$N. Only the first page counts total."},
         {"census", "ue", "live instances per class, most first; pages of 100 rows",
             {},
-            {{"--cls", Takes::One, "str", "Class", "only this class and its subclasses"},
-             {"--outer", Takes::One, "str", "object|text", "objects with this object up their outer chain (a ref, address or $N), or an outer whose name contains text"},
+            {cls,
+             outer,
              {"--match", Takes::One, "str", "text", "keep class names containing text, any case"},
              {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
              {"--start", Takes::One, "int", "N", "next_cursor: pages the stored census without a new scan"}},
             Of<shape::Census>, parse::Census, "Class refs become $1..$N. Every census becomes census-diff's baseline."},
         {"census-diff", "ue", "the classes whose count differs from the last census of that --cls",
             {},
-            {{"--cls", Takes::One, "str", "Class", "only this class and its subclasses"},
-             {"--outer", Takes::One, "str", "object|text", "objects with this object up their outer chain (a ref, address or $N), or an outer whose name contains text"},
+            {cls,
+             outer,
              {"--match", Takes::One, "str", "text", "keep class names containing text, any case"},
              {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
              {"--start", Takes::One, "int", "N", "next_cursor"}},
@@ -44,7 +51,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "Takes a new census, which becomes the next baseline. Class refs become $1..$N."},
         {"name-find", "ue", "FName indices whose text contains text (gameplay tags, row names)",
             {{"text", "text", One, "text", "part of the pooled name"}},
-            {{"--start", Takes::One, "int", "N", "a page's next_cursor"}}, Of<shape::NameFind>, parse::NameFind},
+            {cursor}, Of<shape::NameFind>, parse::NameFind},
         {"name", "ue", "FName comparison indices as text (FName #N in dumps)",
             {{"indices", "index", Some, "int", "an FName comparison index"}}, {}, Of<shape::Names>, parse::Name},
         {"each", "ue", "a table over the live instances of a class: a value per column (up to 16 field paths, or one function)",
@@ -55,10 +62,10 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"--where", Takes::One, "str", "Field~text", "only instances whose field's value contains text, any case "
               "(a string, a name or text; else its JSON); the field need not be a column; Outer, Name and Class "
               "match the object's own (Class~ is the class's name: --cls takes subclasses)"},
-             {"--outer", Takes::One, "str", "object|text", "objects with this object up their outer chain (a ref, address or $N), or an outer whose name contains text"},
+             outer,
              {"--limit", Takes::One, "int", "N", "rows shown (0: all); omitted counts the rest", "100"},
-             {"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside values (0, false, empty, None)"},
-             {"--elements", Takes::One, "int", "N", "elements shown per array, set or map (1..256)", "8"}},
+             nonzero,
+             elements},
             Of<shape::Each>, parse::Each,
             "rows: {ref, values} in the columns' order; a failed cell is null with an errors entry. Spans inside the "
             "instance are read in passes of up to 64 bytes, the first in one tick; a path through a pointer is "
@@ -72,7 +79,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"--fields", Takes::One, "str", "a,b.c", "a returned array's row members to keep (implies a typed call)"},
              {"--start", Takes::One, "int", "N", "a returned array's first row: its next_cursor"},
              {"--limit", Takes::One, "int", "N", "a returned array's rows per page (0: all)", "100"},
-             {"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside outputs (implies a typed call) (0, false, empty, None)"}},
+             {"--nonzero", Takes::Nothing, "bool", "", "as get takes it, inside the outputs; implies a typed call"}},
             Of<shape::Call>, parse::Call,
             "A raw block must match the function's size (params shows it); none sends a zeroed block when every "
             "parameter is an output. hex is the block after the call; a typed call adds outputs, a returned array "
@@ -94,14 +101,16 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"params", "hex params", Any, "bytes", "the parameter block as hex pairs (default: zeroed)"}},
             {}, Of<shape::Call>, parse::Release, {}, {}, true},
         {"fields", "ue", "reflected properties by offset; a class or struct lists its own",
-            {{"object", "object|Class", One, "str", objectOrClass}}, {}, Of<shape::Fields>, parse::Fields},
+            {{"object", "object|Class", One, "str", objectOrClass}},
+            {{"--match", Takes::One, "str", "text", "names or readable labels containing text, any case"}},
+            Of<shape::Fields>, parse::Fields},
         {"dump", "ue", "fields with their current values",
             {{"object", "object|Class", One, "str", objectOrClass}},
             {{"--match", Takes::One, "str", "text", "names containing text"},
-             {"--nonzero", Takes::Nothing, "bool", "", "non-zero values"},
+             {"--nonzero", Takes::Nothing, "bool", "", "non-zero fields, without the zero members inside their values"},
              {"--own", Takes::Nothing, "bool", "", "only the fields the object's own class declares, none it inherits"},
              {"--changed", Takes::Maybe, "path", "file", "changed since snap (or a snapshot file); adds before"},
-             {"--elements", Takes::One, "int", "N", "elements shown per array, set or map (1..256)", "8"}},
+             elements},
             Of<shape::Dump>, parse::Dump,
             "Use on instances, Default__ objects included. Check truncated on the result and its rows before "
             "treating values as complete. A dump can span several ticks."},
@@ -129,23 +138,23 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"entries", "ue", "one page of an array, set or map: elements, or key and value",
             {{"object", "object", One, "ref", object},
              {"field", "[Owner:]Field", One, "str", "the field, with its declaring class where the name is ambiguous"}},
-            {{"--start", Takes::One, "int", "N", "a page's next_cursor"}},
+            {cursor},
             Of<shape::Entries>, parse::Entries, "Names and object pointers are resolved."},
         {"rows", "ue", "a data table's rows: each row's name and its RowStruct members decoded",
             {{"object", "object", One, "ref", object}},
             {{"--match", Takes::One, "str", "text", "row names containing text, any case"},
              {"--fields", Takes::One, "str", "a,b.c", "the row members to keep (paths into structs and arrays)"},
-             {"--start", Takes::One, "int", "N", "a page's next_cursor"},
+             cursor,
              {"--limit", Takes::One, "int", "N", "rows per page (0: all)", "100"},
-             {"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside rows (0, false, empty, None)"}},
+             nonzero},
             Of<shape::Rows>, parse::Rows,
             "RowMap is unreflected: read as the stock UE5 TMap<FName, uint8*> right after RowStruct, its slot "
             "count checked against its allocation bits (refused when they disagree). Nested arrays up to 256 "
             "elements, 3 deep; names resolved. total counts the rows --match kept."},
         {"get", "ue", "named fields, following object pointers and structs (up to 16 paths)",
             {{"object", "object", One, "ref", object}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
-            {{"--nonzero", Takes::Nothing, "bool", "", "leave out zero members inside values (0, false, empty, None)"},
-             {"--elements", Takes::One, "int", "N", "elements shown per array, set or map (1..256)", "8"}}, Of<shape::Get>, parse::Get,
+            {nonzero,
+             elements}, Of<shape::Get>, parse::Get,
             "Owner:Field where a name is ambiguous. The values are read back to back; same_tick says whether in one tick."},
         {"trace", "ue", "the first thing a line hits: actor, component, physical material, distance (read-only)",
             {{"start", "x,y,z|object[@Socket]", One, "str",
@@ -193,7 +202,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"name", "name|#index", One, "str", "the exact pooled name, or its comparison index"}}, {}, Of<shape::Refs>, parse::Refs},
         {"funcs", "ue", "functions on the class chain, then on the native interfaces it implements",
             {{"object", "object|Class", One, "str", objectOrClass}, {"text", "text", Optional, "str", "keep function names containing it"}},
-            {{"--start", Takes::One, "int", "N", "a page's next_cursor"}}, Of<shape::Funcs>, parse::Funcs,
+            {cursor}, Of<shape::Funcs>, parse::Funcs,
             "A row with via \"interface\" is declared only on that native interface: call refuses it on the object; func shows the implementation to call instead."},
         {"params", "ue", "a function's reflected parameter signature",
             {{"object", "object|Class", One, "str", objectOrClass}, {"function", "[Owner:]Function", One, "str", function}},

@@ -18,6 +18,11 @@
 namespace reagentlive::cli::budget {
 // A tool caller's default: what one result may take of an agent's context.
 constexpr size_t ToolBudget = 25000;
+// The keys that say whether a result is complete. A digest keeps every one a
+// result has (a list as its length), so a capped or partial result never
+// reads as whole. Results name them alike: results.md, Conventions.
+inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
+    "tick_accurate", "same_tick", "total", "next_cursor", "filtered"};
 // The verb flags that narrow a result, as the digest names them.
 inline constexpr std::string_view Narrowing[] = {"--fields", "--where", "--match", "--limit", "--nonzero", "--own", "--cls"};
 
@@ -347,8 +352,15 @@ inline Json CallLine(Json call, const Verb& verb, const std::vector<Change>& cha
 // narrower line (typed or a JSON call's text); `file` holds the whole
 // envelope when the line must not run again.
 inline Json Digest(const Profile& profile, size_t chars, size_t limit, const Verb* verb,
-                   std::optional<std::string> next, std::optional<std::string> file) {
+                   std::optional<std::string> next, std::optional<std::string> file, const Json& result = {}) {
     Json digest = {{"chars", chars}, {"budget", limit}};
+    if (result.is_object()) {
+        Json status = Json::object();
+        for (const auto key : StatusKeys)
+            if (const auto found = result.find(std::string(key)); found != result.end())
+                status[std::string(key)] = found->is_array() ? Json(found->size()) : *found;
+        if (!status.empty()) digest["status"] = std::move(status);
+    }
     if (const size_t rows = profile.Rows(); rows != SIZE_MAX)
         digest["rows"] = {{"path", profile.Nodes()[rows].path}, {"count", profile.Nodes()[rows].count}};
     Json largest = Json::array();
@@ -394,7 +406,7 @@ std::optional<Json> Replace(Json& record, size_t chars, const Line& line, Keep&&
         }
     }
     Json out = {{"command", record["command"]}, {"ok", true},
-        {"digest", Digest(profile, chars, line.limit, line.verb, std::move(next), std::move(file))}};
+        {"digest", Digest(profile, chars, line.limit, line.verb, std::move(next), std::move(file), record["result"])}};
     if (record.contains("timing")) out["timing"] = std::move(record["timing"]);
     return out;
 }

@@ -216,35 +216,6 @@ PathTarget ResolvePath(Session& session, StructCache& structs, Ref object, std::
     return out;
 }
 
-// FNames in a set of decoded values, resolved in one lookup: collect, then name.
-struct NameBatch {
-    std::vector<int32_t> indices;
-    std::vector<std::string> names;
-    void Add(const ue::Field& field, std::span<const uint8_t> bytes, StructCache& structs) {
-        const auto collect = [&](int32_t index) -> std::string_view {
-            if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
-            return {};
-        };
-        FormatField(field, bytes, structs, 0, collect);
-    }
-    // A name lookup that only collects: the decoder's first pass.
-    auto Collect() {
-        return [this](int32_t index) -> std::string_view {
-            if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
-            return {};
-        };
-    }
-    void Resolve(Client& client) {
-        if (!indices.empty() && client.Supports(ue::op::Names))
-            if (auto result = ue::Names(client, indices); result) names = std::move(*result);
-    }
-    std::string_view operator()(int32_t index) const {
-        const auto at = std::ranges::find(indices, index);
-        const auto slot = static_cast<size_t>(at - indices.begin());
-        return at == indices.end() || slot >= names.size() ? std::string_view{} : std::string_view(names[slot]);
-    }
-};
-
 // The text each --where matches: a string, a name's or a text's string, else the JSON.
 std::string MatchText(const Json& value) {
     if (value.is_string()) return value.get<std::string>();
@@ -343,7 +314,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                     " per instance (call it on one object instead)");
             const std::string target = function->owner + ":" + function->name;
             ue::EachQuery query{command.className};
-            query.outer = {command.outerText, command.outerAddress};
+            query.outer = {command.outerText, command.outerRef};
             query.function = target;
             query.size = signature.size;
             auto result = ue::Each(client, query);
@@ -411,7 +382,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     ue::EachQuery first{command.className};
     for (size_t i = 0; i < passes.size(); ++i) {
         ue::EachQuery query{command.className};
-        query.outer = {command.outerText, command.outerAddress};
+        query.outer = {command.outerText, command.outerRef};
         query.offset = passes[i].start;
         query.size = passes[i].end - passes[i].start;
         query.reuse = i > 0;
@@ -504,32 +475,23 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                 }
             }
     }
-    NameBatch names;
-    for (const auto& row : cells)
-        for (const auto& cell : row)
-            if (cell.error.empty() && !cell.native && !cell.fixed) names.Add(cell.field, cell.bytes, structs);
-    // Compact values through the decoder (nested containers, tag lists, text
-    // and pointers at any depth); --meta keeps the reflected layout.
+    // Every value through the decoder (nested containers, tag lists, text
+    // and pointers at any depth; --meta the reflected layout).
     RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
-    TextBatch texts;
+    reader.Meta(session.meta);
     for (const auto& row : cells)
         for (const auto& cell : row) {
             if (!cell.error.empty() || cell.native || cell.fixed) continue;
             bool ignored = false;
-            if (session.meta) texts.Add(cell.field, cell.bytes);
-            else reader.Value(cell.field, cell.bytes, {}, names.Collect(), ignored);
+            reader.Value(cell.field, cell.bytes, ignored);
         }
-    names.Resolve(client);
-    if (session.meta) texts.Resolve(session);
-    else reader.Resolve();
+    reader.Resolve();
 
     std::vector<shape::EachError> errors;
     const auto value = [&](const Cell& cell) -> Json {
         if (cell.fixed) return *cell.fixed;
         if (cell.native) return layout::Value(cell.native->field, cell.bytes);
-        if (!session.meta) return reader.Value(cell.field, cell.bytes, {}, names, truncated);
-        return texts.Value(cell.field, cell.bytes, JsonFieldValue(cell.field, cell.bytes, structs, names, truncated, Style(session)),
-            session.meta);
+        return reader.Value(cell.field, cell.bytes, truncated);
     };
     uint64_t matched = 0;
     for (size_t i = 0; i < cells.size(); ++i) {
@@ -590,6 +552,8 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     };
     const Client::Hold hold(client);
     const Ref root = ue::GetRef(command.request);
+    // A gone object fails the command, as it does for every verb; a bad path fails its row.
+    if (const auto table = ObjectTable(session, root); !table) return CommandError(session, jsonCommand, table.error());
     std::vector<Value> values;
     for (const auto& path : command.fields) values.push_back({ResolvePath(session, structs, root, path, false), {}});
     // The values, back to back. A replaced object is refused by its read.
@@ -603,23 +567,16 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         value.bytes = std::move(*bytes);
     }
     const bool sameTick = firstTick == hold.LastTick();
-    // FNames in the values, resolved in one lookup.
-    NameBatch lookupName;
-    for (const auto& value : values)
-        if (value.error.empty() && !value.native) lookupName.Add(value.field, std::span(value.bytes), structs);
-    // Compact values through the decoder, as each does; get names a top-level pointer on its row.
+    // Every value through the decoder, as each does; get names a top-level pointer on its row.
     RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
     reader.KeepTopPointers();
-    TextBatch texts;
+    reader.Meta(session.meta);
     for (const auto& value : values) {
         if (!value.error.empty() || value.native) continue;
         bool ignored = false;
-        if (session.meta) texts.Add(value.field, std::span(value.bytes));
-        else reader.Value(value.field, std::span(value.bytes), {}, lookupName.Collect(), ignored);
+        reader.Value(value.field, std::span(value.bytes), ignored);
     }
-    lookupName.Resolve(client);
-    if (session.meta) texts.Resolve(session);
-    else reader.Resolve();
+    reader.Resolve();
     const auto modules = LoadedModules(session);
     shape::Get result;
     bool failed = false;
@@ -645,9 +602,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
             continue;
         }
         bool partial = false;
-        row.value = !session.meta ? reader.Value(value.field, std::span(value.bytes), {}, lookupName, partial) :
-            texts.Value(value.field, std::span(value.bytes),
-                JsonFieldValue(value.field, std::span(value.bytes), structs, lookupName, partial, Style(session)), session.meta);
+        row.value = reader.Value(value.field, std::span(value.bytes), partial);
         if (partial) row.truncated = true;
         if (session.meta) row.type = value.field.type;
         const auto target = PointerRef(value.field.type, value.bytes);
@@ -709,34 +664,18 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     // decode through the shared decoder (RowReader), as dump's previews do:
     // pointers nested in an element are named, texts converted. A top-level
     // pointer element keeps its object beside it.
-    std::vector<int32_t> indices;
-    std::vector<std::string> names;
     StructCache& structs = Ue(session).structs;
     RowReader reader(session, structs, RowReader::PreviewNested);
     reader.KeepTopPointers();
+    reader.Meta(session.meta);
     {
-        const auto collect = [&](int32_t index) -> std::string_view {
-            if (index >= 0 && std::ranges::find(indices, index) == indices.end()) indices.push_back(index);
-            return {};
-        };
         bool ignored = false;
         for (size_t i = 0; i < count; ++i) {
-            FormatField(key, keyOf(i), structs, 0, collect);
-            reader.Value(key, keyOf(i), {}, collect, ignored);
-            if (map) {
-                FormatField(value, valueOf(i), structs, 0, collect);
-                reader.Value(value, valueOf(i), {}, collect, ignored);
-            }
+            reader.Value(key, keyOf(i), ignored);
+            if (map) reader.Value(value, valueOf(i), ignored);
         }
-        if (!indices.empty() && client.Supports(ue::op::Names))
-            if (auto result = ue::Names(client, indices); result) names = std::move(*result);
     }
     reader.Resolve();
-    const auto lookupName = [&](int32_t index) -> std::string_view {
-        const auto at = std::ranges::find(indices, index);
-        const auto slot = static_cast<size_t>(at - indices.begin());
-        return at == indices.end() || slot >= names.size() ? std::string_view{} : std::string_view(names[slot]);
-    };
     std::vector<Ref> targets;
     for (size_t i = 0; i < count; ++i) {
         for (const auto target : {PointerRef(key.type, keyOf(i)), map ? PointerRef(value.type, valueOf(i)) : Ref{}})
@@ -759,7 +698,7 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
             named = MakeObject(*found);
             RememberRef(session.refs, found->ref);
         }
-        return reader.Value(of, data, {}, lookupName, partial);
+        return reader.Value(of, data, partial);
     };
     for (size_t i = 0; i < count; ++i) {
         shape::EntryRow row;

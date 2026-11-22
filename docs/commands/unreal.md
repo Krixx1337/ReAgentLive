@@ -301,8 +301,11 @@ object:
 | Filter | Keeps |
 |---|---|
 | `--cls C` | instances of `C` or a subclass |
-| `--outer O` | objects with `O` up their outer chain (at most 16 steps). `O` is an object when it parses as one (a literal ref, an address, `$N`), else text an outer's name contains, any case |
+| `--outer O` | objects with `O` up their outer chain (at most 16 steps). `O` is an object when it parses as one (a literal ref, an address, `$N`), checked like any object argument (a gone one is refused as not found, never a filter by whatever reuses its address), else text an outer's name contains, any case (no match is no rows) |
 | `--live` (`find`) | no class default or archetype objects (`each` and `census` skip them always) |
+
+`fields --match T` keeps the fields whose name or readable label contains
+`T`, any case, as `dump --match` does.
 
 `find` and `describe` rows name each object's `outer` (`{name, ref}`): a
 function's or property's class, a subobject's owner; a package has none.

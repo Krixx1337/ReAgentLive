@@ -122,27 +122,14 @@ void RunRows(Session& session, const Command& command, StructCache& structs, std
         if (!read) { errors[i] = read.error().message; continue; }
         bytes[i] = std::move(*read);
     }
-    std::vector<int32_t> nameIndices;
-    const auto collect = [&](int32_t index) -> std::string_view {
-        if (index >= 0 && std::ranges::find(nameIndices, index) == nameIndices.end()) nameIndices.push_back(index);
-        return {};
-    };
     bool ignored = false;
     for (uint32_t i = 0; i < shown; ++i)
-        if (errors[i].empty()) reader.Value(type, bytes[i], paths, collect, ignored);
-    std::vector<std::string> resolved;
-    if (!nameIndices.empty())
-        if (auto names = ue::Names(client, nameIndices); names) resolved = std::move(*names);
+        if (errors[i].empty()) reader.Value(type, bytes[i], paths, ignored);
     reader.Resolve();
-    const auto named = [&](int32_t index) -> std::string_view {
-        const auto at = std::ranges::find(nameIndices, index);
-        const auto slot = static_cast<size_t>(at - nameIndices.begin());
-        return at == nameIndices.end() || slot >= resolved.size() ? std::string_view{} : std::string_view(resolved[slot]);
-    };
     for (uint32_t i = 0; i < shown; ++i) {
         const auto& row = rows[out.from + i];
         shape::TableRow item{rowName(row), Addr(row.row), nullptr};
-        if (errors[i].empty()) item.value = reader.Value(type, bytes[i], paths, named, out.truncated);
+        if (errors[i].empty()) item.value = reader.Value(type, bytes[i], paths, out.truncated);
         else { item.value = {{"error", errors[i]}}; out.truncated = true; }
         if (command.nonzero) KeepNonZero(item.value);
         out.rows.push_back(std::move(item));

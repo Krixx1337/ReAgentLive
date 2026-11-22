@@ -56,7 +56,9 @@ constexpr uint32_t ObjectIdentityOffset = 0xC, ObjectIdentityLength = 12;
 constexpr size_t MaxFindResults = 24;
 constexpr uint32_t MaxClassName = 64;
 // The object filter find, each and census take: data = class name, NUL, then
-// optionally the outer's name text, NUL; address = an outer object (0: none).
+// optionally the outer's name text and NUL, then, with an outer object, its
+// slot and serial (two int32); address = the outer object (0: none). The
+// agent refuses an outer object that is gone, as it refuses any stale ref.
 // An object passes when its class matches and an outer up its chain (at most
 // MaxOuterSteps) is that object or has a name containing the text, any case.
 constexpr uint32_t MaxOuterText = 64, MaxOuterSteps = 16;
@@ -565,7 +567,24 @@ inline bool FilterValid(const Request& request) {
     const uint32_t rest = request.length - static_cast<uint32_t>(end - data) - 1;
     if (!rest) return true;
     const auto* outerEnd = static_cast<const char*>(memchr(end + 1, 0, rest));
-    return outerEnd && outerEnd == end + rest && static_cast<uint32_t>(outerEnd - end - 1) < MaxOuterText;
+    if (!outerEnd || static_cast<uint32_t>(outerEnd - end - 1) >= MaxOuterText) return false;
+    const auto tail = static_cast<uint32_t>(end + rest - outerEnd);  // After the outer text's NUL.
+    return tail == 0 || (tail == 2 * sizeof(int32_t) && request.address);
+}
+// The outer object's ref: address, then slot and serial when the request
+// carries them (index -1: an address alone, identified by the agent).
+inline Ref FilterRef(const Request& request) {
+    Ref ref{static_cast<uintptr_t>(request.address), -1, 0};
+    if (!request.address || request.length < 2 * sizeof(int32_t) + 2) return ref;
+    const auto* data = reinterpret_cast<const char*>(request.data);
+    const size_t classLength = strnlen(data, request.length);
+    if (classLength + 1 >= request.length) return ref;
+    const size_t outerLength = strnlen(data + classLength + 1, request.length - classLength - 1);
+    const size_t at = classLength + 1 + outerLength + 1;
+    if (at + 2 * sizeof(int32_t) != request.length) return ref;
+    memcpy(&ref.index, request.data + at, sizeof(int32_t));
+    memcpy(&ref.serial, request.data + at + sizeof(int32_t), sizeof(int32_t));
+    return ref;
 }
 inline std::string_view FilterOuter(const Request& request) {
     if (!request.length) return {};

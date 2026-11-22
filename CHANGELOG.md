@@ -7,6 +7,25 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **`--outer <ref>` checks the object:** the request carries its slot and
+  serial, and the agent refuses a gone one as not found instead of
+  filtering by whatever reuses its address (protocol: rebuild and
+  re-inject). `get` on a gone object fails the command, as every verb does.
+- **Digests keep status keys** (`status`: `capped`, `truncated`, `unnamed`,
+  `matched`, `omitted`, `errors`...), so a capped result never reads as
+  whole.
+- **One reader decodes every value:** names, texts and pointers are looked
+  up inside it, and `--meta` is its style; `dump --nonzero` also leaves out
+  the zero members inside the values it keeps, as `get` and `each` do.
+  `dump` prints a set or map once (its preview, beside the header).
+- **Float32 values print at float precision** (`2.35`, not
+  `2.3499999046325684`).
+- **`fields --match`**; repeated flags (`--cls`, `--outer`, `--nonzero`,
+  `--elements`, `--start`) are defined once for every verb.
+- **Console tests against a fake engine** (`tests/console/`): the real
+  console, an in-process agent and a synthetic world; every decoding verb
+  must print the same JSON for the same member.
+
 - **One decoder for every value:** sets and maps decode at any depth
   (`{count, rows: [{key, value}]}`), in `rows`, typed calls, `get`, `each`
   and `dump`; object, class and weak pointers inside values are named

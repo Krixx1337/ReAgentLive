@@ -158,6 +158,15 @@ bool OuterMatches(const Request& request, const Object* object, std::string& scr
     return false;
 }
 
+bool OuterAlive(const Request& request, const Context& pack, Response& response) {
+    if (!request.address) return true;
+    Ref ref = detail::FilterRef(request);
+    if (ref.index < 0) ref = Identify(reinterpret_cast<const Object*>(ref.address), pack);
+    if (Resolve(ref, pack)) return true;
+    Refuse(response, Status::NotFound, "outer object gone or not a valid object");
+    return false;
+}
+
 Ref OuterRef(const Object* object, const Context& pack) {
     const Object* outer = ObjectOuter(object);
     if (!outer || !HeaderReadable(outer) || !pack.object(outer)) return {};
@@ -241,6 +250,7 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
     const auto from = static_cast<int32_t>(request.args[1]);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+        if (!OuterAlive(request, pack, response)) return Progress::Done;
         g_find = {};
         g_find.cursor = from; // Later pages start at their cursor instead of rescanning from slot 0.
         ResetClassCache();

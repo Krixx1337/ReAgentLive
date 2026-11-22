@@ -628,15 +628,15 @@ TEST_CASE("name takes FName indices and the agent bounds them") {
 TEST_CASE("--outer takes an object or an outer's name, on find, each and census") {
     const auto byRef = Parse("find --cls BodySetup --outer 0x10#4:2", NoRefs);
     REQUIRE(byRef.has_value());
-    CHECK(byRef->outerAddress == 0x10);
+    CHECK(byRef->outerRef == Ref{0x10, 4, 2});                            // The whole ref, serial included.
     CHECK(byRef->outerText.empty());
     const auto byN = Parse("each BodySetup BoneName --outer $1", TwoRefs);
     REQUIRE(byN.has_value());
-    CHECK(byN->outerAddress == TwoRefs[0].address);
+    CHECK(byN->outerRef == TwoRefs[0]);
     const auto byName = Parse("census --cls BodySetup --outer PA_Pawn", NoRefs);
     REQUIRE(byName.has_value());
     CHECK(byName->outerText == "PA_Pawn");
-    CHECK(byName->outerAddress == 0);
+    CHECK(byName->outerRef.address == 0);
     CHECK(Parse("find --outer PA_Pawn", NoRefs).has_value());             // An outer alone is a filter.
     CHECK_FALSE(Parse("find --outer " + std::string(64, 'x'), NoRefs).has_value());
     // --elements: 1..256 on get, each and dump.

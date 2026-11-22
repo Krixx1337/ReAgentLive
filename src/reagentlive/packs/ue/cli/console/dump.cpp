@@ -111,7 +111,7 @@ int64_t SetCount(std::span<const uint8_t> bytes) {
 }
 }
 
-void PrintFields(Session& session, const Ref& object, bool instance, std::string_view jsonCommand) {
+void PrintFields(Session& session, const Ref& object, bool instance, std::string_view match, std::string_view jsonCommand) {
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, jsonCommand, fields.error());
     const auto sorted = SortedByOffset(std::move(*fields));
@@ -119,6 +119,10 @@ void PrintFields(Session& session, const Ref& object, bool instance, std::string
     const auto native = NativeMembers(session, object, sorted, instance);
     for (const auto& check : native.shown) result.rows.push_back(MakeNativeFieldRow(*check.member, check.stale));
     SortRowsByOffset(result.rows);
+    if (!match.empty())
+        std::erase_if(result.rows, [&](const shape::FieldRow& row) {
+            return !text::ContainsNoCase(row.field.name, match) && !text::ContainsNoCase(row.label, match);
+        });
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
     return Emit(session, jsonCommand, std::move(result));
 }
@@ -301,12 +305,16 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     std::vector<int32_t> indices;
     std::unordered_map<int32_t, size_t> nameSlots;
     std::vector<std::string> names;
-    // Compact field values through the decoder (nested arrays, tag lists,
-    // text at any depth); --meta and previews keep the plain formatter.
+    // Field values and preview elements through the decoder, its own names
+    // and texts included. The plain formatter (with the names collected here)
+    // stays for a top-level container's header beside its preview, --meta
+    // previews, and `before`: a snapshot's nested pointers may be freed.
     RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
     reader.KeepTopPointers(); // A pointer field is named on its row (`object`).
-    // A top-level array keeps its header: its preview already lists the elements.
-    const auto decoded = [&](const ue::Field& field) { return !session.meta && field.type != "ArrayProperty"; };
+    // A top-level container keeps its header: its preview already lists the elements.
+    const auto decoded = [&](const ue::Field& field) {
+        return !session.meta && field.type != "ArrayProperty" && !IsContainer(field.type);
+    };
     if (client.Supports(ue::op::Names)) {
         const auto collectName = [&](int32_t index) -> std::string_view {
             if (index >= 0 && nameSlots.try_emplace(index, indices.size()).second)
@@ -317,7 +325,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             if (keep[i]) {
                 FormatField(sorted[i], FieldBytes(*bytes, sorted[i]), structs, 0, collectName);
                 bool ignored = false;
-                if (decoded(sorted[i])) reader.Value(sorted[i], FieldBytes(*bytes, sorted[i]), {}, collectName, ignored);
+                if (decoded(sorted[i])) reader.Value(sorted[i], FieldBytes(*bytes, sorted[i]), ignored);
             }
         for (const auto& preview : previews) {
             if (!preview.elements) continue;
@@ -328,7 +336,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                     const auto element = data.subspan(offset + part.offset, part.field.size);
                     FormatField(part.field, element, structs, 0, collectName);
                     bool ignored = false;
-                    if (!session.meta) reader.Value(part.field, element, {}, collectName, ignored);
+                    if (!session.meta) reader.Value(part.field, element, ignored);
                 }
         }
         if (auto result = ue::Names(client, indices); result) names = std::move(*result);
@@ -391,7 +399,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         bool partial = false;
         shape::DumpRow row;
         placed(row, field);
-        row.value = decoded(field) ? reader.Value(field, data, {}, lookupName, partial) :
+        row.value = decoded(field) ? reader.Value(field, data, partial) :
             texts.Value(field, data, JsonFieldValue(field, data, structs, lookupName, partial, Style(session)), session.meta);
         if (baseline) {
             const auto old = FieldBytes(baseline->bytes, field);
@@ -421,7 +429,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
                         // beside it (`object`), as a pointer field is.
                         auto value = session.meta ? texts.Value(part.field, element,
                             JsonFieldValue(part.field, element, structs, lookupName, partial, Style(session), 1), true) :
-                            reader.Value(part.field, element, {}, lookupName, partial);
+                            reader.Value(part.field, element, partial);
                         if (key) item.key = std::move(value);
                         else item.value = std::move(value);
                         if (const auto* named = describePointer(part.field.type, element, elementLookups)) {
@@ -482,6 +490,9 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         result.rows.push_back(std::move(row));
     }
     SortRowsByOffset(result.rows);
+    // --nonzero also leaves out the zero members inside the values it keeps, as get and each do.
+    if (command.nonzero)
+        for (auto& row : result.rows) KeepNonZero(row.value);
     const size_t total = sorted.size() + native.shown.size();
     result.truncated = truncated;
     if (reader.Unnamed()) result.unnamed = reader.Unnamed();

@@ -87,6 +87,8 @@ void ResetClassCache();
 std::string_view ClassArgument(const Request& request);
 // The request's object filter on outers (protocol_ue.h): true when none is set.
 bool OuterMatches(const Request& request, const Object* object, std::string& scratch);
+// False (and the response refused as not found) when the filter's outer object is gone.
+bool OuterAlive(const Request& request, const Context& pack, Response& response);
 // The object's outer as a ref, zero when it has none (a package) or it is not an object.
 Ref OuterRef(const Object* object, const Context& pack);
 bool Template(const Object* object);

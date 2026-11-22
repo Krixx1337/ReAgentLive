@@ -60,9 +60,9 @@ struct Command {
     std::string whereField;
     bool nonzero = false, changed = false, own = false; // dump filters; own: only the fields the class itself declares.
     uint32_t elements = 0;      // --elements: per container in get, each and dump; 0: the default.
-    // --outer on find, each and census: an object (outerAddress) or an outer's name text.
+    // --outer on find, each and census: an object (its full ref) or an outer's name text.
     std::string outer, outerText;
-    uint64_t outerAddress = 0;
+    Ref outerRef{};
     // write --trial: the owning object (guarded on its identity) and an
     // optional native object base inside it whose vtable is guarded too.
     Ref owner{};

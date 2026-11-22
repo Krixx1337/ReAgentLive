@@ -62,7 +62,7 @@ std::string Outer(const Args& args, std::span<const Ref> refs, Command& command)
     command.outer = args.Value("--outer");
     Request object{};
     if (Object(command.outer, refs, object) && ue::GetRef(object).address) {
-        command.outerAddress = ue::GetRef(object).address;
+        command.outerRef = ue::GetRef(object); // Slot and serial too: the agent refuses a stale one.
         return {};
     }
     if (command.outer.empty() || command.outer.size() >= ue::MaxOuterText)
@@ -272,6 +272,7 @@ Parsed Record(const Args& args, const ParseContext& context) {
 Parsed Fields(const Args& args, const ParseContext& context) {
     Command command;
     if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
+    command.match = args.Value("--match");
     command.request.op = ue::op::Fields;
     return command;
 }

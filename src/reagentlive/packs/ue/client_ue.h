@@ -20,8 +20,8 @@ struct Object { Ref ref; std::string name, className; uint32_t size = 0; Ref out
 // this object up their outer chain, or an outer whose name contains text.
 struct OuterFilter {
     std::string_view text;
-    uint64_t object = 0;
-    bool Empty() const { return text.empty() && !object; }
+    Ref object{};       // Slot and serial checked by the agent; index -1: an address it identifies.
+    bool Empty() const { return text.empty() && !object.address; }
 };
 struct FindResult {
     std::vector<Object> objects; // Up to MaxFindResults matches from the cursor on.

@@ -240,6 +240,15 @@ if(REAGENTLIVE_BUILD_TESTS)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
         tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp)
     target_link_libraries(reagentlive-loopback-tests PRIVATE reagentlive-core reagentlive-client reagentlive-ue-client reagentlive-cli reagentlive-doctest)
+    # The real console against a fake engine: an in-process agent whose pack
+    # ops answer from a synthetic world (tests/console/fake_engine.h).
+    if(TARGET reagentlive-console AND reagentlive_pack_count EQUAL 1)
+        add_executable(reagentlive-console-tests tests/console/main.cpp tests/console/console_tests.cpp)
+        target_link_libraries(reagentlive-console-tests PRIVATE reagentlive-console reagentlive-core reagentlive-doctest)
+        set_target_properties(reagentlive-console-tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
+        target_compile_options(reagentlive-console-tests PRIVATE /W4 /WX /EHsc)
+        doctest_discover_tests(reagentlive-console-tests TEST_PREFIX "reagentlive." PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+    endif()
     # The own-thread host end to end: the real DLL loaded into the test process.
     add_executable(reagentlive-example-tests tests/example/main.cpp)
     target_link_libraries(reagentlive-example-tests PRIVATE reagentlive-client reagentlive-doctest)

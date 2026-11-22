@@ -1,5 +1,6 @@
 // reagentlive CLI: the JSON type every result uses, numbers from raw bytes, and --nonzero.
 #pragma once
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <span>
@@ -11,13 +12,24 @@
 namespace reagentlive::cli {
 using Json = nlohmann::json;
 
+// A float32 as the shortest decimal that reads back as the same float
+// (2.35, not 2.3499999046325684): JSON prints the double it widens to.
+inline double ShortFloat(float number) {
+    char text[32];
+    const auto written = std::to_chars(text, text + sizeof(text), number);
+    double out = number;
+    std::from_chars(text, written.ptr, out);
+    return out;
+}
+
 template<class T> Json JsonNumber(std::span<const uint8_t> bytes) {
     T number{};
     format_detail::Load(bytes, number);
     if constexpr (std::is_floating_point_v<T>) {
         if (!std::isfinite(number)) return {{"non_finite", std::isnan(number) ? "nan" : number < 0 ? "-inf" : "inf"}};
     }
-    return number;
+    if constexpr (std::is_same_v<T, float>) return ShortFloat(number);
+    else return number;
 }
 
 // --nonzero on a decoded value: leaves out the zero members of its structs,

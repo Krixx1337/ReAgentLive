@@ -173,8 +173,12 @@ request costs up to a host tick. The console cuts both:
   items. A result past the budget is not printed: `digest` stands in for
   `result` (`ok` stays true) with its size (`chars`, `budget`), the main
   list (`rows`: its path and count), its `largest` parts (paths with
-  array elements folded, `rows[].Price`) and the verb's narrowing flags
-  (`narrow`). Then one of two:
+  array elements folded, `rows[].Price`), the verb's narrowing flags
+  (`narrow`) and `status`: every key the result had that says whether it
+  is complete (`capped`, `truncated`, `unnamed`, `matched`, `omitted`,
+  `errors` as a count, `tick_accurate`, `same_tick`, `total`,
+  `next_cursor`, `filtered`), so a capped result never reads as whole.
+  Then one of two:
   - `next`: the line again, narrowed by what the result showed. A row
     list's members that fit go in `--fields` (whole members where they
     fit, else their own members), `--limit` shrinks to the rows that fit,

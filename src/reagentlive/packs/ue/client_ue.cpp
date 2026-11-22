@@ -13,15 +13,21 @@ Error TooLong(const char* what) { return {Error::Kind::Agent, Status::BadRequest
 // The object filter (protocol_ue.h): class name, NUL, then the outer text and NUL when set.
 static bool SetFilter(Request& request, std::string_view className, const OuterFilter& outer) {
     if (className.size() >= MaxClassName || outer.text.size() >= MaxOuterText) return false;
-    request.address = outer.object;
-    if (className.empty() && outer.text.empty()) return true;
+    request.address = outer.object.address;
+    const bool slot = outer.object.address && outer.object.index >= 0;
+    if (className.empty() && outer.text.empty() && !slot) return true;
     memcpy(request.data, className.data(), className.size());
     request.data[className.size()] = 0;
     request.length = static_cast<uint32_t>(className.size() + 1);
-    if (!outer.text.empty()) {
+    if (!outer.text.empty() || slot) {
         memcpy(request.data + request.length, outer.text.data(), outer.text.size());
         request.data[request.length + outer.text.size()] = 0;
         request.length += static_cast<uint32_t>(outer.text.size() + 1);
+    }
+    if (slot) {
+        memcpy(request.data + request.length, &outer.object.index, sizeof(int32_t));
+        memcpy(request.data + request.length + sizeof(int32_t), &outer.object.serial, sizeof(int32_t));
+        request.length += 2 * sizeof(int32_t);
     }
     return true;
 }

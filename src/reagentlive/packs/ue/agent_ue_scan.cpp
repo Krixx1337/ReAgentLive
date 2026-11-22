@@ -127,6 +127,7 @@ Progress Each(const Request& request, Response& response, bool first, const Host
     } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+        if (!OuterAlive(request, pack, response)) return Progress::Done;
         if (!g_each) g_each = new (std::nothrow) EachState;
         if (!g_each) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
         auto& state = *g_each;

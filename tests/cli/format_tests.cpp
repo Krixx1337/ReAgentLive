@@ -344,6 +344,14 @@ TEST_CASE("a wide row prints compact: its size is held") {
     CHECK(pruned.dump().size() < value.dump().size());
 }
 
+TEST_CASE("a float32 prints at float precision") {
+    CHECK(JsonNumber<float>(Bytes(2.35f)).dump() == "2.35");
+    CHECK(JsonNumber<float>(Bytes(0.1f)).dump() == "0.1");
+    CHECK(JsonNumber<float>(Bytes(100000.0f)).dump() == "100000.0");
+    CHECK(JsonNumber<double>(Bytes(0.1)).dump() == "0.1");                 // Doubles as they are.
+    CHECK(static_cast<float>(JsonNumber<float>(Bytes(1.0f / 3.0f)).get<double>()) == 1.0f / 3.0f);
+}
+
 TEST_CASE("--nonzero: zero members go, elements and non-zero values stay") {
     Json value = {{"A", 0}, {"B", false}, {"C", ""}, {"D", "None"}, {"E", nullptr}, {"F", Json::array()},
         {"G", {{"X", 0.0}}}, {"H", 1}, {"I", Json::array({0, 2})}, {"J", {{"count", 0}, {"rows", Json::array()}}},

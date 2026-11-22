@@ -192,8 +192,11 @@ flag ignores it.
 
 **The object filter** (`find`, `each`, `census`): `data` holds the class
 name and NUL (the class may be empty for `find` and `census`), then
-optionally an outer's name text and NUL (under 64 bytes); `address` holds
-an outer object (0: none). An object passes when an outer up its chain, at
+optionally an outer's name text and NUL (under 64 bytes), then, with an
+outer object, its slot and serial (two int32); `address` holds the outer
+object (0: none; without slot and serial, an address the agent identifies).
+The agent refuses an outer object that is gone (`NotFound`) before it
+scans. An object passes when an outer up its chain, at
 most 16 steps, is that object or has a name containing the text, any case.
 Every `FindEntry` (find, describe, describe many) carries `outer`, the
 object's own outer as a ref, zero for a package.

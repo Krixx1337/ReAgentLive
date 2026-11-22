@@ -166,30 +166,16 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
             if (arrayOutput(parameter))
                 if (auto why = rows.Check(Element(parameter), paths); !why.empty()) return fail(std::move(why));
     }
-    std::vector<int32_t> nameIndices;
-    const auto collect = [&](int32_t index) -> std::string_view {
-        if (index >= 0 && std::ranges::find(nameIndices, index) == nameIndices.end()) nameIndices.push_back(index);
-        return {};
-    };
+    rows.Meta(session.meta);
     for (const auto& parameter : signature.parameters) {
         if (ue::InputParameter(parameter.parameterFlags)) continue;
         bool ignored = false;
         if (arrayOutput(parameter))
-            rows.Array(parameter, FieldBytes(*result, parameter), command.from, command.limit, paths, collect, ignored);
-        else if (session.meta)
-            JsonFieldValue(parameter, FieldBytes(*result, parameter), structs, collect, ignored, Style(session));
+            rows.Array(parameter, FieldBytes(*result, parameter), command.from, command.limit, paths, ignored);
         else
-            rows.Value(parameter, FieldBytes(*result, parameter), {}, collect, ignored);
+            rows.Value(parameter, FieldBytes(*result, parameter), ignored);
     }
-    std::vector<std::string> resolved;
-    if (!nameIndices.empty() && client.Supports(ue::op::Names))
-        if (auto names = ue::Names(client, nameIndices); names) resolved = std::move(*names);
     rows.Resolve();
-    const auto named = [&](int32_t index) -> std::string_view {
-        const auto at = std::ranges::find(nameIndices, index);
-        const auto slot = static_cast<size_t>(at - nameIndices.begin());
-        return at == nameIndices.end() || slot >= resolved.size() ? std::string_view{} : std::string_view(resolved[slot]);
-    };
     std::vector<shape::CallOutput> outputs;
     bool truncated = false;
     for (const auto& parameter : signature.parameters) {
@@ -200,9 +186,8 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         if (session.meta) row.meta = MakeFieldInfo(parameter);
         bool partial = false;
         row.value = arrayOutput(parameter) ?
-            rows.Array(parameter, FieldBytes(*result, parameter), command.from, command.limit, paths, named, partial) :
-            session.meta ? JsonFieldValue(parameter, FieldBytes(*result, parameter), structs, named, partial, Style(session)) :
-            rows.Value(parameter, FieldBytes(*result, parameter), {}, named, partial);
+            rows.Array(parameter, FieldBytes(*result, parameter), command.from, command.limit, paths, partial) :
+            rows.Value(parameter, FieldBytes(*result, parameter), partial);
         row.truncated = partial;
         truncated |= partial;
         if (command.nonzero) KeepNonZero(row.value);

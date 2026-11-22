@@ -137,8 +137,18 @@ TEST_CASE("the object filter: a class, an outer text, an outer object") {
     set(std::string_view("Body\0PA\0x", 10));                  // Bytes after it.
     CHECK(ue::Check(request) == Status::BadRequest);
     request.length = 0;
-    request.address = 0x1000;                                   // An outer object alone.
+    request.address = 0x1000;                                   // An outer object alone: an address to identify.
     CHECK(ue::Check(request) == Status::Ok);
+    CHECK(ue::detail::FilterRef(request).index == -1);
+    const int32_t slot[2] = {77, 5};                            // With its slot and serial, after the outer text.
+    set(std::string_view("Body\0\0", 6));
+    memcpy(request.data + 6, slot, sizeof(slot));
+    request.length = 6 + sizeof(slot);
+    CHECK(ue::Check(request) == Status::Ok);
+    CHECK(ue::detail::FilterRef(request) == ue::Ref{0x1000, 77, 5});
+    request.address = 0;                                        // A slot with no object.
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.address = 0x1000;
     request.op = ue::op::Each;                                  // each still needs its class.
     CHECK(ue::Check(request) == Status::BadRequest);
     set(std::string_view("Body\0PA\0", 8));

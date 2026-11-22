@@ -1,0 +1,217 @@
+// reagentlive console tests: the real console against the fake engine
+// (fake_engine.h). One fixture object is read through every verb that decodes
+// values, and the same member must print the same JSON in each; status keys
+// and stale object arguments must be reported alike. A divergence still
+// known is marked should_fail, so the test turns red when it is fixed and
+// the mark can go.
+#include "fake_engine.h"
+#include <map>
+
+using namespace fake;
+
+namespace {
+template<class T> std::span<const uint8_t> AsBytes(const T& value) {
+    return {reinterpret_cast<const uint8_t*>(&value), sizeof(value)};
+}
+struct WeakPtr { int32_t index, serial; };
+struct BoxBytes { double center[3]; int32_t name, number; float radius; WeakPtr owner; uint32_t pad; };
+static_assert(sizeof(BoxBytes) == 48);
+struct ScoreSlot { int32_t name, number; int32_t value, pad; int32_t hashNext, hashIndex; };
+static_assert(sizeof(ScoreSlot) == 24);
+
+// The fixture: a Thing whose Info struct holds every kind of value the
+// decoder handles, its own top-level containers, and a crowd of pointers.
+struct Fixture {
+    std::string thing, ghost, package;   // Literal refs.
+    std::string stale;                   // A ref to Thing_0 with a serial that moved on.
+    uint32_t crowd = 0;
+};
+
+std::string Text(const Ref& ref) {
+    return std::format("0x{:x}#{}:{}", ref.address, ref.index, ref.serial);
+}
+
+const Fixture& TheFixture() {
+    static const Fixture fixture = [] {
+        auto& world = TheWorld();
+        Type& vector = world.AddType("Vector", 24, true);
+        vector.fields = {Field("X", "DoubleProperty", 0, 8), Field("Y", "DoubleProperty", 8, 8), Field("Z", "DoubleProperty", 16, 8)};
+        Type& tag = world.AddType("GameplayTag", 8, true);
+        tag.fields = {Field("TagName", "NameProperty", 0, 8)};
+        Type& box = world.AddType("Box", 48, true);
+        box.fields = {StructField("Center", 0, vector), Field("Name", "NameProperty", 24, 8),
+            Field("Radius", "FloatProperty", 32, 4), Field("Owner", "WeakObjectProperty", 36, 8)};
+        const auto scoreKey = Field("Key", "NameProperty", 0, 8), scoreValue = Field("Value", "IntProperty", 0, 4);
+        Type& info = world.AddType("Info", 152, true);
+        info.fields = {Field("Owner", "WeakObjectProperty", 0, 8), Field("Stale", "WeakObjectProperty", 8, 8),
+            Field("Friend", "ObjectProperty", 16, 8), MapField("Scores", 24, scoreKey, scoreValue, 24, 8),
+            ArrayField("Boxes", 104, "StructProperty", 48, &box), StructField("Tag", 120, tag),
+            StructField("Zero", 128, vector)};
+        Type& thingType = world.AddType("Thing", 0x400, false, "Object");
+        thingType.fields = {StructField("Info", 0x30, info), ArrayField("Boxes", 0x100, "StructProperty", 48, &box),
+            MapField("Scores", 0x110, scoreKey, scoreValue, 24, 8), ArrayField("Crowd", 0x160, "ObjectProperty", 8),
+            Field("Health", "FloatProperty", 0x170, 4)};
+
+        Object& package = world.Add("Package_Things", "Package", 64);
+        const Ref packageRef = package.ref;
+        Object& buddy = world.Instance("Buddy", thingType, packageRef);
+        const Ref buddyRef = buddy.ref;
+        Object& ghost = world.Instance("Ghost", thingType, packageRef);
+        const WeakPtr ghostWeak{ghost.ref.index, ghost.ref.serial};
+        ghost.ref.serial = 2; // Freed and its slot reused: the old weak pointer no longer resolves.
+        Object& thing = world.Instance("Thing_0", thingType, packageRef);
+        const Ref thingRef = thing.ref;
+
+        // Values, written into Thing_0's bytes.
+        uint8_t* bytes = world.Bytes(thing);
+        const auto boxOf = [&](double x, const char* name, float radius) {
+            return BoxBytes{{x, 2.0, 3.0}, world.Name(name), 0, radius, {buddyRef.index, buddyRef.serial}, 0};
+        };
+        const BoxBytes boxes[2] = {boxOf(1.5, "hand_r_box", 2.35f), boxOf(-4.0, "head_box", 0.5f)};
+        const ScoreSlot scores[3] = {{world.Name("Kills"), 0, 7, 0, -1, 0}, {world.Name("Deaths"), 0, 0, 0, -1, 0},
+            {world.Name("Assists"), 0, 3, 0, -1, 0}};
+        uint8_t* infoAt = bytes + 0x30;
+        const WeakPtr owner{buddyRef.index, buddyRef.serial};
+        memcpy(infoAt + 0, &owner, 8);
+        memcpy(infoAt + 8, &ghostWeak, 8);
+        const uint64_t friendAddress = buddyRef.address;
+        memcpy(infoAt + 16, &friendAddress, 8);
+        SetSparse(infoAt + 24, AsBytes(scores), 3, 24);
+        SetArray(infoAt + 104, AsBytes(boxes), 2);
+        const int32_t tagName[2] = {world.Name("Item.Weapon.Rifle"), 0};
+        memcpy(infoAt + 120, tagName, 8);
+        SetArray(bytes + 0x100, AsBytes(boxes), 2);
+        SetSparse(bytes + 0x110, AsBytes(scores), 3, 24);
+        const float health = 87.5f;
+        memcpy(bytes + 0x170, &health, 4);
+        // The crowd: more distinct objects than one command names.
+        std::vector<uint64_t> crowd;
+        for (int i = 0; i < 150; ++i) crowd.push_back(world.Instance("Extra_" + std::to_string(i), vector).ref.address);
+        SetArray(bytes + 0x160, {reinterpret_cast<const uint8_t*>(crowd.data()), crowd.size() * 8},
+            static_cast<uint32_t>(crowd.size()));
+
+        Fixture out;
+        out.thing = Text(thingRef);
+        out.package = Text(packageRef);
+        out.ghost = Text(Ref{0, ghostWeak.index, ghostWeak.serial});
+        out.stale = Text(Ref{thingRef.address, thingRef.index, thingRef.serial + 5});
+        out.crowd = static_cast<uint32_t>(crowd.size());
+        return out;
+    }();
+    return fixture;
+}
+
+// A get row's value by path.
+Json Get(const std::string& path, const std::string& flags = {}) {
+    const auto result = Result("get " + TheFixture().thing + " " + path + (flags.empty() ? "" : " " + flags));
+    REQUIRE(result["rows"].size() == 1);
+    return result["rows"][0]["value"];
+}
+// Thing_0's cell for one each column.
+Json Each(const std::string& path, const std::string& flags = {}) {
+    const auto result = Result("each Thing " + path + " --where Name~Thing_0" + (flags.empty() ? "" : " " + flags));
+    REQUIRE(result["rows"].size() == 1);
+    return result["rows"][0]["values"][0];
+}
+// A dump row's value by field name.
+Json DumpRow(const std::string& name, const std::string& key = "value", const std::string& flags = {}) {
+    const auto result = Result("dump " + TheFixture().thing + (flags.empty() ? "" : " " + flags));
+    for (const auto& row : result["rows"])
+        if (row["name"] == name) return row.value(key, Json());
+    FAIL("no dump row " << name);
+    return {};
+}
+}
+
+TEST_CASE("the fake engine answers the console") {
+    const auto& fixture = TheFixture();
+    const auto described = Result("describe " + fixture.thing);
+    CHECK(described["name"] == "Thing_0");
+    CHECK(described["outer"]["name"] == "Package_Things");
+    CHECK(Get("Health") == 87.5);
+}
+
+TEST_CASE("one member, one JSON: get, each and dump agree") {
+    const Json info = Get("Info");
+    // Every kind of value, decoded the same at any depth.
+    CHECK(info["Scores"] == Json{{"count", 3}, {"rows", Json::array({{{"key", "Kills"}, {"value", 7}},
+        {{"key", "Deaths"}, {"value", 0}}, {{"key", "Assists"}, {"value", 3}}})}});
+    CHECK(info["Tag"] == "Item.Weapon.Rifle");
+    CHECK(info["Owner"]["name"] == "Buddy");
+    CHECK(info["Friend"]["name"] == "Buddy");
+    CHECK(info["Stale"].value("gone", false));
+    CHECK(info["Boxes"]["rows"][0]["Name"] == "hand_r_box");
+    CHECK(info["Boxes"]["rows"][0]["Radius"] == 2.35);
+    CHECK(info["Boxes"]["rows"][0]["Owner"]["name"] == "Buddy");
+    // dump's value of Info is the same struct.
+    CHECK(DumpRow("Info") == info);
+    // each reads the members one column each.
+    for (const char* member : {"Scores", "Boxes", "Tag", "Zero", "Owner", "Stale", "Friend"})
+        CHECK_MESSAGE(Each(std::string("Info.") + member) == info[member], member);
+}
+
+TEST_CASE("--nonzero agrees across verbs") {
+    const Json info = Get("Info", "--nonzero");
+    CHECK_FALSE(info.contains("Zero"));
+    CHECK(info["Scores"]["rows"][1] == Json{{"key", "Deaths"}});
+    CHECK(DumpRow("Info", "value", "--nonzero") == info);
+    CHECK(Each("Info.Scores", "--nonzero") == info["Scores"]);
+}
+
+TEST_CASE("--meta agrees across verbs: the reflected layout from one reader") {
+    const Json tag = Get("Info.Tag", "--meta");
+    REQUIRE(tag.contains("members"));
+    CHECK(tag["members"][0]["value"]["name"] == "Item.Weapon.Rifle");
+    CHECK(Each("Info.Tag", "--meta") == tag);
+    const Json info = Get("Info", "--meta");
+    CHECK(DumpRow("Info", "value", "--meta") == info);
+}
+
+TEST_CASE("top-level containers: get and each in full, entries and dump previews element by element") {
+    const Json boxes = Get("Boxes");
+    CHECK(Each("Boxes") == boxes);
+    CHECK(Get("Scores") == Each("Scores"));
+    const auto entries = Result("entries " + TheFixture().thing + " Boxes");
+    CHECK(entries["rows"][0]["value"] == boxes["rows"][0]);
+    const Json preview = DumpRow("Boxes", "preview");
+    CHECK(preview["elements"][0]["value"] == boxes["rows"][0]);
+}
+
+TEST_CASE("past the pointer cap, every verb counts unnamed alike, digested or not") {
+    const auto& fixture = TheFixture();
+    const auto get = Result("get " + fixture.thing + " Crowd --elements 256");
+    REQUIRE(get.contains("unnamed"));
+    const auto unnamed = get["unnamed"].get<uint32_t>();
+    CHECK(unnamed == fixture.crowd - 112);
+    const auto each = Result("each Thing Crowd --where Name~Thing_0 --elements 256");
+    CHECK(each["unnamed"] == unnamed);
+    // A digest keeps it.
+    const auto records = RunLines("get " + fixture.thing + " Crowd --elements 256 --budget 1000");
+    REQUIRE(records.size() == 1);
+    REQUIRE(records[0].contains("digest"));
+    CHECK(records[0]["digest"]["status"]["unnamed"] == unnamed);
+}
+
+TEST_CASE("a stale object fails alike as a positional and as --outer") {
+    const auto& fixture = TheFixture();
+    for (const std::string line : {"get " + fixture.stale + " Health", "describe " + fixture.stale,
+                                   "find --cls Thing --outer " + fixture.stale,
+                                   "each Thing Health --outer " + fixture.stale}) {
+        const auto records = RunLines(line);
+        REQUIRE(records.size() == 1);
+        INFO(line << " -> " << records[0].dump());
+        CHECK_FALSE(records[0]["ok"].get<bool>());
+        CHECK(records[0]["error"]["status"] == static_cast<int>(Status::NotFound));
+    }
+    // An outer named by text that matches nothing is an answer: no rows.
+    CHECK(Result("find --cls Thing --outer NoSuchPackage")["rows"].empty());
+    CHECK(Result("find --cls Thing --outer " + fixture.package)["total"] == 3);
+}
+
+TEST_CASE("fields --match keeps the matching fields, any case") {
+    const auto all = Result("fields " + TheFixture().thing);
+    const auto some = Result("fields " + TheFixture().thing + " --match sCORE");
+    REQUIRE(some["rows"].size() == 1);
+    CHECK(some["rows"][0]["name"] == "Scores");
+    CHECK(all["rows"].size() > some["rows"].size());
+}

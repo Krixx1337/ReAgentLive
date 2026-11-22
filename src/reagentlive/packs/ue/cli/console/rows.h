@@ -99,7 +99,9 @@ inline ue::Field Element(const ue::Field& array) {
 // structs expand member by member, a tag container is the list of its tags,
 // text is converted by the engine and object pointers are named. Rendered
 // twice: once collecting names, texts and pointers, once with them resolved
-// (Resolve between); element reads are cached between the two.
+// (Resolve between); element reads are cached between the two. A verb adds
+// its values, calls Resolve once and prints them: it never looks up names,
+// texts or pointers for a value itself. --meta is a style of the same reader.
 class RowReader {
 public:
     static constexpr uint32_t MaxNested = 256;    // Elements per nested array in rows.
@@ -114,6 +116,22 @@ public:
 
     // Top-level pointer fields stay addresses: dump and get name them on their rows.
     void KeepTopPointers() { topPointers_ = false; }
+    // --meta: a value in its reflected layout (members with their layout, a
+    // name's index and number, a text with how it was read), not compact.
+    void Meta(bool meta) { meta_ = meta; }
+
+    // One value, its names looked up by the reader: collected on the first
+    // pass, resolved by Resolve, used on the second.
+    Json Value(const ue::Field& field, std::span<const uint8_t> bytes, bool& truncated) {
+        return Value(field, bytes, {}, Names(), truncated);
+    }
+    Json Value(const ue::Field& field, std::span<const uint8_t> bytes, const RowPaths& paths, bool& truncated) {
+        return Value(field, bytes, paths, Names(), truncated);
+    }
+    Json Array(const ue::Field& array, std::span<const uint8_t> header, uint32_t from, uint32_t limit,
+               const RowPaths& paths, bool& truncated) {
+        return Array(array, header, from, limit, paths, Names(), truncated);
+    }
     // Distinct pointers past MaxPointers, printed as addresses: the result's `unnamed`.
     uint32_t Unnamed() const { return unnamed_; }
 
@@ -194,6 +212,8 @@ public:
     // Between the two passes: the texts met, converted by the engine
     // (TextBatch), and the pointers met, named in describe-many requests.
     void Resolve() {
+        if (!nameIndices_.empty() && session_.client.Supports(ue::op::Names))
+            if (auto found = ue::Names(session_.client, nameIndices_); found) names_ = std::move(*found);
         texts_.Resolve(session_);
         resolved_ = true;
         asked_ = std::min(targets_.size(), MaxPointers);
@@ -214,6 +234,11 @@ public:
     Json Value(const ue::Field& field, std::span<const uint8_t> bytes, const RowPaths& paths, const Names& names,
                bool& truncated, unsigned depth = 0, unsigned nest = 0) {
         const ValueStyle style{false, &session_.names};
+        if (meta_ && !depth && !nest) { // The reflected layout, as the plain formatter prints it.
+            texts_.Add(field, bytes);
+            return texts_.Value(field, bytes, JsonFieldValue(field, bytes, structs_, names, truncated, ValueStyle{true, &session_.names}),
+                true);
+        }
         if (field.type == "TextProperty") {
             texts_.Add(field, bytes);
             return texts_.Value(field, bytes, JsonFieldValue(field, bytes, structs_, names, truncated, style, 1), false);
@@ -240,6 +265,20 @@ public:
     }
 
 private:
+    // The reader's own name lookup (Value without a lookup of the caller's).
+    auto Names() {
+        return [this](int32_t index) -> std::string_view {
+            if (index < 0) return {};
+            const auto at = std::ranges::find(nameIndices_, index);
+            if (!resolved_) {
+                if (at == nameIndices_.end()) nameIndices_.push_back(index);
+                return {};
+            }
+            const auto slot = static_cast<size_t>(at - nameIndices_.begin());
+            return at == nameIndices_.end() || slot >= names_.size() ? std::string_view{} : std::string_view(names_[slot]);
+        };
+    }
+
     // A set or map, as arrays print: {count, rows, truncated?}; a map's rows
     // are {key, value}. The stock UE5 sparse layout, checked as `entries`
     // checks it; a header that fails falls back to hex with the reason.
@@ -369,7 +408,9 @@ private:
     Session& session_;
     StructCache& structs_;
     uint32_t nested_;
-    bool topPointers_ = true, resolved_ = false;
+    bool topPointers_ = true, resolved_ = false, meta_ = false;
+    std::vector<int32_t> nameIndices_;                  // FNames met, in order...
+    std::vector<std::string> names_;                    // ...and their text, once resolved.
     std::vector<Ref> targets_;                          // Pointers met, in order.
     std::vector<std::optional<ue::Object>> described_;  // Their objects, for the first asked_.
     size_t asked_ = 0;

@@ -71,6 +71,7 @@ Progress CensusBody(const Request& request, Response& response, bool first, cons
     } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+        if (!OuterAlive(request, pack, response)) return Progress::Done;
         if (!g_census) g_census = new (std::nothrow) CensusState;
         if (!g_census) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
         if (request.args[1] && g_census->complete && g_census->filter == filter) {

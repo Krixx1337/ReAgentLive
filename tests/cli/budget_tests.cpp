@@ -236,6 +236,29 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
         [](const std::string&) { return std::string(); }));
 }
 
+TEST_CASE("digest: status keys survive, a list as its length") {
+    Json result = VendorCall(200);
+    result["capped"] = true;
+    result["unnamed"] = 7;
+    result["errors"] = Json::array({{{"column", 0}}, {{"column", 1}}});
+    result["tick_accurate"] = false;
+    Json record = Envelope(result);
+    const auto digest = budget::Replace(record, Text(record).size(), CallLine("call $1 Vendor:GetItems", true),
+        [](const std::string&) { return std::string(); });
+    REQUIRE(digest);
+    const Json& status = (*digest)["digest"]["status"];
+    CHECK(status["capped"] == true);
+    CHECK(status["unnamed"] == 7);
+    CHECK(status["errors"] == 2);
+    CHECK(status["tick_accurate"] == false);
+    CHECK_FALSE(status.contains("omitted"));
+    // A result with none carries no status.
+    Json plain = Envelope(VendorCall(200));
+    const auto none = budget::Replace(plain, Text(plain).size(), CallLine("call $1 Vendor:GetItems", true),
+        [](const std::string&) { return std::string(); });
+    CHECK_FALSE((*none)["digest"].contains("status"));
+}
+
 TEST_CASE("digest: kept results are per target pid and agent owner") {
     CHECK(budget::ResultsName(123, 456) == "reagentlive-123-456.results");
     CHECK(budget::ResultsName(123, 456).starts_with(budget::ResultsPrefix(123)));
