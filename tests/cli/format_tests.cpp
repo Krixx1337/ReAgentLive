@@ -1,6 +1,7 @@
 // reagentlive CLI value formatting: field values, JSON values and struct expansion.
 #include "reagentlive/packs/ue/cli/values/format_ue.h"
 #include "reagentlive/packs/ue/cli/values/json_output.h"
+#include "reagentlive/frontends/cli/values/format.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "doctest.h"
 #include "verbs.h"
@@ -372,4 +373,21 @@ TEST_CASE("--nonzero: zero members go, elements and non-zero values stay") {
     Json scalar = 0;
     KeepNonZero(scalar);
     CHECK(scalar == 0);
+}
+
+TEST_CASE("search text shows the printable string around a hit") {
+    const std::string ascii = std::string("\x01\x02") + "Projectile.Impact.PenetrationEnter" + std::string(1, 0) + "Next";
+    const std::vector<uint8_t> bytes(ascii.begin(), ascii.end());
+    const size_t hit = ascii.find("enetrat");
+    CHECK(TextAround(bytes, hit, 7, false) == "Projectile.Impact.PenetrationEnter");
+    // At most 4 characters each side, the cut ends marked.
+    CHECK(TextAround(bytes, hit, 7, false, 4) == "...ct.PenetrationE...");
+    CHECK(TextAround(bytes, hit, 7, false, 4).starts_with("..."));
+    CHECK(TextAround(bytes, hit, 7, false, 4).ends_with("..."));
+    CHECK(TextAround(bytes, 0, 2, false).empty());            // Not inside text.
+    std::vector<uint8_t> wide;
+    for (const char c : std::string("Hit ImpactVelocity: %f")) { wide.push_back(static_cast<uint8_t>(c)); wide.push_back(0); }
+    wide.push_back(0); wide.push_back(0);
+    CHECK(TextAround(wide, 8, 12, true) == "Hit ImpactVelocity: %f");
+    CHECK(TextAround(wide, 8, 12, false).empty());           // UTF-16 read as ASCII is not text.
 }

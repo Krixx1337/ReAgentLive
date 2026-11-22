@@ -14,6 +14,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
     using schema::Of;
     using enum Arity;
     constexpr std::string_view object = "an object: $N, a literal ref or an address";
+    constexpr std::string_view objectOrDefault = "an object: $N, a literal ref, an address or a Default__ name";
     constexpr std::string_view objectOrClass = "an object ($N, a literal ref, an address), or a class or struct by name";
     constexpr std::string_view function = "the function, with its declaring class where the name is ambiguous";
     constexpr std::string_view path = "a file path (quote one with spaces)";
@@ -70,12 +71,12 @@ inline const std::vector<Verb>& UnrealVerbs() {
              nonzero,
              elements},
             Of<shape::Each>, parse::Each,
-            "rows: {ref, values} in the columns' order; a failed cell is null with an errors entry. Spans inside the "
+            "rows: {ref, name, values} in the columns' order (name: the instance's); a failed cell is null with an errors entry. Spans inside the "
             "instance are read in passes of up to 64 bytes, the first in one tick; a path through a pointer is "
             "followed per instance (same_tick false). Functions must be const or pure with outputs only; a call's "
             "value is its return value, or {return, outputs}. The instances become $1..$N.", {}, true},
         {"call", "ue", "call a reflected function with a raw block or Name=value inputs",
-            {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
+            {{"object", "object", One, "ref", objectOrDefault}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
             {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"},
              {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"},
@@ -92,7 +93,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "--dry answers mode dry: hex is the block that would be sent, with exec and pure; show it when asking to call. "
             "A call that faults in the engine is refused as faulted: the target may be left in a bad state.", {}, true},
         {"call-pure", "ue", "call a const or pure function that keeps nothing (read-only); as call takes",
-            {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
+            {{"object", "object", One, "ref", objectOrDefault}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
             {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"},
              {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"}},
@@ -139,12 +140,12 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "Lines as layout-export writes them; offset as a number or \"0x..\", size and type optional. problem: "
             "no class, no field, offset, size or type; ok when every line holds. Rows stop at 200 (capped)."},
         {"entries", "ue", "one page of an array, set or map: elements, or key and value",
-            {{"object", "object", One, "ref", object},
+            {{"object", "object", One, "ref", objectOrDefault},
              {"field", "[Owner:]Field", One, "str", "the field, with its declaring class where the name is ambiguous"}},
             {cursor},
             Of<shape::Entries>, parse::Entries, "Names and object pointers are resolved."},
         {"rows", "ue", "a data table's rows: each row's name and its RowStruct members decoded",
-            {{"object", "object", One, "ref", object}},
+            {{"object", "object", One, "ref", objectOrDefault}},
             {{"--match", Takes::One, "str", "text", "row names containing text, any case"},
              {"--fields", Takes::One, "str", "a,b.c", "the row members to keep (paths into structs and arrays)"},
              cursor,
@@ -155,7 +156,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "count checked against its allocation bits (refused when they disagree). Nested arrays up to 256 "
             "elements, 3 deep; names resolved. total counts the rows --match kept."},
         {"get", "ue", "named fields, following object pointers and structs (up to 16 paths)",
-            {{"object", "object", One, "ref", object}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
+            {{"object", "object", One, "ref", objectOrDefault}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
             {nonzero,
              elements}, Of<shape::Get>, parse::Get,
             "Owner:Field where a name is ambiguous. The values are read back to back; same_tick says whether in one tick."},

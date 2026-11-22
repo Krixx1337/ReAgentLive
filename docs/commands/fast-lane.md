@@ -186,6 +186,12 @@ spaces, `;` and `--` are text, `\"` is a quote and `\\` a backslash;
 any other backslash is literal, so paths need no doubling. Unquoted words
 are joined by single spaces up to the first option.
 
+Each row carries `text`: the printable string the hit lies in (ASCII, or
+UTF-16 with `--wide`), up to 96 characters each side of the match with
+`...` where it was cut, read back in batches after the search. A hit that
+is not inside text gets none. `xrefs` the string's start, not the hit,
+when the match is inside a longer string.
+
 ## The chain
 
 In an engine with no reflection, a system is named by

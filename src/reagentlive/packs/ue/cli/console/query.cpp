@@ -340,6 +340,16 @@ std::string MatchText(const Json& value) {
 // fit MaxEachValue bytes each, the first in one tick and the rest over its
 // instance list; a path's part past a pointer is resolved and read per
 // instance, as get does. A cell that fails is null, with an `errors` entry.
+// Each shown row's object name, described in a few requests (refs: the rows'
+// objects, in order). Rows keep no name when the describe fails.
+static void NameRows(Client& client, const std::vector<Ref>& refs, shape::Each& record) {
+    if (refs.empty() || !client.Supports(ue::op::DescribeMany)) return;
+    auto described = ue::DescribeMany(client, refs);
+    if (!described) return;
+    for (size_t i = 0; i < record.rows.size() && i < described->size(); ++i)
+        if ((*described)[i]) record.rows[i].name = (*described)[i]->name;
+}
+
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand) {
     Client& client = session.client;
@@ -431,12 +441,13 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                 last.emplace_back(row.object, row.value);
                 if (!room()) continue;
                 refs.push_back(row.object);
-                shape::EachRow item{FullRef(row.object), {EachValue(std::nullopt, signature, row.value, structs,
+                shape::EachRow item{FullRef(row.object), std::nullopt, {EachValue(std::nullopt, signature, row.value, structs,
                     Style(session), truncated)}, {}};
                 if (session.meta) item.hex = HexBytes(row.value);
                 record.rows.push_back(std::move(item));
             }
             if (omittedRows) record.omitted = omittedRows;
+            NameRows(client, refs, record);
             record.columns = {target};
             record.mode = "call";
             record.capped = result->capped;
@@ -610,7 +621,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         }
         if (!room()) continue;
         refs.push_back(object);
-        shape::EachRow item{FullRef(object), {}, {}};
+        shape::EachRow item{FullRef(object), std::nullopt, {}, {}};
         for (size_t c = 0; c < cells[i].size(); ++c) {
             if (hiddenWhere && c == *whereColumn) continue;
             const Cell& cell = cells[i][c];
@@ -624,6 +635,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         if (session.meta && columns.size() == 1 && !columns.front().pointer) item.hex = HexBytes(cells[i].front().bytes);
         record.rows.push_back(std::move(item));
     }
+    NameRows(client, refs, record);
     record.columns = command.fields;
     if (whereColumn) record.matched = matched;
     if (omittedRows) record.omitted = omittedRows;

@@ -222,9 +222,11 @@ struct Write {
 struct AddressRow {
     Addr address;
     Location where;
+    std::optional<std::string> text;  // search text: the printable string around the hit.
     template<class V> static void Describe(V& v) {
         v("address", &AddressRow::address);
         v.flat("", &AddressRow::where);
+        v("text", &AddressRow::text);
     }
 };
 struct Search {

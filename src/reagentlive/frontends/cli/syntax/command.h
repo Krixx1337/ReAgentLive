@@ -84,6 +84,8 @@ struct Command {
     // (`resume`: start at the address, a cut listing's next; `file`: --save);
     // step through unconditional direct jumps. xrefs: list unknown hits too.
     bool function = false, follow = false, all = false, resume = false;
+    // search text: 1 for ASCII, 2 for UTF-16 (--wide); rows then carry the text around each hit.
+    uint8_t textSearch = 0;
     // read, peek, vtable, disasm: offsets of a pointer chain after the
     // address (<addr>->0x10->0x8); the console resolves it before running.
     std::vector<uint64_t> chain;
@@ -134,6 +136,7 @@ inline bool TestName(std::string_view name) {
 // layout-export: classes per call; layout-check: lines per file and mismatch rows shown.
 constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows = 200;
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.
+constexpr size_t MaxSearchText = 96; // search text: characters shown each side of a hit.
 constexpr uint64_t MaxDisasm = 64, DefaultDisasm = 24, MaxFunctionDisasm = 2048; // The last: disasm --function.
 namespace touch {
 constexpr size_t MaxOffsets = 8;

@@ -488,10 +488,12 @@ struct Refs {
 // column. With --seconds (one column) also the polls and the changes seen.
 struct EachRow {
     RefId ref;
+    std::optional<std::string> name; // The instance's object name (absent when it was gone).
     std::vector<Json> values;
     std::optional<HexBytes> hex;    // --meta, one column read in the instance: its bytes.
     template<class V> static void Describe(V& v) {
         v("ref", &EachRow::ref);
+        v("name", &EachRow::name);
         v("values", &EachRow::values);
         v("hex", &EachRow::hex);
     }

@@ -382,7 +382,7 @@ Parsed LayoutCheck(const Args& args, const ParseContext&) {
 // entries <object> <[Owner:]Field> [--start N]: one page of an array, set or map.
 Parsed Entries(const Args& args, const ParseContext& context) {
     Command command;
-    if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
+    if (!CallObject(args.At(0), context, command)) return Fail("object must be $N, an address or a Default__ name");
     uint64_t from = 0;
     if (!Cursor(args, INT32_MAX, from)) return Fail("--start is a cursor");
     command.kind = Kind::Entries;
@@ -395,7 +395,7 @@ Parsed Entries(const Args& args, const ParseContext& context) {
 // rows <object> [--match text] [--fields a,b.c] [--start N] [--limit N]: a data table's rows.
 Parsed Rows(const Args& args, const ParseContext& context) {
     Command command;
-    if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
+    if (!CallObject(args.At(0), context, command)) return Fail("object must be $N, an address or a Default__ name");
     command.limit = DefaultCallRows;
     if (auto why = RowOptions(args, command); !why.empty()) return Fail(std::move(why));
     command.match = args.Value("--match");
@@ -407,7 +407,7 @@ Parsed Rows(const Args& args, const ParseContext& context) {
 // get <object> <Field[.Field...]>...: named fields, following object pointers.
 Parsed Get(const Args& args, const ParseContext& context) {
     Command command;
-    if (!Object(args.At(0), context.refs, command.request)) return Fail("object must be $N or an address");
+    if (!CallObject(args.At(0), context, command)) return Fail("object must be $N, an address or a Default__ name");
     for (size_t i = 1; i < args.positionals.size(); ++i) {
         const std::string_view path = args.positionals[i];
         size_t depth = 1;

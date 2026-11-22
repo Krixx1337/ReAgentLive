@@ -584,10 +584,10 @@ TEST_CASE("each groups its columns' spans into passes of at most 64 bytes") {
     each.classRef = RefId{"0x1#1:0"};
     each.columns = {"Health", "Controller.PlayerState"};
     each.mode = "field";
-    each.rows.push_back({RefId{"0x10#2:1"}, {100.0, nullptr}, {}});
+    each.rows.push_back({RefId{"0x10#2:1"}, std::string("BP_Pawn_C_0"), {100.0, nullptr}, {}});
     each.errors = std::vector<shape::EachError>{{RefId{"0x10#2:1"}, 1, "null pointer at Controller"}};
     const auto json = Checked(each);
-    CHECK(json["rows"][0] == Json{{"ref", "0x10#2:1"}, {"values", Json::array({100.0, nullptr})}});
+    CHECK(json["rows"][0] == Json{{"ref", "0x10#2:1"}, {"name", "BP_Pawn_C_0"}, {"values", Json::array({100.0, nullptr})}});
     CHECK(json["errors"][0]["column"] == 1);
     CHECK(json["same_tick"] == false);
 }

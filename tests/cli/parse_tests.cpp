@@ -322,8 +322,11 @@ TEST_CASE("search text takes a quoted string exactly") {
     REQUIRE(parsed.has_value());
     CHECK(text(*parsed) == R"(say "hi" from C:\Game\x \ end)");
 
+    CHECK(parsed->textSearch == 1);   // Rows then carry the text around each hit.
+    CHECK(Parse("search hex 41 42", NoRefs)->textSearch == 0);
     parsed = Parse("search text \"ab c\" --wide", NoRefs);
     REQUIRE(parsed.has_value());
+    CHECK(parsed->textSearch == 2);
     CHECK(parsed->request.length == 8);
     CHECK(parsed->request.data[4] == ' ');
     CHECK(parsed->request.data[5] == 0);
@@ -545,6 +548,11 @@ TEST_CASE("--nonzero: get, each, rows and a typed call") {
     CHECK(call->nonzero);
     CHECK_FALSE(Parse("call $1 Vendor:GetEntries 00 --nonzero", TwoRefs).has_value());
     CHECK(Parse("get $1 Health Stats --nonzero", TwoRefs)->nonzero);
+    // A default object by name, as call takes it; the console finds it before reading.
+    CHECK(Parse("get Default__PhysicsSettings PhysicalSurfaces", TwoRefs)->className == "Default__PhysicsSettings");
+    CHECK(Parse("rows Default__Table --limit 5", TwoRefs)->className == "Default__Table");
+    CHECK(Parse("entries Default__Settings Map", TwoRefs)->className == "Default__Settings");
+    CHECK_FALSE(Parse("get PhysicsSettings PhysicalSurfaces", TwoRefs));   // A class is not an object.
     CHECK_FALSE(Parse("get $1 Health", TwoRefs)->nonzero);
     CHECK(Parse("each Pawn Health --nonzero", TwoRefs)->nonzero);
     CHECK(Parse("rows $1 --nonzero --limit 0", TwoRefs)->nonzero);

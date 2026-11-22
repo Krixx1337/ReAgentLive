@@ -48,6 +48,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **A digest keeps `saved` and `next`:** a `disasm --save` too large to
   print still names its file, and a cut listing its resume address
   ([digests](docs/commands/console.md)).
+- **`get`, `rows` and `entries` take a `Default__` name**, as `call` does
+  (`get Default__GameSettings Scale`)
+  ([class names](docs/commands/unreal.md#class-names)).
+- **`search text` rows carry the string they hit** (`text`), so finding
+  a string's start needs no reads
+  ([search text](docs/commands/fast-lane.md#search-text)).
+- **`each` rows carry the instance's `name`**
+  ([each](docs/commands/unreal.md#each)).
 - **IDA label import:** one undo step, a wait box that cancels, and
   `apply(path)` for headless sessions
   ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).

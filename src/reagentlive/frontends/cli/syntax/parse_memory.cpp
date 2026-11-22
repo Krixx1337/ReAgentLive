@@ -309,6 +309,7 @@ Parsed Search(const Args& args, const ParseContext& context) {
             } else request.data[i] = static_cast<uint8_t>(value[i]);
         }
         request.length = static_cast<uint32_t>(size);
+        command.textSearch = wide ? 2 : 1;
     } else if (type == "hex") {
         if (!Bytes(value, request.data, MaxSearchPattern, request.length) || !request.length)
             return Fail("pattern must be hex pairs, at most " + std::to_string(MaxSearchPattern) + " bytes");

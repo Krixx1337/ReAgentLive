@@ -289,7 +289,9 @@ that exact name under `Struct` once per agent instance and reuses its ref
 through the cache file. Names up to 127 characters: the agent compares the
 whole name, and the reply's name (cut at 63) is compared that far. A name
 starting with `Default__` is that default object (an exact find, any
-class), so `dump Default__Character` dumps the object. The lookup is an exact `find` (`FindExact`): the
+class), so `dump Default__Character` dumps the object. `get`, `rows`,
+`entries`, `call` and `call-pure` take a `Default__` name in place of an
+object (`get Default__GameSettings Scale`), never a bare class name. The lookup is an exact `find` (`FindExact`): the
 agent stops at the first match instead of scanning and counting the whole
 table, so a class costs the slots up to it; only a name that is no class
 costs a full scan.
@@ -312,7 +314,9 @@ class.
 ## each
 
 `each <Class> <path>...` is a table: `columns` once, then `rows` of
-`{ref, values}`, one value per column in the order asked. The same shape
+`{ref, name, values}`, one value per column in the order asked; `name` is
+the instance's object name, described for the rows shown (after
+`--where` and `--limit`) in a few requests. The same shape
 for one column, so the verb keeps one result type.
 
 - **Columns.** Up to 16 field paths, as `get` takes them (`Owner:Field` or

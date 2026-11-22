@@ -320,9 +320,19 @@ bool PackHeld(const Command& command) {
         op == ue::op::Functions || op == ue::op::Parameters || op == ue::op::Function;
 }
 
-void RunPackCommand(Session& session, const Command& command, std::string_view jsonCommand) {
+void RunPackCommand(Session& session, const Command& given, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!HasUnreal(client)) return JsonError(session, jsonCommand, "unsupported", NoPack);
+    // get, rows and entries take a default object by name (Default__Class), as
+    // call does: found here, before they run, and passed on as a ref.
+    Command command = given;
+    if ((command.kind == Kind::Get || command.kind == Kind::Rows || command.kind == Kind::Entries) &&
+        command.className.starts_with("Default__")) {
+        auto object = ResolveObjectOrClass(session, command.className);
+        if (!object) return CommandError(session, jsonCommand, object.error());
+        ue::SetRef(command.request, *object);
+        command.className.clear();
+    }
     if (command.kind == Kind::Label) {
         RunLabel(session, command, jsonCommand);
         return;
