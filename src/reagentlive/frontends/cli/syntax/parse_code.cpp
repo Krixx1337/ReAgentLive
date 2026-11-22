@@ -34,7 +34,7 @@ Parsed Xrefs(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// touches <addr> <offset>... [--range N]: functions near addr whose [reg + disp] operands use the offsets.
+// touches <addr> <offset>... [--range N] [--reads]: functions near addr whose [reg + disp] operands use the offsets.
 Parsed Touches(const Args& args, const ParseContext& context) {
     Command command;
     if (!Address(args.At(0), context.refs, context.modules, command.request.address)) return Fail();
@@ -51,6 +51,7 @@ Parsed Touches(const Args& args, const ParseContext& context) {
         if (std::ranges::find(command.offsets, static_cast<uint32_t>(n)) == command.offsets.end())
             command.offsets.push_back(static_cast<uint32_t>(n));
     }
+    command.readsOnly = args.Has("--reads");
     command.kind = Kind::Touches;
     command.request.op = op::ReadBatch;
     return command;

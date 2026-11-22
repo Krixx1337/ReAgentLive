@@ -19,7 +19,7 @@ holds), `func` (a reflected function's native entry), `disasm`, `xrefs`,
 ```text
 disasm <addr> [count] [--function] [--follow]
 xrefs <addr> [--module M] [--all]
-touches <addr> <offset> [offset ...] [--range N]
+touches <addr> <offset> [offset ...] [--range N] [--reads]
 search text <text|"quoted text"> [--wide] [search options]
 ```
 
@@ -34,7 +34,8 @@ function's first entry). A lookup is a few held reads: up to seven sampled
 entries per `read-batch` while the range is wide, then one window of 340.
 Sampled entries are kept for the console run, and the directory's location
 goes in the cache file. With no entry, `function` is absent: a leaf function,
-data, or chance bytes. Bounds are never guessed from padding or prologues.
+code a packed or protected image leaves out of its directory, data, or
+chance bytes. Bounds are never guessed from padding or prologues.
 
 ## disasm
 
@@ -43,7 +44,12 @@ bytes of live memory from `addr`, which must be an instruction boundary
 (the decoder is Zydis, in the console only). One read; when part of it is
 unreadable, up to the page end and on from there.
 - `--function` starts at the start of the function holding `addr` and stops
-  at its end; refused when no entry holds it.
+  at its end. When no entry holds it, it walks from `addr` instead: the
+  listing stops (`stop: "walk end"`) at the first return or unconditional
+  jump that no earlier forward branch passes, counting branches up to
+  16 KB ahead (farther ones are tail calls). `function` is then absent and
+  `addr` is the start you gave; an early return before a branch target
+  the walk has not seen yet can end it short.
 - `--follow`: at an unconditional direct jump the listing continues at the
   target, at most 3 times inside the same limits, listed in `followed`.
   With `--function` each target's own entry bounds it. Calls, conditional
@@ -109,6 +115,12 @@ offsets that should appear together.
   address (default 0x80000, at most 0x400000, each side) is decoded whole;
   the code is read once, 4 KB per held request (1 MB, 5,858 functions
   took 0.5 s live).
+- Executable code no entry lists (leaf functions, code a packed image
+  leaves out of its directory) is decoded too, in pieces cut after each
+  return and around int3 padding. Its rows carry `unlisted: true`, with the
+  piece's bounds as `function`; `scanned.unlisted` counts the pieces. A
+  piece can start mid-instruction and hold more than one function: confirm
+  it with `disasm --function` at a use.
 - A use is a memory operand `[reg + disp]` whose displacement is an asked
   offset; `[rsp + disp]` (stack slots) and `[rip + disp]` (globals) are
   never members. `write` is set when the operand is written.
@@ -117,6 +129,9 @@ offsets that should appear together.
   then by uses: the setup that writes most of a block comes first, its
   readers after. At most 24 rows of 12 uses (`total` counts all of each);
   `capped` when more functions matched.
+- `--reads` looks for the code that consumes a block: rows rank by the
+  distinct offsets read (`distinct`), and a row that reads none, or writes
+  every offset it reads (a struct copy, a constructor), is left out.
 - Unrelated classes share small offsets: ask for several that only one
   layout has together, and confirm the top row with `disasm --function` or
   a decompiler before naming anything.

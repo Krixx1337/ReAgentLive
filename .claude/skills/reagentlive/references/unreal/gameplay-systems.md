@@ -32,6 +32,13 @@
   (`name-find` the action's name) and decode its response map; a blocking
   states container lists the state tags that refuse it. Then find which
   effect grants that tag.
+- Which native code sends a tagged event (an impact or a cue): a tag the
+  game defines in C++ leads there. `search text <Tag.Name> --module <exe>`,
+  `xrefs` the string's start: one `lea` in a start-up function that
+  registers it; `disasm` there: the `lea rcx, [rip+…]` before the
+  registration call is the tag's global. `xrefs <global>`: its `load` rows
+  are the code that uses the tag. Try this before `touches` when the
+  system raises tagged events or cues.
 
 ## Attributes and effects
 

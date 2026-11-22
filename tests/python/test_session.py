@@ -100,7 +100,7 @@ CALLS = [
         'capped': False, 'scan_ms': 3})],
     [C('touches', {'addr': 'Game.exe+0x10', 'offsets': [0x538, 0x540], 'range': 0x1000}), ok({
         'address': '0x10', 'offsets': ['0x538', '0x540'], 'range': 4096,
-        'scanned': {'from': '0x0', 'to': '0x1010', 'functions': 2, 'bytes': 64}, 'total': 1, 'capped': False, 'scan_ms': 1,
+        'scanned': {'from': '0x0', 'to': '0x1010', 'functions': 2, 'unlisted': 0, 'bytes': 64}, 'total': 1, 'capped': False, 'scan_ms': 1,
         'rows': [{'function': {'start': '0x20', 'end': '0x40'}, 'distinct': 1, 'writes': False, 'total': 0, 'uses': []}]})],
     [C('pin', {'addr': '0x10#1:1+0x3e4', 'data': '0000803f', 'ms': 2500, 'expect': '00000000'}), ok(PIN)],
     [C('pin-list'), ok({'rows': [PIN]})],

@@ -328,6 +328,33 @@ TEST_CASE("disasm --follow steps through unconditional jumps only, at most three
     CHECK(bounded->stop == "function end");
 }
 
+TEST_CASE("disasm walk stops at the return no earlier forward branch passes") {
+    Image image;
+    const uint64_t a = Base + 0x4800;
+    image.Put(a, Join({{0x74, 0x03},             // je +3: past the first ret
+        {0x90, 0xc3},                              // nop; ret: an early return, passed by the je
+        {0x90},                                    // the je's target
+        {0xe9}, Rel32(0x100000),                   // jmp far away: a tail call, does not extend the walk
+        {0x90, 0x90}}));
+    dis::Options options;
+    options.count = 64;
+    options.walk = true;
+    auto listing = dis::List(image.Read(), a, options);
+    REQUIRE(listing);
+    REQUIRE(listing->rows.size() == 5);
+    CHECK(listing->rows[2].text == "ret");
+    CHECK(listing->rows[4].text.starts_with("jmp"));
+    CHECK(listing->stop == "walk end");
+
+    // jmp +1 to the byte after a ret: the code goes on there, so that ret does not end it.
+    image.Put(a, Join({{0xeb, 0x01}, {0xc3}, {0x90, 0xc3}}));
+    auto over = dis::List(image.Read(), a, options);
+    REQUIRE(over);
+    CHECK(over->rows.size() == 4);
+    CHECK(over->rows[3].address == a + 4);
+    CHECK(over->stop == "walk end");
+}
+
 TEST_CASE("string hints: ASCII, UTF-16 and a target that is not text") {
     Image image;
     const uint64_t at = Base + 0x5000;
@@ -699,6 +726,35 @@ TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes an
     CHECK(rows[2].start == 1);
 }
 
+TEST_CASE("touches cuts unlisted code at returns and int3 padding, and --reads drops copies") {
+    const auto code = Join({
+        {0x8b, 0x81, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rcx+0x538]
+        {0xc3},                                           // ret: the first piece ends here
+        {0xcc, 0xcc, 0xcc},                               // padding: in no piece
+        {0x89, 0x83, 0x38, 0x05, 0x00, 0x00},             // mov [rbx+0x538], eax
+        {0xc3},
+    });
+    const auto pieces = touch::Pieces(code, Base + 0x1000);
+    REQUIRE(pieces.size() == 2);
+    CHECK(pieces[0].start == Base + 0x1000);
+    CHECK(pieces[0].end == Base + 0x1007);
+    CHECK(pieces[1].start == Base + 0x100a);
+    CHECK(pieces[1].end == Base + 0x1011);
+
+    const touch::Use read{Base, 0x538, false, {}}, write{Base, 0x538, true, {}}, other{Base, 0x540, false, {}};
+    std::vector<touch::Row> rows(4);
+    rows[0].start = 1; rows[0].uses = {read, write, other};   // 0x540 is read and not written: kept
+    rows[1].start = 2; rows[1].uses = {read, write};          // a copy: dropped
+    rows[2].start = 3; rows[2].uses = {write};                // writes only: dropped
+    rows[3].start = 4; rows[3].uses = {read, other};          // two reads, no write
+    touch::Rank(rows, true);
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].start == 1);   // Two reads each; the row that writes ranks first, as without --reads.
+    CHECK(rows[0].distinct == 2);
+    CHECK(rows[1].start == 4);
+    CHECK(rows[1].distinct == 2);
+}
+
 TEST_CASE("the exception directory lists the entries starting in a range") {
     Image image;
     image.Headers(4);
@@ -727,6 +783,8 @@ TEST_CASE("touches syntax and result") {
     CHECK(touches->offsets == std::vector<uint32_t>{0x538, 0x540});
     CHECK(touches->range == 0x1000);
     CHECK(Parse("touches 0x1000 0x10", refs)->range == touch::DefaultRange);
+    CHECK_FALSE(Parse("touches 0x1000 0x10", refs)->readsOnly);
+    CHECK(Parse("touches 0x1000 0x10 --reads", refs)->readsOnly);
     CHECK_FALSE(Parse("touches 0x1000", refs));
     CHECK_FALSE(Parse("touches 0x1000 0", refs));
     CHECK_FALSE(Parse("touches 0x1000 0x10 --range 0", refs));
@@ -737,8 +795,14 @@ TEST_CASE("touches syntax and result") {
     row.start = Base + 0x1000; row.end = Base + 0x1100; row.distinct = 1;
     row.uses.push_back({Base + 0x1004, 0x538, true, "mov [rcx+0x538], eax"});
     const std::vector<uint32_t> offsets{0x538};
-    const auto json = Checked(MakeTouches(Base + 0x2000, offsets, 0x1000, Base + 0x1000, Base + 0x3000, 3, 0x2000, {row}, 7, modules));
+    touch::Row unlisted = row;
+    unlisted.listed = false;
+    const auto json = Checked(MakeTouches(Base + 0x2000, offsets, 0x1000, Base + 0x1000, Base + 0x3000, 3, 5, 0x2000,
+        {row, unlisted}, 7, modules));
     CHECK(json["rows"][0]["uses"][0]["rva"] == "0x1004");
+    CHECK_FALSE(json["rows"][0].contains("unlisted"));
+    CHECK(json["rows"][1]["unlisted"] == true);
+    CHECK(json["scanned"]["unlisted"] == 5);
     CHECK(json["offsets"][0] == "0x538");
 }
 

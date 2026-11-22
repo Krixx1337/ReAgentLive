@@ -160,10 +160,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::SigBytes>, parse::SigBytes},
         {"disasm", "core", "1..64 instructions (default 24, up to 512 bytes) decoded from live bytes",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions", "24"}},
-            {{"--function", Takes::Nothing, "bool", "", "list the containing function (exception table)"},
+            {{"--function", Takes::Nothing, "bool", "", "list the containing function (exception table; else walk from addr)"},
              {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
             Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints and import names; the "
-            "listing names the module once. --meta adds each row's module and address fields. Accepts a pointer chain."},
+            "listing names the module once. --meta adds each row's module and address fields. Accepts a pointer chain. "
+            "--function where no exception-table entry holds addr lists from addr to the first return or jump no "
+            "earlier forward branch passes: stop \"walk end\", no function key; addr is the start you gave."},
         {"xrefs", "core", "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", One, "addr", at}},
             {{"--module", Takes::One, "str", "name", "scan another loaded module"},
@@ -171,8 +173,11 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Xrefs>, parse::Xrefs},
         {"touches", "core", "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", One, "addr", at}, {"offsets", "offset", Some, "int", "a struct offset to look for, per offset"}},
-            {{"--range", Takes::One, "int", "N", "bytes each side of addr", "0x80000"}},
-            Of<shape::Touches>, parse::Touches, "Most offsets first, writes marked: the code behind an unreflected member."},
+            {{"--range", Takes::One, "int", "N", "bytes each side of addr", "0x80000"},
+             {"--reads", Takes::Nothing, "bool", "", "rank by offsets read; drop rows writing every offset they read"}},
+            Of<shape::Touches>, parse::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
+            "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
+            "those rows carry unlisted, their bounds the piece's. --reads leaves out struct copies and constructors."},
         {"vtable", "core", "an object's virtual table: slots until the first entry that is not code",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many slots at most"}},
             {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},

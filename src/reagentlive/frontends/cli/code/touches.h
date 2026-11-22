@@ -1,9 +1,10 @@
 // reagentlive CLI: which functions near an address use given struct offsets
 // (`touches`). Finds the code behind an unreflected member: decode every
 // function the exception directory lists around a known function (an exec
-// thunk, a getter) and keep memory operands [reg + disp] whose displacement
-// is one of the offsets. Console only, pure: code bytes come in, so tests feed
-// fixed bytes.
+// thunk, a getter), and the executable code it leaves out, split into pieces
+// at returns and int3 padding; keep memory operands [reg + disp] whose
+// displacement is one of the offsets. Console only, pure: code bytes come in,
+// so tests feed fixed bytes.
 #pragma once
 #include <Zydis/Zydis.h>
 #include <algorithm>
@@ -55,22 +56,64 @@ inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, 
     return uses;
 }
 
+// Code no exception-table entry lists, cut into pieces that each end after a
+// return or before a run of int3 padding; the padding itself is left out.
+struct Piece { uint64_t start = 0, end = 0; };
+inline std::vector<Piece> Pieces(std::span<const uint8_t> code, uint64_t address) {
+    static const dis::detail::Decoder decoder; // Console only: thread-safe statics are fine here.
+    std::vector<Piece> pieces;
+    ZydisDecodedInstruction instruction;
+    size_t begin = 0;
+    const auto close = [&](size_t end) {
+        if (end > begin) pieces.push_back({address + begin, address + end});
+    };
+    for (size_t at = 0; at < code.size();) {
+        if (code[at] == 0xcc) {
+            close(at);
+            while (at < code.size() && code[at] == 0xcc) ++at;
+            begin = at;
+            continue;
+        }
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.decoder, nullptr, code.data() + at, code.size() - at,
+                &instruction))) {
+            ++at;
+            continue;
+        }
+        at += instruction.length;
+        if (instruction.mnemonic == ZYDIS_MNEMONIC_RET) {
+            close(at);
+            begin = at;
+        }
+    }
+    close(code.size());
+    return pieces;
+}
+
 // One function's uses, ranked by how many of the asked offsets it touches.
+// `listed` is false for a piece of code outside every exception-table entry.
 struct Row {
     uint64_t start = 0, end = 0;
     std::vector<Use> uses;
     size_t distinct = 0;
     bool writes = false;
+    bool listed = true;
 };
-inline void Rank(std::vector<Row>& rows) {
+// With `reads`: count only the offsets read, and drop rows that read none or
+// write every offset they read (struct copies, constructors).
+inline void Rank(std::vector<Row>& rows, bool reads = false) {
     for (auto& row : rows) {
-        std::vector<uint32_t> seen;
+        std::vector<uint32_t> seen, read, written;
         for (const auto& use : row.uses) {
             if (std::ranges::find(seen, use.offset) == seen.end()) seen.push_back(use.offset);
+            auto& side = use.write ? written : read;
+            if (std::ranges::find(side, use.offset) == side.end()) side.push_back(use.offset);
             row.writes = row.writes || use.write;
         }
-        row.distinct = seen.size();
+        row.distinct = reads ? read.size() : seen.size();
+        if (reads && std::ranges::all_of(read, [&](uint32_t o) { return std::ranges::find(written, o) != written.end(); }))
+            row.distinct = 0;
     }
+    if (reads) std::erase_if(rows, [](const Row& row) { return row.distinct == 0; });
     std::ranges::stable_sort(rows, [](const Row& a, const Row& b) {
         if (a.distinct != b.distinct) return a.distinct > b.distinct;
         if (a.writes != b.writes) return a.writes;

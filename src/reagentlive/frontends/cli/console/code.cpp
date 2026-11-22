@@ -1,7 +1,8 @@
 // reagentlive CLI console: the fast lane's code questions about one address.
 // disasm (decoded in the console from one read) and xrefs (the agent's
 // relative-reference scan and pointer search, kinds named here), both with
-// function bounds from the module's exception directory.
+// function bounds from the module's exception directory; touches (the
+// [reg + disp] uses of struct offsets in the code around an address).
 #include <algorithm>
 #include <array>
 #include <map>
@@ -104,15 +105,15 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     uint64_t address = command.request.address;
     auto function = FunctionAt(session, address);
     if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
-    if (command.function) {
-        if (!*function) return JsonError(session, jsonCommand, "validation",
-            "no exception-table entry holds that address (a leaf function or data); list from an address instead");
-        address = (*function)->range.start;
-    }
+    // --function with no entry holding the address (a leaf function, or an
+    // image whose directory leaves code out): walk from the address instead.
+    const bool walk = command.function && !*function;
+    if (command.function && *function) address = (*function)->range.start;
     dis::Options options;
     options.count = command.limit;
     options.follow = command.follow;
-    if (command.function) options.bound = [&session](uint64_t at) { return EntryEnd(session, at); };
+    options.walk = walk;
+    if (command.function && !walk) options.bound = [&session](uint64_t at) { return EntryEnd(session, at); };
     auto listing = dis::List(AgentRead(session), address, options);
     if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
     const auto modules = LoadedModules(session);
@@ -221,14 +222,47 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
     const uint64_t from = address - std::min(address - module.base, command.range), to = address + command.range;
     auto ranges = table->Between(from, to);
     if (!ranges) return JsonError(session, jsonCommand, "unwind", ranges.error());
-    // One copy of the code from the first entry to the last, MaxRead bytes
-    // per request (a batch's total); unreadable parts stay int3 and decode to nothing.
+    // The executable sections' parts of [from, to): code no entry lists is scanned too.
+    std::vector<unwind::Range> executable;
+    for (const auto& section : (*layout)->sections) {
+        if (!section.Exec()) continue;
+        const uint64_t start = std::max(from, module.base + section.rva);
+        const uint64_t end = std::min(to, module.base + section.rva + section.size);
+        if (start < end) executable.push_back({start, end});
+    }
+    std::ranges::sort(executable, {}, &unwind::Range::start);
+    // Executable code outside every entry. An entry that began before `from`
+    // and runs into it is skipped like a listed one.
+    std::vector<unwind::Range> gaps;
+    {
+        std::vector<unwind::Range> covered = *ranges;
+        if (auto first = FunctionAt(session, from); first && *first) {
+            const auto& held = (*first)->chunk ? *(*first)->chunk : (*first)->range;
+            covered.push_back({from, held.end});
+        }
+        std::ranges::sort(covered, {}, &unwind::Range::start);
+        for (const auto& span : executable) {
+            uint64_t at = span.start;
+            for (const auto& entry : covered) {
+                if (entry.end <= at || entry.start >= span.end) continue;
+                if (entry.start > at) gaps.push_back({at, entry.start});
+                at = std::max(at, entry.end);
+            }
+            if (at < span.end) gaps.push_back({at, span.end});
+        }
+    }
+    // One copy of the code from the lowest scanned byte to the highest, MaxRead
+    // bytes per request (a batch's total); unreadable parts stay int3 and decode to nothing.
     std::vector<uint8_t> code;
     uint64_t low = 0;
-    if (!ranges->empty()) {
-        low = ranges->front().start;
-        uint64_t high = low;
-        for (const auto& range : *ranges) high = std::max(high, range.end);
+    if (!ranges->empty() || !gaps.empty()) {
+        low = UINT64_MAX;
+        uint64_t high = 0;
+        for (const auto* list : {&*ranges, &gaps})
+            for (const auto& range : *list) {
+                low = std::min(low, range.start);
+                high = std::max(high, range.end);
+            }
         code.assign(static_cast<size_t>(high - low), 0xcc);
         const auto read = AgentRead(session);
         for (uint64_t at = low; at < high;) {
@@ -254,11 +288,26 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
         row.end = whole.end;
         row.uses.insert(row.uses.end(), uses.begin(), uses.end());
     }
+    size_t pieces = 0;
+    for (const auto& gap : gaps) {
+        const auto bytes = std::span(code).subspan(static_cast<size_t>(gap.start - low), static_cast<size_t>(gap.end - gap.start));
+        for (const auto& piece : touch::Pieces(bytes, gap.start)) {
+            ++pieces;
+            auto uses = touch::InCode(bytes.subspan(static_cast<size_t>(piece.start - gap.start),
+                static_cast<size_t>(piece.end - piece.start)), piece.start, command.offsets);
+            if (uses.empty()) continue;
+            auto& row = functions[piece.start];
+            row.start = piece.start;
+            row.end = piece.end;
+            row.listed = false;
+            row.uses = std::move(uses);
+        }
+    }
     std::vector<touch::Row> rows;
     for (auto& [start, row] : functions) rows.push_back(std::move(row));
-    touch::Rank(rows);
+    touch::Rank(rows, command.readsOnly);
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
-    Emit(session, jsonCommand, MakeTouches(address, command.offsets, command.range, from, to, ranges->size(),
+    Emit(session, jsonCommand, MakeTouches(address, command.offsets, command.range, from, to, ranges->size(), pieces,
         code.size(), rows, ms, LoadedModules(session)));
 }
 }

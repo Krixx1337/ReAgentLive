@@ -89,9 +89,11 @@ struct Command {
     // vtable: `offset` is where the table pointer sits in the object;
     // `table`: the address is the table itself; `bodies`: resolve jump stubs.
     bool table = false, bodies = false;
-    // touches: struct offsets to find and the bytes scanned each side of the address.
+    // touches: struct offsets to find and the bytes scanned each side of the
+    // address; `readsOnly` (--reads) ranks by offsets read and drops copies.
     std::vector<uint32_t> offsets;
     uint64_t range = 0;
+    bool readsOnly = false;
     // call --dry: resolve the function and build the block, call nothing.
     bool dry = false;
     // call and rows: the member paths kept in each row (--fields a,b.c);

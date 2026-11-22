@@ -280,8 +280,10 @@ struct TouchRow {
     bool writes = false;
     uint64_t total = 0;             // Uses in the function; `uses` shows the first ones.
     std::vector<TouchUse> uses;
+    std::optional<bool> unlisted;   // True: code outside every exception-table entry, bounds the piece's.
     template<class V> static void Describe(V& v) {
         v("function", &TouchRow::function);
+        v("unlisted", &TouchRow::unlisted);
         v("distinct", &TouchRow::distinct);
         v("writes", &TouchRow::writes);
         v("total", &TouchRow::total);
@@ -290,11 +292,12 @@ struct TouchRow {
 };
 struct TouchScanned {
     Addr from, to;
-    uint64_t functions = 0, bytes = 0;
+    uint64_t functions = 0, unlisted = 0, bytes = 0;  // unlisted: pieces outside every entry.
     template<class V> static void Describe(V& v) {
         v("from", &TouchScanned::from);
         v("to", &TouchScanned::to);
         v("functions", &TouchScanned::functions);
+        v("unlisted", &TouchScanned::unlisted);
         v("bytes", &TouchScanned::bytes);
     }
 };
@@ -466,19 +469,20 @@ inline shape::Region MakeRegion(uint64_t address, const RegionInfo& info, std::s
 }
 
 inline shape::Touches MakeTouches(uint64_t address, std::span<const uint32_t> offsets, uint64_t range, uint64_t from,
-                                  uint64_t to, size_t entries, size_t bytes, const std::vector<touch::Row>& rows,
-                                  int64_t ms, std::span<const Module> modules) {
+                                  uint64_t to, size_t entries, size_t unlisted, size_t bytes,
+                                  const std::vector<touch::Row>& rows, int64_t ms, std::span<const Module> modules) {
     shape::Touches out;
     out.address = address;
     out.where = Locate(address, modules);
     for (const uint32_t offset : offsets) out.offsets.push_back(HexNum(offset));
     out.range = range;
-    out.scanned = {from, to, entries, bytes};
+    out.scanned = {from, to, entries, unlisted, bytes};
     out.total = rows.size();
     for (size_t i = 0; i < rows.size() && i < touch::MaxRows; ++i) {
         const auto& row = rows[i];
         shape::TouchRow item;
         item.function = {row.start, row.end, Locate(row.start, modules), {}};
+        if (!row.listed) item.unlisted = true;
         item.distinct = row.distinct;
         item.writes = row.writes;
         item.total = row.uses.size();

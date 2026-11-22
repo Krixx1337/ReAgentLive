@@ -25,6 +25,16 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+### Improved
+
+- **`touches` finds code outside the exception directory:** leaf functions
+  and the code packed images leave unlisted are scanned too, marked
+  `unlisted`; `--reads` ranks by offsets read and drops struct copies
+  ([touches](docs/commands/fast-lane.md#touches)).
+- **`disasm --function` walks where no entry holds the address:** it lists
+  to the function's last return instead of refusing
+  ([disasm](docs/commands/fast-lane.md#disasm)).
+
 ## 0.4.0
 
 Any UE5 game without an SDK dump, engine calls from any host, and output

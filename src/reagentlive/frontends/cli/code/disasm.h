@@ -21,6 +21,7 @@ namespace reagentlive::cli::dis {
 using ReadFn = sig::ReadFn;
 constexpr size_t MaxInstructions = 64, MaxBytes = 512, DefaultCount = 24;
 constexpr size_t MaxFollow = 3;     // Unconditional direct jumps stepped through per listing.
+constexpr uint64_t MaxWalkReach = 0x4000; // A walk counts forward branches this near; farther ones are tail calls.
 constexpr size_t MinString = 4, MaxString = 96;
 constexpr size_t StringWindow = (MaxString + 1) * 2; // UTF-16 text and its terminator.
 
@@ -175,12 +176,15 @@ struct Options {
     size_t count = DefaultCount;  // 1..MaxInstructions.
     bool follow = false;
     BoundFn bound;                // Null: no bound.
+    // No bound known: stop at a return or unconditional jump that no earlier
+    // forward branch (within MaxWalkReach) passes, stop "walk end".
+    bool walk = false;
 };
 struct Listing {
     std::vector<Instruction> rows;
     std::vector<Hop> followed;
     std::optional<End> end;       // Undecodable, unreadable or cut by a limit inside an instruction.
-    std::string stop;             // "count", "bytes", "function end", or the end's reason.
+    std::string stop;             // "count", "bytes", "function end", "walk end", or the end's reason.
 };
 
 // Lists up to `count` instructions and MaxBytes bytes from `start`, an
@@ -196,6 +200,7 @@ inline std::expected<Listing, std::string> List(const ReadFn& read, uint64_t sta
     std::vector<uint8_t> buffer;
     uint64_t bufferStart = 0;
     bool pageCut = false;   // The buffer ends at a page boundary because the rest was unreadable.
+    uint64_t reach = 0;     // walk: the farthest forward branch target seen.
     // Reads from the cursor up to the budget and the bound; on failure, up to
     // the page end. False when nothing there is readable.
     const auto fill = [&]() -> std::expected<bool, std::string> {
@@ -248,6 +253,12 @@ inline std::expected<Listing, std::string> List(const ReadFn& read, uint64_t sta
         const uint64_t from = cursor;
         cursor += length;
         listing.rows.push_back(std::move(*instruction));
+        if (options.walk && !hop) {
+            const auto& row = listing.rows.back();
+            if (row.target && row.branch != "call" && *row.target > from && *row.target - from <= MaxWalkReach)
+                reach = std::max(reach, *row.target);
+            if (row.ends && cursor > reach) { listing.stop = "walk end"; break; }
+        }
         if (hop) {
             const uint64_t to = *listing.rows.back().target;
             listing.followed.push_back({from, to});

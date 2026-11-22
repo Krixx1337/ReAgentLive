@@ -11,7 +11,10 @@ Answer one-address questions live, with no database:
 - What points here: `xrefs <addr>` (`--module` for a DLL calling into the
   exe).
 - What code uses these member offsets: `touches <exec> <offset>...` from a
-  native function of the same class (a `func` exec).
+  native function of the same class (a `func` exec). Copies and
+  constructors rank first when the offsets are common: `touches --reads`
+  for the code that consumes the block. Rows marked unlisted are pieces of
+  code outside the exception table: confirm each with `disasm --function`.
 - Does this signature hold: `sig-check`.
 
 ## ReAgentLive or the static tool
@@ -44,8 +47,10 @@ Answer one-address questions live, with no database:
 - `func` gives its exec; `disasm <exec> --function` lists it, and each
   `call`'s `target` is the next hop. Follow one level at a time; open the
   static tool once a function needs decompiling.
-- `disasm` refuses `--function` where the exception table has no entry (a
-  leaf function): list from the address itself.
+- Where the exception table has no entry (a leaf function, or a packed
+  image that leaves real functions out), `disasm --function` walks from
+  the address you give: give it the function's start (the byte after the
+  previous `ret`) and, when it stops on the count, list on from the last row.
 
 ## Native interface getters
 
