@@ -1,6 +1,7 @@
 """The docs rules (docs/contributing.md#docs): links resolve, INDEX lists every page, no host names,
 every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
-The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
+AGENTS.md (for an agent changing the repo; CLAUDE.md imports it) stays within its line budget and needs no
+header; links and names are checked there as everywhere. The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
 every such path must exist, and no skill file links GitHub's main branch. The user's own git-ignored
 references/local-lessons.md is skipped by every check.
 
@@ -14,7 +15,7 @@ import tempfile
 import unittest
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-SKIP_DIRS = {'third_party', '__pycache__', '.git'}
+SKIP_DIRS = {'third_party', '__pycache__', '.git', 'build', 'out'}  # build trees are git-ignored
 TEXT = ('.md', '.h', '.cpp', '.py', '.txt', '.cmake')
 LINK = re.compile(r'(?<!!)\[[^\]]*\]\(([^)\s]+)\)')
 HEADING = re.compile(r'^(#{1,6})\s+(.*?)\s*#*\s*$')
@@ -24,6 +25,8 @@ FENCE = re.compile(r'^\s*(```|~~~)')
 FORBID = []
 HEADER_LINES = 15
 SKILL_MAX_LINES = 110
+AGENTS_MAX_LINES = 120
+AGENT_FILES = {'AGENTS.md', 'CLAUDE.md'}  # for an agent changing the repo: no TL;DR or Home of line
 SKILL = os.path.join('.claude', 'skills', 'reagentlive')
 GENERATED = {'docs/commands/results.md'}
 ORCHESTRATORS = {'README.md', 'docs/INDEX.md'}
@@ -141,8 +144,8 @@ def check_headers(root):
     Agent procedures under docs/agents/ are exempt; links, the index and names still apply to them."""
     problems = []
     for page in listed_pages(root):
-        if page in GENERATED or page.startswith(('.claude/', AGENT_PROCEDURES)):
-            continue  # generated pages, skill files and agent procedures carry no header
+        if page in GENERATED or page in AGENT_FILES or page.startswith(('.claude/', AGENT_PROCEDURES)):
+            continue  # generated pages, skill files, agent procedures and AGENTS.md carry no header
         with open(os.path.join(root, page), encoding='utf-8') as file:
             head = file.read().split('\n')[:HEADER_LINES]
         if not any(line.startswith('**TL;DR:**') for line in head):
@@ -170,6 +173,16 @@ def check_skill(root):
         if os.path.normpath(path) not in linked:
             problems.append(f'{os.path.relpath(path, skill)}: not linked from SKILL.md'.replace('\\', '/'))
     return problems
+
+
+def check_agents(root):
+    """AGENTS.md stays an orchestrator: at most AGENTS_MAX_LINES lines."""
+    path = os.path.join(root, 'AGENTS.md')
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding='utf-8') as file:
+        lines = len(file.read().rstrip('\n').split('\n'))
+    return [f'AGENTS.md: {lines} lines, over {AGENTS_MAX_LINES}'] if lines > AGENTS_MAX_LINES else []
 
 
 def check_code_paths(root):
@@ -254,6 +267,9 @@ class Docs(unittest.TestCase):
 
     def test_the_skill_stays_short_and_reaches_every_reference(self):
         self.assertEqual(check_skill(ROOT), [])
+
+    def test_agents_md_stays_short(self):
+        self.assertEqual(check_agents(ROOT), [])
 
     def test_the_skills_repo_paths_exist(self):
         self.assertEqual(check_code_paths(ROOT), [])
@@ -359,6 +375,25 @@ class Docs(unittest.TestCase):
         with Tree({skill + 'SKILL.md': '[w](references/w.md)\n' + 'x\n' * 110, **refs}) as root:
             self.assertEqual(check_skill(root), ['SKILL.md: 111 lines, over 110',
                                                  'references/unreal/n.md: not linked from SKILL.md'])
+
+    def test_a_long_agents_md_fails(self):
+        with Tree({'AGENTS.md': 'x\n' * 120}) as root:
+            self.assertEqual(check_agents(root), [])
+        with Tree({'AGENTS.md': 'x\n' * 121}) as root:
+            self.assertEqual(check_agents(root), ['AGENTS.md: 121 lines, over 120'])
+        with Tree({'docs/a.md': '# A\n'}) as root:
+            self.assertEqual(check_agents(root), [])  # no AGENTS.md, nothing to check
+
+    def test_agent_files_need_no_header_but_keep_links_and_names(self):
+        index = '**TL;DR:** x.\n[a](../AGENTS.md) [c](../CLAUDE.md)\n'
+        with Tree({'docs/INDEX.md': index,
+                   'AGENTS.md': '# Working on it\n\n[ok](docs/INDEX.md) [gone](docs/missing.md) SomeGame\n',
+                   'CLAUDE.md': '@AGENTS.md\n[bad](nope.md) somegame\n'}) as root:
+            self.assertEqual(check_headers(root), [])
+            self.assertEqual(check_links(root), ['AGENTS.md:3: docs/missing.md: no such file',
+                                                 'CLAUDE.md:2: nope.md: no such file'])
+            self.assertEqual(check_names(root, ['somegame']), ['AGENTS.md:3: names the host or game',
+                                                               'CLAUDE.md:2: names the host or game'])
 
 
 if __name__ == '__main__':

@@ -25,6 +25,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **`AGENTS.md`** for agents changing this repo (commands, hard rules,
+  how to run large changes), with a `CLAUDE.md` that imports it; the docs
+  test checks both and skips local `build/` and `out/` folders.
 Any UE5 game without an SDK dump, engine calls from any host, and output
 that costs an agent far less.
 

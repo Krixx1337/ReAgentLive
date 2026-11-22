@@ -28,6 +28,7 @@ are under `src/reagentlive/`.
 | Write a client or change the wire format | [clients](client.md), [protocol](protocol.md) |
 | Keep a mod's logic or a tool outside the game, with a lean DLL inside | [outside programs](outside-programs.md) |
 | Add a command or change the code | [contributing](contributing.md) |
+| Change ReAgentLive with an AI agent | [AGENTS.md](../AGENTS.md) (commands, hard rules, large changes) |
 | Know why something is built this way, or was rejected | [design](design.md); for `help`, scripts and tools: [tool interface](tool-interface.md) |
 | Pick the next feature, or check it is not ruled out | [ideas](ideas.md) |
 | Describe the project | [positioning](positioning.md) |

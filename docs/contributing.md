@@ -195,7 +195,7 @@ CMake fetches a pinned nlohmann/json release for the console and CLI tests
 when the parent project has not already provided the target.
 
 ```powershell
-cmake -S . -B build -G Ninja   # from the ReAgentLive folder; tests on by default
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # from the ReAgentLive folder; tests on by default
 cmake --build build
 ctest --test-dir build
 ```
@@ -217,7 +217,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive.engine-layout` (`tests/python/`) | engine offsets defined only in their homes (`engine_layout.h`, `engine_layout_sdk.h`, `globals.h`, `name_pool.h`) |
 | `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help --json` has core rows only, none marked `needsPack`, each the same as in the full table, and the module generated from it no pack verb |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
-| `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, INDEX lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, and no host or game name appears in the library |
+| `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, INDEX lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, `AGENTS.md` stays within its own, and no host or game name appears in the library |
 
 The Unreal agent handlers need a live object table, so hosts check them in
 their own live sessions; the Unreal example's DLL is tested in-process,
@@ -256,6 +256,12 @@ their first line is one sentence for a human who lands there. They carry
 no TL;DR and no *Home of* line; `docs/agents/README.md` routes between
 them and restates nothing.
 
+**Changing the repo, a fourth audience.** [`AGENTS.md`](../AGENTS.md) is
+for an AI agent changing ReAgentLive (`CLAUDE.md` imports it): an
+orchestrator of commands, hard rules and how to run large changes, linking
+this page for the details. Imperative and dense, no TL;DR and no *Home of*
+line, at most 120 lines (the docs test checks).
+
 **Two kinds of page, never mixed.** *Orchestrators* route: one line of
 what and why per topic, a link to its home, and when to read it; no fact
 stated in full (`README.md`, `docs/INDEX.md`, `docs/agents/README.md`, the
@@ -290,6 +296,7 @@ Check this table before adding a fact; if it has a home, link there.
 | The setup record's fields | [agents/setup.md](agents/setup.md#10-write-the-setup-record) | the skill and agents/README.md read it, never restate it |
 | When and how an agent reviews a session and proposes skill lessons (modes, scratch file, rubric) | the skill's `references/improving.md` | docs |
 | The user's own skill lessons | the skill's `references/local-lessons.md` (git-ignored, the user's) | anything tracked |
+| How an agent works on this repo: commands, hard rules, large changes | [`AGENTS.md`](../AGENTS.md) | this page keeps the details; `AGENTS.md` links them |
 | Where code goes, tests, these rules | this page | |
 
 The skill may be installed apart from the docs (a link into the clone, or
