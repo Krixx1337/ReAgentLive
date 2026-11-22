@@ -51,7 +51,9 @@ class LoadFunction(unittest.TestCase):
         self.assertIn('overlap', loader.parse([FUNCTION, CODE, overlap]))
 
     def test_ida_claims_only_saved_functions(self):
-        self.assertTrue(loader.accept_file(FakeInput(FUNCTION + '\n' + CODE), 'f.jsonl'))
+        claimed = loader.accept_file(FakeInput(FUNCTION + '\n' + CODE), 'f.jsonl')
+        self.assertEqual(claimed['format'], loader.FORMAT)
+        self.assertEqual(claimed['options'], 1 | 0x8000)   # Offered before IDA's own Binary file.
         self.assertEqual(loader.accept_file(FakeInput('{"kind":"exec","rva":"0x10"}'), 'labels.jsonl'), 0)
         self.assertEqual(loader.accept_file(FakeInput('MZ\x90\x00'), 'game.exe'), 0)
 

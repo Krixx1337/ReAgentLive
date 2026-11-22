@@ -59,6 +59,10 @@ def parse(lines):
     return {'function': function, 'segments': segments, 'names': names}
 
 
+FORMAT = 'ReAgentLive saved function'
+ACCEPT_FIRST = 0x8000  # ida_loader.ACCEPT_FIRST: offered before IDA's own "Binary file".
+
+
 def accept_file(li, filename):
     """IDA: claim the file when its first line is a function row."""
     li.seek(0)
@@ -66,21 +70,32 @@ def accept_file(li, filename):
     if isinstance(first, bytes):
         first = first.decode('utf-8', 'replace')
     if first.lstrip().startswith('{') and ('"row":"function"' in first or '"row": "function"' in first):
-        return {'format': 'ReAgentLive saved function', 'processor': 'metapc'}
+        return {'format': FORMAT, 'processor': 'metapc', 'options': 1 | ACCEPT_FIRST}
     return 0
 
 
 def load_file(li, neflags, format):
-    """IDA: build the database from the plan."""
+    """IDA: build the database from the plan; 1 on success, 0 on failure."""
     import ida_bytes
+    import ida_entry
     import ida_funcs
     import ida_ida
     import ida_idp
+    import ida_kernwin
+    import ida_loader
     import ida_name
     import ida_segment
-    import ida_kernwin
     import ida_typeinf
 
+    if format != FORMAT:
+        return 0
+    ida_idp.set_processor_type('metapc', ida_idp.SETPROC_LOADER)
+    ida_ida.inf_set_app_bitness(64)
+    # Windows x64 code: without this IDA assumes GNU C++ and the System V
+    # calling convention, and the decompiler garbles the parameters.
+    ida_typeinf.set_compiler_string('vc', True)
+    if neflags & ida_loader.NEF_RELOAD:
+        return 1  # Reloading the same bytes into an existing database: nothing to add.
     li.seek(0)
     text = li.read(li.size())
     if isinstance(text, bytes):
@@ -89,20 +104,19 @@ def load_file(li, neflags, format):
     if isinstance(plan, str):
         ida_kernwin.warning(f'ReAgentLive function not loaded: {plan}')
         return 0
-    ida_idp.set_processor_type('metapc', ida_idp.SETPROC_LOADER)
-    ida_ida.inf_set_64bit(True)
-    # Windows x64 code: without this IDA assumes GNU C++ and the System V
-    # calling convention, and the decompiler garbles the parameters.
-    ida_typeinf.set_compiler_string('vc', True)
     for index, (start, data, kind) in enumerate(plan['segments']):
         segment = ida_segment.segment_t()
         segment.start_ea = start
         segment.end_ea = start + len(data)
         segment.bitness = 2
         segment.perm = ida_segment.SEGPERM_READ | (ida_segment.SEGPERM_EXEC if kind == 'CODE' else 0)
-        ida_segment.add_segm_ex(segment, f'{kind.lower()}{index}', kind, ida_segment.ADDSEG_NOSREG)
-        ida_bytes.put_bytes(start, data)
+        if not ida_segment.add_segm_ex(segment, f'{kind.lower()}{index}', kind, ida_segment.ADDSEG_NOSREG):
+            ida_kernwin.warning(f'ReAgentLive function not loaded: no segment at {start:#x}')
+            return 0
+        ida_loader.mem2base(data, start, -1)  # -1: no position in the input file.
     function = plan['function']
+    names = dict(plan['names'])
+    ida_entry.add_entry(function['start'], function['start'], names.get(function['start'], 'start'), True)
     ida_funcs.add_func(function['start'])
     for address, name in plan['names']:
         ida_name.set_name(address, name, ida_name.SN_NOWARN | ida_name.SN_NOCHECK)
