@@ -5,6 +5,7 @@
 #include <string.h>
 #include <string_view>
 #include "reagentlive/core/protocol.h"
+#include "reagentlive/packs/ue/engine_layout.h"
 
 // Find: text = name substring (may be empty when a class is given); data =
 // optional class name, NUL-terminated, matching the object's class or any parent
@@ -52,8 +53,8 @@ using reagentlive::AddressRef;
 constexpr size_t MaxParams = 1024;
 // Guards for pins and watch ranges on an object: its object-table index
 // (int32) and class pointer, adjacent in UE5's UObject. A freed or replaced
-// object changes them. The agent checks the layout against its SDK.
-constexpr uint32_t ObjectIdentityOffset = 0xC, ObjectIdentityLength = 12;
+// object changes them (layout::EngineLayout objectIndex, objectClass).
+using layout::ObjectIdentityLength;
 constexpr size_t MaxFindResults = 24;
 constexpr uint32_t MaxClassName = MaxText; // Class names in a request: as long as its text.
 // The object filter find, each and census take: data = class name, NUL, then
@@ -126,7 +127,7 @@ struct FunctionEntry {
     uint32_t flags, executable;
     char owner[64], name[64];
     // A function declared on a native interface the object's class implements
-    // (see InterfacesOffset): interface = 1, the interface part's offset in the
+    // (see the layout's interfaces): interface = 1, the interface part's offset in the
     // object, the vtable slot its stub calls (bytes; -1 unknown) and the
     // address the object's interface vtable holds there (0 unknown).
     uint32_t interface, interfaceOffset;
@@ -135,7 +136,7 @@ struct FunctionEntry {
 };
 
 // Native interface functions. A class's implemented interfaces are a TArray
-// at UClass+InterfacesOffset (UE5, read live) of {UClass*, int32 PointerOffset,
+// at UClass + the layout's interfaces (UE5, read live) of {UClass*, int32 PointerOffset,
 // bool} entries. A function declared on an interface is only on the interface
 // class. Its exec stub calls a slot of the vtable at the start of the object it
 // is given, without moving `this` to the interface part, so through
@@ -146,7 +147,8 @@ struct FunctionEntry {
 // subclass) whose part lies inside the implementing class's size. One bad
 // entry makes the array implausible and Function refuses (another engine
 // layout) instead of trusting any of it.
-constexpr uint32_t InterfacesOffset = 0x1E0, InterfaceEntrySize = 16, MaxInterfaces = 64;
+using layout::InterfaceEntrySize;
+constexpr uint32_t MaxInterfaces = 64;
 // The stub is scanned to its own end from its module's exception directory,
 // never into the next function: a stub's call can sit past 160 bytes.
 constexpr uint32_t MaxStubScan = 512;
@@ -185,7 +187,7 @@ struct FunctionNameEntry {
     char owner[64], name[64];
     // 1: declared on a native interface the class implements; owner is the
     // interface. Calling it through ProcessEvent on the object is refused (see
-    // InterfacesOffset); func reports its implementation.
+    // the layout's interfaces); func reports its implementation.
     uint32_t interface, reserved;
 };
 constexpr size_t MaxFunctionsPerPage = MaxRead / sizeof(FunctionNameEntry);
@@ -355,10 +357,9 @@ bool ReadFieldsPage(const uint8_t* data, size_t length, Visit&& visit) {
 
 // UE5 keeps a map's or set's element layout in the property, after its inner
 // property pointers: FScriptMapLayout (ValueOffset, then FScriptSetLayout) at
-// MapLayoutOffset, FScriptSetLayout (HashNextIdOffset, HashIndexOffset, Size)
-// at SetLayoutOffset. The SDK does not describe it, so these are pack
-// constants and every layout read through them is checked before use.
-constexpr uint32_t MapLayoutOffset = 0x80, SetLayoutOffset = 0x78;
+// the layout's mapLayout, FScriptSetLayout (HashNextIdOffset, HashIndexOffset, Size)
+// at its setLayout. The SDK does not describe it, so every layout read
+// through them is checked before use.
 struct ContainerLayout { int32_t valueOffset, hashNextIdOffset, hashIndexOffset, stride; };
 // The key at 0, a map's value after it, then two int32 hash links, all inside
 // a stride of at most MaxArrayElementBytes. valueSize 0 = a set. Pure; tested.
@@ -519,7 +520,6 @@ namespace expr {
 constexpr uint8_t LocalVariable = 0x00, InstanceVariable = 0x01, FinalFunction = 0x1C, NameConst = 0x21,
     LocalFinalFunction = 0x46, LocalOutVariable = 0x48, CallMath = 0x68;
 }
-constexpr uint32_t ScriptOffset = 0x60;        // UStruct::Script in UE5 (read live).
 constexpr uint32_t ScriptNameOperand = 12;     // FScriptName: comparison index, display index, number.
 constexpr uint32_t MaxScriptBytes = 1u << 20;  // Larger scripts are refused as implausible.
 enum class ScriptKind : uint8_t { Name = 1, Function = 2, Property = 3 };
@@ -675,8 +675,8 @@ constexpr uint32_t CallsDry = 1;
 constexpr uint64_t CallsLatest = MaxCallsSlots;
 // UE5 frame and function layout the thunk reads (UObject::ProcessEvent,
 // FFrame's constructor and UFunction::Invoke, CL-516586): FFrame::Node and
-// ::Locals, UFunction::ReturnValueOffset (0xFFFF: none). Not in the SDK.
-constexpr uint32_t FrameNodeOffset = 0x10, FrameLocalsOffset = 0x28, FunctionReturnOffset = 0xB8;
+// ::Locals, UFunction::ReturnValueOffset (0xFFFF: none): the layout's
+// frameNode, frameLocals and returnValueOffset. Not in the SDK.
 enum class CallsSlotState : uint32_t { Free, Recording, Expired, Finished, Replaced };
 // A caller can load a thunk's address from the function before the restore
 // swaps it back and enter the thunk later, past its in-flight count. A

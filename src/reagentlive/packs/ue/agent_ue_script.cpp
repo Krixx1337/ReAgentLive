@@ -23,7 +23,7 @@ struct ScriptArray { const uint8_t* data; int32_t count, capacity; };
 
 // The bytecode of a struct with a plausible Script array, copied with a guard.
 bool ReadScript(const SDK::UStruct* type, const Host& host, std::vector<uint8_t>& out) {
-    const auto* where = reinterpret_cast<const uint8_t*>(type) + ScriptOffset;
+    const auto* where = reinterpret_cast<const uint8_t*>(type) + Engine().script;
     ScriptArray script{};
     if (!host.readable(where, sizeof(script)) || !GuardedCopy(&script, where, sizeof(script))) return false;
     if (script.count <= 0 || script.capacity < script.count || static_cast<uint32_t>(script.count) > MaxScriptBytes ||

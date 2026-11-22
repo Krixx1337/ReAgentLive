@@ -112,10 +112,10 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     for (size_t i = 0; wantInterfaces && i < defaults.size(); ++i)
         if (!BlueprintClass(defaults[i].name)) natives.push_back(i);
     addresses.clear();
-    for (const size_t i : natives) addresses.push_back(defaults[i].ref.address + ue::ObjectIdentityOffset + 4);
+    for (const size_t i : natives) addresses.push_back(defaults[i].ref.address + ue::layout::StockUE5.objectClass);
     const auto classes = ReadEach(client, addresses, 8);
     addresses.clear();
-    for (const auto& type : classes) addresses.push_back(Qword(type) ? Qword(type) + ue::InterfacesOffset : 1);
+    for (const auto& type : classes) addresses.push_back(Qword(type) ? Qword(type) + ue::layout::StockUE5.interfaces : 1);
     const auto headers = ReadEach(client, addresses, 16);
     std::vector<std::pair<size_t, uint64_t>> implemented; // (default object, interface class pointer)
     std::set<uint64_t> interfaceClasses;

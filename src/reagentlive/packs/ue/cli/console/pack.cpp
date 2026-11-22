@@ -379,9 +379,9 @@ Result<Guard> ObjectGuard(Session& session, uint64_t object) {
     Client& client = session.client;
     Guard guard{};
     if (!object) return guard;
-    auto bytes = client.Read(object + ue::ObjectIdentityOffset, ue::ObjectIdentityLength);
+    auto bytes = client.Read(object + ue::layout::StockUE5.objectIndex, ue::ObjectIdentityLength);
     if (!bytes) return std::unexpected(bytes.error());
-    guard.address = object + ue::ObjectIdentityOffset;
+    guard.address = object + ue::layout::StockUE5.objectIndex;
     guard.length = ue::ObjectIdentityLength;
     memcpy(guard.bytes, bytes->data(), bytes->size());
     return guard;

@@ -19,6 +19,7 @@
 #include "reagentlive/packs/ue/name_pool.h"
 #ifdef REAGENTLIVE_UE_SDK
 #include "SDK/CoreUObject_classes.hpp"
+#include "reagentlive/packs/ue/engine_layout_sdk.h"
 #endif
 #include "reagentlive/packs/ue/agent_ue_base.h"
 
@@ -93,8 +94,8 @@ ObjectLayout SdkLayout() {
 }
 // The identity a client guards objects with (protocol_ue.h) is this SDK's
 // header too: the stock shapes are asserted beside Find.
-static_assert(offsetof(SDK::UObject, Index) == ObjectIdentityOffset &&
-              offsetof(SDK::UObject, Class) == ObjectIdentityOffset + 4);
+static_assert(offsetof(SDK::UObject, Index) == static_cast<size_t>(layout::StockUE5.objectIndex) &&
+              offsetof(SDK::UObject, Class) == static_cast<size_t>(layout::StockUE5.objectClass));
 // Template() tests these flags by value.
 static_assert(static_cast<uint32_t>(SDK::EObjectFlags::ClassDefaultObject) == 0x10 &&
               static_cast<uint32_t>(SDK::EObjectFlags::ArchetypeObject) == 0x20);
@@ -247,6 +248,12 @@ void Locate(const Context& pack, const Host& host) {
 }
 
 const ObjectLayout& Layout() { return g_layout; }
+#ifdef REAGENTLIVE_UE_SDK
+constexpr layout::EngineLayout EngineValue = layout::SdkLayout();
+#else
+constexpr layout::EngineLayout EngineValue = layout::StockUE5;
+#endif
+const layout::EngineLayout& Engine() { return EngineValue; }
 
 namespace {
 // The item of a slot, or null: outside the table or an empty chunk.

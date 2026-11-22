@@ -7,6 +7,15 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+- **One home for engine layout:** every engine offset the Unreal pack
+  reads is in `packs/ue/engine_layout.h` (`EngineLayout`, `StockUE5`,
+  profile groups and `ProfileJson`); `engine_layout_sdk.h` fills it from a
+  host's SDK. A test refuses engine offsets defined anywhere else. The
+  protocol's `InterfacesOffset`, `MapLayoutOffset`, `SetLayoutOffset`,
+  `ScriptOffset`, `Frame*Offset`, `FunctionReturnOffset` and
+  `ObjectIdentityOffset` are gone (hosts: use the layout).
+- **Skill:** `references/unreal/new-game.md`, finding a game's engine
+  layout with no dump.
 - **`enum <object|Enum>`**: an enum's names and values (new op 277;
   protocol: rebuild and re-inject).
 - **Typed calls take objects:** an object or class input is `$N`, a ref or

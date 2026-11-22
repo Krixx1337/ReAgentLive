@@ -21,9 +21,9 @@
 namespace reagentlive::ue {
 namespace {
 using Native = void (*)(void* context, void* stack, void* result);
-// FunctionReturnOffset sits in the SDK's padding after FunctionFlags: pin the
+// ReturnValueOffset sits in the SDK's padding after FunctionFlags: pin the
 // UFunction layout it was read from (UE5: flags 0xB0, return offset 0xB8).
-static_assert(FunctionReturnOffset == offsetof(SDK::UFunction, FunctionFlags) + 8);
+static_assert(static_cast<size_t>(layout::StockUE5.returnValueOffset) == offsetof(SDK::UFunction, FunctionFlags) + 8);
 constexpr size_t RowStride = sizeof(CallsRow) + MaxCallsBlock;
 
 // One recording. Written on the game thread while not recording; the thunk
@@ -73,8 +73,8 @@ template<unsigned I> void Thunk(void* context, void* stack, void* result) {
     void* node = nullptr;
     uint8_t* locals = nullptr;
     const auto* frame = static_cast<const uint8_t*>(stack);
-    const bool read = frame && GuardedCopy(&node, frame + FrameNodeOffset, sizeof(node)) &&
-        GuardedCopy(&locals, frame + FrameLocalsOffset, sizeof(locals));
+    const bool read = frame && GuardedCopy(&node, frame + Engine().frameNode, sizeof(node)) &&
+        GuardedCopy(&locals, frame + Engine().frameLocals, sizeof(locals));
     // ProcessEvent builds a frame for this function whose locals are the
     // parameter block; a Blueprint VM call passes its own frame.
     const bool event = read && node == slot.function && locals;
@@ -185,7 +185,7 @@ Progress CallsStart(const Request& request, Response& response, bool, const Host
         return Progress::Done;
     }
     uint16_t returnOffset = 0xFFFF;
-    if (!GuardedCopy(&returnOffset, reinterpret_cast<const uint8_t*>(function) + FunctionReturnOffset, sizeof(returnOffset))) {
+    if (!GuardedCopy(&returnOffset, reinterpret_cast<const uint8_t*>(function) + Engine().returnValueOffset, sizeof(returnOffset))) {
         Refuse(response, Status::Refused, "function unreadable");
         return Progress::Done;
     }

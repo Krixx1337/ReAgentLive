@@ -304,8 +304,8 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
 }
 
 // The identity a client guards with (protocol_ue.h) is the header's index and class.
-static_assert(globals::StockShapes[0].objectIndexOffset == ObjectIdentityOffset &&
-              globals::StockShapes[0].objectClassOffset == ObjectIdentityOffset + 4 && ObjectIdentityLength == 4 + sizeof(void*));
+static_assert(globals::StockShapes[0].objectIndexOffset == static_cast<uint32_t>(layout::StockUE5.objectIndex) &&
+              globals::StockShapes[0].objectClassOffset == static_cast<uint32_t>(layout::StockUE5.objectClass) && ObjectIdentityLength == 4 + sizeof(void*));
 
 namespace {
 // One ref (address-only, full, or weak slot and serial) to its entry; false when gone or not an object.

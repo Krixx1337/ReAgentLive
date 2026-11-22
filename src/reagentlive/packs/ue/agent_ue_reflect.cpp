@@ -98,7 +98,7 @@ void DescribeStruct(const SDK::FField* field, Ref& structType, std::string& stru
 // passes ContainerLayoutValid (stride stays 0 otherwise).
 void DescribeContainer(const SDK::FField* field, bool map, FieldText& entry, const Context& pack, const Host& host) {
     const auto* base = reinterpret_cast<const uint8_t*>(field);
-    if (!host.readable(base, (map ? MapLayoutOffset : SetLayoutOffset) + sizeof(ContainerLayout))) return;
+    if (!host.readable(base, static_cast<uint32_t>(map ? Engine().mapLayout : Engine().setLayout) + sizeof(ContainerLayout))) return;
     const auto inner = [&](const SDK::FProperty* property, std::string& type, uint32_t& size, Ref& structType,
                            std::string& structName) {
         if (!host.readable(property, sizeof(SDK::FProperty)) ||
@@ -114,15 +114,15 @@ void DescribeContainer(const SDK::FField* field, bool map, FieldText& entry, con
     if (map && !inner(static_cast<const SDK::FMapProperty*>(field)->ValueProperty, entry.valueType, entry.numbers.valueSize,
                       entry.valueStructType, entry.valueStructName)) return;
     ContainerLayout layout{};
-    if (map) memcpy(&layout, base + MapLayoutOffset, sizeof(layout));
-    else memcpy(&layout.hashNextIdOffset, base + SetLayoutOffset, 3 * sizeof(int32_t));
+    if (map) memcpy(&layout, base + Engine().mapLayout, sizeof(layout));
+    else memcpy(&layout.hashNextIdOffset, base + Engine().setLayout, 3 * sizeof(int32_t));
     if (!ContainerLayoutValid(layout, entry.numbers.elementSize, entry.numbers.valueSize)) return;
     entry.numbers.stride = static_cast<uint32_t>(layout.stride);
     entry.numbers.valueOffset = map ? static_cast<uint32_t>(layout.valueOffset) : 0;
 }
 
 // Each native interface `start` or a parent implements, from the class's
-// TArray at InterfacesOffset of {UClass*, int32 PointerOffset, bool}. Every
+// TArray at the layout's interfaces of {UClass*, int32 PointerOffset, bool}. Every
 // class's array is checked before any entry is used: an interface class (a
 // UInterface subclass) whose part lies inside the implementing class's size.
 // `visit(interface, offset)` returns false to stop. Returns false when some
@@ -148,7 +148,7 @@ bool ForEachInterface(const SDK::UStruct* start, const Context& pack, const Host
     unsigned depth = 0;
     for (const SDK::UStruct* type = start; type && depth < MaxClassDepth && pack.object(type);
          type = type->SuperStruct, ++depth) {
-        const auto* where = reinterpret_cast<const uint8_t*>(type) + InterfacesOffset;
+        const auto* where = reinterpret_cast<const uint8_t*>(type) + Engine().interfaces;
         Header header{};
         if (!host.readable(where, sizeof(header)) || !GuardedCopy(&header, where, sizeof(header))) return false;
         if (!header.count && header.capacity >= 0 && header.capacity <= static_cast<int32_t>(MaxInterfaces))
@@ -180,7 +180,7 @@ bool ForEachInterface(const SDK::UStruct* start, const Context& pack, const Host
 
 // A function declared on an interface that the object's class (or a parent)
 // implements, with the interface part's offset in the object.
-// `implausible`: some class's array at InterfacesOffset does not look like
+// `implausible`: some class's array at the layout's interfaces does not look like
 // implemented interfaces (another engine layout); nothing is trusted then.
 struct InterfaceFunction { SDK::UFunction* function; const SDK::UStruct* declaring; int32_t offset; bool implausible; };
 InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_view owner, std::string_view name,
@@ -264,7 +264,7 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
     const auto [owner, name] = SplitFunction(request.text);
     SDK::UFunction* function = FindFunction(object->Class, owner, name, pack);
     if (!function && FindInterfaceFunction(object, owner, name, pack, host).function) {
-        // The reason fits MaxReason; why is in protocol_ue.h (InterfacesOffset).
+        // The reason fits MaxReason; why is in protocol_ue.h (Interfaces).
         Refuse(response, Status::Refused, "native interface function: see func for its implementation");
         return Progress::Done;
     }

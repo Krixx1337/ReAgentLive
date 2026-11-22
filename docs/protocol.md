@@ -289,9 +289,9 @@ its members.
 For a map or set, a record carries the key (a set's element) in the
 element members, a map's value type, size, offset and struct, and the
 element's `stride` (key, value and the two `int32` hash links). The layout
-comes from the property itself: UE5's `FScriptMapLayout` at `MapLayoutOffset`
-(0x80) or `FScriptSetLayout` at `SetLayoutOffset` (0x78), pack constants
-because the SDK does not describe them. `ContainerLayoutValid` checks every
+comes from the property itself: UE5's `FScriptMapLayout` at `mapLayout`
+(0x80) or `FScriptSetLayout` at `setLayout` (0x78) of the engine layout
+(`engine_layout.h`), not from the SDK, which does not describe them. `ContainerLayoutValid` checks every
 layout (key at 0, the value after it, adjacent hash links, the stride at
 most 512 bytes); a failed check leaves `stride` 0 and the console shows the
 raw header.

@@ -156,6 +156,7 @@ to cross to the static tool (native-code reference).
 | follow a native getter, read a Blueprint function's bytecode, disassemble, find the code using an offset, or make or check a byte signature | `references/native-code.md` |
 | hunt unreflected state or padding, read an object with no reflection, or use `search` | `references/hidden-state.md` |
 | rebuild, reinject, or see an attach or layout error | `references/reinjecting.md` |
+| work in an Unreal game with no dump: find the engine layout (struct, field, property, function, enum, call offsets) live and in a static tool | `references/unreal/new-game.md` |
 
 ## When ReAgentLive hits a limit
 

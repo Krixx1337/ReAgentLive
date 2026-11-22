@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include "reagentlive/packs/ue/agent_ue.h"
+#include "reagentlive/packs/ue/engine_layout.h"
 #include "reagentlive/packs/ue/globals.h"
 #include "reagentlive/packs/ue/name_pool.h"
 
@@ -49,6 +50,9 @@ struct ObjectLayout {
     bool fromSdk = false;
 };
 const ObjectLayout& Layout();
+// The engine layout every reflected read uses (engine_layout.h): the host's
+// SDK (reagentlive::ue) or StockUE5 (reagentlive::ue-base).
+const layout::EngineLayout& Engine();
 
 using Object = SDK::UObject;
 struct NameId { int32_t index; uint32_t number; };

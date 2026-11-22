@@ -235,7 +235,8 @@ if(REAGENTLIVE_BUILD_TESTS)
     target_link_libraries(reagentlive-core-console PRIVATE reagentlive-client nlohmann_json::nlohmann_json Zydis)
     set_target_properties(reagentlive-core-console PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
     target_compile_options(reagentlive-core-console PRIVATE /W4 /WX /EHsc)
-    add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp tests/ue/globals_tests.cpp)
+    add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp tests/ue/globals_tests.cpp
+        tests/ue/layout_tests.cpp)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
         tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp)
@@ -286,6 +287,10 @@ if(REAGENTLIVE_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_core_console.py"
                 --console "$<TARGET_FILE:reagentlive-core-console>" --table "$<TARGET_FILE:reagentlive-table>")
         set_tests_properties(reagentlive.core-console PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # Engine offsets have one home, engine_layout.h.
+        add_test(NAME reagentlive.engine-layout
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_engine_layout.py")
+        set_tests_properties(reagentlive.engine-layout PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         add_test(NAME reagentlive.ida-labels
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_ida_labels.py")
         set_tests_properties(reagentlive.ida-labels PROPERTIES LABELS "reagentlive" TIMEOUT 60)
