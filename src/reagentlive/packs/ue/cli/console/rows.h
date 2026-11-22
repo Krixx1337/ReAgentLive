@@ -141,6 +141,11 @@ public:
                const RowPaths& paths, bool& truncated) {
         return Array(array, header, from, limit, paths, Names(), truncated);
     }
+    // A top-level container's header, printed beside its preview (dump): the
+    // header alone, not marked truncated, since the preview lists the elements.
+    Json Header(const ue::Field& field, std::span<const uint8_t> bytes, bool& truncated) {
+        return JsonFieldValue(field, bytes, structs_, Names(), truncated, ValueStyle{meta_, &session_.names});
+    }
     // Distinct pointers past MaxPointers, printed as addresses: the result's `unnamed`.
     uint32_t Unnamed() const { return unnamed_; }
     // A top-level pointer's object, for a verb that names it beside its value

@@ -260,9 +260,9 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         if (timedOut) break;
     }
 
-    // Two readers: `live` for field values and preview elements, `held` for
-    // what is a copy (a container's header beside its preview, `before`):
-    // nothing is read through those. Both collect, resolve, then print.
+    // Two readers: `live` for field values, container headers and preview
+    // elements, `held` for `before`, a copy: nothing is read through it.
+    // Both collect, resolve, then print.
     RowReader live(session, structs, previewCount);
     RowReader held(session, structs, previewCount);
     for (RowReader* reader : {&live, &held}) {
@@ -272,7 +272,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     held.Snapshot();
     const auto header = [](const ue::Field& field) { return field.type == "ArrayProperty" || IsContainer(field.type); };
     const auto value = [&](const ue::Field& field, std::span<const uint8_t> data, bool& partial) {
-        return header(field) ? held.Value(field, data, partial) : live.Value(field, data, partial);
+        return header(field) ? live.Header(field, data, partial) : live.Value(field, data, partial);
     };
     const auto parts = [&](const Preview& preview, auto&& visit) {
         if (!preview.elements) return;

@@ -205,6 +205,9 @@ TEST_CASE("top-level containers: get and each in full, entries and dump previews
     CHECK(entries["rows"][0]["value"] == boxes["rows"][0]);
     const Json preview = DumpRow("Boxes", "preview");
     CHECK(preview["elements"][0]["value"] == boxes["rows"][0]);
+    // The header beside a whole preview is not cut: the preview lists every element.
+    CHECK(DumpRow("Boxes", "truncated").is_null());
+    CHECK_FALSE(DumpRow("Boxes").contains("truncated"));
 }
 
 TEST_CASE("past the pointer cap, every verb counts unnamed alike, digested or not") {

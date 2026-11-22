@@ -136,5 +136,10 @@ first (see the skill's rules).
 - Pick the function by `funcs` on the class that receives the event.
   `via: vm` rows (a Blueprint calling native code) have no parameters; a
   native call made directly from C++ is invisible, so zero rows can mean
-  the wrong function, not no event.
+  the wrong function, not no event. A Blueprint function called from
+  another Blueprint is invisible too (the VM skips its pointer): record the
+  native function it calls, or the event that enters it.
+- Strings, arrays, sets and maps in a row print as headers (the caller may
+  have freed them); to see such a value, `call` the function yourself while
+  recording, or `get` the state it left.
 - Read with `calls-read` while it runs; `calls-stop` restores at once.
