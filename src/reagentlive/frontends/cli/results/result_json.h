@@ -593,6 +593,7 @@ struct Batch {
 struct Status {
     uint32_t pid = 0;
     std::string build, version;
+    std::string commit;          // The console's source commit (12 hex digits, -dirty), or unknown.
     uint32_t replacedAgents = 0;
     uint64_t ticks = 0, ticksPerSecond = 0, intervalMs = 0;
     bool ticking = false;
@@ -605,6 +606,7 @@ struct Status {
         v("pid", &Status::pid);
         v("build", &Status::build);
         v("version", &Status::version);
+        v("commit", &Status::commit);
         v("replaced_agents", &Status::replacedAgents);
         v("ticks", &Status::ticks);
         v("ticks_per_second", &Status::ticksPerSecond);

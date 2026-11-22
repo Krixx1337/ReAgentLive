@@ -57,7 +57,7 @@ DIGEST = {'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300
 # Replies by call: [call as the client sends it, reply].
 CALLS = [
     [C('rows', {'object': '0x10#1:1'}), {'ok': True, 'digest': DIGEST}],
-    [C('status'), ok({'pid': 4, 'build': 'b', 'version': '0.1.0', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
+    [C('status'), ok({'pid': 4, 'build': 'b', 'version': '0.1.0', 'commit': '0123456789ab', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
                       'interval_ms': 100, 'ticking': True, 'host_thread': 'engine', 'packs': ['ue'], 'table_hash': 'abc'})],
     [C('region', {'addr': 'base+0x10'}), ok({'address': '0x10', 'kind': 'code', 'section': '.text', 'base': '0x0',
                                             'size': '0x1000', 'allocation_base': '0x0', 'state': 'commit', 'type': 'image',

@@ -70,10 +70,19 @@ target_sources(reagentlive-core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reage
 target_include_directories(reagentlive-core INTERFACE "${reagentlive_include_root}")
 target_compile_features(reagentlive-core INTERFACE cxx_std_23)
 
+# The source tree's commit, for status (reagentlive/commit.h, refreshed on
+# every build, rewritten only when the commit changes).
+set(reagentlive_generated "${CMAKE_CURRENT_BINARY_DIR}/reagentlive_generated")
+add_custom_target(reagentlive-commit
+    COMMAND "${CMAKE_COMMAND}" -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}
+        -DOUTPUT=${reagentlive_generated}/reagentlive/commit.h -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/commit.cmake"
+    BYPRODUCTS "${reagentlive_generated}/reagentlive/commit.h" VERBATIM)
+
 add_library(reagentlive-client INTERFACE)
 add_library(reagentlive::client ALIAS reagentlive-client)
 target_sources(reagentlive-client INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/client.cpp")
-target_include_directories(reagentlive-client INTERFACE "${reagentlive_include_root}")
+target_include_directories(reagentlive-client INTERFACE "${reagentlive_include_root}" "${reagentlive_generated}")
+add_dependencies(reagentlive-client reagentlive-commit)
 target_compile_features(reagentlive-client INTERFACE cxx_std_23)
 target_link_libraries(reagentlive-client INTERFACE winmm) # timeBeginPeriod: 1 ms waits.
 

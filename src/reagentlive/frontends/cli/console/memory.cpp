@@ -30,6 +30,7 @@
 #include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
+#include "reagentlive/commit.h"
 #include "reagentlive/version.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
@@ -52,6 +53,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     result.pid = client.AgentPid();
     result.build = client.AgentBuild();
     result.version = Version;
+    result.commit = REAGENTLIVE_COMMIT;
     result.replacedAgents = client.AgentTakeovers();
     result.ticks = now.ticks;
     result.ticksPerSecond = static_cast<uint64_t>(rate + 0.5);
