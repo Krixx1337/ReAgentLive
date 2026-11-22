@@ -90,14 +90,35 @@ name; wide characters above 0x7f read `?`.
 
 ## Without an SDK
 
-`reagentlive::ue-base` is the part of the pack that compiles with no SDK
+`reagentlive::ue-base` builds every op with no SDK
 ([hosting](../hosting.md#cmake-targets)): one prebuilt agent for any UE5
-game, with no dump. Its ops are `find`, `describe` (and its batch form),
-object range reads, `name`, `census` and `name-find`; a host lists only
-those, so the rest answer `unsupported op`. Fields, calls, containers and
-bytecode need the SDK's types.
+game, with no dump. Engine types are read at the offsets of the engine
+layout (`packs/ue/engine_layout.h`): a host's SDK when it has one
+(`reagentlive::ue`), else `StockUE5`.
 
-The layout comes from the engine, checked like the globals:
+**Layout groups.** Without an SDK, the first op that needs a group checks
+it once on objects every UE5 game has, and the group's ops run only if it
+passes; otherwise they are refused with the check that failed (e.g.
+"field: Vector members are not X, Y, Z"):
+
+| Group | Checked on | Ops |
+|---|---|---|
+| class | cast flags of `Class`, `Struct`, `Field`, `Object` | every op below |
+| struct | `Class` > `Struct` > `Field` > `Object` > null; `Guid` size 16, `Vector` 12 or 24 | fields, params, func, funcs, script, refs, call |
+| field | `Vector`'s properties are `X`, `Y`, `Z`, float or double | fields, params, call |
+| property | `Vector` and `Guid` member offsets, sizes, `ArrayDim` 1, plain-data flags; `IntProperty`'s field cast flags | fields, params, call |
+| typed | every bool on `Actor` (bytes at the bool base), its struct and array properties | fields, params, call |
+| function | `KismetMathLibrary:Add_IntInt`: native, parameters 12 bytes, return at 8, exec in code | func, funcs, exec entries, call |
+| enum | `ENetRole` decodes to 5 names, `ROLE_None` first | enum |
+| call | `UObject`'s vtable slot tests `FunctionFlags` against `FUNC_Native` | call, call-pure, each with functions, the recorder |
+
+`FFrame` offsets (the recorder) and the set, map and interface layouts are
+not checked up front: the recorder needs the call group, and each container
+and interface array is validated where it is read. A host that ticks off the
+engine's thread still gets only the read ops (below). Finding a layout for an
+engine that is not stock: the skill's `references/unreal/new-game.md`.
+
+The table, header and two struct offsets come from the engine, checked like the globals:
 
 - **Table and object header:** UE5's chunked table (64K items per chunk)
   and header (flags `+0x08`, index `+0x0C`, class `+0x10`, name `+0x18`,

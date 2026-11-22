@@ -11,7 +11,6 @@
 #include <cstring>
 #include <vector>
 #include "reagentlive/packs/ue/agent_ue.h"
-#include "SDK/CoreUObject_classes.hpp"
 #include "reagentlive/packs/ue/agent_ue_internal.h"
 
 namespace reagentlive::ue {
@@ -19,9 +18,10 @@ namespace {
 Progress PreviewArrayBody(const Request& request, Response& response, bool first, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read) || !LayoutReady(GroupClass, host, response))
+        return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
-    if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
+    if (!object || IsA(object, cast::Struct)) {
         Refuse(response, Status::NotFound, "array preview requires a live instance");
         return Progress::Done;
     }
@@ -50,9 +50,10 @@ Progress PreviewArrayBody(const Request& request, Response& response, bool first
 Progress EntriesBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read) || !LayoutReady(GroupClass, host, response))
+        return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
-    if (!object || object->IsA(SDK::EClassCastFlags::Struct)) {
+    if (!object || IsA(object, cast::Struct)) {
         Refuse(response, Status::NotFound, "entries require a live instance");
         return Progress::Done;
     }

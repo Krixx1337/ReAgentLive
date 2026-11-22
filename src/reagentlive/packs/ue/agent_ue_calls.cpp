@@ -15,15 +15,11 @@
 #include <new>
 #include <utility>
 #include "reagentlive/packs/ue/agent_ue.h"
-#include "SDK/CoreUObject_classes.hpp"
 #include "reagentlive/packs/ue/agent_ue_internal.h"
 
 namespace reagentlive::ue {
 namespace {
 using Native = void (*)(void* context, void* stack, void* result);
-// ReturnValueOffset sits in the SDK's padding after FunctionFlags: pin the
-// UFunction layout it was read from (UE5: flags 0xB0, return offset 0xB8).
-static_assert(static_cast<size_t>(layout::StockUE5.returnValueOffset) == offsetof(SDK::UFunction, FunctionFlags) + 8);
 constexpr size_t RowStride = sizeof(CallsRow) + MaxCallsBlock;
 
 // One recording. Written on the game thread while not recording; the thunk
@@ -31,7 +27,7 @@ constexpr size_t RowStride = sizeof(CallsRow) + MaxCallsBlock;
 struct Slot {
     volatile LONG state;        // CallsSlotState.
     volatile LONG inFlight;     // Calls inside the thunk now: a slot is reused only at zero.
-    SDK::UFunction* function;
+    Object* function;           // The UFunction whose native pointer is swapped.
     Native original;
     uint64_t filter;
     uint32_t blockSize, returnOffset, returnSize;
@@ -107,7 +103,7 @@ template<unsigned... I> constexpr auto MakeThunks(std::integer_sequence<unsigned
 }
 constexpr auto Thunks = MakeThunks(std::make_integer_sequence<unsigned, MaxCallsSlots>{});
 
-Native* FuncField(SDK::UFunction* function) { return reinterpret_cast<Native*>(&function->ExecFunction); }
+Native* FuncField(Object* function) { return reinterpret_cast<Native*>(ExecFunctionSlot(function)); }
 
 // Puts the original pointer back if it still holds this slot's thunk;
 // otherwise something else replaced it, and the thunk forwards for good.
@@ -167,15 +163,15 @@ void StopCallRecordings() {
 
 Progress CallsStart(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response) || !LayoutReady(GroupsCall, host, response)) return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     Sweep();
-    SDK::UObject* object = ResolveRequestObject(request, pack);
+    Object* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
     const auto [owner, name] = SplitFunction(request.text);
-    const SDK::UStruct* start = object->IsA(SDK::EClassCastFlags::Struct) ? static_cast<const SDK::UStruct*>(object)
-                                                                          : object->Class;
-    SDK::UFunction* function = FindFunction(start, owner, name, pack);
+    // The recorder swaps the function's native pointer: UFunctions are heap
+    // data the engine itself writes, never code.
+    auto* function = const_cast<Object*>(FindFunction(TypeOf(object), owner, name, pack));
     if (!function) { Refuse(response, Status::NotFound, "function not found on the class chain"); return Progress::Done; }
     const Native current = *FuncField(function);
     for (unsigned i = 0; i < MaxCallsSlots; ++i)
@@ -189,7 +185,7 @@ Progress CallsStart(const Request& request, Response& response, bool, const Host
         Refuse(response, Status::Refused, "function unreadable");
         return Progress::Done;
     }
-    const auto size = function->Size;
+    const auto size = StructSize(function);
     if (size < 0 || static_cast<uint32_t>(size) > MaxCallsBlock) {
         Refuse(response, Status::Refused, "parameter block larger than a row holds", static_cast<uint64_t>(size < 0 ? 0 : size));
         return Progress::Done;

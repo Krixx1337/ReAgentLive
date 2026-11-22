@@ -18,53 +18,54 @@
 #include <vector>
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/name_pool.h"
-#include "SDK/CoreUObject_classes.hpp"
 #include "reagentlive/packs/ue/agent_ue_internal.h"
 
 namespace reagentlive::ue {
 namespace {
-bool SameName(const SDK::UObject* object, std::string_view expected) {
+bool SameName(const Object* object, std::string_view expected) {
     std::string name;
-    return FullName(object->Name, name) == expected;
+    return FullName(ObjectName(object), name) == expected;
 }
 }
 
-SDK::UFunction* FindFunction(const SDK::UStruct* start, std::string_view owner, std::string_view name,
-                             const Context& pack, const SDK::UStruct** declaring) {
+const Object* FindFunction(const Object* start, std::string_view owner, std::string_view name,
+                           const Context& pack, const Object** declaring) {
     unsigned depth = 0;
-    for (const SDK::UStruct* type = start; type && depth < MaxClassDepth && pack.object(type);
-         type = type->SuperStruct, ++depth) {
+    for (const Object* type = start; type && depth < MaxClassDepth && pack.object(type);
+         type = SuperStruct(type), ++depth) {
         if (!owner.empty() && !SameName(type, owner)) continue;
         unsigned children = 0;
-        for (SDK::UField* field = type->Children; field && children < MaxChildren && pack.object(field);
-             field = field->Next, ++children)
-            if (field->HasTypeFlag(SDK::EClassCastFlags::Function) && SameName(field, name)) {
+        for (const Object* field = FirstChild(type); field && children < MaxChildren && pack.object(field);
+             field = NextChild(field), ++children)
+            if (IsA(field, cast::Function) && SameName(field, name)) {
                 if (declaring) *declaring = type;
-                return static_cast<SDK::UFunction*>(field);
+                return field;
             }
     }
     return nullptr;
 }
 
+std::string FieldTypeName(FieldPtr field, const Host& host) {
+    const FieldClassPtr type = FieldClass(field);
+    if (!host.readable(type, FieldClassBytes())) return {};
+    return NameOf(FieldClassName(type));
+}
 
-bool PlainData(const SDK::FProperty* property, const Host& host) {
-    const auto flagsOf = [](const SDK::FProperty* p) { return static_cast<uint64_t>(p->PropertyFlags); };
+bool PlainData(FieldPtr property, const Host& host) {
+    const auto flagsOf = [](FieldPtr p) { return PropertyFlags(p); };
     // A struct's members, its super structs' included; -1 for anything else.
-    const auto membersOf = [&](const SDK::FProperty* p, const auto& visit) -> int {
-        if (!host.readable(p->ClassPrivate, sizeof(SDK::FFieldClass)) ||
-            View(NameOf(p->ClassPrivate->Name)) != "StructProperty" || !host.readable(p, sizeof(SDK::FStructProperty)))
-            return -1;
+    const auto membersOf = [&](FieldPtr p, const auto& visit) -> int {
+        if (FieldTypeName(p, host) != "StructProperty" || !host.readable(p, TypedBytes())) return -1;
         const auto& pack = Pack(host);
         int count = 0;
         unsigned depth = 0;
-        for (const SDK::UStruct* type = static_cast<const SDK::FStructProperty*>(p)->Struct; type;
-             type = type->SuperStruct, ++depth) {
+        for (const Object* type = StructOf(p); type; type = SuperStruct(type), ++depth) {
             if (depth >= MaxClassDepth || !pack.object(type)) return -1;
             unsigned children = 0;
-            const SDK::FField* field = type->ChildProperties;
-            for (; field && children < MaxChildren; field = field->Next, ++children) {
-                if (!host.readable(field, sizeof(SDK::FProperty))) return -1;
-                visit(static_cast<const SDK::FProperty*>(field));
+            FieldPtr field = ChildProperties(type);
+            for (; field && children < MaxChildren; field = FieldNext(field), ++children) {
+                if (!host.readable(field, PropertyBytes())) return -1;
+                visit(field);
                 ++count;
             }
             if (field) return -1;
@@ -84,34 +85,34 @@ struct FieldText {
 };
 
 // The struct a StructProperty holds, as a ref the client can pass to Fields.
-void DescribeStruct(const SDK::FField* field, Ref& structType, std::string& structName, const Context& pack,
+void DescribeStruct(FieldPtr field, Ref& structType, std::string& structName, const Context& pack,
                     const Host& host) {
-    if (!host.readable(field, sizeof(SDK::FStructProperty))) return;
-    const SDK::UStruct* type = static_cast<const SDK::FStructProperty*>(field)->Struct;
+    if (!host.readable(field, TypedBytes())) return;
+    const Object* type = StructOf(field);
     const Ref ref = Identify(type, pack);
-    if (!ref.address || !type->IsA(SDK::EClassCastFlags::Struct)) return;
+    if (!ref.address || !IsA(type, cast::Struct)) return;
     structType = ref;
-    structName = NameOf(type->Name);
+    structName = NameOf(ObjectName(type));
 }
 
 // A map's key and value or a set's element, and the element layout when it
 // passes ContainerLayoutValid (stride stays 0 otherwise).
-void DescribeContainer(const SDK::FField* field, bool map, FieldText& entry, const Context& pack, const Host& host) {
+void DescribeContainer(FieldPtr field, bool map, FieldText& entry, const Context& pack, const Host& host) {
     const auto* base = reinterpret_cast<const uint8_t*>(field);
-    if (!host.readable(base, static_cast<uint32_t>(map ? Engine().mapLayout : Engine().setLayout) + sizeof(ContainerLayout))) return;
-    const auto inner = [&](const SDK::FProperty* property, std::string& type, uint32_t& size, Ref& structType,
+    if (!host.readable(base, static_cast<uint32_t>(map ? Engine().mapLayout : Engine().setLayout) + sizeof(ContainerLayout)) ||
+        !host.readable(field, TypedBytes())) return;
+    const auto inner = [&](FieldPtr property, std::string& type, uint32_t& size, Ref& structType,
                            std::string& structName) {
-        if (!host.readable(property, sizeof(SDK::FProperty)) ||
-            !host.readable(property->ClassPrivate, sizeof(SDK::FFieldClass)) || property->ElementSize <= 0) return false;
-        size = static_cast<uint32_t>(property->ElementSize);
-        type = NameOf(property->ClassPrivate->Name);
+        if (!host.readable(property, PropertyBytes()) || ElementSize(property) <= 0) return false;
+        type = FieldTypeName(property, host);
+        if (type.empty()) return false;
+        size = static_cast<uint32_t>(ElementSize(property));
         if (type == "StructProperty") DescribeStruct(property, structType, structName, pack, host);
         return true;
     };
-    const SDK::FProperty* key = map ? static_cast<const SDK::FMapProperty*>(field)->KeyProperty
-                                    : static_cast<const SDK::FSetProperty*>(field)->ElementProperty;
+    const FieldPtr key = map ? MapKey(field) : SetElement(field);
     if (!inner(key, entry.elementType, entry.numbers.elementSize, entry.structType, entry.structName)) return;
-    if (map && !inner(static_cast<const SDK::FMapProperty*>(field)->ValueProperty, entry.valueType, entry.numbers.valueSize,
+    if (map && !inner(MapValue(field), entry.valueType, entry.numbers.valueSize,
                       entry.valueStructType, entry.valueStructName)) return;
     ContainerLayout layout{};
     if (map) memcpy(&layout, base + Engine().mapLayout, sizeof(layout));
@@ -130,24 +131,24 @@ void DescribeContainer(const SDK::FField* field, bool map, FieldText& entry, con
 // nothing is trusted then.
 constexpr unsigned MaxSeenInterfaces = 64;
 template<class Visit>
-bool ForEachInterface(const SDK::UStruct* start, const Context& pack, const Host& host, Visit&& visit) {
+bool ForEachInterface(const Object* start, const Context& pack, const Host& host, Visit&& visit) {
     struct Header { const uint8_t* data; int32_t count, capacity; };
-    struct Entry { const SDK::UStruct* type; int32_t offset; };
-    // An interface class derives from CoreUObject's "Interface" (the SDK has no UInterface type).
-    const auto isInterface = [&](const SDK::UStruct* type) {
+    struct Entry { const Object* type; int32_t offset; };
+    // An interface class derives from CoreUObject's "Interface".
+    const auto isInterface = [&](const Object* type) {
         unsigned up = 0;
-        for (; type && up < MaxClassDepth && pack.object(type) && HeaderReadable(type); type = type->SuperStruct, ++up) {
-            const auto name = NameOf(type->Name);
+        for (; type && up < MaxClassDepth && pack.object(type) && HeaderReadable(type); type = SuperStruct(type), ++up) {
+            const auto name = NameOf(ObjectName(type));
             if (View(name) == "Interface") return true;
         }
         return false;
     };
     // A parent's interfaces can repeat in a child's array: visit each once.
-    const SDK::UStruct* seen[MaxSeenInterfaces]{};
+    const Object* seen[MaxSeenInterfaces]{};
     unsigned seenCount = 0;
     unsigned depth = 0;
-    for (const SDK::UStruct* type = start; type && depth < MaxClassDepth && pack.object(type);
-         type = type->SuperStruct, ++depth) {
+    for (const Object* type = start; type && depth < MaxClassDepth && pack.object(type);
+         type = SuperStruct(type), ++depth) {
         const auto* where = reinterpret_cast<const uint8_t*>(type) + Engine().interfaces;
         Header header{};
         if (!host.readable(where, sizeof(header)) || !GuardedCopy(&header, where, sizeof(header))) return false;
@@ -162,9 +163,9 @@ bool ForEachInterface(const SDK::UStruct* start, const Context& pack, const Host
             Entry& entry = entries[i];
             const bool plausible = GuardedCopy(&entry.type, at, sizeof(entry.type)) &&
                 GuardedCopy(&entry.offset, at + 8, sizeof(entry.offset)) && entry.type && pack.object(entry.type) &&
-                HeaderReadable(entry.type) && entry.type->IsA(SDK::EClassCastFlags::Class) &&
-                isInterface(entry.type) && entry.offset > 0 && type->Size > 0 &&
-                static_cast<int64_t>(entry.offset) + static_cast<int64_t>(sizeof(void*)) <= type->Size;
+                HeaderReadable(entry.type) && IsA(entry.type, cast::Class) &&
+                isInterface(entry.type) && entry.offset > 0 && StructSize(type) > 0 &&
+                static_cast<int64_t>(entry.offset) + static_cast<int64_t>(sizeof(void*)) <= StructSize(type);
             if (!plausible) return false;
         }
         for (int32_t i = 0; i < header.count; ++i) {
@@ -182,14 +183,14 @@ bool ForEachInterface(const SDK::UStruct* start, const Context& pack, const Host
 // implements, with the interface part's offset in the object.
 // `implausible`: some class's array at the layout's interfaces does not look like
 // implemented interfaces (another engine layout); nothing is trusted then.
-struct InterfaceFunction { SDK::UFunction* function; const SDK::UStruct* declaring; int32_t offset; bool implausible; };
-InterfaceFunction FindInterfaceFunction(const SDK::UObject* object, std::string_view owner, std::string_view name,
+struct InterfaceFunction { const Object* function; const Object* declaring; int32_t offset; bool implausible; };
+InterfaceFunction FindInterfaceFunction(const Object* object, std::string_view owner, std::string_view name,
                                         const Context& pack, const Host& host) {
     if (owner.empty()) return {};
     InterfaceFunction found{};
-    const bool plausible = ForEachInterface(object->Class, pack, host, [&](const SDK::UStruct* type, int32_t offset) {
-        const SDK::UStruct* declaring = nullptr;
-        if (auto* function = FindFunction(type, owner, name, pack, &declaring)) {
+    const bool plausible = ForEachInterface(ObjectClass(object), pack, host, [&](const Object* type, int32_t offset) {
+        const Object* declaring = nullptr;
+        if (const Object* function = FindFunction(type, owner, name, pack, &declaring)) {
             found = {function, declaring, offset, false};
             return false;
         }
@@ -225,29 +226,31 @@ KeptResults g_kept; // Owned call results (protocol_ue.h); constant-initialised.
 constexpr size_t MaxCallSlots = 64;
 
 // The function's parameter slots; false when the list is unreadable or too long.
-bool ParameterSlots(const SDK::UFunction* function, const Host& host, ParameterSlot* slots, size_t& count,
+bool ParameterSlots(const Object* function, const Host& host, ParameterSlot* slots, size_t& count,
                     bool& owning) {
     count = 0;
     owning = false;
     unsigned children = 0;
-    const SDK::FField* field = function->ChildProperties;
-    for (; field && children < MaxChildren && host.readable(field, sizeof(SDK::FProperty)); field = field->Next, ++children) {
-        const auto* property = static_cast<const SDK::FProperty*>(field);
-        const auto propertyFlags = static_cast<uint64_t>(property->PropertyFlags);
+    FieldPtr field = ChildProperties(function);
+    for (; field && children < MaxChildren && host.readable(field, PropertyBytes()); field = FieldNext(field), ++children) {
+        const uint64_t propertyFlags = PropertyFlags(field);
         if (!(propertyFlags & flags::Parm)) continue;
-        const int64_t size = static_cast<int64_t>(property->ElementSize) * property->ArrayDim;
-        if (count == MaxCallSlots || property->Offset < 0 || size < 0 || size > static_cast<int64_t>(MaxParams)) return false;
-        slots[count++] = {static_cast<uint32_t>(property->Offset), static_cast<uint32_t>(size), propertyFlags};
-        owning |= OwningParameter(propertyFlags, PlainData(property, host));
+        const int64_t size = static_cast<int64_t>(ElementSize(field)) * ArrayDim(field);
+        const int32_t offset = PropertyOffset(field);
+        if (count == MaxCallSlots || offset < 0 || size < 0 || size > static_cast<int64_t>(MaxParams)) return false;
+        slots[count++] = {static_cast<uint32_t>(offset), static_cast<uint32_t>(size), propertyFlags};
+        owning |= OwningParameter(propertyFlags, PlainData(field, host));
     }
     return !field;
 }
 }
 
 // No objects that unwind in this frame: SEH and C++ unwinding do not mix.
-__declspec(noinline) bool GuardedProcessEvent(SDK::UObject* object, SDK::UFunction* function, void* params) {
+__declspec(noinline) bool GuardedProcessEvent(Object* object, const Object* function, void* params) {
+    using ProcessEvent = void (*)(Object*, const Object*, void*);
     __try {
-        object->ProcessEvent(function, params);
+        const auto* vtable = *reinterpret_cast<ProcessEvent* const*>(object);
+        vtable[Engine().processEventSlot](object, function, params);
         return true;
     } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
                 EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
@@ -257,12 +260,12 @@ __declspec(noinline) bool GuardedProcessEvent(SDK::UObject* object, SDK::UFuncti
 
 Progress Call(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response) || !LayoutReady(GroupsCall, host, response)) return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    SDK::UObject* object = ResolveRequestObject(request, pack);
+    Object* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
     const auto [owner, name] = SplitFunction(request.text);
-    SDK::UFunction* function = FindFunction(object->Class, owner, name, pack);
+    const Object* function = FindFunction(ObjectClass(object), owner, name, pack);
     if (!function && FindInterfaceFunction(object, owner, name, pack, host).function) {
         // The reason fits MaxReason; why is in protocol_ue.h (Interfaces).
         Refuse(response, Status::Refused, "native interface function: see func for its implementation");
@@ -273,9 +276,10 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
         Refuse(response, Status::Refused, "function changed since parameter inspection");
         return Progress::Done;
     }
-    if (function->Size < 0 || static_cast<uint32_t>(function->Size) != request.length) {
+    const int32_t functionSize = StructSize(function);
+    if (functionSize < 0 || static_cast<uint32_t>(functionSize) != request.length) {
         Refuse(response, Status::BadRequest, "parameter block size differs from the function's",
-            static_cast<uint64_t>(function->Size < 0 ? 0 : function->Size));
+            static_cast<uint64_t>(functionSize < 0 ? 0 : functionSize));
         return Progress::Done;
     }
     ParameterSlot slots[MaxCallSlots];
@@ -286,7 +290,7 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
         return Progress::Done;
     }
     if (request.flags & CallPure) {
-        if (!EachFunctionAllowed(static_cast<uint32_t>(function->FunctionFlags))) {
+        if (!EachFunctionAllowed(FunctionFlags(function))) {
             Refuse(response, Status::Refused, "not a const or pure function: use call");
             return Progress::Done;
         }
@@ -327,22 +331,23 @@ Progress Call(const Request& request, Response& response, bool, const Host& host
     return Progress::Done;
 }
 
-Progress Function(const Request& request, Response& response, bool, const Host& host) {
+namespace {
+Progress FunctionBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read) || !LayoutReady(GroupsFunctions, host, response))
+        return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
         return Progress::Done;
     }
-    const auto* start = object->IsA(SDK::EClassCastFlags::Class)
-        ? static_cast<const SDK::UClass*>(object) : object->Class;
+    const Object* start = IsA(object, cast::Class) ? object : ObjectClass(object);
     const auto [owner, name] = SplitFunction(request.text);
-    const SDK::UStruct* declaring = nullptr;
-    const auto* function = FindFunction(start, owner, name, pack, &declaring);
+    const Object* declaring = nullptr;
+    const Object* function = FindFunction(start, owner, name, pack, &declaring);
     InterfaceFunction viaInterface{};
-    if (!function && start == object->Class) {
+    if (!function && start == ObjectClass(object)) {
         viaInterface = FindInterfaceFunction(object, owner, name, pack, host);
         if (viaInterface.implausible) {
             Refuse(response, Status::Refused, "interfaces array implausible: engine layout differs");
@@ -355,22 +360,22 @@ Progress Function(const Request& request, Response& response, bool, const Host& 
         Refuse(response, Status::NotFound, "function not found on the class chain or its interfaces");
         return Progress::Done;
     }
-    if (!host.readable(function, sizeof(SDK::UFunction))) {
+    if (!host.readable(function, FunctionBytes())) {
         Refuse(response, Status::NotReadable, "function metadata is not readable");
         return Progress::Done;
     }
     FunctionEntry entry{};
     entry.address = reinterpret_cast<uintptr_t>(function);
-    entry.exec = reinterpret_cast<uintptr_t>(function->ExecFunction);
-    entry.flags = static_cast<uint32_t>(function->FunctionFlags);
+    entry.exec = ExecFunction(function);
+    entry.flags = FunctionFlags(function);
     MEMORY_BASIC_INFORMATION page{};
     if (entry.exec && VirtualQuery(reinterpret_cast<const void*>(entry.exec), &page, sizeof(page)) &&
         page.State == MEM_COMMIT && !(page.Protect & PAGE_GUARD)) {
         entry.executable = (page.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ |
             PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
     }
-    const auto className = NameOf(declaring->Name);
-    const auto functionName = NameOf(function->Name);
+    const auto className = NameOf(ObjectName(declaring));
+    const auto functionName = NameOf(ObjectName(function));
     CopyText(entry.owner, View(className));
     CopyText(entry.name, View(functionName));
     entry.slot = -1;
@@ -396,27 +401,28 @@ Progress Function(const Request& request, Response& response, bool, const Host& 
     return Progress::Done;
 }
 
-Progress Functions(const Request& request, Response& response, bool, const Host& host) {
+Progress FunctionsBody(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read) || !LayoutReady(GroupsFunctions, host, response))
+        return Progress::Done;
     const auto* object = ResolveRequestObject(request, pack);
     if (!object) {
         Refuse(response, Status::NotFound, "object gone or not a valid object");
         return Progress::Done;
     }
-    const SDK::UStruct* type = object->IsA(SDK::EClassCastFlags::Class)
-        ? static_cast<const SDK::UClass*>(object) : object->Class;
+    const Object* start = IsA(object, cast::Class) ? object : ObjectClass(object);
     auto* entries = reinterpret_cast<FunctionNameEntry*>(response.data);
     uint32_t count = 0, matched = 0;
+    const Object* type = start;
     for (unsigned depth = 0; type && depth < MaxClassDepth && pack.object(type);
-         type = type->SuperStruct, ++depth) {
-        const auto owner = NameOf(type->Name);
+         type = SuperStruct(type), ++depth) {
+        const auto owner = NameOf(ObjectName(type));
         unsigned children = 0;
-        for (const auto* field = type->Children; field && children < MaxChildren && pack.object(field);
-             field = field->Next, ++children) {
-            if (!field->HasTypeFlag(SDK::EClassCastFlags::Function)) continue;
-            const auto name = NameOf(field->Name);
+        for (const Object* field = FirstChild(type); field && children < MaxChildren && pack.object(field);
+             field = NextChild(field), ++children) {
+            if (!IsA(field, cast::Function)) continue;
+            const auto name = NameOf(ObjectName(field));
             if (request.text[0] && !NameMatches(View(name), request.text)) continue;
             if (matched++ < request.length) continue;
             if (count == MaxFunctionsPerPage) {
@@ -432,16 +438,14 @@ Progress Functions(const Request& request, Response& response, bool, const Host&
     // Then the functions of each native interface a class implements: only on
     // the interface class, so absent from the chain above. An unreadable
     // interface array lists nothing more (func and call explain it).
-    const SDK::UStruct* start = object->IsA(SDK::EClassCastFlags::Class)
-        ? static_cast<const SDK::UClass*>(object) : object->Class;
-    if (!response.detail && start->IsA(SDK::EClassCastFlags::Class)) {
-        ForEachInterface(start, pack, host, [&](const SDK::UStruct* type, int32_t) {
-            const auto owner = NameOf(type->Name);
+    if (!response.detail && IsA(start, cast::Class)) {
+        ForEachInterface(start, pack, host, [&](const Object* type, int32_t) {
+            const auto owner = NameOf(ObjectName(type));
             unsigned children = 0;
-            for (const auto* field = type->Children; field && children < MaxChildren && pack.object(field);
-                 field = field->Next, ++children) {
-                if (!field->HasTypeFlag(SDK::EClassCastFlags::Function)) continue;
-                const auto name = NameOf(field->Name);
+            for (const Object* field = FirstChild(type); field && children < MaxChildren && pack.object(field);
+                 field = NextChild(field), ++children) {
+                if (!IsA(field, cast::Function)) continue;
+                const auto name = NameOf(ObjectName(field));
                 if (request.text[0] && !NameMatches(View(name), request.text)) continue;
                 if (matched++ < request.length) continue;
                 if (count == MaxFunctionsPerPage) {
@@ -463,9 +467,10 @@ Progress Functions(const Request& request, Response& response, bool, const Host&
 // Reflected properties of a class or struct chain, most derived first, one page per request.
 Progress FieldsBody(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read) || !LayoutReady(GroupsFields, host, response))
+        return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    const SDK::UObject* object = ResolveRequestObject(request, pack);
+    const Object* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
     const Ref before = Identify(object, pack);
     const bool signature = request.op == op::Parameters;
@@ -473,31 +478,29 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
         Refuse(response, Status::Refused, "not on the game thread");
         return Progress::Done;
     }
-    if (signature && (!object->IsA(SDK::EClassCastFlags::Function) ||
-        !host.readable(object, sizeof(SDK::UFunction)))) {
+    if (signature && (!IsA(object, cast::Function) || !host.readable(object, FunctionBytes()))) {
         Refuse(response, Status::BadRequest, "parameters require a UFunction");
         return Progress::Done;
     }
-    const SDK::UStruct* type = object->IsA(SDK::EClassCastFlags::Struct) ?
-        static_cast<const SDK::UStruct*>(object) : object->Class;
+    const Object* type = TypeOf(object);
     FieldsPageWriter page(response.data);
     bool full = false;
     uint32_t index = 0;
     unsigned depth = 0;
     // Fields: the type's object-table index, so a client cache can tell whose
     // table it is (an instance reports its class). Parameters: the block size.
-    const uint32_t blockSize = signature ? static_cast<uint32_t>(type->Size) : static_cast<uint32_t>(type->Index);
-    for (; type && depth < MaxClassDepth && pack.object(type); type = signature ? nullptr : type->SuperStruct, ++depth) {
-        const auto owner = NameOf(type->Name);
+    const uint32_t blockSize = signature ? static_cast<uint32_t>(StructSize(type)) : static_cast<uint32_t>(ObjectIndex(type));
+    for (; type && depth < MaxClassDepth && pack.object(type); type = signature ? nullptr : SuperStruct(type), ++depth) {
+        const auto owner = NameOf(ObjectName(type));
         unsigned children = 0;
-        const SDK::FField* field = type->ChildProperties;
-        for (; field && children < MaxChildren && host.readable(field, sizeof(SDK::FProperty));
-             field = field->Next, ++children) {
-            const auto* property = static_cast<const SDK::FProperty*>(field); // UE5 child properties.
-            using Flags = SDK::EPropertyFlags;
-            const auto has = [&](Flags flag) { return (property->PropertyFlags & static_cast<uint64_t>(flag)) != 0; };
-            if (signature && !has(Flags::Parm)) continue;
-            if (signature && property->Offset < 0) {
+        FieldPtr field = ChildProperties(type);
+        for (; field && children < MaxChildren && host.readable(field, PropertyBytes());
+             field = FieldNext(field), ++children) {
+            const uint64_t propertyFlags = PropertyFlags(field);
+            const auto has = [&](uint64_t flag) { return (propertyFlags & flag) != 0; };
+            const int32_t arrayDim = ArrayDim(field), offset = PropertyOffset(field);
+            if (signature && !has(flags::Parm)) continue;
+            if (signature && offset < 0) {
                 Refuse(response, Status::BadRequest, "invalid parameter offset");
                 return Progress::Done;
             }
@@ -507,37 +510,35 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
             FieldRecord& numbers = entry.numbers;
             if (signature) {
                 numbers.flags = Param;
-                if (has(Flags::OutParm)) numbers.flags |= Output;
-                if (has(Flags::ReturnParm)) numbers.flags |= Return;
-                if (has(Flags::ReferenceParm)) numbers.flags |= Reference;
-                if (has(Flags::ConstParm)) numbers.flags |= Const;
-                if (PlainData(property, host)) numbers.flags |= Plain;
-                if (property->ArrayDim == 1) numbers.flags |= Scalar;
+                if (has(flags::OutParm)) numbers.flags |= Output;
+                if (has(flags::ReturnParm)) numbers.flags |= Return;
+                if (has(property_flags::ReferenceParm)) numbers.flags |= Reference;
+                if (has(flags::ConstParm)) numbers.flags |= Const;
+                if (PlainData(field, host)) numbers.flags |= Plain;
+                if (arrayDim == 1) numbers.flags |= Scalar;
             }
-            const int64_t size = static_cast<int64_t>(property->ElementSize) * property->ArrayDim;
-            numbers.offset = property->Offset > 0 ? static_cast<uint32_t>(property->Offset) : 0;
+            const int64_t size = static_cast<int64_t>(ElementSize(field)) * arrayDim;
+            numbers.offset = offset > 0 ? static_cast<uint32_t>(offset) : 0;
             numbers.size = size > 0 && size <= UINT32_MAX ? static_cast<uint32_t>(size) : 0;
-            entry.name = NameOf(field->Name);
-            if (host.readable(field->ClassPrivate, sizeof(SDK::FFieldClass))) {
-                entry.type = NameOf(field->ClassPrivate->Name);
-                const bool isBool = (field->ClassPrivate->CastFlags & static_cast<uint64_t>(SDK::EClassCastFlags::BoolProperty)) != 0;
-                if (isBool && host.readable(field, sizeof(SDK::FBoolProperty))) {
-                    const auto* flag = static_cast<const SDK::FBoolProperty*>(field);
-                    numbers.offset += flag->ByteOffset;
-                    numbers.boolMask = flag->FieldMask;
+            entry.name = NameOf(FieldName(field));
+            const FieldClassPtr fieldClass = FieldClass(field);
+            if (host.readable(fieldClass, FieldClassBytes())) {
+                entry.type = NameOf(FieldClassName(fieldClass));
+                const bool isBool = (FieldClassCastFlags(fieldClass) & cast::BoolProperty) != 0;
+                const bool typed = host.readable(field, TypedBytes());
+                if (isBool && typed) {
+                    numbers.offset += BoolByteOffset(field);
+                    numbers.boolMask = BoolFieldMask(field);
                 }
-                if (entry.type == "StructProperty" && property->ArrayDim == 1)
+                if (entry.type == "StructProperty" && arrayDim == 1)
                     DescribeStruct(field, entry.structType, entry.structName, pack, host);
-                if ((entry.type == "MapProperty" || entry.type == "SetProperty") && property->ArrayDim == 1 &&
-                    host.readable(field, sizeof(SDK::FSetProperty)))
+                if ((entry.type == "MapProperty" || entry.type == "SetProperty") && arrayDim == 1 && typed)
                     DescribeContainer(field, entry.type == "MapProperty", entry, pack, host);
-                if (entry.type == "ArrayProperty" && property->ArrayDim == 1 &&
-                    host.readable(field, sizeof(SDK::FArrayProperty))) {
-                    const auto* inner = static_cast<const SDK::FArrayProperty*>(field)->InnerProperty;
-                    if (host.readable(inner, sizeof(SDK::FProperty)) &&
-                        host.readable(inner->ClassPrivate, sizeof(SDK::FFieldClass)) && inner->ElementSize > 0) {
-                        numbers.elementSize = static_cast<uint32_t>(inner->ElementSize);
-                        entry.elementType = NameOf(inner->ClassPrivate->Name);
+                if (entry.type == "ArrayProperty" && arrayDim == 1 && typed) {
+                    const FieldPtr inner = ArrayInner(field);
+                    if (host.readable(inner, PropertyBytes()) && ElementSize(inner) > 0) {
+                        entry.elementType = FieldTypeName(inner, host);
+                        if (!entry.elementType.empty()) numbers.elementSize = static_cast<uint32_t>(ElementSize(inner));
                         if (entry.elementType == "StructProperty")
                             DescribeStruct(inner, entry.structType, entry.structName, pack, host);
                     }
@@ -563,6 +564,7 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
     StillSame(before, pack, response);
     return Progress::Done;
 }
+}
 
 // An enum's names and values, one page from args[1]. Two layouts: the
 // stock TArray of {FName, int64} pairs at UEnum::Names, or two arrays and a
@@ -570,12 +572,6 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
 // FName* and int64*, bit 0 a dynamic-allocation tag, at Names - 8 and Names, the int32 count at
 // Names + 8. A layout is used only when its array is plausible and every
 // name in it decodes in the pool.
-struct EnumLayout {
-    const uint8_t* names;
-    const uint8_t* values;
-    size_t nameStride, valueStride;
-    uint32_t count;
-};
 bool EnumNamesDecode(const EnumLayout& layout) {
     for (uint32_t i = 0; i < layout.count; ++i) {
         int32_t index = 0;
@@ -586,48 +582,49 @@ bool EnumNamesDecode(const EnumLayout& layout) {
     }
     return true;
 }
-bool FindEnumLayout(const SDK::UEnum* object, EnumLayout& out) {
+bool FindEnumLayout(const Object* object, EnumLayout& out) {
     const auto* base = reinterpret_cast<const uint8_t*>(object);
-    constexpr size_t NamesOffset = offsetof(SDK::UEnum, Names);
-    static_assert(sizeof(SDK::UEnum::Names) == sizeof(ArrayHeader) && NamesOffset >= 8 &&
-                  NamesOffset + 12 <= sizeof(SDK::UEnum));
+    const int32_t namesOffset = Engine().enumNames;
+    if (namesOffset < 8) return false;
     // A pair is the FName, then the int64 at the next 8-byte boundary.
-    constexpr size_t ValueOffset = (sizeof(SDK::FName) + 7) & ~size_t{7}, PairSize = ValueOffset + sizeof(int64_t);
+    const size_t valueOffset = (NameBytes() + 7) & ~size_t{7}, pairSize = valueOffset + sizeof(int64_t);
     ArrayHeader pairs{};
-    memcpy(&pairs, base + NamesOffset, sizeof(pairs));
+    if (!GuardedCopy(&pairs, base + namesOffset, sizeof(pairs))) return false;
     if (pairs.count >= 0 && static_cast<uint32_t>(pairs.count) <= MaxEnumEntries && pairs.capacity >= pairs.count &&
         (!pairs.count || pairs.data)) {
         const auto* data = reinterpret_cast<const uint8_t*>(pairs.data);
-        out = {data, data + ValueOffset, PairSize, PairSize, static_cast<uint32_t>(pairs.count)};
+        out = {data, data + valueOffset, pairSize, pairSize, static_cast<uint32_t>(pairs.count)};
         if (EnumNamesDecode(out)) return true;
     }
     uint64_t names = 0, values = 0;
     int32_t count = 0;
-    memcpy(&names, base + NamesOffset - 8, sizeof(names));
-    memcpy(&values, base + NamesOffset, sizeof(values));
-    memcpy(&count, base + NamesOffset + 8, sizeof(count));
+    if (!GuardedCopy(&names, base + namesOffset - 8, sizeof(names)) ||
+        !GuardedCopy(&values, base + namesOffset, sizeof(values)) ||
+        !GuardedCopy(&count, base + namesOffset + 8, sizeof(count))) return false;
     names &= ~uint64_t{1};
     values &= ~uint64_t{1};
     if (count < 0 || static_cast<uint32_t>(count) > MaxEnumEntries ||
         (count && (!names || !values || (names & 7) || (values & 7)))) return false;
-    out = {reinterpret_cast<const uint8_t*>(names), reinterpret_cast<const uint8_t*>(values), sizeof(SDK::FName),
+    out = {reinterpret_cast<const uint8_t*>(names), reinterpret_cast<const uint8_t*>(values), NameBytes(),
            sizeof(int64_t), static_cast<uint32_t>(count)};
     return EnumNamesDecode(out);
 }
 
+namespace {
 Progress EnumBody(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
+    if (!PackReady(pack, host, response, Access::Read) || !LayoutReady(GroupClass | GroupEnum, host, response))
+        return Progress::Done;
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    const SDK::UObject* object = ResolveRequestObject(request, pack);
+    const Object* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
-    if (!object->IsA(SDK::EClassCastFlags::Enum) || !host.readable(object, sizeof(SDK::UEnum))) {
+    if (!IsA(object, cast::Enum) || !host.readable(object, EnumBytes())) {
         Refuse(response, Status::BadRequest, "not an enum");
         return Progress::Done;
     }
     const Ref before = Identify(object, pack);
     EnumLayout layout{};
-    if (!FindEnumLayout(static_cast<const SDK::UEnum*>(object), layout)) {
+    if (!FindEnumLayout(object, layout)) {
         Refuse(response, Status::Refused, "the enum's names match no known layout");
         return Progress::Done;
     }
@@ -651,8 +648,15 @@ Progress EnumBody(const Request& request, Response& response, bool, const Host& 
     StillSame(before, pack, response);
     return Progress::Done;
 }
+}
 
 // Off the engine's thread (Context::offThreadReads) these run under a fault guard.
+Progress Function(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&FunctionBody, request, response, first, host);
+}
+Progress Functions(const Request& request, Response& response, bool first, const Host& host) {
+    return GuardedRead(&FunctionsBody, request, response, first, host);
+}
 Progress Fields(const Request& request, Response& response, bool first, const Host& host) {
     return GuardedRead(&FieldsBody, request, response, first, host);
 }

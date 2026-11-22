@@ -18,7 +18,6 @@
 #include <vector>
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/name_pool.h"
-#include "SDK/CoreUObject_classes.hpp"
 #include "reagentlive/packs/ue/agent_ue_internal.h"
 
 namespace reagentlive::ue {
@@ -47,14 +46,13 @@ void EachPage(uint32_t from, Response& response) {
 }
 
 // Read-only by contract: const or pure, every parameter a plain output.
-bool EachCallable(const SDK::UFunction* function, const Host& host) {
-    if (!EachFunctionAllowed(static_cast<uint32_t>(function->FunctionFlags))) return false;
+bool EachCallable(const Object* function, const Host& host) {
+    if (!EachFunctionAllowed(FunctionFlags(function))) return false;
     unsigned children = 0;
-    const SDK::FField* field = function->ChildProperties;
-    for (; field && children < MaxChildren && host.readable(field, sizeof(SDK::FProperty)); field = field->Next, ++children) {
-        const auto* property = static_cast<const SDK::FProperty*>(field);
-        const auto propertyFlags = static_cast<uint64_t>(property->PropertyFlags);
-        if ((propertyFlags & flags::Parm) && !EachParameterAllowed(propertyFlags, PlainData(property, host))) return false;
+    FieldPtr field = ChildProperties(function);
+    for (; field && children < MaxChildren && host.readable(field, PropertyBytes()); field = FieldNext(field), ++children) {
+        const uint64_t propertyFlags = PropertyFlags(field);
+        if ((propertyFlags & flags::Parm) && !EachParameterAllowed(propertyFlags, PlainData(field, host))) return false;
     }
     return !field;
 }
@@ -67,29 +65,30 @@ bool EachEvaluate(const Request& request, Response& response, const Host& host) 
     const uint32_t stride = EachStride(size);
     const bool call = request.text[0] != 0;
     const auto [owner, name] = SplitFunction(request.text);
-    const SDK::UStruct* lastType = nullptr;
-    SDK::UFunction* function = nullptr;
-    const SDK::UFunction* checked = nullptr;
+    const Object* lastType = nullptr;
+    const Object* function = nullptr;
+    const Object* checked = nullptr;
     state.rows.assign(state.instances.size() * size_t{stride}, 0);
     state.rowCount = 0;
     for (const Ref& ref : state.instances) {
-        SDK::UObject* object = Resolve(ref, pack);
+        Object* object = Resolve(ref, pack);
         if (!object) continue; // Gone since the scan.
         uint8_t* row = state.rows.data() + size_t{state.rowCount} * stride;
         if (call) {
-            if (object->Class != lastType) {
-                lastType = object->Class;
+            if (ObjectClass(object) != lastType) {
+                lastType = ObjectClass(object);
                 function = FindFunction(lastType, owner, name, pack);
             }
             if (!function) continue;
             if (function != checked) {
-                if (!host.readable(function, sizeof(SDK::UFunction)) || !EachCallable(function, host)) {
+                if (!host.readable(function, FunctionBytes()) || !EachCallable(function, host)) {
                     Refuse(response, Status::Refused, "only const or pure functions with plain outputs only");
                     return false;
                 }
-                if (function->Size < 0 || static_cast<uint32_t>(function->Size) != size) {
+                const int32_t functionSize = StructSize(function);
+                if (functionSize < 0 || static_cast<uint32_t>(functionSize) != size) {
                     Refuse(response, Status::BadRequest, "parameter block size differs from the function's",
-                        static_cast<uint64_t>(function->Size < 0 ? 0 : function->Size));
+                        static_cast<uint64_t>(functionSize < 0 ? 0 : functionSize));
                     return false;
                 }
                 checked = function;
@@ -114,7 +113,8 @@ bool EachEvaluate(const Request& request, Response& response, const Host& host) 
 
 Progress Each(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response) ||
+        !LayoutReady(request.text[0] ? GroupsCall : GroupClass, host, response)) return Progress::Done;
     const std::string_view className = ClassArgument(request);
     // The instance list is kept per filter: class, outer text and outer object.
     std::string filter;
@@ -160,8 +160,8 @@ Progress Each(const Request& request, Response& response, bool first, const Host
             std::string scratch;
             for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
                 if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
-                SDK::UObject* object = TableObject(state.cursor);
-                if (!object || !HeaderReadable(object) || object->Index != state.cursor || Template(object) ||
+                Object* object = TableObject(state.cursor);
+                if (!object || !HeaderReadable(object) || ObjectIndex(object) != state.cursor || Template(object) ||
                     !ClassMatches(object, className, scratch) ||
                     !OuterMatches(request, object, scratch)) continue;
                 const Ref ref = Identify(object, pack);
@@ -192,7 +192,7 @@ namespace {
 struct ExecState {
     int32_t cursor = 0;
     bool complete = false;
-    std::vector<const SDK::UFunction*> functions;
+    std::vector<const Object*> functions;
 };
 ExecState* g_exec;
 
@@ -204,12 +204,12 @@ void ExecPage(uint32_t from, Response& response, const Context& pack) {
     for (; i < functions.size() && count < MaxExecPerPage; ++i) {
         ExecEntry& entry = entries[count++];
         entry = {};
-        const SDK::UFunction* function = functions[i];
+        const Object* function = functions[i];
         if (!pack.object(function)) continue; // Zeroed row: gone.
-        entry.exec = reinterpret_cast<uintptr_t>(function->ExecFunction);
-        CopyText(entry.name, FullName(function->Name, name));
-        if (const SDK::UObject* outer = function->Outer; outer && pack.object(outer) && HeaderReadable(outer))
-            CopyText(entry.owner, FullName(outer->Name, name));
+        entry.exec = ExecFunction(function);
+        CopyText(entry.name, FullName(ObjectName(function), name));
+        if (const Object* outer = ObjectOuter(function); outer && pack.object(outer) && HeaderReadable(outer))
+            CopyText(entry.owner, FullName(ObjectName(outer), name));
     }
     response.length = count * static_cast<uint32_t>(sizeof(ExecEntry));
     response.detail = FindDetail(static_cast<uint32_t>(functions.size()), i < functions.size() ? i : 0);
@@ -218,7 +218,8 @@ void ExecPage(uint32_t from, Response& response, const Context& pack) {
 
 Progress ExecEntries(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response) || !LayoutReady(GroupClass | GroupFunction, host, response))
+        return Progress::Done;
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
         if (!g_exec) g_exec = new (std::nothrow) ExecState;
@@ -238,11 +239,11 @@ Progress ExecEntries(const Request& request, Response& response, bool first, con
         const int32_t count = TableNum();
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
             if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
-            SDK::UObject* object = TableObject(state.cursor);
-            if (!object || !HeaderReadable(object) || object->Index != state.cursor ||
-                !object->IsA(SDK::EClassCastFlags::Function)) continue;
-            const auto* function = static_cast<const SDK::UFunction*>(object);
-            if (!(static_cast<uint32_t>(function->FunctionFlags) & flags::FunctionNative) || !function->ExecFunction) continue;
+            const Object* object = TableObject(state.cursor);
+            if (!object || !HeaderReadable(object) || ObjectIndex(object) != state.cursor ||
+                !IsA(object, cast::Function)) continue;
+            const Object* function = object;
+            if (!(FunctionFlags(function) & flags::FunctionNative) || !ExecFunction(function)) continue;
             if (state.functions.size() >= MaxExecEntries) break;
             state.functions.push_back(function);
         }

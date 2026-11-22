@@ -14,7 +14,6 @@
 #include <string_view>
 #include <vector>
 #include "reagentlive/packs/ue/agent_ue.h"
-#include "SDK/CoreUObject_classes.hpp"
 #include "reagentlive/packs/ue/agent_ue_internal.h"
 
 namespace reagentlive::ue {
@@ -22,7 +21,7 @@ namespace {
 struct ScriptArray { const uint8_t* data; int32_t count, capacity; };
 
 // The bytecode of a struct with a plausible Script array, copied with a guard.
-bool ReadScript(const SDK::UStruct* type, const Host& host, std::vector<uint8_t>& out) {
+bool ReadScript(const Object* type, const Host& host, std::vector<uint8_t>& out) {
     const auto* where = reinterpret_cast<const uint8_t*>(type) + Engine().script;
     ScriptArray script{};
     if (!host.readable(where, sizeof(script)) || !GuardedCopy(&script, where, sizeof(script))) return false;
@@ -33,24 +32,26 @@ bool ReadScript(const SDK::UStruct* type, const Host& host, std::vector<uint8_t>
 }
 
 // "Owner:Name" of a function, or "Name" without a readable outer.
-std::string FunctionText(const SDK::UObject* function, const Context& pack) {
+std::string FunctionText(const Object* function, const Context& pack) {
     std::string name, owner;
-    std::string text(FullName(function->Name, name));
-    const SDK::UObject* outer = function->Outer;
-    if (outer && pack.object(outer) && HeaderReadable(outer)) text = std::string(FullName(outer->Name, owner)) + ":" + text;
+    std::string text(FullName(ObjectName(function), name));
+    const Object* outer = ObjectOuter(function);
+    if (outer && pack.object(outer) && HeaderReadable(outer)) text = std::string(FullName(ObjectName(outer), owner)) + ":" + text;
     return text;
 }
 
 // A property's "Type Name" when the pointer is an FField whose class name ends in "Property".
 bool PropertyText(uint64_t pointer, const Host& host, std::string& out) {
-    const auto* field = reinterpret_cast<const SDK::FField*>(pointer);
-    if (!host.readable(field, sizeof(SDK::FField))) return false;
-    const SDK::FFieldClass* type = field->ClassPrivate;
-    if (!type || !host.readable(type, sizeof(SDK::FFieldClass))) return false;
+    const auto field = reinterpret_cast<FieldPtr>(pointer);
+    const uint32_t bytes = std::max<uint32_t>(static_cast<uint32_t>(Engine().fieldClass + 8),
+                                              static_cast<uint32_t>(Engine().fieldName + 8));
+    if (!host.readable(field, bytes)) return false;
+    const FieldClassPtr type = FieldClass(field);
+    if (!type || !host.readable(type, FieldClassBytes())) return false;
     std::string typeName, fieldName;
-    const auto typeText = FullName(type->Name, typeName);
+    const auto typeText = FullName(FieldClassName(type), typeName);
     if (typeText.size() < 8 || !typeText.ends_with("Property")) return false;
-    out = std::string(typeText) + " " + std::string(FullName(field->Name, fieldName));
+    out = std::string(typeText) + " " + std::string(FullName(FieldName(field), fieldName));
     return true;
 }
 
@@ -59,7 +60,7 @@ const void* g_scriptOf;
 uint32_t g_scriptSize;
 
 // Confirms each anchored candidate and keeps one entry per value.
-bool ScanFunction(const SDK::UStruct* type, const Host& host, const Context& pack) {
+bool ScanFunction(const Object* type, const Host& host, const Context& pack) {
     std::vector<uint8_t> bytes;
     if (!ReadScript(type, host, bytes)) return false;
     auto& rows = *g_scriptRows;
@@ -85,9 +86,9 @@ bool ScanFunction(const SDK::UStruct* type, const Host& host, const Context& pac
             break;
         }
         case ScriptKind::Function: {
-            const auto* object = reinterpret_cast<const SDK::UObject*>(candidate.value);
+            const auto* object = reinterpret_cast<const Object*>(candidate.value);
             const Ref ref = Identify(object, pack);
-            if (!ref.address || !object->IsA(SDK::EClassCastFlags::Function)) return;
+            if (!ref.address || !IsA(object, cast::Function)) return;
             entry.object = ref;
             entry.pointer = candidate.value;
             CopyText(entry.text, FunctionText(object, pack));
@@ -138,11 +139,12 @@ void RefsPage(uint32_t from, Response& response) {
 Progress Script(const Request& request, Response& response, bool, const Host& host) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
-    const SDK::UObject* object = ResolveRequestObject(request, pack);
+    if (!PackReady(pack, host, response) || !LayoutReady(GroupStruct | GroupClass, host, response))
+        return Progress::Done;
+    const Object* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
-    if (!object->IsA(SDK::EClassCastFlags::Struct)) { Refuse(response, Status::BadRequest, "not a function or struct"); return Progress::Done; }
-    const auto* type = static_cast<const SDK::UStruct*>(object);
+    if (!IsA(object, cast::Struct)) { Refuse(response, Status::BadRequest, "not a function or struct"); return Progress::Done; }
+    const Object* type = object;
     if (!g_scriptRows) g_scriptRows = new (std::nothrow) std::vector<ScriptEntry>;
     if (!g_scriptRows) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
     try {
@@ -157,7 +159,8 @@ Progress Script(const Request& request, Response& response, bool, const Host& ho
 
 Progress Refs(const Request& request, Response& response, bool first, const Host& host) {
     const Context& pack = Pack(host);
-    if (!PackReady(pack, host, response)) return Progress::Done;
+    if (!PackReady(pack, host, response) || !LayoutReady(GroupStruct | GroupClass, host, response))
+        return Progress::Done;
     const auto index = static_cast<int32_t>(request.args[0]);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
@@ -182,10 +185,10 @@ Progress Refs(const Request& request, Response& response, bool first, const Host
         const int32_t count = TableNum();
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
             if ((checked & 15) == 15 && budget.Spent()) return Progress::Continue;
-            SDK::UObject* object = TableObject(state.cursor);
-            if (!object || !HeaderReadable(object) || object->Index != state.cursor ||
-                !object->IsA(SDK::EClassCastFlags::Function)) continue;
-            if (!ReadScript(static_cast<const SDK::UStruct*>(object), host, state.scratch)) continue;
+            const Object* object = TableObject(state.cursor);
+            if (!object || !HeaderReadable(object) || ObjectIndex(object) != state.cursor ||
+                !IsA(object, cast::Function)) continue;
+            if (!ReadScript(object, host, state.scratch)) continue;
             const auto& bytes = state.scratch;
             uint32_t hits = 0, firstHit = 0;
             for (size_t at = 0; at + ScriptNameOperand < bytes.size(); ++at) {
@@ -199,9 +202,9 @@ Progress Refs(const Request& request, Response& response, bool first, const Host
             entry.offset = firstHit;
             entry.count = hits;
             std::string name;
-            CopyText(entry.name, FullName(object->Name, name));
-            if (const SDK::UObject* outer = object->Outer; outer && pack.object(outer) && HeaderReadable(outer))
-                CopyText(entry.owner, FullName(outer->Name, name));
+            CopyText(entry.name, FullName(ObjectName(object), name));
+            if (const Object* outer = ObjectOuter(object); outer && pack.object(outer) && HeaderReadable(outer))
+                CopyText(entry.owner, FullName(ObjectName(outer), name));
             state.rows.push_back(entry);
         }
     } catch (...) {

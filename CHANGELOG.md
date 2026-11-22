@@ -16,6 +16,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `ObjectIdentityOffset` are gone (hosts: use the layout).
 - **Skill:** `references/unreal/new-game.md`, finding a game's engine
   layout with no dump.
+- **Every Unreal op without an SDK:** the handlers read through the engine
+  layout, so `reagentlive::ue-base` has them all. Without an SDK each layout
+  group is checked on known objects before its ops run and refused with the
+  failed check otherwise; `reagentlive::ue` only adds the SDK as the layout.
+  `func` and `funcs` are reads now (off-thread hosts get them).
 - **`enum <object|Enum>`**: an enum's names and values (new op 277;
   protocol: rebuild and re-inject).
 - **Typed calls take objects:** an object or class input is `$N`, a ref or

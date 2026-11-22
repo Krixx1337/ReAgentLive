@@ -91,7 +91,7 @@ FetchContent_Declare(reagentlive GIT_REPOSITORY <repository> GIT_TAG <release ta
 FetchContent_MakeAvailable(reagentlive)
 
 target_link_libraries(my-mod PRIVATE reagentlive::ue)         # agent: core + Unreal pack
-# or, with no SDK: reagentlive::ue-base (lookups, names and census only)
+# or, with no SDK: reagentlive::ue-base (stock UE5 layout, checked at run time)
 target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal calls + CLI
 ```
 
@@ -123,8 +123,8 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | Target | Carries |
 |---|---|
 | `reagentlive::core` | `core/agent.cpp`, include root, C++23 |
-| `reagentlive::ue-base` | the SDK-free part of the Unreal pack: `agent_ue.cpp`, `agent_ue_census.cpp`, `agent_ue_globals.cpp` (defined with `ue` in `REAGENTLIVE_PACKS`), links `core`; no SDK. Ops: find, describe, object range reads, names, census, name-find ([without an SDK](commands/unreal.md#without-an-sdk)) |
-| `reagentlive::ue` | the rest of `packs/ue/agent_ue*.cpp`, links `ue-base` and builds it with the SDK as the layout's source; the consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
+| `reagentlive::ue-base` | every Unreal pack agent file, `packs/ue/agent_ue*.cpp` (defined with `ue` in `REAGENTLIVE_PACKS`), links `core`; no SDK: the stock UE5 layout, each group checked on known objects before its ops run ([without an SDK](commands/unreal.md#without-an-sdk)) |
+| `reagentlive::ue` | links `ue-base` and builds it with the host's SDK as the layout (`REAGENTLIVE_UE_SDK`, every group on); the consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
 | `reagentlive::client` | `core/client.cpp` |
 | `reagentlive::ue-client` | `packs/ue/client_ue.cpp`, links `client`; no SDK needed |
 | `reagentlive::cli` | `frontends/cli/syntax/`: the parser, without nlohmann/json |
