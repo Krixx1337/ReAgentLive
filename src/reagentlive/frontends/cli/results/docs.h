@@ -2,6 +2,7 @@
 // `help --json` prints (the verb table), so the page cannot drift from the
 // console. tests/table writes it and a test fails when the file is stale. Pure.
 #pragma once
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,6 +25,81 @@ inline std::string ArgKeys(const Json& args) {
 inline std::string Signature(const Json& row) {
     const std::string keys = ArgKeys(row.value("args", Json::array()));
     return row.at("verb").get<std::string>() + (keys.empty() ? "" : " {" + keys + "}");
+}
+
+// docs/commands/reference.md: every verb in full (args with their help, the
+// result, notes and an example call), the general notes, the shared view
+// keys and the error kinds. `table` is `help --json`; `extra` holds what the
+// table does not: {notes: [str], view: [arg], errors: [{kind, meaning, message}]}.
+inline std::string ReferenceMarkdown(const Json& table, const Json& extra) {
+    const auto cell = [](std::string text) {
+        for (size_t at = 0; (at = text.find('|', at)) != std::string::npos; at += 2) text.insert(at, "\\");
+        for (size_t at = 0; (at = text.find('\n', at)) != std::string::npos;) text.replace(at, 1, " ");
+        return text;
+    };
+    const auto heading = [&](const std::string& origin) {
+        for (const auto& item : table.value("origins", Json::array()))
+            if (item.at("origin") == origin) return item.at("title").get<std::string>();
+        return origin;
+    };
+    const auto type = [](const Json& arg) {
+        std::string text = arg.contains("enum") ? std::string() : arg.at("type").get<std::string>();
+        if (arg.contains("enum"))
+            for (const auto& word : arg.at("enum")) text += (text.empty() ? "" : "|") + word.get<std::string>();
+        return arg.value("list", false) ? "[" + text + "]" : text;
+    };
+    // One table row per arg; an object's keys follow it by path (view.limit).
+    std::function<void(std::string&, const Json&, const std::string&)> argRows = [&](std::string& out, const Json& args,
+                                                                                    const std::string& prefix) {
+        for (const auto& arg : args) {
+            const std::string key = prefix + arg.at("key").get<std::string>();
+            const std::string fallback = arg.contains("default") ? "`" + cell(arg.at("default").dump()) + "`" : "";
+            out += "| `" + key + "` | `" + cell(type(arg)) + "` | " + (arg.value("required", false) ? "yes" : "") + " | " +
+                fallback + " | " + cell(arg.value("help", std::string())) + " |\n";
+            if (arg.contains("fields")) argRows(out, arg.at("fields"), key + ".");
+        }
+    };
+    std::string out =
+        "# Verb reference\n\n"
+        "<!-- Generated from the verb table (tests/table: `reagentlive-table --write-reference "
+        "docs/commands/reference.md`). Do not edit: change the verb's row, `ViewKeys`, `GeneralNotes` or "
+        "`ErrorKinds`. -->\n\n"
+        "Every verb as the console's table holds it: its args with their help, its result, its notes and one\n"
+        "example call. A call is `{\"verb\": ..., \"args\": {...}}` with the keys below; `help` with `verb` prints the\n"
+        "same for one verb. Result keys and the notation: [result shapes](results.md); the contract:\n"
+        "[JSON-only contract](../tool-interface.md#json-only-contract).\n\n"
+        "## General notes\n\n";
+    for (const auto& note : extra.value("notes", Json::array())) out += "- " + note.get<std::string>() + "\n";
+    out += "\n## View\n\nThe shared output-shaping object: one schema, the same on every verb that takes `view`. A\n"
+           "verb takes the keys that apply to its result (its row lists them); a key it does not take is refused.\n\n"
+           "| Key | Type | Required | Default | What |\n|---|---|---|---|---|\n";
+    argRows(out, extra.value("view", Json::array()), "");
+    out += "\n## Error kinds\n\nAn error's `kind`, and the shape of its `message` (`<...>` stands for a value).\n\n"
+           "| Kind | When | Message |\n|---|---|---|\n";
+    for (const auto& kind : extra.value("errors", Json::array()))
+        out += "| `" + kind.at("kind").get<std::string>() + "` | " + cell(kind.at("meaning").get<std::string>()) + " | " +
+            cell(kind.at("message").get<std::string>()) + " |\n";
+    std::string origin;
+    for (const auto& row : table.at("rows")) {
+        const auto rowOrigin = row.at("origin").get<std::string>();
+        if (rowOrigin != origin) {
+            origin = rowOrigin;
+            out += "\n## " + heading(origin) + "\n";
+        }
+        out += "\n### " + row.at("verb").get<std::string>() + "\n\n" + row.at("summary").get<std::string>() + ".\n\n";
+        out += "Pack `" + row.at("pack").get<std::string>() + "`" +
+            (row.value("writes", false) ? "; **writes or calls**" : "") +
+            (row.value("blocks", false) ? "; blocks (left out of MCP)" : "") + ".\n\n";
+        if (!row.value("args", Json::array()).empty()) {
+            out += "| Key | Type | Required | Default | What |\n|---|---|---|---|---|\n";
+            argRows(out, row.at("args"), "");
+            out += "\n";
+        }
+        out += "Result: `" + cell(row.at("result").get<std::string>()) + "`\n\n";
+        if (row.contains("notes")) out += row.at("notes").get<std::string>() + "\n\n";
+        out += "```json\n" + row.at("example").dump() + "\n```\n";
+    }
+    return out;
 }
 
 // `table`: the result of `help --json` ({rows: [{verb, origin, summary, args, result, ...}], types, origins}).

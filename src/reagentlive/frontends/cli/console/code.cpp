@@ -115,11 +115,11 @@ std::expected<std::optional<touch::Piece>, std::string> UnlistedPiece(Session& s
 } // namespace
 void RunDisasm(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "disasm needs read-batch");
+    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "disasm needs read-batch");
     const Client::Hold hold(client);
     uint64_t address = command.request.address;
     auto function = FunctionAt(session, address);
-    if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
+    if (!function) return JsonError(session, jsonCommand, ErrorKind::Unwind, function.error());
     // --function with no entry holding the address (a leaf function, or an
     // image whose directory leaves code out): walk from the address instead.
     const bool walk = command.function && !*function;
@@ -131,11 +131,11 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     if (const Module* module = walk ? ModuleAt(address, modules) : nullptr) {
         bool follows = false;
         auto held = UnlistedPiece(session, *module, address, &follows);
-        if (!held) return JsonError(session, jsonCommand, "unwind", held.error());
+        if (!held) return JsonError(session, jsonCommand, ErrorKind::Unwind, held.error());
         if (*held && !follows) piece = *held;
     }
     if (piece && !command.file.empty() && !command.resume)
-        return JsonError(session, jsonCommand, "start", "the address lies " + save::Hex(address - piece->start) +
+        return JsonError(session, jsonCommand, ErrorKind::Start, "the address lies " + save::Hex(address - piece->start) +
             " bytes into unlisted code that starts at " + save::Hex(piece->start) + ": save from the function's start "
             "(junk bytes may lead the piece), or set resume to save from the address");
     // Read-only: inside a loaded module, in a section that is not writable.
@@ -178,19 +178,19 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         return listing;
     };
     auto listing = list(address, command.limit, walk, command.follow);
-    if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+    if (!listing) return JsonError(session, jsonCommand, ErrorKind::Read, listing.error());
     // An entry whose start does not decode (a packed image's, a few bytes
     // early): list from the address given instead, still bounded by the entry.
     if (listing->rows.empty() && address != command.request.address) {
         address = command.request.address;
         listing = list(address, command.limit, false, command.follow);
-        if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+        if (!listing) return JsonError(session, jsonCommand, ErrorKind::Read, listing.error());
     }
     // An entry shorter than one instruction (a one-byte decoy over real
     // code): no entry holds the address, so walk from it as for unlisted code.
     if (command.function && !walk && dis::ShorterThanOne(*listing)) {
         listing = list(address, command.limit, true, command.follow);
-        if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+        if (!listing) return JsonError(session, jsonCommand, ErrorKind::Read, listing.error());
     }
     auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
     if (piece) out.piece = shape::AddressRange{piece->start, piece->end};
@@ -201,14 +201,14 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             const auto& entry = (*function)->chunk ? *(*function)->chunk : (*function)->range;
             bound = " (entry " + save::Hex(entry.start) + ".." + save::Hex(entry.end) + ")";
         }
-        return JsonError(session, jsonCommand, "start", "nothing to save at " + save::Hex(address) + ": " +
+        return JsonError(session, jsonCommand, ErrorKind::Start, "nothing to save at " + save::Hex(address) + ": " +
             listing->stop + bound + "; save from an address the listing reaches (disasm without save shows it)");
     }
 
     const Module* module = ModuleAt(address, modules);
-    if (!module) return JsonError(session, jsonCommand, "module", "save needs code inside a loaded module");
+    if (!module) return JsonError(session, jsonCommand, ErrorKind::Module, "save needs code inside a loaded module");
     const auto timestamp = ImageTimestamp(session, *module);
-    if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
+    if (!timestamp) return JsonError(session, jsonCommand, ErrorKind::File, "the module's PE header is unreadable");
     // Switch tables in a part: each site, its entries' bytes and the targets
     // inside the module's code. The part's rows stop where a table after the
     // jump starts (its bytes are data, not code), so the table is saved as data.
@@ -319,7 +319,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             if (!held(target) && std::ranges::find(left, target) == left.end()) left.push_back(target);
         return {};
     };
-    if (auto added = addChunks(address); !added) return JsonError(session, jsonCommand, "unwind", added.error());
+    if (auto added = addChunks(address); !added) return JsonError(session, jsonCommand, ErrorKind::Unwind, added.error());
     // --callees: each function the first calls directly (its chunks too), once, up to the caps.
     std::vector<Addr> skipped;
     size_t calleeBytes = 0;
@@ -344,7 +344,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             // A call target is a start, even where an entry says otherwise
             // (one that begins a few bytes early); the entry bounds the end.
             auto entry = FunctionAt(session, target);
-            if (!entry) return JsonError(session, jsonCommand, "unwind", entry.error());
+            if (!entry) return JsonError(session, jsonCommand, ErrorKind::Unwind, entry.error());
             const uint64_t start = target;
             if (std::ranges::find(starts, start) != starts.end()) continue;
             auto callee = list(start, MaxFunctionDisasm, !*entry, false);
@@ -357,7 +357,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             starts.push_back(start);
             owners.push_back(0);
             listings.push_back(std::move(*callee));
-            if (auto added = addChunks(start); !added) return JsonError(session, jsonCommand, "unwind", added.error());
+            if (auto added = addChunks(start); !added) return JsonError(session, jsonCommand, ErrorKind::Unwind, added.error());
         }
     }
     // A table that one part found may lie inside another (a chunk that runs
@@ -384,7 +384,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
         const size_t n = std::min(MaxBatchReads, spans.size() - first);
         auto items = read(std::span(spans).subspan(first, n));
-        if (!items) return JsonError(session, jsonCommand, "read", items.error());
+        if (!items) return JsonError(session, jsonCommand, ErrorKind::Read, items.error());
         for (size_t i = 0; i < n && i < items->size(); ++i)
             if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
     }
@@ -417,7 +417,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         for (const auto& path : files) {
             if (path.empty()) continue;
             std::ifstream in(path);
-            if (!in && !command.labels.empty()) return JsonError(session, jsonCommand, "file", "cannot read " + command.labels);
+            if (!in && !command.labels.empty()) return JsonError(session, jsonCommand, ErrorKind::File, "cannot read " + command.labels);
             for (std::string text; in && std::getline(in, text);)
                 if (auto row = ParseLabel(text, *module, *timestamp)) rows.push_back(std::move(*row));
         }
@@ -428,7 +428,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         if (!listings[i].rows.empty()) saved.push_back({starts[i], listings[i].rows, owners[i]});
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
     if (!file || !(file << save::Lines(*module, *timestamp, saved, data, labels)))
-        return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
+        return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
     KeepSaveSummary(out, command.file);
     uint64_t rows = 0;
     for (const auto& one : listings) rows += one.rows.size();
@@ -458,13 +458,13 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Xrefs) || !client.Supports(op::Search) || !client.Supports(op::ReadBatch))
-        return JsonError(session, jsonCommand, "unsupported", "xrefs needs an agent with xrefs, search and read-batch");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "xrefs needs an agent with xrefs, search and read-batch");
     const uint64_t target = command.request.address;
     const Module* found = command.target.empty() ? ModuleAt(target, LoadedModules(session)) :
         text::ModuleNamed(command.target, LoadedModules(session));
     if (!found && !command.target.empty() && RefreshModules(session))
         found = text::ModuleNamed(command.target, LoadedModules(session));
-    if (!found) return JsonError(session, jsonCommand, "module", command.target.empty() ?
+    if (!found) return JsonError(session, jsonCommand, ErrorKind::Module, command.target.empty() ?
         "the address lies in no loaded module; name one with module" : "no loaded module with that name");
     const Module module = *found; // The list may be re-read below.
 
@@ -503,7 +503,7 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
             pad.push_back(static_cast<size_t>(from - (relatives[i] - xref::Before)));
         }
         auto items = read(spans);
-        if (!items) return JsonError(session, jsonCommand, "read", items.error());
+        if (!items) return JsonError(session, jsonCommand, ErrorKind::Read, items.error());
         for (size_t i = 0; i < spans.size(); ++i) {
             const uint64_t field = relatives[first + i];
             if (i >= items->size() || !(*items)[i]) {
@@ -522,7 +522,7 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
     for (size_t i = 0; i < hits.size(); ++i) {
         if (hits[i].kind == "unknown" && !command.all) continue;
         auto function = FunctionAt(session, hits[i].instruction.value_or(hits[i].field));
-        if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
+        if (!function) return JsonError(session, jsonCommand, ErrorKind::Unwind, function.error());
         functions[i] = *function;
     }
     // Code hits no entry lists: the piece holding the instruction, as touches gives it.
@@ -530,7 +530,7 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
     for (size_t i = 0; i < hits.size(); ++i) {
         if (functions[i] || hits[i].kind == "unknown" || hits[i].kind == "pointer") continue;
         auto piece = UnlistedPiece(session, module, hits[i].instruction.value_or(hits[i].field));
-        if (!piece) return JsonError(session, jsonCommand, "unwind", piece.error());
+        if (!piece) return JsonError(session, jsonCommand, ErrorKind::Unwind, piece.error());
         pieces[i] = *piece;
     }
     Emit(session, jsonCommand, MakeXrefs(target, module, hits, functions, command.all,
@@ -538,20 +538,20 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
 }
 void RunTouches(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "touches needs read-batch");
+    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "touches needs read-batch");
     const uint64_t address = command.request.address;
     const Module* found = ModuleAt(address, LoadedModules(session));
-    if (!found) return JsonError(session, jsonCommand, "module", "the address lies in no loaded module");
+    if (!found) return JsonError(session, jsonCommand, ErrorKind::Module, "the address lies in no loaded module");
     const Module module = *found;
     auto layout = LayoutOf(session, module);
-    if (!layout) return JsonError(session, jsonCommand, "unwind", layout.error());
+    if (!layout) return JsonError(session, jsonCommand, ErrorKind::Unwind, layout.error());
     auto& table = session.unwindTables[module.base];
     if (!table) table = std::make_unique<unwind::Table>(AgentRead(session), module, (*layout)->exception);
     const Client::Hold hold(client);
     const auto started = Clock::now();
     const uint64_t from = address - std::min(address - module.base, command.range), to = address + command.range;
     auto ranges = table->Between(from, to);
-    if (!ranges) return JsonError(session, jsonCommand, "unwind", ranges.error());
+    if (!ranges) return JsonError(session, jsonCommand, ErrorKind::Unwind, ranges.error());
     // The executable sections' parts of [from, to): code no entry lists is scanned too.
     std::vector<unwind::Range> executable;
     for (const auto& section : (*layout)->sections) {
@@ -602,7 +602,7 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
             spans.push_back({at, std::min<uint64_t>(MaxRead - sizeof(Status), high - at)});
             at += spans.back().length;
             auto items = read(spans);
-            if (!items) return JsonError(session, jsonCommand, "read", items.error());
+            if (!items) return JsonError(session, jsonCommand, ErrorKind::Read, items.error());
             for (size_t i = 0; i < spans.size() && i < items->size(); ++i)
                 if ((*items)[i]) std::copy((*items)[i]->begin(), (*items)[i]->end(), code.begin() + (spans[i].address - low));
         }
@@ -614,7 +614,7 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
             static_cast<size_t>(range.end - range.start)), range.start, command.offsets);
         if (uses.empty()) continue;
         auto function = FunctionAt(session, range.start);
-        if (!function) return JsonError(session, jsonCommand, "unwind", function.error());
+        if (!function) return JsonError(session, jsonCommand, ErrorKind::Unwind, function.error());
         const unwind::Range whole = *function ? (*function)->range : unwind::Range{range.start, range.end};
         auto& row = functions[whole.start];
         row.start = whole.start;

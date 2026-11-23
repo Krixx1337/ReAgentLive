@@ -87,7 +87,7 @@ std::expected<shape::Stats, std::string> BuildStats(const std::filesystem::path&
 
 void RunStats(Session& session, const Command& command, std::string_view jsonCommand) {
     auto stats = BuildStats(session.usage.path, session.verbs, command, session.usage.session);
-    if (!stats) return JsonError(session, jsonCommand, "validation", stats.error());
+    if (!stats) return JsonError(session, jsonCommand, ErrorKind::Validation, stats.error());
     Emit(session, jsonCommand, std::move(*stats));
 }
 
@@ -142,7 +142,7 @@ std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, s
 
 void RunHelp(Session& session, const Command& command, std::string_view jsonCommand) {
     auto help = BuildHelp(session.verbs, session.origins, session.tableHash, command);
-    if (!help) return JsonError(session, jsonCommand, "schema", help.error());
+    if (!help) return JsonError(session, jsonCommand, ErrorKind::Schema, help.error());
     Emit(session, jsonCommand, std::move(*help));
 }
 
@@ -235,7 +235,7 @@ std::expected<Command, Json> BuildLine(std::span<const Verb> verbs, const InputL
         const auto closest = check::NearestVerbs(verbs, input.name);
         for (size_t i = 0; i < closest.size(); ++i) message += (i ? ", " : " (did you mean ") + closest[i];
         message += closest.empty() ? " (help lists them)" : "?)";
-        return std::unexpected(Json{{"kind", "schema"}, {"message", message}});
+        return std::unexpected(Json{{"kind", KindName(ErrorKind::Schema)}, {"message", message}});
     }
     auto args = CheckCall(*verb, input.Args());
     if (!args) return std::unexpected(RefusalJson(*verb, input.Args(), args.error()));
@@ -260,7 +260,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
     Client& client = session.client;
     const Request& request = command.request;
     if (!client.Supports(request.op))
-        return JsonError(session, jsonCommand, "unsupported", "agent does not support this operation");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support this operation");
     switch (request.op) {
     case op::Read: {
         auto bytes = client.Read(request.address, request.length);
@@ -319,7 +319,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
         if (!written) {
             if (found.empty()) return CommandError(session, jsonCommand, written.error());
             session.failed = true;
-            return PrintJson(session, {{"command", jsonCommand}, {"ok", false}, {"error", {{"kind", "agent"},
+            return PrintJson(session, {{"command", jsonCommand}, {"ok", false}, {"error", {{"kind", KindName(ErrorKind::Agent)},
                 {"message", written.error().message}, {"reason", written.error().reason},
                 {"found", format_detail::Hex(found, found.size())}}}});
         }
@@ -337,7 +337,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
         return Emit(session, jsonCommand, std::move(result));
     }
     }
-    JsonError(session, jsonCommand, "unsupported", "unsupported operation");
+    JsonError(session, jsonCommand, ErrorKind::Unsupported, "unsupported operation");
 }
 
 // Commands that make several round trips run held, so they finish in as few
@@ -448,14 +448,14 @@ void RunBatch(Session& session, const Command& command, std::string_view jsonCom
 // its own) with its envelope captured into a line; then the report.
 void RunPlan(Session& session, const Command& command, std::string_view jsonCommand) {
     std::ifstream in(command.file, std::ios::binary);
-    if (!in) return JsonError(session, jsonCommand, "file", "plan: cannot read " + command.file);
+    if (!in) return JsonError(session, jsonCommand, ErrorKind::File, "plan: cannot read " + command.file);
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     auto steps = plan::Parse(text);
-    if (!steps) return JsonError(session, jsonCommand, "schema", steps.error());
+    if (!steps) return JsonError(session, jsonCommand, ErrorKind::Schema, steps.error());
     std::ofstream out;
     if (!command.target.empty()) {
         out.open(command.target, std::ios::binary | std::ios::trunc);
-        if (!out) return JsonError(session, jsonCommand, "file", "out: cannot write " + command.target);
+        if (!out) return JsonError(session, jsonCommand, ErrorKind::File, "out: cannot write " + command.target);
     }
     const auto began = Clock::now();
     const auto since = [](Clock::time_point from) {
@@ -490,7 +490,7 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
             const double ms = since(callBegan);
             session.capture = outer;
             Json envelope = records.empty() ? Json{{"command", step.verb}, {"ok", false},
-                {"error", {{"kind", "internal"}, {"message", "no result"}}}} : std::move(records.back());
+                {"error", {{"kind", KindName(ErrorKind::Internal)}, {"message", "no result"}}}} : std::move(records.back());
             Json line = {{"step", index + 1}};
             if (runs > 1) line["run"] = run + 1;
             line["at_ms"] = tenths(since(began));
@@ -526,7 +526,7 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
     if (out.is_open()) {
         out << Json{{"report", ToJson(report)}}.dump(-1, ' ', true, Json::error_handler_t::replace) << '\n';
         out.flush();
-        if (!out) return JsonError(session, jsonCommand, "file", "out: cannot write " + command.target);
+        if (!out) return JsonError(session, jsonCommand, ErrorKind::File, "out: cannot write " + command.target);
         result.file = command.target;
     } else {
         result.rows = std::move(rows);
@@ -566,7 +566,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     UsageScope usage(session, input.original, inBatch);
     if (!input.problem.empty()) {
         usage.Describe("call", Json());
-        JsonError(session, "call", "schema", input.problem);
+        JsonError(session, "call", ErrorKind::Schema, input.problem);
         return false;
     }
     if (input.meta) session.meta = true;
@@ -576,9 +576,8 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     usage.Describe(input.name, callArgs);
     // The ceiling (--packs): a verb of another pack is refused before it is parsed, inside a batch too.
     if (const Verb* row = FindVerb(session.verbs, jsonCommand); row && !(session.toolPacks & ToolPackBit(row->pack))) {
-        const auto pack = std::string(ToolPackName(row->pack));
-        JsonError(session, jsonCommand, "pack", std::string(row->name) + " is in the " + pack + " pack, outside this console's --packs " +
-            ToolPackList(session.toolPacks) + ": start it with " + pack + " in --packs");
+        JsonError(session, jsonCommand, ErrorKind::Pack,
+            refusal::OutsidePacks(row->name, ToolPackName(row->pack), ToolPackList(session.toolPacks)));
         return false;
     }
     // A host's verb: its row checks the arguments and the result, the host does the rest.
@@ -593,7 +592,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
         Json envelope;
         if (!session.config.hostCommand(client, *host, *args, envelope) || !envelope.is_object() || !envelope.contains("ok") ||
             !envelope["ok"].is_boolean()) {
-            JsonError(session, jsonCommand, "host", "host command returned no result");
+            JsonError(session, jsonCommand, ErrorKind::Host, "host command returned no result");
         } else if (envelope["ok"].get<bool>()) {
             JsonResult(session, jsonCommand, envelope.value("result", Json::object()));
         } else {
@@ -618,7 +617,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     // The table and the verbs' docs are what a client reads to call at all: never digested.
     if (parsed->kind == Kind::Help) session.input.budget = 0;
     if (inBatch && parsed->kind == Kind::Each && parsed->seconds) {
-        JsonError(session, jsonCommand, "schema", "seconds: each with seconds is not allowed in a batch");
+        JsonError(session, jsonCommand, ErrorKind::Schema, "seconds: each with seconds is not allowed in a batch");
         return false;
     }
     // A pointer chain: resolved here, then the command runs at its end.
@@ -632,7 +631,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
         auto resolved = MakeChain(parsed->request.address, *chain, LoadedModules(session));
         if (chain->broken) {
             session.failed = true;
-            Json error = {{"kind", "chain"}, {"message", "hop " + std::to_string(*chain->broken) + ": " + chain->reason},
+            Json error = {{"kind", KindName(ErrorKind::Chain)}, {"message", "hop " + std::to_string(*chain->broken) + ": " + chain->reason},
                 {"chain", ToJson(resolved)}};
             PrintJson(session, {{"command", jsonCommand}, {"ok", false}, {"error", std::move(error)}});
             return false;
@@ -723,7 +722,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
 // ends the console, so a client starts it again. Nothing is recorded.
 int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, const std::string& hash,
                const std::filesystem::path& usagePath, const std::vector<std::string>* lines,
-               const std::function<bool(std::string&)>& readStdin, std::string_view kind, std::string_view why) {
+               const std::function<bool(std::string&)>& readStdin, ErrorKind kind, std::string_view why) {
     const auto print = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
         std::fflush(stdout);
@@ -742,7 +741,7 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
     while (nextLine()) {
         const InputLine input = ReadLine(line);
         if (!input.problem.empty()) {
-            print(ErrorEnvelope("call", "schema", input.problem));
+            print(ErrorEnvelope("call", ErrorKind::Schema, input.problem));
             failed = 1;
             continue;
         }
@@ -758,14 +757,14 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
         case Kind::Help:
             if (auto help = BuildHelp(verbs, origins, hash, *parsed)) print(ResultEnvelope(name, ToJson(*help)));
             else {
-                print(ErrorEnvelope(name, "schema", help.error()));
+                print(ErrorEnvelope(name, ErrorKind::Schema, help.error()));
                 failed = 1;
             }
             break;
         case Kind::Stats:
             if (auto stats = BuildStats(usagePath, verbs, *parsed, std::nullopt)) print(ResultEnvelope(name, ToJson(*stats)));
             else {
-                print(ErrorEnvelope(name, "validation", stats.error()));
+                print(ErrorEnvelope(name, ErrorKind::Validation, stats.error()));
                 failed = 1;
             }
             break;
@@ -804,7 +803,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         std::fflush(stdout);
     };
     const auto startupError = [&](std::string_view message) {
-        printStartup(ErrorEnvelope("startup", "startup", message));
+        printStartup(ErrorEnvelope("startup", ErrorKind::Startup, message));
         return 1;
     };
     Names names;
@@ -887,7 +886,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         line = pending[pendingAt++];
         return true;
     };
-    const auto offline = [&](std::string_view why, std::string_view kind = "startup") {
+    const auto offline = [&](std::string_view why, ErrorKind kind = ErrorKind::Startup) {
         if (!oneShot) std::fprintf(stderr, "  no target: help and stats only (%.*s)\n", static_cast<int>(why.size()), why.data());
         return RunOffline(verbs, origins, tableHash, usagePath, lines, readStdin, kind, why);
     };
@@ -913,7 +912,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         client = Client::Attach(section, config.layout);
     }
-    if (!client) return offline(client.error().message, client.error().kind == Error::Kind::Busy ? "busy" : "startup");
+    if (!client) return offline(client.error().message, client.error().kind == Error::Kind::Busy ? ErrorKind::Busy : ErrorKind::Startup);
     client->SetWaitNotice([](std::chrono::milliseconds waited, bool ticking) {
         std::fprintf(stderr, "  waiting %lld s (%s)\n", static_cast<long long>(waited.count() / 1000),
             ticking ? "agent ticking, request running" : "agent not ticking");

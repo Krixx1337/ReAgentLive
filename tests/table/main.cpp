@@ -1,11 +1,13 @@
 // reagentlive-table: the verb table without a console or an agent. Prints
 // what `help --json` returns for the core's and the Unreal pack's rows (the
-// Python client's tests read it), and writes or checks the page generated
+// Python client's tests read it), and writes or checks the pages generated
 // from it.
-//   reagentlive-table                      the `help --json` result
-//   reagentlive-table --markdown           docs/commands/results.md as text
-//   reagentlive-table --write <file>       write that page
-//   reagentlive-table --check <file>       exit 1 when the file differs (stale)
+//   reagentlive-table                              the `help --json` result
+//   reagentlive-table --markdown                   docs/commands/results.md as text
+//   reagentlive-table --write <file>               write that page
+//   reagentlive-table --check <file>               exit 1 when the file differs (stale)
+//   reagentlive-table --write-reference <file>     docs/commands/reference.md, likewise
+//   reagentlive-table --check-reference <file>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -29,13 +31,20 @@ int main(int argc, char** argv) {
         std::puts(table.dump().c_str());
         return 0;
     }
-    const std::string page = ResultsMarkdown(table);
+    // What the reference adds to the table: the general notes, the view keys, the error kinds.
+    Json extra = {{"notes", GeneralNotes()}, {"view", Json::array()}, {"errors", Json::array()}};
+    for (const auto& note : UnrealNotes()) extra["notes"].push_back(note);
+    for (const auto& key : ViewKeys()) extra["view"].push_back(ArgJson(key));
+    for (const auto& kind : ErrorKinds)
+        extra["errors"].push_back({{"kind", kind.name}, {"meaning", kind.meaning}, {"message", kind.message}});
+    const bool reference = mode == "--write-reference" || mode == "--check-reference";
+    const std::string page = reference ? ReferenceMarkdown(table, extra) : ResultsMarkdown(table);
     if (mode == "--markdown") {
         std::fputs(page.c_str(), stdout);
         return 0;
     }
-    if ((mode == "--write" || mode == "--check") && argc == 3) {
-        if (mode == "--write") {
+    if ((mode == "--write" || mode == "--check" || reference) && argc == 3) {
+        if (mode == "--write" || mode == "--write-reference") {
             std::ofstream file(argv[2], std::ios::binary | std::ios::trunc);
             file << page;
             return file ? 0 : 1;
@@ -44,9 +53,11 @@ int main(int argc, char** argv) {
         std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         std::erase(text, '\r');
         if (text == page) return 0;
-        std::fprintf(stderr, "%s is stale: run reagentlive-table --write %s\n", argv[2], argv[2]);
+        std::fprintf(stderr, "%s is stale: run reagentlive-table %s %s\n", argv[2],
+            reference ? "--write-reference" : "--write", argv[2]);
         return 1;
     }
-    std::fputs("usage: reagentlive-table [--markdown | --write <file> | --check <file>]\n", stderr);
+    std::fputs("usage: reagentlive-table [--markdown | --write <file> | --check <file> | --write-reference <file> | "
+               "--check-reference <file>]\n", stderr);
     return 2;
 }

@@ -31,13 +31,13 @@ struct LabelsFile {
 
 // The file (default: the host's names file, else the console's), its lines,
 // and the module and build its rows are matched against.
-std::expected<LabelsFile, std::pair<std::string, std::string>> OpenLabels(Session& session, const Command& command) {
+std::expected<LabelsFile, std::pair<ErrorKind, std::string>> OpenLabels(Session& session, const Command& command) {
     LabelsFile file;
     file.path = !command.file.empty() ? command.file
         : !session.hostLabels.empty() ? session.hostLabels.string() : session.labels.string();
-    if (file.path.empty()) return std::unexpected(std::pair("file", "no labels file: give one"));
+    if (file.path.empty()) return std::unexpected(std::pair(ErrorKind::File, "no labels file: give one"));
     std::ifstream in(file.path, std::ios::binary);
-    if (!in) return std::unexpected(std::pair("file", "cannot open " + file.path));
+    if (!in) return std::unexpected(std::pair(ErrorKind::File, "cannot open " + file.path));
     for (std::string line; std::getline(in, line);) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (!line.empty()) file.lines.push_back(std::move(line));
@@ -45,10 +45,10 @@ std::expected<LabelsFile, std::pair<std::string, std::string>> OpenLabels(Sessio
     const auto modules = LoadedModules(session);
     const Module* module = command.target.empty() ? (modules.empty() ? nullptr : &modules.front())
                                                   : text::ModuleNamed(command.target, modules);
-    if (!module) return std::unexpected(std::pair("module", "no loaded module with that name"));
+    if (!module) return std::unexpected(std::pair(ErrorKind::Module, "no loaded module with that name"));
     file.module = *module;
     const auto timestamp = ImageTimestamp(session, file.module);
-    if (!timestamp) return std::unexpected(std::pair("module", "the module's PE header is unreadable"));
+    if (!timestamp) return std::unexpected(std::pair(ErrorKind::Module, "the module's PE header is unreadable"));
     file.timestamp = *timestamp;
     return file;
 }
@@ -138,7 +138,7 @@ std::expected<void, std::string> Rewrite(const std::string& path, std::span<cons
 void RunLabelsSign(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Search) || !client.Supports(op::ReadBatch))
-        return JsonError(session, jsonCommand, "unsupported", "labels-sign needs an agent with search and read-batch");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "labels-sign needs an agent with search and read-batch");
     auto file = OpenLabels(session, command);
     if (!file) return JsonError(session, jsonCommand, file.error().first, file.error().second);
     const Module& module = file->module;
@@ -195,14 +195,14 @@ void RunLabelsSign(Session& session, const Command& command, std::string_view js
     }
     result.searches = checker.Searches();
     if (changed)
-        if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, "file", written.error());
+        if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, ErrorKind::File, written.error());
     Emit(session, jsonCommand, std::move(result));
 }
 
 void RunLabelsPort(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Search) || !client.Supports(op::ReadBatch))
-        return JsonError(session, jsonCommand, "unsupported", "labels-port needs an agent with search and read-batch");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "labels-port needs an agent with search and read-batch");
     auto file = OpenLabels(session, command);
     if (!file) return JsonError(session, jsonCommand, file.error().first, file.error().second);
     const Module& module = file->module;
@@ -242,7 +242,7 @@ void RunLabelsPort(Session& session, const Command& command, std::string_view js
     if (!added.empty()) {
         auto lines = file->lines;
         lines.insert(lines.end(), added.begin(), added.end());
-        if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, "file", written.error());
+        if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, ErrorKind::File, written.error());
     }
     Emit(session, jsonCommand, std::move(result));
 }

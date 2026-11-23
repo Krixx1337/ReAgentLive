@@ -20,7 +20,7 @@ are under `src/reagentlive/`.
 | Know what works where, and my tier | [tiers](tiers.md) |
 | Pick how to drive it (MCP tools, console, Python, C++ client) | [clients](client.md) |
 | Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
-| Know what a command takes and returns | `help <verb>` in the console, or [result shapes](commands/results.md) |
+| Know what a command takes and returns | `help` with `verb` in the console, the [verb reference](commands/reference.md), or [result shapes](commands/results.md) |
 | Have an AI agent set it all up, or update it | [for AI agents](#for-ai-agents) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
 | Any UE5 game, no dump (T1-T2; T3 after `game-thread on`) | [Unreal example](../examples/unreal/README.md) |
@@ -61,6 +61,7 @@ the README's paste prompts send an agent there.
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `get`, labels, readable names, native members |
 | [commands/capture.md](commands/capture.md) | which command for which question about change; `get --snap`, timing an action |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
+| [commands/reference.md](commands/reference.md) | every verb in full (args with their help, result, notes, an example call), the general notes, the shared `view` keys and the error kinds, generated from the verb table |
 | [hosting.md](hosting.md) | Unreal and own-thread examples, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
 | [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
 | [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |

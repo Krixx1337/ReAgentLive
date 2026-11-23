@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "reagentlive/frontends/cli/call/refusals.h"
 #include "reagentlive/frontends/cli/results/schema.h"
 #include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/values/json.h"
@@ -795,13 +796,13 @@ inline Json ResultEnvelope(std::string_view command, Json result) {
     return {{"command", command}, {"ok", true}, {"result", std::move(result)}};
 }
 // Validation and console errors: kind and message only.
-inline Json ErrorEnvelope(std::string_view command, std::string_view kind, std::string_view message) {
-    return {{"command", command}, {"ok", false}, {"error", {{"kind", kind}, {"message", message}}}};
+inline Json ErrorEnvelope(std::string_view command, ErrorKind kind, std::string_view message) {
+    return {{"command", command}, {"ok", false}, {"error", {{"kind", KindName(kind)}, {"message", message}}}};
 }
 // Client errors add the agent's status, detail and reason.
 inline Json ErrorEnvelope(std::string_view command, const Error& error) {
-    const char* kind = error.kind == Error::Kind::Timeout ? "timeout" :
-        error.kind == Error::Kind::Attach ? "attach" : error.kind == Error::Kind::Busy ? "busy" : "agent";
+    const std::string_view kind = KindName(error.kind == Error::Kind::Timeout ? ErrorKind::Timeout :
+        error.kind == Error::Kind::Attach ? ErrorKind::Attach : error.kind == Error::Kind::Busy ? ErrorKind::Busy : ErrorKind::Agent);
     return {{"command", command}, {"ok", false}, {"error", {
         {"kind", kind}, {"message", error.message}, {"status", static_cast<uint32_t>(error.status)},
         {"detail", error.detail}, {"reason", error.reason}}}};

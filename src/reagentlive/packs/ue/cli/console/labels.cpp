@@ -50,13 +50,13 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
         ((wantVtables || wantInterfaces) && !client.Supports(ue::op::Find)) ||
         (wantInterfaces && (!client.Supports(ue::op::Function) || !client.Supports(ue::op::Functions) ||
                             !client.Supports(ue::op::DescribeMany))))
-        return JsonError(session, jsonCommand, "unsupported", "export-labels needs a newer agent for these kinds");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "export-labels needs a newer agent for these kinds");
     const auto modules = LoadedModules(session);
     const Module* module = command.target.empty() ? (modules.empty() ? nullptr : &modules.front())
                                                   : text::ModuleNamed(command.target, modules);
-    if (!module) return JsonError(session, jsonCommand, "module", "no loaded module with that name");
+    if (!module) return JsonError(session, jsonCommand, ErrorKind::Module, "no loaded module with that name");
     const auto timestamp = ImageTimestamp(session, *module);
-    if (!timestamp) return JsonError(session, jsonCommand, "module", "the module's PE header is unreadable");
+    if (!timestamp) return JsonError(session, jsonCommand, ErrorKind::Module, "the module's PE header is unreadable");
     const auto inside = [&](uint64_t address) { return address >= module->base && address - module->base < module->size; };
     std::vector<LabelRow> rows;
 
@@ -64,7 +64,7 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     // gave (user), globals peek --label confirmed and kinds not derived now
     // stay, and so does every other build's line.
     const std::string path = command.file.empty() ? session.labels.string() : command.file;
-    if (path.empty()) return JsonError(session, jsonCommand, "file", "no labels file: give one");
+    if (path.empty()) return JsonError(session, jsonCommand, ErrorKind::File, "no labels file: give one");
     std::vector<std::string> lines;
     if (std::ifstream in(path); in)
         for (std::string line; std::getline(in, line);)
@@ -206,11 +206,11 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
             for (const auto& [key, value] : row.extra.items()) line[key] = value; // A signature stays with its row.
             out << line.dump() << '\n';
         }
-        if (!out) return JsonError(session, jsonCommand, "file", "cannot write " + path);
+        if (!out) return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + path);
     }
     std::error_code error;
     std::filesystem::rename(temporary, path, error);
-    if (error) return JsonError(session, jsonCommand, "file", "cannot replace " + path + ": " + error.message());
+    if (error) return JsonError(session, jsonCommand, ErrorKind::File, "cannot replace " + path + ": " + error.message());
     Emit(session, jsonCommand, shape::ExportLabels{path, module->name, *timestamp, rows.size(), globals, users,
         execCount, vtableCount, interfaceCount, lookups, kept.otherBuilds.size(), capped});
 }

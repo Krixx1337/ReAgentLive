@@ -124,7 +124,7 @@ shape::Write TimedResult(Session& session, shape::TimedWrite row, uint32_t lengt
 // write --hold: a pin the agent writes every tick.
 void RunPin(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::Pin)) return JsonError(session, jsonCommand, "unsupported", "agent does not support hold");
+    if (!client.Supports(op::Pin)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support hold");
     const Request& request = command.request;
     PinSpec spec{};
     spec.address = request.address;
@@ -181,10 +181,10 @@ shape::TimedWrite MakeTrial(const TrialState& trial) {
 // write --undo: a trial the agent restores.
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::Trial)) return JsonError(session, jsonCommand, "unsupported", "agent does not support undo");
+    if (!client.Supports(op::Trial)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support undo");
     const Request& request = command.request;
     auto ownerSize = TrialOwnerSize(session, command.owner);
-    if (!ownerSize) return JsonError(session, jsonCommand, "validation", "write with undo refused: " + ownerSize.error());
+    if (!ownerSize) return JsonError(session, jsonCommand, ErrorKind::Validation, "write with undo refused: " + ownerSize.error());
     auto guard = ObjectGuard(session, command.owner.address);
     if (!guard) return CommandError(session, jsonCommand, guard.error());
     TrialSpec spec{};
@@ -198,7 +198,7 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
     spec.ownerSize = *ownerSize;
     spec.object = command.object;
     if (!TrialSpecValid(spec))
-        return JsonError(session, jsonCommand, "validation", spec.object ?
+        return JsonError(session, jsonCommand, ErrorKind::Validation, spec.object ?
             "write with undo refused: the target must lie within 0x1000 bytes after object" :
             "write with undo refused: the target is outside the owner; give object for a native object it points to");
     auto trial = client.TrialAdd(spec);
@@ -210,7 +210,7 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     const bool trials = client.Supports(op::Trial), pins = client.Supports(op::Pin);
-    if (!trials && !pins) return JsonError(session, jsonCommand, "unsupported", "agent does not support timed writes");
+    if (!trials && !pins) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support timed writes");
     const bool clear = command.all;
     const auto id = static_cast<uint32_t>(command.request.args[0]);
     shape::Writes result;
@@ -344,7 +344,7 @@ void PrintCapture(Session& session, std::string_view jsonCommand, bool all) {
     result.rows = WatchSamples(info->spec, *rows, gaps);
     if (!session.watchFile.empty()) {
         if (!WriteCapture(session.watchFile, WatchRanges(info->spec), result.rows))
-            return JsonError(session, jsonCommand, "file", "cannot write " + session.watchFile);
+            return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + session.watchFile);
         result.file = session.watchFile;
     }
     result.running = info->stop == WatchEnd::Running;
@@ -366,13 +366,13 @@ void RunWatch(Session& session, const Command& original, std::string_view jsonCo
     // <object>.<Field> ranges: place, size and type from reflection; guarded on the field's object.
     for (const auto& field : command.watchFields) {
         auto range = PackWatchField(session, field.object, field.path);
-        if (!range) return JsonError(session, jsonCommand, "validation", range.error());
+        if (!range) return JsonError(session, jsonCommand, ErrorKind::Validation, range.error());
         command.reads[field.range].address = range->address;
         command.reads[field.range].length = range->length;
         command.watchTypes[field.range] = range->type;
         command.guardObjects[field.range] = range->object;
     }
-    if (!client.Supports(op::Watch)) return JsonError(session, jsonCommand, "unsupported", "agent does not support watch");
+    if (!client.Supports(op::Watch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support watch");
     if (command.target == "read") return PrintCapture(session, jsonCommand, command.all);
     if (command.target == "stop") {
         if (auto stopped = client.WatchStop(); !stopped) return CommandError(session, jsonCommand, stopped.error());
@@ -391,13 +391,13 @@ void RunWatch(Session& session, const Command& original, std::string_view jsonCo
             i < command.watchTypes.size() ? command.watchTypes[i] : 0, *guard};
     }
     if (!WatchSpecValid(spec))
-        return JsonError(session, jsonCommand, "schema", "ranges exceed the row limit of " + std::to_string(MaxWatchRowBytes) + " bytes");
+        return JsonError(session, jsonCommand, ErrorKind::Schema, "ranges exceed the row limit of " + std::to_string(MaxWatchRowBytes) + " bytes");
     if (!WatchFits(spec))
-        return JsonError(session, jsonCommand, "validation", "the capture does not fit the agent's buffer: at most " +
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "the capture does not fit the agent's buffer: at most " +
             std::to_string(WatchLongestFit(spec) / 1000) + " s at this interval and row size");
     // A file is checked before the capture starts: the ranges go in as its first line.
     if (!command.file.empty() && !WriteCapture(command.file, WatchRanges(spec), {}))
-        return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
+        return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
     auto capacity = client.WatchStart(spec);
     if (!capacity) return CommandError(session, jsonCommand, capacity.error());
     session.watchFile = command.file;
@@ -490,20 +490,20 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
     if (command.label) {
         const std::string path = !command.file.empty() ? command.file
             : !session.hostLabels.empty() ? session.hostLabels.string() : session.labels.string();
-        if (path.empty()) return JsonError(session, jsonCommand, "label", "no labels file: give one with file");
+        if (path.empty()) return JsonError(session, jsonCommand, ErrorKind::Label, "no labels file: give one with file");
         const auto* module = ModuleAt(start, modules);
-        if (!module) return JsonError(session, jsonCommand, "label", "only addresses inside a loaded module can be labelled");
-        if (!values[0].read) return JsonError(session, jsonCommand, "label", "the qword is unreadable");
+        if (!module) return JsonError(session, jsonCommand, ErrorKind::Label, "only addresses inside a loaded module can be labelled");
+        if (!values[0].read) return JsonError(session, jsonCommand, ErrorKind::Label, "the qword is unreadable");
         std::string name = command.target;
         if (name.empty() && !values[0].name.empty() && !values[0].object && result.rows[0].label == "value")
             name = "FName_" + values[0].name;
-        if (name.empty()) return JsonError(session, jsonCommand, "label", "give a name with name: the value has no name hint");
+        if (name.empty()) return JsonError(session, jsonCommand, ErrorKind::Label, "give a name with name: the value has no name hint");
         const auto timestamp = ImageTimestamp(session, *module);
-        if (!timestamp) return JsonError(session, jsonCommand, "label", "the module's PE header is unreadable");
+        if (!timestamp) return JsonError(session, jsonCommand, ErrorKind::Label, "the module's PE header is unreadable");
         auto label = MakeLabel(*module, *timestamp, start, name, "global");
         std::ofstream file(path, std::ios::binary | std::ios::app);
         file << ToJson(label).dump() << '\n';
-        if (!file) return JsonError(session, jsonCommand, "label", "cannot append to " + path);
+        if (!file) return JsonError(session, jsonCommand, ErrorKind::Label, "cannot append to " + path);
         result.labelled = std::move(label);
     }
     Emit(session, jsonCommand, std::move(result));
@@ -571,7 +571,7 @@ void RunSearch(Session& session, const Command& command, std::string_view jsonCo
     if (!command.target.empty()) {
         const auto* match = text::ModuleNamed(command.target, LoadedModules(session));
         if (!match && RefreshModules(session)) match = text::ModuleNamed(command.target, LoadedModules(session));
-        if (!match) return JsonError(session, jsonCommand, "module", "no loaded module with that name");
+        if (!match) return JsonError(session, jsonCommand, ErrorKind::Module, "no loaded module with that name");
         query.from = match->base;
         query.to = match->base + match->size;
     } else if (!query.to && !query.writableOnly && !query.privateOnly) {

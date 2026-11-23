@@ -135,7 +135,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
     session.input.reads = ue::EachFunctionAllowed(function.flags);
     const auto& arguments = command.fields;
     const auto fail = [&](std::string message) {
-        JsonError(session, jsonCommand, "validation", message);
+        JsonError(session, jsonCommand, ErrorKind::Validation, message);
     };
     if (signature.size > ue::MaxParams) return fail("typed call parameter block too large");
     std::vector<uint8_t> bytes(signature.size);

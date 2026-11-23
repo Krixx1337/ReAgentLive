@@ -121,6 +121,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **A generated verb reference:** [docs/commands/reference.md](docs/commands/reference.md)
+  lists every verb with its args and their help, result, notes and an
+  example call, the shared `view` keys and every error kind with its
+  message shape. A host can check its own docs' calls against its table
+  with `tests/python/check_verb_names.py --table <console>`.
+
 - **Plan files:** `{"verb": "run", "args": {"plan": "plan.json", "out":
   "lines.jsonl"}}` runs a list of steps (`{verb, args, expect?, repeat?:
   {every, for}}`), each as its own call under the console's `--packs`, and

@@ -48,7 +48,7 @@ void RunMemSnap(Session& session, const Command& command, std::string_view jsonC
     snapshot.tick = hold.LastTick();
     snapshot.bytes = std::move(*bytes);
     if (!SaveSnap(client.AgentPid(), snapshot))
-        return JsonError(session, jsonCommand, "file", "cannot write " + SnapPath(client.AgentPid()).string());
+        return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + SnapPath(client.AgentPid()).string());
     shape::MemSnap out;
     out.address = snapshot.address;
     out.where = Locate(snapshot.address, LoadedModules(session));
@@ -60,12 +60,12 @@ void RunMemSnap(Session& session, const Command& command, std::string_view jsonC
 void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     auto before = LoadSnap(client.AgentPid());
-    if (!before) return JsonError(session, jsonCommand, "validation", "no mem-snap for this process: take one first");
+    if (!before) return JsonError(session, jsonCommand, ErrorKind::Validation, "no mem-snap for this process: take one first");
     if (before->owner != client.AgentOwner())
-        return JsonError(session, jsonCommand, "validation", "the mem-snap is from another agent instance: take a new one");
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "the mem-snap is from another agent instance: take a new one");
     const size_t size = ElementSize(command.view);
     if (before->narrowed && before->type != command.view)
-        return JsonError(session, jsonCommand, "validation", "the candidates were narrowed as " + before->type +
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "the candidates were narrowed as " + before->type +
             "; diff as " + before->type + " or take a new mem-snap");
     const Client::Hold hold(client);
     auto now = client.ReadRange(before->address, before->bytes.size());
@@ -82,7 +82,7 @@ void RunMemDiff(Session& session, const Command& command, std::string_view jsonC
         kept.candidates = diff.offsets;
         kept.narrowed = true;
         if (!SaveSnap(client.AgentPid(), kept))
-            return JsonError(session, jsonCommand, "file", "cannot write " + SnapPath(client.AgentPid()).string());
+            return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + SnapPath(client.AgentPid()).string());
         out.kept = true;
     }
     Emit(session, jsonCommand, std::move(out));

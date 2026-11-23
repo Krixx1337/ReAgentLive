@@ -252,6 +252,9 @@ if(REAGENTLIVE_BUILD_TESTS)
     add_test(NAME reagentlive.results-doc
         COMMAND reagentlive-table --check "${CMAKE_CURRENT_SOURCE_DIR}/docs/commands/results.md")
     set_tests_properties(reagentlive.results-doc PROPERTIES LABELS "reagentlive" TIMEOUT 30)
+    add_test(NAME reagentlive.reference-doc
+        COMMAND reagentlive-table --check-reference "${CMAKE_CURRENT_SOURCE_DIR}/docs/commands/reference.md")
+    set_tests_properties(reagentlive.reference-doc PROPERTIES LABELS "reagentlive" TIMEOUT 30)
     # The console without the pack, built beside the default one: the proof
     # that the core console does not lean on the pack (the example's main).
     add_executable(reagentlive-core-console examples/own_thread/console.cpp
@@ -318,6 +321,14 @@ if(REAGENTLIVE_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_core_console.py"
                 --console "$<TARGET_FILE:reagentlive-core-console>" --table "$<TARGET_FILE:reagentlive-table>")
         set_tests_properties(reagentlive.core-console PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # Every verb and arg the docs and the skill name is in the table (and the checker's own tests).
+        add_test(NAME reagentlive.verb-names
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/check_verb_names.py"
+                --table "$<TARGET_FILE:reagentlive-table>")
+        set_tests_properties(reagentlive.verb-names PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        add_test(NAME reagentlive.verb-names-check
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_verb_names.py")
+        set_tests_properties(reagentlive.verb-names-check PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         # Engine offsets have one home, engine_layout.h.
         add_test(NAME reagentlive.engine-layout
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_engine_layout.py")

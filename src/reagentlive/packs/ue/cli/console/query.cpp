@@ -120,7 +120,7 @@ Result<shape::GameThread> SendGameThread(Session& session, const Request& reques
 // game-thread on|off: one request.
 void RunGameThread(Session& session, const Command& command, std::string_view jsonCommand) {
     if (!session.client.Supports(ue::op::GameThread))
-        return JsonError(session, jsonCommand, "unsupported", "this agent's host has no game-thread tick");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "this agent's host has no game-thread tick");
     auto out = SendGameThread(session, command.request);
     if (!out) return CommandError(session, jsonCommand, out.error());
     Emit(session, jsonCommand, std::move(*out));
@@ -129,7 +129,7 @@ void RunGameThread(Session& session, const Command& command, std::string_view js
 // enum <object|Enum>: the names and values, named in one names request.
 void RunEnum(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(ue::op::Enum)) return JsonError(session, jsonCommand, "unsupported", "agent does not support enum");
+    if (!client.Supports(ue::op::Enum)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support enum");
     Ref object = ue::GetRef(command.request);
     if (!command.className.empty()) {
         auto found = ue::Find(client, command.className, {"Enum", 0, true});
@@ -407,7 +407,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
              std::string_view jsonCommand) {
     Client& client = session.client;
     session.input.reads = true; // Fields, or a function that must be const or pure: safe to run again.
-    const auto fail = [&](std::string message) { JsonError(session, jsonCommand, "validation", message); };
+    const auto fail = [&](std::string message) { JsonError(session, jsonCommand, ErrorKind::Validation, message); };
     auto type = ResolveClass(session, command.className);
     if (!type) return CommandError(session, jsonCommand, type.error());
     // --where's field is read as one more column, hidden unless asked for.
@@ -802,13 +802,13 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
 
 void RunEntries(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(ue::op::Entries)) return JsonError(session, jsonCommand, "unsupported", "agent does not support entries");
+    if (!client.Supports(ue::op::Entries)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support entries");
     const auto object = ue::GetRef(command.request);
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, jsonCommand, fields.error());
     std::string why;
     const auto* field = FindField(session.names, *fields, command.target, why);
-    if (!field) return JsonError(session, jsonCommand, "field", why);
+    if (!field) return JsonError(session, jsonCommand, ErrorKind::Field, why);
     ue::ContainerKind kind{};
     uint32_t stride = 0;
     if (field->type == "ArrayProperty" && field->elementSize) {
@@ -817,9 +817,9 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     } else if (field->type == "SetProperty" || field->type == "MapProperty") {
         kind = field->type == "MapProperty" ? ue::ContainerKind::Map : ue::ContainerKind::Set;
         stride = field->stride;
-        if (!stride) return JsonError(session, jsonCommand, "layout", "the element layout is unknown (failed its check); read the header raw");
+        if (!stride) return JsonError(session, jsonCommand, ErrorKind::Layout, "the element layout is unknown (failed its check); read the header raw");
     } else {
-        return JsonError(session, jsonCommand, "field", field->name + " is " + field->type + ", not an array, set or map");
+        return JsonError(session, jsonCommand, ErrorKind::Field, field->name + " is " + field->type + ", not an array, set or map");
     }
     auto page = ue::Entries(client, object, field->offset, kind, stride, command.limit);
     if (!page) return CommandError(session, jsonCommand, page.error());

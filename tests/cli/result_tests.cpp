@@ -281,6 +281,23 @@ TEST_CASE("a refused call names its key, that key's schema and a corrected examp
     CHECK(Call(R"({"verb": "batch", "args": {"calls": "read 0x10"}})").error().starts_with("calls: a list of"));
 }
 
+TEST_CASE("error kinds: one catalogue in ErrorKind's order, each with a meaning and a message shape") {
+    std::set<std::string_view> names;
+    for (size_t i = 0; i < std::size(ErrorKinds); ++i) {
+        CHECK(ErrorKinds[i].kind == static_cast<ErrorKind>(i));
+        CHECK_MESSAGE(names.insert(ErrorKinds[i].name).second, ErrorKinds[i].name);
+        CHECK_FALSE(ErrorKinds[i].meaning.empty());
+        CHECK_FALSE(ErrorKinds[i].message.empty());
+    }
+    CHECK(std::size(ErrorKinds) == static_cast<size_t>(ErrorKind::Internal) + 1);
+    CHECK(KindName(ErrorKind::Schema) == "schema");
+    CHECK(ErrorEnvelope("read", ErrorKind::File, "x")["error"]["kind"] == "file");
+    // The shared templates, as the catalogue shows them.
+    CHECK(refusal::OutsidePacks("write", "modify", "explore") ==
+          "write is in the modify pack, outside this console's --packs explore: start it with modify in --packs");
+    CHECK(refusal::Misplaced("limit", "view") == R"('limit' goes inside view: {"view": {"limit": ...}})");
+}
+
 TEST_CASE("named types: listed once in the table, by name in the rows that use them") {
     const auto table = Checked(MakeHelpTable(AllVerbs(), AllOrigins()));
     REQUIRE(table.contains("types"));
@@ -901,7 +918,7 @@ TEST_CASE("script and refs results group entries by kind") {
 
 TEST_CASE("every line is a result or an error envelope") {
     CHECK(ResultEnvelope("find", Json::object()) == Json{{"command", "find"}, {"ok", true}, {"result", Json::object()}});
-    const auto validation = ErrorEnvelope("find", "validation", "bad");
+    const auto validation = ErrorEnvelope("find", ErrorKind::Validation, "bad");
     CHECK(validation == Json{{"command", "find"}, {"ok", false}, {"error", {{"kind", "validation"}, {"message", "bad"}}}});
     const Error refused{Error::Kind::Agent, Status::NotFound, 0, "gone", "not found: gone"};
     const auto agent = ErrorEnvelope("describe", refused);

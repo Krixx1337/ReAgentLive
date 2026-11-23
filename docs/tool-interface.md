@@ -317,6 +317,15 @@ path. So JSON is the only input.
 - **Input:** `-c` takes one call, a JSON list of calls, or `@<file>` (one
   call per line, or a list), which avoids shell quoting; stdin takes one
   call (or a list) per line. `batch` takes a list of calls.
+- **One source for verb text.** The row is the only place a verb's name,
+  pack, args (with help), notes and example are written;
+  [the verb reference](commands/reference.md) is generated from it like
+  [result shapes](commands/results.md), and hand-written pages keep
+  rationale, workflows and gotchas. `check_verb_names.py` (ctest
+  `reagentlive.verb-names`) fails on a doc that names a verb or arg the
+  table lacks; a host runs it on its own docs. Error kinds and their
+  message templates are one catalogue (`ErrorKinds`, `call/refusals.h`):
+  a handler names an `ErrorKind`, never a string.
 - **Plan files for scripted runs** (`call/plan.h`): `run` executes a JSON
   list of steps (`{verb, args, expect?, repeat?}`) as its own calls and
   writes NDJSON lines and a report; the file is the replay key

@@ -99,7 +99,7 @@ std::expected<void, std::string> DecodeWarnings(Session& session, const sig::Che
 
 void RunSigFile(Session& session, const Command& command, std::string_view jsonCommand) {
     std::ifstream file(command.file, std::ios::binary);
-    if (!file) return JsonError(session, jsonCommand, "file", "cannot open " + command.file);
+    if (!file) return JsonError(session, jsonCommand, ErrorKind::File, "cannot open " + command.file);
     sig::Checker checker(AgentSearch(session), AgentRead(session), LoadedModules(session));
     std::vector<std::optional<sig::CheckResult>> outcomes;
     shape::SigFile results;
@@ -131,7 +131,7 @@ void RunSigFile(Session& session, const Command& command, std::string_view jsonC
         results.lines.push_back(std::move(row));
         outcomes.push_back(std::move(*result));
     }
-    if (results.lines.empty()) return JsonError(session, jsonCommand, "file", "no patterns in " + command.file);
+    if (results.lines.empty()) return JsonError(session, jsonCommand, ErrorKind::File, "no patterns in " + command.file);
     if (const auto winner = sig::Winner(outcomes)) results.winner = results.lines[*winner].line;
     results.searches = checker.Searches();
     Emit(session, jsonCommand, shape::SigCheckResult{std::nullopt, std::move(results)});
@@ -154,19 +154,19 @@ void RunSig(Session& session, const Command& command, std::string_view jsonComma
     Client& client = session.client;
     if (command.sigMode == Command::SigMode::Bytes) return RunSigBytes(session, command, jsonCommand);
     if (!client.Supports(op::Search) || !client.Supports(op::ReadBatch))
-        return JsonError(session, jsonCommand, "unsupported", "sig needs an agent with search and read-batch");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "sig needs an agent with search and read-batch");
     // Held: the window reads (8 per request) follow each other in as few ticks as the budget allows.
     const Client::Hold hold(client);
     if (command.sigMode == Command::SigMode::File) return RunSigFile(session, command, jsonCommand);
     const Module* module = SigModule(session, command.target);
-    if (!module) return JsonError(session, jsonCommand, "module", command.target.empty() ?
+    if (!module) return JsonError(session, jsonCommand, ErrorKind::Module, command.target.empty() ?
         "modules unavailable" : "no loaded module with that name");
     const Module chosen = *module; // The list may be re-read while checking.
     const sig::Check check{command.pattern, command.expect, command.offset, command.resolve};
     auto result = sig::Checker(AgentSearch(session), AgentRead(session), LoadedModules(session)).Run(check, chosen);
-    if (!result) return JsonError(session, jsonCommand, "validation", result.error());
+    if (!result) return JsonError(session, jsonCommand, ErrorKind::Validation, result.error());
     if (auto decoded = DecodeWarnings(session, check, *result); !decoded)
-        return JsonError(session, jsonCommand, "read", decoded.error());
+        return JsonError(session, jsonCommand, ErrorKind::Read, decoded.error());
     Emit(session, jsonCommand, shape::SigCheckResult{MakeSigCheck(check, *result, chosen, LoadedModules(session)), std::nullopt});
 }
 }

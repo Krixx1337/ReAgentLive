@@ -99,7 +99,7 @@ void Snap(Session& session, const Ref& object, const std::string& path, std::opt
     if (!bytes) return CommandError(session, jsonCommand, bytes.error());
     baseline = Snapshot{object, std::move(sorted), std::move(*bytes)};
     if (!path.empty() && !SaveSnapshot(path, *baseline))
-        return JsonError(session, jsonCommand, "snapshot", "cannot write snapshot file " + path);
+        return JsonError(session, jsonCommand, ErrorKind::Snapshot, "cannot write snapshot file " + path);
     shape::Get result;
     result.ref = ReusableRef(object);
     result.snap = shape::SnapInfo{end, path.empty() ? std::nullopt : std::optional<std::string>(path)};

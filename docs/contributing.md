@@ -64,11 +64,17 @@ never the section directly. ReAgentLive never includes host code.
    (`reagentlive_gen.py`) and the MCP tools read the row; regenerate a
    module you keep. A new argument or result type also needs its entry in
    both files' type maps (the Python tests fail until it has one).
-7. **Docs:** the command's page under `docs/commands/` and its line in the
-   [INDEX](INDEX.md#commands) lookup table. Regenerate
-   [result shapes](commands/results.md):
-   `reagentlive-table --write docs/commands/results.md` (the
-   `reagentlive.results-doc` test fails while it is stale).
+7. **Docs:** the row is the only place the verb's name, pack, args (with
+   their help), notes and example are written. Regenerate
+   [result shapes](commands/results.md) and the
+   [verb reference](commands/reference.md):
+   `reagentlive-table --write docs/commands/results.md` and
+   `reagentlive-table --write-reference docs/commands/reference.md`
+   (`reagentlive.results-doc` and `reagentlive.reference-doc` fail while
+   either is stale). The command's page under `docs/commands/` keeps its
+   rationale, workflows and gotchas and links the reference; its line goes
+   in the [INDEX](INDEX.md#commands) lookup table. A new error kind joins
+   `ErrorKinds` (`call/refusals.h`), never a string at the call site.
 
 ## Source layout
 
@@ -219,7 +225,8 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters, the background worker and search jobs, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
 | `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get` (paths, and every field with values and previews), `each` and `entries` must print the same JSON, with and without `--nonzero` and `--meta`; status keys (`unnamed`, digested or not) and stale object arguments (positional and `--outer`) must agree. Add a case here when a verb gains a value or an object argument |
 | `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, its args schema, schema refusals and their examples, help), the builders and typed values, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
-| `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |
+| `reagentlive.results-doc`, `reagentlive.reference-doc` (`tests/table/`) | [result shapes](commands/results.md) and the [verb reference](commands/reference.md) are what the table generates; `reagentlive-table` also prints `help --json` without a console |
+| `reagentlive.verb-names`, `reagentlive.verb-names-check` (`tests/python/`) | every verb and arg the docs and the skill name (JSON calls, plan steps, Python calls, MCP tool names, key paths such as `view.limit`) is in the table (`check_verb_names.py`; a host runs it on its own docs with its console), and the checker's own cases |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the class index, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |
 | `reagentlive.python-session`, `reagentlive.python-mcp`, `reagentlive.ida-labels` (`tests/python/`) | the session client and a module generated from the real table, against a scripted fake console (`fake_console.py`) that serves it (strict results, a method per verb, JSON calls, canned replies checked against their types); the MCP tools made from that table, through an in-memory client (skipped without the MCP SDK); and the IDA label importer |
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack; with the Unreal pack, the Unreal example's DLL the same way (`unreal_tests.cpp`, no engine: the `ue` pack listed, `game-thread` answering) |
@@ -289,7 +296,8 @@ Check this table before adding a fact; if it has a home, link there.
 | What the agent does next at each tier (climb, approvals) | the skill's `SKILL.md` | docs |
 | What each interface offers (MCP tools, console, Python, C++ client) and its API | [client.md](client.md) | README: one line each |
 | Which interface to pick for a task; verb → MCP tool → Python function | the skill's `references/interfaces.md` | docs |
-| A verb's arguments, flags, result keys | the verb table in code (`help <verb>`); [commands/results.md](commands/results.md) is generated from it, never edited | everything else |
+| A verb's name, pack, arguments, notes, example, result keys | the verb table in code (`help <verb>`); [commands/reference.md](commands/reference.md) and [commands/results.md](commands/results.md) are generated from it, never edited | everything else |
+| Error kinds and their message templates | `ErrorKinds` in `call/refusals.h` (listed in [the reference](commands/reference.md#error-kinds)) | handlers (they name an `ErrorKind`) |
 | A verb's behaviour and guards | its page under `commands/` | skill (links only) |
 | Which Unreal commands need the game thread | [commands/unreal.md](commands/unreal.md#off-the-engines-thread) | everywhere else (links) |
 | Console mechanics: lines, refs, `$N`, budgets, cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
@@ -322,7 +330,7 @@ path exists and that no `blob/main` URL is left in the skill.
 pages only) a `*Home of:*` line naming the facts it owns, then a
 `**TL;DR:**` of two to four plain sentences: what it is, when it matters,
 the one thing not to get wrong. Orchestrators carry only the TL;DR;
-`commands/results.md` (generated), `docs/agents/` pages and skill files
+`commands/results.md` and `commands/reference.md` (generated), `docs/agents/` pages and skill files
 carry neither. The
 TL;DR is for a person new to the project: plain words, jargon defined or
 linked. The docs test checks both lines within a page's first 15 lines.

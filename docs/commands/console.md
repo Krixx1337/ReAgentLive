@@ -87,7 +87,7 @@ string.
 - `"meta": true` and `"timing": true` beside `verb` and `args` do what the
   line flags do.
 - **`batch`** takes `"calls"`, a list of calls: `{"verb": "batch", "args":
-  {"calls": [{"verb": "read", "args": {"addr": "0x10"}}, {"verb": "base"}]}}`.
+  {"calls": [{"verb": "read", "args": {"addr": "0x10"}}, {"verb": "modules"}]}}`.
 - The envelope's `command` is the verb, as for a typed line. A host's
   verbs take JSON calls too.
 

@@ -52,12 +52,12 @@ bool Table(const Json& get, std::string_view className, std::string_view asked) 
 void RunExportAssets(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(ue::op::Find) || !client.Supports(ue::op::Fields) || !client.Supports(ue::op::ReadObject))
-        return JsonError(session, jsonCommand, "unsupported", "export-assets needs an agent with find, fields and object reads");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "export-assets needs an agent with find, fields and object reads");
     namespace fs = std::filesystem;
     const fs::path dir(command.file);
     std::error_code error;
     fs::create_directories(dir, error);
-    if (error) return JsonError(session, jsonCommand, "file", "cannot create " + command.file + ": " + error.message());
+    if (error) return JsonError(session, jsonCommand, ErrorKind::File, "cannot create " + command.file + ": " + error.message());
 
     // The objects: each class's live instances, once each, in table order.
     std::vector<std::pair<ue::Object, std::string_view>> objects; // With the class asked for.
@@ -122,7 +122,7 @@ void RunExportAssets(Session& session, const Command& command, std::string_view 
     const fs::path indexPath = dir / "index.json";
     std::ofstream out(indexPath, std::ios::binary | std::ios::trunc);
     if (!out || !(out << index.dump(1) << '\n'))
-        return JsonError(session, jsonCommand, "file", "cannot write " + indexPath.string());
+        return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + indexPath.string());
     result.index = indexPath.string();
     if (result.objects > result.rows.size()) result.omitted = result.objects - result.rows.size();
     Emit(session, jsonCommand, std::move(result));

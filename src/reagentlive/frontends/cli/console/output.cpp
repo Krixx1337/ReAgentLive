@@ -131,13 +131,13 @@ void JsonResult(Session& session, std::string_view command, Json result) {
     if (session.current) {
         const auto type = session.current->result ? session.current->result() : schema::Of<schema::Nothing>();
         if (auto problem = schema::Problem(type, result); !problem.empty())
-            return JsonError(session, command, "internal", "the result does not match help " +
+            return JsonError(session, command, ErrorKind::Internal, "the result does not match help " +
                 std::string(session.current->name) + ": " + problem);
     }
     PrintJson(session, ResultEnvelope(command, std::move(result)));
 }
 
-void JsonError(Session& session, std::string_view command, std::string_view kind, std::string_view message) {
+void JsonError(Session& session, std::string_view command, ErrorKind kind, std::string_view message) {
     session.failed = true;
     PrintJson(session, ErrorEnvelope(command, kind, message));
 }

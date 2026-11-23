@@ -127,7 +127,7 @@ template<class T> void Emit(Session& session, std::string_view command, T result
     session.chain.reset();
     JsonResult(session, command, ToJson(result));
 }
-void JsonError(Session& session, std::string_view command, std::string_view kind, std::string_view message);
+void JsonError(Session& session, std::string_view command, ErrorKind kind, std::string_view message);
 // A call refused before it ran: `error` as call/check.h RefusalJson builds it.
 void JsonRefusal(Session& session, std::string_view command, Json error);
 void CommandError(Session& session, std::string_view jsonCommand, const Error& error);

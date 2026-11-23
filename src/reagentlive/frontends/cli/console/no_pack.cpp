@@ -35,7 +35,7 @@ bool PackCommand(const Command& command) {
 }
 bool PackHeld(const Command&) { return false; }
 void RunPackCommand(Session& session, const Command&, std::string_view jsonCommand) {
-    JsonError(session, jsonCommand, "unsupported", NoPack);
+    JsonError(session, jsonCommand, ErrorKind::Unsupported, NoPack);
 }
 
 // An object-relative pin or watch has no identity to guard on.

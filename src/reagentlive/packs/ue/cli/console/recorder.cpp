@@ -123,7 +123,7 @@ void RunCalls(Session& session, const Command& original, std::string_view jsonCo
     Client& client = session.client;
     Command command = original;
     if (!client.Supports(command.request.op))
-        return JsonError(session, jsonCommand, "unsupported", "this host does not offer the call recorder");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "this host does not offer the call recorder");
     if (command.target == "start") {
         if (!command.className.empty()) {
             auto type = ResolveObjectOrClass(session, command.className);

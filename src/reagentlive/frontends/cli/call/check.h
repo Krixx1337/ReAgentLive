@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "reagentlive/frontends/cli/call/refusals.h"
 #include "reagentlive/frontends/cli/call/verb.h"
 
 namespace reagentlive::cli {
@@ -204,7 +205,7 @@ namespace check {
 // One value against its arg; an object's keys as a call's are, named by their path ("view.limit").
 inline std::optional<Refusal> Value(const Arg& arg, const Json& value, const std::string& path) {
     const auto wrong = [](const Arg& at, const Json& item, const std::string& key) {
-        return Refusal{key + ": " + Takes(at) + ", not " + item.dump(-1, ' ', true, Json::error_handler_t::replace), key};
+        return Refusal{refusal::WrongType(key, Takes(at), item.dump(-1, ' ', true, Json::error_handler_t::replace)), key};
     };
     if (arg.type != "obj") {
         if (!Fits(arg, value)) return wrong(arg, value, path);
@@ -222,8 +223,8 @@ inline std::optional<Refusal> Value(const Arg& arg, const Json& value, const std
     }
     for (const auto& field : arg.fields)
         if (field.required && !value.contains(field.key))
-            return Refusal{"missing " + path + "." + std::string(field.key) + ": " + Takes(field) +
-                (field.help.empty() ? "" : " (" + std::string(field.help) + ")"), path + "." + std::string(field.key)};
+            return Refusal{refusal::Missing(path + "." + std::string(field.key), Takes(field), field.help),
+                path + "." + std::string(field.key)};
     return std::nullopt;
 }
 }
@@ -243,21 +244,18 @@ inline std::expected<Args, Refusal> CheckCall(const Verb& verb, const Json& give
             // An object's key given as the verb's own: say where it goes.
             if (const auto path = KeyPath(verb, key); !path.empty()) {
                 const auto parent = path.substr(0, path.find('.'));
-                return Out(std::unexpect, Refusal{"'" + key + "' goes inside " + parent + ": {\"" + parent + "\": {\"" + key +
-                    "\": ...}}", path});
+                return Out(std::unexpect, Refusal{refusal::Misplaced(key, parent), path});
             }
             const Arg* closest = check::Nearest(verb, key);
-            return Out(std::unexpect, Refusal{"unknown key '" + key + "'" +
-                (closest ? " (did you mean " + std::string(closest->key) + "?)" : "") + "; " + std::string(verb.name) +
-                " takes " + ArgKeys(verb), key});
+            return Out(std::unexpect, Refusal{refusal::UnknownKey(key, closest ? closest->key : std::string_view{}, verb.name,
+                ArgKeys(verb)), key});
         }
     }
     for (const auto& arg : verb.args) {
         const std::string key(arg.key);
         if (!given.is_object() || !given.contains(key)) {
             if (arg.required)
-                return Out(std::unexpect, Refusal{"missing " + key + ": " + check::Takes(arg) +
-                    (arg.help.empty() ? "" : " (" + std::string(arg.help) + ")"), key});
+                return Out(std::unexpect, Refusal{refusal::Missing(key, check::Takes(arg), arg.help), key});
             continue;
         }
         const Json& value = given[key];
@@ -367,7 +365,7 @@ inline Json ArgJson(const Arg& arg) {
 // A refused call's error: kind schema, the message, the key at fault and its
 // part of the schema (else the whole row's args), and the corrected example.
 inline Json RefusalJson(const Verb& verb, const Json& given, const Refusal& refusal) {
-    Json error = {{"kind", "schema"}, {"message", refusal.message}};
+    Json error = {{"kind", KindName(ErrorKind::Schema)}, {"message", refusal.message}};
     const Arg* arg = refusal.key.empty() ? nullptr : FindKey(verb, refusal.key);
     if (arg) {
         error["key"] = refusal.key;

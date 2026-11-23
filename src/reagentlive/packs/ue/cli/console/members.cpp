@@ -52,9 +52,9 @@ NativeShown NativeMembers(Session& session, const Ref& object, std::span<const u
 // native file, checked against the reflected layout first.
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    const auto fail = [&](std::string message) { JsonError(session, jsonCommand, "validation", message); };
+    const auto fail = [&](std::string message) { JsonError(session, jsonCommand, ErrorKind::Validation, message); };
     if (Ue(session).nativeFile.empty()) return fail("no native file: the console's path is unknown");
-    if (!client.Supports(ue::op::Fields)) return JsonError(session, jsonCommand, "unsupported", "label needs an agent with fields");
+    if (!client.Supports(ue::op::Fields)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "label needs an agent with fields");
     Ref object = ue::GetRef(command.request);
     // A class by name is a class target; a Default__ name is an object, as a ref is.
     const std::string className = command.className.starts_with("Default__") ? std::string() : command.className;

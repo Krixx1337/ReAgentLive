@@ -51,12 +51,12 @@ void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs,
     if (page.from) {
         // A later page: the stored census, sliced; no scan, and the baselines stay.
         if (const auto problem = CensusPageProblem(Ue(session).census, Ue(session).censusBefore, filter, command.changed);
-            !problem.empty()) return JsonError(session, jsonCommand, "validation", problem);
+            !problem.empty()) return JsonError(session, jsonCommand, ErrorKind::Validation, problem);
         census = StoredCensus(*Ue(session).census);
     } else {
         if (command.changed)
             if (const auto problem = CensusBaselineProblem(Ue(session).census, filter); !problem.empty())
-                return JsonError(session, jsonCommand, "validation", problem);
+                return JsonError(session, jsonCommand, ErrorKind::Validation, problem);
         const auto started = Clock::now();
         auto scanned = ue::Census(session.client, className, {command.outerText, command.outerRef});
         if (!scanned) return CommandError(session, jsonCommand, scanned.error());
@@ -87,7 +87,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     Command command = original;
     const Request& request = command.request;
     if (!client.Supports(request.op))
-        return JsonError(session, jsonCommand, "unsupported", "agent does not support this operation");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support this operation");
     if (command.kind == Kind::Each) return RunEach(session, command, refs, structs, jsonCommand);
     if (!command.className.empty()) {
         auto type = ResolveObjectOrClass(session, command.className);
@@ -98,7 +98,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     if (command.kind == Kind::Dump) return PrintDump(session, ue::GetRef(request), refs, structs, command, baseline);
     if (command.kind == Kind::Script) {
         if (command.decode) return RunScriptDecode(session, command, jsonCommand);
-        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, "unsupported", "agent does not support script");
+        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support script");
         const auto object = ue::GetRef(request);
         auto function = ue::Function(client, object, request.text);
         if (!function) return CommandError(session, jsonCommand, function.error());
@@ -117,7 +117,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
                 if (index || !found->next) break;
                 from = found->next;
             }
-            if (!index) return JsonError(session, jsonCommand, "validation", "no pooled name is exactly '" + name + "'");
+            if (!index) return JsonError(session, jsonCommand, ErrorKind::Validation, "no pooled name is exactly '" + name + "'");
         } else if (auto names = ue::Names(client, std::span(&index, 1)); names && !names->front().empty()) {
             name = names->front();
         }
@@ -133,10 +133,10 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         if (!function) return CommandError(session, jsonCommand, function.error());
         auto signature = ue::Parameters(client, function->address);
         if (!signature) return CommandError(session, jsonCommand, signature.error());
-        if (signature->size > ue::MaxParams) return JsonError(session, jsonCommand, "validation", "parameter block too large");
+        if (signature->size > ue::MaxParams) return JsonError(session, jsonCommand, ErrorKind::Validation, "parameter block too large");
         if (command.kind != Kind::Release)
             if (const auto refusal = calls::ZeroBlockRefusal(*signature); !refusal.empty())
-                return JsonError(session, jsonCommand, "validation", refusal);
+                return JsonError(session, jsonCommand, ErrorKind::Validation, refusal);
         command.request.length = signature->size;
         memset(command.request.data, 0, signature->size);
         callSignature = std::move(*signature);
@@ -158,7 +158,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
             callSignature = std::move(*signature);
         }
         if (callSignature->size != command.request.length)
-            return JsonError(session, jsonCommand, "validation", "the block is " + std::to_string(command.request.length) +
+            return JsonError(session, jsonCommand, ErrorKind::Validation, "the block is " + std::to_string(command.request.length) +
                 " bytes; the function's is " + std::to_string(callSignature->size));
         return Emit(session, jsonCommand, MakeDryCall(command.request,
             std::span(command.request.data, command.request.length), *function));
@@ -245,7 +245,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         return Emit(session, jsonCommand, std::move(row));
     }
     }
-    JsonError(session, jsonCommand, "unsupported", "unsupported operation");
+    JsonError(session, jsonCommand, ErrorKind::Unsupported, "unsupported operation");
 }
 }
 
@@ -347,7 +347,7 @@ bool PackHeld(const Command& command) {
 
 void RunPackCommand(Session& session, const Command& given, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!HasUnreal(client)) return JsonError(session, jsonCommand, "unsupported", NoPack);
+    if (!HasUnreal(client)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, NoPack);
     // get, rows and entries take a default object by name (Default__Class), as
     // call does: found here, before they run, and passed on as a ref.
     Command command = given;
@@ -400,7 +400,7 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
         return;
     }
     if (command.kind == Kind::Get) {
-        if (!client.Supports(ue::op::Fields)) JsonError(session, jsonCommand, "unsupported", "get needs an agent with fields");
+        if (!client.Supports(ue::op::Fields)) JsonError(session, jsonCommand, ErrorKind::Unsupported, "get needs an agent with fields");
         else {
             std::vector<Ref> named; // The objects the rows name.
             RunGet(session, command, Ue(session).structs, named, jsonCommand);
@@ -409,7 +409,7 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
     }
     if (command.kind == Kind::Snap) {
         if (!client.Supports(ue::op::ReadObject) || !client.Supports(ue::op::Fields)) {
-            JsonError(session, jsonCommand, "unsupported", "get with snap needs an agent with fields and object reads");
+            JsonError(session, jsonCommand, ErrorKind::Unsupported, "get with snap needs an agent with fields and object reads");
             return;
         }
         Snap(session, ue::GetRef(command.request), command.file, Ue(session).baseline, jsonCommand);

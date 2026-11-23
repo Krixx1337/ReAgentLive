@@ -38,7 +38,7 @@ std::optional<shape::Region> RegionOf(Session& session, uint64_t address) {
 
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "vtable needs read-batch");
+    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "vtable needs read-batch");
     const Client::Hold hold(client);
     const uint64_t address = command.request.address;
     const auto modules = LoadedModules(session);
@@ -67,11 +67,11 @@ void RunVtable(Session& session, const Command& command, std::string_view jsonCo
                 if (auto part = client.Read(*table, static_cast<uint32_t>(page - page % 8))) bytes = std::move(*part);
             }
         }
-        if (!bytes) return JsonError(session, jsonCommand, "read", "the table is unreadable");
+        if (!bytes) return JsonError(session, jsonCommand, ErrorKind::Read, "the table is unreadable");
         slots = native::ReadSlots(*bytes, command.limit, [&session](uint64_t value) { return InCode(session, value); });
         if (command.bodies)
             if (auto resolved = native::ResolveBodies(AgentRead(session), slots.slots); !resolved)
-                return JsonError(session, jsonCommand, "read", resolved.error());
+                return JsonError(session, jsonCommand, ErrorKind::Read, resolved.error());
     }
     auto out = MakeVtable(address, command.offset, table, found, slots, LoadedModules(session));
     if (command.rtti) {

@@ -178,7 +178,8 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"resolve", "str", "a reference signature, \"next,field[,size]\" as labels files keep it; expect is then its target"}},
             Of<shape::SigCheckResult>, build::SigCheck,
             "Reports mismatches, diverges_at and warnings for unmasked addresses. file takes no other key and "
-            "answers file, winner (the first line that holds) and a row per line."},
+            "answers file, winner (the first line that holds) and a row per line. Options: pattern or file is the "
+            "signature; module, expect, offset and resolve say where it must land, each a field labels files keep."},
         {"sig-bytes", "core", ToolPack::Native, "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
             {{"addr", "addr", at, {}, true}, {"len", "int", "how many bytes", "64"}},
             Of<shape::SigBytes>, build::SigBytes},
@@ -247,7 +248,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Vtable>, build::Vtable, "rtti adds rtti, read from the locator in the "
             "slot before the table; complete is the whole object when addr is one of its parts. Where that slot holds "
             "no locator (no type information, or not an MSVC image; engines often build without it) it adds "
-            "rtti_error instead."},
+            "rtti_error instead. Options: count bounds what is read (not a view); offset and table say where the "
+            "table pointer is; resolve and rtti add reads."},
     };
     return verbs;
 }

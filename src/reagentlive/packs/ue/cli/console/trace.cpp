@@ -242,7 +242,7 @@ Result<void> Decode(Session& session, std::span<const uint8_t> hit, shape::Trace
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(ue::op::Call) || !client.Supports(ue::op::Parameters) || !client.Supports(ue::op::DescribeMany))
-        return JsonError(session, jsonCommand, "unsupported", "trace needs an agent with call, params and describe");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "trace needs an agent with call, params and describe");
     shape::Trace out;
     std::vector<double> ends[2];
     for (int i = 0; i < 2; ++i) {
@@ -256,7 +256,7 @@ void RunTrace(Session& session, const Command& command, std::string_view jsonCom
     for (const auto& end : command.traceEnds)
         if (!world.address && !end.literal) world = end.object;
     if (!world.address)
-        return JsonError(session, jsonCommand, "validation", "two points need ignore (an actor): the trace runs in its world");
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "two points need ignore (an actor): the trace runs in its world");
     out.start = ends[0];
     out.end = ends[1];
     out.channel = ChannelText(command.traceChannel);

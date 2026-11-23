@@ -33,9 +33,12 @@ ctest --test-dir build --output-on-failure
   `REAGENTLIVE_FORBIDDEN_NAMES`), so this repo never has to spell them.
 - `reagentlive.python-mcp` skips itself without the MCP Python SDK
   (`python -m pip install mcp`); a skip is not a pass.
-- After changing a row of the verb table, regenerate the results page:
-  `build/reagentlive-table --write docs/commands/results.md`
-  (`reagentlive.results-doc` fails while it is stale).
+- After changing a row of the verb table, regenerate both generated pages:
+  `build/reagentlive-table --write docs/commands/results.md` and
+  `build/reagentlive-table --write-reference docs/commands/reference.md`
+  (`reagentlive.results-doc` and `reagentlive.reference-doc` fail while
+  stale; `reagentlive.verb-names` fails on a doc naming a verb or arg the
+  table lacks).
 - A change is done only when every test passes. What each suite covers:
   [contributing: tests](docs/contributing.md#tests).
 

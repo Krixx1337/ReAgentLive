@@ -209,23 +209,23 @@ void RunLayoutExport(Session& session, const Command& command, std::string_view 
         ++out.enums;
     }
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
-    if (!file || !(file << lines)) return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
+    if (!file || !(file << lines)) return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
     Emit(session, jsonCommand, std::move(out));
 }
 
 void RunLayoutCheck(Session& session, const Command& command, std::string_view jsonCommand) {
     std::ifstream file(command.file);
-    if (!file) return JsonError(session, jsonCommand, "file", "cannot read " + command.file);
+    if (!file) return JsonError(session, jsonCommand, ErrorKind::File, "cannot read " + command.file);
     std::vector<LayoutLine> lines;
     size_t number = 0;
     for (std::string text; std::getline(file, text);) {
         ++number;
         if (text.find_first_not_of(" \t\r") == std::string::npos || LayoutTypeLine(text)) continue;
         auto line = ParseLayoutLine(text);
-        if (!line) return JsonError(session, jsonCommand, "validation",
+        if (!line) return JsonError(session, jsonCommand, ErrorKind::Validation,
             command.file + " line " + std::to_string(number) + ": " + line.error());
         if (lines.size() == MaxLayoutLines)
-            return JsonError(session, jsonCommand, "validation", "at most " + std::to_string(MaxLayoutLines) + " lines");
+            return JsonError(session, jsonCommand, ErrorKind::Validation, "at most " + std::to_string(MaxLayoutLines) + " lines");
         lines.push_back(std::move(*line));
     }
     shape::LayoutCheck out;
@@ -261,7 +261,7 @@ void RunLayoutCheck(Session& session, const Command& command, std::string_view j
 
 void RunLayout(Session& session, const Command& command, std::string_view jsonCommand) {
     if (!session.client.Supports(ue::op::Fields))
-        return JsonError(session, jsonCommand, "unsupported", "layout needs an agent with fields");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "layout needs an agent with fields");
     if (command.target == "export") return RunLayoutExport(session, command, jsonCommand);
     RunLayoutCheck(session, command, jsonCommand);
 }

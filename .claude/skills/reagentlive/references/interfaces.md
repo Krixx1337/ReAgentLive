@@ -66,7 +66,7 @@ for building tools, not for investigating.
 | `read` | `read` `{addr:"0x7ff600001000", len:16, type:"u32"}` | `c.read(0x7ff600001000, 16, type='u32')` | `read 0x7ff600001000 16 --type u32` |
 | `get` | `ue_get` `{object:"<ref>", paths:["Health","Controller.PlayerState"]}` | `c.ue.get(ref, ['Health', 'Controller.PlayerState'])` | `get <ref> Health Controller.PlayerState` |
 | `sig-check` | `sig_check` `{pattern:"48 8b ?? 89", module:"game.exe"}` | `c.sig_check('48 8b ?? 89', module='game.exe')` | `sig-check 48 8b ?? 89 --module game.exe` |
-| `census --diff` | `ue_census` `{cls:"Actor", diff:true, limit:0}` | `c.ue.census(cls='Actor', diff=True, limit=0)` | `census --diff --cls Actor --limit 0` |
+| `census --diff` | `ue_census` `{cls:"Actor", diff:true, view:{limit:0}}` | `c.ue.census(cls='Actor', diff=True, view={'limit': 0})` | `census --diff --cls Actor --limit 0` |
 | `game-thread` | `ue_game_thread` `{action:"on"}` | `c.ue.game_thread('on')` | `game-thread on` |
 | `batch` | `batch` `{calls:[{verb:"read",args:{addr:"0x10"}},{verb:"modules"}]}` | `s.batch_results([('read', {'addr': 0x10}), ('modules', {})])` | `batch { read 0x10; modules }` |
 | `watch-start` | `watch_start` `{duration:2, ranges:["<ref>.Health"]}` | `c.watch_start(2, ['<ref>.Health'])`; blocking: `s.watch(2, ['<ref>.Health'])` | `watch-start 2 <ref>.Health` |

@@ -192,16 +192,16 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     const Snapshot* baseline = nullptr;
     if (command.changed) {
         if (!command.file.empty() && !(loaded = LoadSnapshot(command.file)))
-            return JsonError(session, "get", "snapshot", "cannot read snapshot file " + command.file);
+            return JsonError(session, "get", ErrorKind::Snapshot, "cannot read snapshot file " + command.file);
         baseline = loaded ? &*loaded : sessionBaseline ? &*sessionBaseline : nullptr;
-        if (!baseline) return JsonError(session, "get", "snapshot", "changed needs get with snap first (or a snapshot file)");
-        if (baseline->object != object) return JsonError(session, "get", "snapshot", "the snapshot is of another object ref");
+        if (!baseline) return JsonError(session, "get", ErrorKind::Snapshot, "changed needs get with snap first (or a snapshot file)");
+        if (baseline->object != object) return JsonError(session, "get", ErrorKind::Snapshot, "the snapshot is of another object ref");
     }
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, "get", fields.error());
     const auto sorted = SortedByOffset(std::move(*fields));
     if (baseline && sorted != baseline->fields)
-        return JsonError(session, "get", "snapshot", "reflected field layout changed; take a new snapshot");
+        return JsonError(session, "get", ErrorKind::Snapshot, "reflected field layout changed; take a new snapshot");
     // --own: the class that declares the kept fields; an instance's is looked up.
     std::string ownClass;
     if (command.own) {
