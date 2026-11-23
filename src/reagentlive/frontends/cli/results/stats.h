@@ -114,9 +114,12 @@ struct Stats {
 
 namespace stats_detail {
 // Args that narrow what a verb prints: a call to a verb that has one and
-// gave none is marked `unfiltered`.
-inline constexpr std::string_view FilterKeys[] = {"match", "nonzero", "own", "changed", "cls", "limit"};
-inline bool IsFilter(std::string_view key) { return std::ranges::find(FilterKeys, key) != std::end(FilterKeys); }
+// gave none is marked `unfiltered`. A view's keys are logged by path (view.limit).
+inline constexpr std::string_view FilterKeys[] = {"match", "nonzero", "own", "cls", "limit"};
+inline bool IsFilter(std::string_view key) {
+    if (const size_t dot = key.rfind('.'); dot != std::string_view::npos) key = key.substr(dot + 1);
+    return std::ranges::find(FilterKeys, key) != std::end(FilterKeys);
+}
 }
 constexpr size_t StatsLargestCalls = 5;
 
@@ -166,7 +169,9 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
         if (const Verb* verb = FindVerb(verbs, line.verb)) ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
         // A digested call cost its digest only: not worth a mark.
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.digest) {
-            const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) { return IsFilter(a.key); });
+            const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) {
+                return IsFilter(a.key) || std::ranges::any_of(a.fields, [](const Arg& f) { return IsFilter(f.key); });
+            });
             if (filters && std::ranges::none_of(line.keys, [](const std::string& k) { return IsFilter(k); }))
                 bump(row.unfiltered);
         }

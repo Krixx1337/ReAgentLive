@@ -34,7 +34,7 @@ ARGUMENTS = {'bool': 'bool', 'int': 'int | str', 'num': 'float', 'dur': 'float',
              'file': 'str', 'bytes': 'bytes | str', 'pattern': 'str', 'layout': 'str', 'addr': 'str | dict[str, Any]',
              'chain': 'str | dict[str, Any]', 'ref': 'str', 'path': 'list[str]', 'filter': 'dict[str, Any]',
              'params': 'dict[str, Any]', 'range': 'dict[str, Any]', 'point': 'list[float] | str | dict[str, Any]',
-             'scalar': 'str | int | float', 'calls': 'list[Call]'}
+             'scalar': 'str | int | float', 'calls': 'list[Call]', 'obj': 'dict[str, Any]'}
 
 
 def known(vocabulary, kind, what):

@@ -679,52 +679,6 @@ struct Call {
     }
 };
 
-// call-pure: one call, with call's keys (mode raw, typed or dry), or with
-// --each a table over the instances, with each's keys (mode call). One
-// type for both forms: every key but mode is absent where it does not apply.
-struct CallPure {
-    std::string mode;
-    std::optional<RefId> ref, classRef;
-    std::optional<std::string> function, keptReason, className, pollError;
-    std::optional<uint64_t> blockSize, polls, matched, omitted;
-    std::optional<HexBytes> hex;
-    std::optional<bool> kept, truncated, pure, sameTick, capped;
-    std::optional<std::vector<CallOutput>> outputs;
-    std::optional<Addr> exec;
-    std::optional<uint32_t> unnamed, seconds;
-    std::optional<std::vector<std::string>> columns;
-    std::optional<std::vector<EachRow>> rows;
-    std::optional<std::vector<EachError>> errors;
-    std::optional<std::vector<EachChange>> changes;
-    template<class V> static void Describe(V& v) {
-        v("mode", &CallPure::mode, "raw|typed|dry|call");
-        v("ref", &CallPure::ref);
-        v("function", &CallPure::function);
-        v("block_size", &CallPure::blockSize);
-        v("hex", &CallPure::hex);
-        v("kept", &CallPure::kept);
-        v("kept_reason", &CallPure::keptReason);
-        v("outputs", &CallPure::outputs);
-        v("truncated", &CallPure::truncated);
-        v("exec", &CallPure::exec);
-        v("pure", &CallPure::pure);
-        v("unnamed", &CallPure::unnamed);
-        v("class", &CallPure::className);
-        v("class_ref", &CallPure::classRef);
-        v("columns", &CallPure::columns);
-        v("rows", &CallPure::rows);
-        v("same_tick", &CallPure::sameTick);
-        v("capped", &CallPure::capped);
-        v("errors", &CallPure::errors);
-        v("seconds", &CallPure::seconds);
-        v("polls", &CallPure::polls);
-        v("changes", &CallPure::changes);
-        v("poll_error", &CallPure::pollError);
-        v("matched", &CallPure::matched);
-        v("omitted", &CallPure::omitted);
-    }
-};
-
 // label: the member as the native file now holds it.
 struct NativeLabel {
     std::string path;

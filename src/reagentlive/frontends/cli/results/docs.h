@@ -10,13 +10,19 @@
 namespace reagentlive::cli {
 // A row's verb and arg keys, as the results page lists them: `read {addr, len?, type?}`
 // (`?` marks an optional key, `[]` a list).
-inline std::string Signature(const Json& row) {
+// An object arg lists its keys the same way: `view{start?, limit?}?`.
+inline std::string ArgKeys(const Json& args) {
     std::string keys;
-    for (const auto& arg : row.value("args", Json::array())) {
+    for (const auto& arg : args) {
         keys += (keys.empty() ? "" : ", ") + arg.at("key").get<std::string>();
+        if (arg.contains("fields")) keys += "{" + ArgKeys(arg.at("fields")) + "}";
         if (arg.value("list", false)) keys += "[]";
         if (!arg.value("required", false)) keys += "?";
     }
+    return keys;
+}
+inline std::string Signature(const Json& row) {
+    const std::string keys = ArgKeys(row.value("args", Json::array()));
     return row.at("verb").get<std::string>() + (keys.empty() ? "" : " {" + keys + "}");
 }
 
@@ -41,7 +47,7 @@ inline std::string ResultsMarkdown(const Json& table) {
         "`help` lists the verbs, `help` with `verb` shows one (args, result, notes, an example call) and\n"
         "`help` with `json` prints this whole table for programs. `status` carries `table_hash`, which\n"
         "changes whenever a row does. The Command column lists each verb's arg keys: `?` marks an optional\n"
-        "one, `[]` a list.\n\n"
+        "one, `[]` a list, `{...}` an object's keys (`view` is the shared output-shaping object).\n\n"
         "## Notation\n\n"
         "| Type | Meaning |\n|---|---|\n"
         "| `addr` | an address as `\"0x...\"` text |\n"
@@ -57,7 +63,7 @@ inline std::string ResultsMarkdown(const Json& table) {
         "| `Name` | a named type, defined once under [Named types](#named-types); a pack's carry its prefix |\n\n"
         "## Conventions\n\n"
         "- `rows` is a result's list; `total` is how many there are in all when `rows` may show fewer.\n"
-        "- A page carries `from` (where it began) and `next_cursor` (pass it as `start`; absent when done).\n"
+        "- A page carries `from` (where it began) and `next_cursor` (pass it as `view.start`; absent when done).\n"
         "- `capped`: the rows were cut at a hard limit and there is no cursor. `truncated`: a value in the\n"
         "  result is incomplete.\n"
         "- `module` and `rva` stand beside an address inside a loaded module, so it opens at the same RVA\n"

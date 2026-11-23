@@ -376,11 +376,20 @@ struct UsageScope {
         record.verb = verb ? std::string(verb->name) : std::string(name.substr(0, MaxUsageVerb));
         record.origin = verb ? std::string(verb->origin) : std::string();
         if (!verb) return;
+        // An object's keys by path (view.limit).
+        const auto given = [](const Json& in, const std::string& key) {
+            return in.is_object() && in.contains(key) && !in[key].is_null() && !(in[key].is_boolean() && !in[key].get<bool>());
+        };
         for (const auto& arg : verb->args) {
             const std::string key(arg.key);
-            const bool given = callArgs.is_object() && callArgs.contains(key) && !callArgs[key].is_null() &&
-                !(callArgs[key].is_boolean() && !callArgs[key].get<bool>());
-            if (given) record.keys.push_back(key);
+            if (!given(callArgs, key)) continue;
+            if (arg.fields.empty()) {
+                record.keys.push_back(key);
+                continue;
+            }
+            for (const auto& field : arg.fields)
+                if (given(callArgs[key], std::string(field.key))) record.keys.push_back(key + "." + std::string(field.key));
+            if (!callArgs[key].is_object() || callArgs[key].empty()) record.keys.push_back(key);
         }
         // A program's own reads of the table and its quit are not the agent's calls.
         const auto has = [&](const char* key) { return std::ranges::find(record.keys, key) != record.keys.end(); };

@@ -317,6 +317,21 @@ path. So JSON is the only input.
 - **Input:** `-c` takes one call, a JSON list of calls, or `@<file>` (one
   call per line, or a list), which avoids shell quoting; stdin takes one
   call (or a list) per line. `batch` takes a list of calls.
+- **One `view` for output shaping.** What only shapes a result (a page's
+  `start`, `limit`, `match`, `fields`, `nonzero`, `elements`) is one
+  object, `view`, with one schema (`ViewKeys` in `call/verb.h`) on every
+  list-returning verb; a verb takes the keys that apply to its result,
+  and its notes say what `match` matches and what `limit` 0 means. A view
+  key given at the top is refused with where it goes, and the example
+  moves it there. Options that decide what the agent reads or does
+  (`disasm`'s `count`, `search`'s `max`) are not a view.
+- **An options budget.** No verb takes more than six own args beside
+  `view` (a table test). Related options are one typed object (`search`'s
+  `scope`, `write`'s `undo`, `disasm`'s `save`), exclusive flags one enum
+  (`get`'s `mode`), and a mode with another result shape is another verb
+  (`call-each` beside `call-pure`). A new option replaces one or says in
+  the verb's notes why nothing else covers it. An object's keys are read
+  as the verb's own once checked, so a row never uses a name twice.
 
 | Rejected | Why |
 |---|---|
@@ -325,6 +340,8 @@ path. So JSON is the only input.
 | Positionals in the JSON form | order carried meaning a caller had to guess |
 | A shorthand string beside each typed value (`"A.B"` for `["A", "B"]`) | two forms again, and the schema could no longer check the value |
 | `$N` in JSON calls | session state a picked argument should not depend on; literal refs work across runs |
+| Output flags per verb (`limit`, `nonzero`, ... at the top) | the same option under different help on every verb, and the count per verb kept growing (`search` 12, `get` 10) |
+| A view with every key on every verb, unused ones ignored | a silently ignored key reads as a filter that ran |
 
 ## Tool packs
 
@@ -336,15 +353,14 @@ pack, sized so a normal question stays inside the default ones:
 |---|---|---|
 | `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, functions' metadata, memory reads |
 | `native` | read code and keep names across builds | disassembly, references, signatures, labels, layout files |
-| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure` (and its `--each` form) |
+| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure`, `call-each` |
 | `modify` | change the target or call into it | `write`, `writes`, `call`, `release`, the call recorder, `game-thread` |
 
 `help --json` is the list's source (each row's `pack`); membership is a
 one-line change in the row.
 
 - **Exact marks first.** A verb's mark is per verb, so risk must be too:
-  `each` reads fields only and its function form is `call-pure <Class>
-  <Function> --each`; `status` reads the game-thread mode and
+  `each` reads fields only and its function form is `call-each`; `status` reads the game-thread mode and
   `game-thread` keeps only `on` and `off`. A test parses every form of
   every verb outside `modify` and checks none writes or calls (a `trace`
   calls a line trace that changes no state; a `batch`'s items are checked

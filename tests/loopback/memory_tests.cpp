@@ -308,9 +308,9 @@ TEST_CASE("search text finds a string in both widths") {
     const auto base = reinterpret_cast<uint64_t>(block.data());
     // The search verb's row, as far as these calls need it.
     const cli::Verb search{"search", "core", cli::ToolPack::Native, "",
-        {{"type", "str", {}, {}, true}, {"value", "scalar", {}, {}, true}, {"wide", "bool"}}, nullptr, cli::build::Search};
+        {{"type", "str", {}, {}, true}, {"value", "scalar", {}, {}, true}}, nullptr, cli::build::Search};
     for (const auto& [call, offset] : {std::pair{std::string(R"({"verb": "search", "args": {"type": "text", "value": "Zq7Weapon"}})"), 64},
-             {R"({"verb": "search", "args": {"type": "text", "value": "Zq7Aimed", "wide": true}})", 512}}) {
+             {R"({"verb": "search", "args": {"type": "wtext", "value": "Zq7Aimed"}})", 512}}) {
         auto parsed = cli::BuildCall(std::span(&search, 1), cli::Json::parse(call));
         REQUIRE(parsed);
         SearchQuery query;

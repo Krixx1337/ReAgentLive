@@ -210,7 +210,7 @@ struct Change {
 };
 
 namespace detail {
-inline bool HasArg(const Verb& verb, std::string_view key) { return FindArg(verb, key) != nullptr; }
+inline bool HasArg(const Verb& verb, std::string_view key) { return !KeyPath(verb, key).empty(); }
 // Members that fit in `room` characters, top down: a member kept whole when
 // it fits (smallest first), else its own members tried the same way. Field
 // paths, sorted; `sum` gets their characters.
@@ -285,33 +285,46 @@ inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, cons
                     }
                     paths.push_back(std::move(steps));
                 }
-                changes.push_back({"fields", std::move(paths)});
+                changes.push_back({KeyPath(verb, "fields"), std::move(paths)});
                 kept = sum + shown * 2;
             }
         }
         if (kept > room && detail::HasArg(verb, "limit")) {
             const size_t perRow = std::max<size_t>(1, kept / shown);
             const size_t fit = std::max<size_t>(1, room / perRow);
-            if (fit < shown) changes.push_back({"limit", fit});
+            if (fit < shown) changes.push_back({KeyPath(verb, "limit"), fit});
         }
     }
-    if (changes.empty() && detail::HasArg(verb, "nonzero") && !given.Has("nonzero")) changes.push_back({"nonzero"});
-    else if (changes.empty() && detail::HasArg(verb, "own") && !given.Has("own")) changes.push_back({"own"});
+    if (changes.empty() && detail::HasArg(verb, "nonzero") && !given.Has("nonzero")) changes.push_back({KeyPath(verb, "nonzero")});
+    else if (changes.empty() && detail::HasArg(verb, "own") && !given.Has("own")) changes.push_back({KeyPath(verb, "own")});
     return changes;
 }
 
-// The verb's narrowing args, as `help` names them: the digest's `narrow`.
+// The verb's narrowing args, by path (view.limit): the digest's `narrow`.
 inline std::vector<std::string> NarrowingArgs(const Verb& verb) {
     std::vector<std::string> out;
-    for (const auto& arg : verb.args)
+    for (const auto& arg : verb.args) {
         if (std::ranges::find(Narrowing, arg.key) != std::end(Narrowing)) out.emplace_back(arg.key);
+        for (const auto& field : arg.fields)
+            if (std::ranges::find(Narrowing, field.key) != std::end(Narrowing))
+                out.push_back(std::string(arg.key) + "." + std::string(field.key));
+    }
     return out;
 }
 
-// A JSON call with the changes applied to its args.
+// A JSON call with the changes applied to its args; a key by path (view.limit) goes into its object.
 inline Json CallLine(Json call, const std::vector<Change>& changes) {
     if (!call.contains("args") || !call["args"].is_object()) call["args"] = Json::object();
-    for (const auto& change : changes) call["args"][change.key] = change.value;
+    for (const auto& change : changes) {
+        const size_t dot = change.key.find('.');
+        if (dot == std::string::npos) {
+            call["args"][change.key] = change.value;
+            continue;
+        }
+        Json& parent = call["args"][change.key.substr(0, dot)];
+        if (!parent.is_object()) parent = Json::object();
+        parent[change.key.substr(dot + 1)] = change.value;
+    }
     return call;
 }
 

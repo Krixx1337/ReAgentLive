@@ -137,11 +137,13 @@ TEST_CASE("help rows come from the table: args, an example call, the result in n
     REQUIRE(full["args"].size() == search->args.size());
     for (size_t i = 0; i < search->args.size(); ++i) CHECK(full["args"][i] == ArgJson(search->args[i]));
     CHECK(full["args"][0] == Json{{"key", "type"}, {"type", "str"}, {"required", true},
-        {"enum", {"hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text"}}, {"help", "the value's type"}});
+        {"enum", {"hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text", "wtext"}}, {"help", "the value's type (wtext: text as UTF-16)"}});
     CHECK(full["args"][1]["type"] == "scalar");
     CHECK(full["args"].back() == Json{{"key", "max"}, {"type", "int"}, {"default", 64},
         {"help", "hits at most; the job stops when full"}});
-    CHECK(full["args"][3] == Json{{"key", "start"}, {"type", "addr"}, {"help", "start, or a job's next_cursor"}});
+    // An object arg lists its keys as fields, each as ArgJson gives it.
+    CHECK(full["args"][2]["type"] == "obj");
+    CHECK(full["args"][2]["fields"][1] == Json{{"key", "start"}, {"type", "addr"}, {"help", "start, or a job's next_cursor"}});
     // The example holds every required key, and the row accepts it.
     CHECK(full["example"] == Json{{"verb", "search"}, {"args", {{"type", "hex"}, {"value", "00 00 80 3f"}}}});
     CHECK(CheckCall(*search, full["example"]["args"]).has_value());
@@ -205,10 +207,10 @@ TEST_CASE("an argument's type is checked against the row before the builder runs
     CHECK(Call(R"({"verb": "read", "args": {"addr": "0x10", "len": "zz"}})").error().starts_with("len: a whole number"));
     CHECK(Call(R"({"verb": "read", "args": {"addr": "0x10", "len": "0x"}})").error().starts_with("len: a whole number"));
     CHECK(Call(R"({"verb": "search", "args": {"type": "u16", "value": 5}})").error().starts_with(
-        "type: one of hex|u32|i32|u64|ptr|f32|f64|text, not \"u16\""));
+        "type: one of hex|u32|i32|u64|ptr|f32|f64|text|wtext, not \"u16\""));
     CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x10", "offsets": ["0x538", "x1"]}})").error().starts_with(
         "offsets: a list, each a whole number"));
-    CHECK(Call(R"({"verb": "census", "args": {"limit": "many"}})").error().starts_with("limit: a whole number"));
+    CHECK(Call(R"({"verb": "census", "args": {"view": {"limit": "many"}}})").error().starts_with("view.limit: a whole number"));
     CHECK(Call(R"({"verb": "xrefs", "args": {"addr": "0x10", "all": "yes"}})").error().starts_with("all: true or false"));
     // A decimal string is not an address: the builder's error names the key.
     CHECK(Call(R"({"verb": "read", "args": {"addr": "16"}})").error().starts_with("addr: '16' is not an address"));

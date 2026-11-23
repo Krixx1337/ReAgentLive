@@ -50,7 +50,7 @@ Args ArgsOf(const Verb& verb, const Json& given) {
     return *args;
 }
 
-const Json VendorArgs = {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}, {"limit", 0}};
+const Json VendorArgs = {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}, {"view", {{"limit", 0}}}};
 
 budget::Line LineOf(bool reads, const Json& given = VendorArgs) {
     budget::Line line;
@@ -127,7 +127,7 @@ TEST_CASE("narrow: fields keeps the members that fit, whole where they can, limi
     const budget::Profile profile(result);
     const auto changes = budget::Narrow(profile, Row("call"), ArgsOf(Row("call"), VendorArgs), budget::ToolBudget);
     REQUIRE_FALSE(changes.empty());
-    REQUIRE(changes.front().key == "fields");
+    REQUIRE(changes.front().key == "view.fields");
     const Json& paths = changes.front().value;
     REQUIRE(paths.is_array());
     bool tag = false;
@@ -144,7 +144,7 @@ TEST_CASE("narrow: fields keeps the members that fit, whole where they can, limi
     CHECK(tag);
     if (kept > budget::ToolBudget / 4 * 3) {
         REQUIRE(changes.size() == 2);
-        CHECK(changes[1].key == "limit");
+        CHECK(changes[1].key == "view.limit");
         CHECK(changes[1].value.is_number());
     }
 
@@ -163,17 +163,17 @@ TEST_CASE("narrow: limit for a list without fields; nonzero, then own, for get")
     const budget::Profile each(Json{{"class", "Pawn"}, {"rows", rows}});
     const auto& eachRow = Row("each");
     const auto changes = budget::Narrow(each, eachRow,
-        ArgsOf(eachRow, {{"cls", "Pawn"}, {"paths", Json::array({Json::array({"Health"})})}, {"limit", 0}}), budget::ToolBudget);
+        ArgsOf(eachRow, {{"cls", "Pawn"}, {"paths", Json::array({Json::array({"Health"})})}, {"view", {{"limit", 0}}}}), budget::ToolBudget);
     REQUIRE(changes.size() == 1);
-    CHECK(changes[0].key == "limit");
+    CHECK(changes[0].key == "view.limit");
     REQUIRE(changes[0].value.is_number_unsigned());
     CHECK(changes[0].value.get<size_t>() * 100 < budget::ToolBudget);
 
     const budget::Profile all(Json{{"rows", Json::array({{{"name", std::string(30000, 'x')}}})}});
     const auto& getRow = Row("get");
     CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}}), budget::ToolBudget) ==
-        std::vector<budget::Change>{{"nonzero"}});
-    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}, {"nonzero", true}}), budget::ToolBudget) ==
+        std::vector<budget::Change>{{"view.nonzero"}});
+    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}, {"view", {{"nonzero", true}}}}), budget::ToolBudget) ==
         std::vector<budget::Change>{{"own"}});
 
     // A verb with no narrowing arg offers no call.
@@ -182,16 +182,18 @@ TEST_CASE("narrow: limit for a list without fields; nonzero, then own, for get")
 }
 
 TEST_CASE("next call: the changes set in the call's args, its other keys kept") {
-    const std::vector<budget::Change> changes{{"fields", Json::array({Json::array({"Tag"}), Json::array({"Price"})})},
-        {"limit", 40}};
-    const Json json = budget::CallLine(Json{{"verb", "call"}, {"args", {{"object", "0x10#1:2"}, {"function", "F"}, {"limit", 0}}},
-        {"meta", true}}, changes);
-    CHECK(json["args"]["fields"] == Json::array({Json::array({"Tag"}), Json::array({"Price"})}));
-    CHECK(json["args"]["limit"] == 40);
+    const std::vector<budget::Change> changes{{"view.fields", Json::array({Json::array({"Tag"}), Json::array({"Price"})})},
+        {"view.limit", 40}};
+    const Json json = budget::CallLine(Json{{"verb", "call"},
+        {"args", {{"object", "0x10#1:2"}, {"function", "F"}, {"view", {{"limit", 0}, {"nonzero", true}}}}}, {"meta", true}}, changes);
+    CHECK(json["args"]["view"]["fields"] == Json::array({Json::array({"Tag"}), Json::array({"Price"})}));
+    CHECK(json["args"]["view"]["limit"] == 40);
+    CHECK(json["args"]["view"]["nonzero"] == true);
     CHECK(json["args"]["object"] == "0x10#1:2");
     CHECK(json["meta"] == true);
-    // A call without args gets them.
-    CHECK(budget::CallLine(Json{{"verb", "get"}}, {{"nonzero"}})["args"] == Json{{"nonzero", true}});
+    // A call without args gets them; an own key stays at the top.
+    CHECK(budget::CallLine(Json{{"verb", "get"}}, {{"view.nonzero"}})["args"] == Json{{"view", {{"nonzero", true}}}});
+    CHECK(budget::CallLine(Json{{"verb", "get"}}, {{"own"}})["args"] == Json{{"own", true}});
 }
 
 TEST_CASE("digest: a const call gets a narrower line, a call that may change state a file") {
@@ -222,10 +224,10 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
     CHECK(call["verb"] == "call");
     CHECK(call["args"]["object"] == "0x10#1:2");
     CHECK(call["args"]["function"] == "Vendor:GetItems");
-    CHECK(call["args"]["fields"].is_array());
+    CHECK(call["args"]["view"]["fields"].is_array());
     CHECK(Call(next));
-    // narrow names the verb's narrowing args by their keys.
-    CHECK(digest["narrow"] == Json::array({"fields", "limit", "nonzero"}));
+    // narrow names the verb's narrowing args by their paths.
+    CHECK(digest["narrow"] == Json::array({"view.limit", "view.fields", "view.nonzero"}));
     CHECK(Text(*reads).size() < budget::ToolBudget);
 
     // Must not run again: the whole envelope goes to the file, no next.

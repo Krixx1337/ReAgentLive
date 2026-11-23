@@ -386,7 +386,7 @@ std::string MatchText(const Json& value) {
 }
 
 // each: one row per live instance, a value per column, the columns in the
-// order asked. call-pure --each: a function is the only column (one call per
+// order asked. call-each: a function is the only column (one call per
 // instance); each alone never calls. Field
 // paths are resolved on the class: the spans they need inside the instance
 // (a field, or the pointer a path follows) are read by as few agent passes as
@@ -469,7 +469,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         if (pollError) record.pollError = pollError->message;
     };
 
-    // call-pure --each: the function, the only column, called on each instance.
+    // call-each: the function, the only column, called on each instance.
     if (command.eachCall) {
         auto function = ue::Function(client, *type, paths[0]);
         if (!function && function.error().kind == Error::Kind::Agent && function.error().status == Status::NotFound)
@@ -528,8 +528,8 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         if (!column.error.empty()) {
             // A function's name: say where it goes instead.
             if (paths.size() == 1 && !whereColumn && ue::Function(client, *type, path))
-                return fail(path + " is a function of " + command.className + ": call-pure " + command.className + " " +
-                    path + " with each calls it on every instance (each reads fields)");
+                return fail(path + " is a function of " + command.className + ": call-each with cls " + command.className +
+                    " and function " + path + " calls it on every instance (each reads fields)");
             return fail("not a field of " + command.className + ": " + path + " (" + column.error + ")");
         }
         // A set or map column reads its header in the pass; the decoder reads its elements per instance.

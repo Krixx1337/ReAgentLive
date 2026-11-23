@@ -211,7 +211,7 @@ TEST_CASE("instanced structs and soft pointers decode alike in get, each and dum
 }
 
 TEST_CASE("nonzero agrees across verbs") {
-    const Json nonzero{{"nonzero", true}};
+    const Json nonzero{{"view", {{"nonzero", true}}}};
     const Json info = Get("Info", nonzero);
     CHECK_FALSE(info.contains("Zero"));
     CHECK(info["Scores"]["rows"][1] == Json{{"key", "Deaths"}});
@@ -244,7 +244,7 @@ TEST_CASE("top-level containers: get and each in full, entries and dump previews
 
 TEST_CASE("past the pointer cap, every verb counts unnamed alike, digested or not") {
     const auto& fixture = TheFixture();
-    const Json elements{{"elements", 256}};
+    const Json elements{{"view", {{"elements", 256}}}};
     const auto get = Result(CallText("get", With(GetArgs(PathsOf("Crowd")), elements)));
     REQUIRE(get.contains("unnamed"));
     const auto unnamed = get["unnamed"].get<uint32_t>();
@@ -307,8 +307,8 @@ TEST_CASE("a get path that names no field suggests the closest fields") {
 }
 
 TEST_CASE("get with types and match keeps the matching fields, any case") {
-    const auto all = Result(CallText("get", With(GetArgs(), {{"types", true}})));
-    const auto some = Result(CallText("get", With(GetArgs(), {{"types", true}, {"match", "sCORE"}})));
+    const auto all = Result(CallText("get", With(GetArgs(), {{"mode", "types"}})));
+    const auto some = Result(CallText("get", With(GetArgs(), {{"mode", "types"}, {"view", {{"match", "sCORE"}}}})));
     REQUIRE(some["rows"].size() == 1);
     CHECK(some["rows"][0]["name"] == "Scores");
     CHECK(all["rows"].size() > some["rows"].size());
@@ -391,7 +391,7 @@ const Extras& TheExtras() {
 
 TEST_CASE("a class named past 63 characters resolves, and names travel whole") {
     const auto& extras = TheExtras();
-    const auto fields = Result(CallText("get", {{"object", extras.longClass}, {"types", true}}));
+    const auto fields = Result(CallText("get", {{"object", extras.longClass}, {"mode", "types"}}));
     REQUIRE(fields["rows"].size() == 1);
     CHECK(fields["rows"][0]["name"] == std::string(120, 'L'));
     CHECK(fields["rows"][0]["owner"] == extras.longClass);
@@ -417,16 +417,16 @@ TEST_CASE("enum names an enum's values, past one page") {
 
 TEST_CASE("a bare Default__ name is the default object, not a class") {
     TheExtras();
-    const auto fields = Result(CallText("get", {{"object", "Default__Wide"}, {"types", true}}));
+    const auto fields = Result(CallText("get", {{"object", "Default__Wide"}, {"mode", "types"}}));
     CHECK(fields["rows"].size() == 120);
-    const auto dumped = Result(CallText("get", {{"object", "Default__Wide"}, {"match", "Field_7"}}));
+    const auto dumped = Result(CallText("get", {{"object", "Default__Wide"}, {"view", {{"match", "Field_7"}}}}));
     CHECK(dumped["rows"].size() > 0);
 }
 
 TEST_CASE("a class's fields come in few pages") {
     const auto& extras = TheExtras();
     const uint32_t before = extras.wide->pages;
-    const auto fields = Result(CallText("get", {{"object", "Wide"}, {"types", true}}));
+    const auto fields = Result(CallText("get", {{"object", "Wide"}, {"mode", "types"}}));
     CHECK(fields["rows"].size() == 120);
     const uint32_t pages = extras.wide->pages - before;
     CHECK(pages * 4 <= (120 + 10) / 11); // At least 4x fewer than 11 entries a page.
@@ -434,13 +434,13 @@ TEST_CASE("a class's fields come in few pages") {
 
 TEST_CASE("get with elements lifts a top-level array's preview past 8") {
     const auto& fixture = TheFixture();
-    const auto dumped = Result(CallText("get", With(GetArgs(), {{"match", "Crowd"}, {"elements", 12}})));
+    const auto dumped = Result(CallText("get", With(GetArgs(), {{"view", {{"match", "Crowd"}, {"elements", 12}}}})));
     REQUIRE(dumped["rows"].size() == 1);
     const auto& preview = dumped["rows"][0]["preview"];
     CHECK(preview["total"] == fixture.crowd);
     REQUIRE(preview["elements"].size() == 12);
     CHECK(preview["elements"][11]["object"]["name"] == "Extra_11");
-    CHECK(Result(CallText("get", With(GetArgs(), {{"match", "Crowd"}})))["rows"][0]["preview"]["elements"].size() == 8);
+    CHECK(Result(CallText("get", With(GetArgs(), {{"view", {{"match", "Crowd"}}}})))["rows"][0]["preview"]["elements"].size() == 8);
 }
 
 namespace {
@@ -470,14 +470,14 @@ Json Envelope(const std::string& call) {
 }
 }
 
-TEST_CASE("each never calls: a function goes to call-pure with each, which does") {
+TEST_CASE("each never calls: a function goes to call-each, which does") {
     TheScoreFunction();
     const auto each = Envelope(CallText("each", {{"cls", "Thing"}, {"paths", PathsOf("GetScore")}}));
     REQUIRE_FALSE(each.value("ok", true));
-    CHECK(each["error"]["message"].get<std::string>().starts_with("GetScore is a function of Thing: call-pure"));
+    CHECK(each["error"]["message"].get<std::string>().starts_with("GetScore is a function of Thing: call-each"));
     // The fake engine refuses any call: reaching it is the point.
     const auto eachCall = [](const char* function) {
-        return Envelope(CallText("call-pure", {{"object", "Thing"}, {"function", function}, {"each", true}}));
+        return Envelope(CallText("call-each", {{"cls", "Thing"}, {"function", function}}));
     };
     const auto called = eachCall("GetScore");
     REQUIRE_FALSE(called.value("ok", true));
@@ -576,12 +576,12 @@ std::string SaveFile(const char* name) {
 TEST_CASE("disasm with save walks past a one-byte decoy entry and refuses an empty listing") {
     // A decoy at the function's start: walked to its return and saved.
     const auto file = SaveFile("decoy.jsonl");
-    const auto saved = Result(CallText("disasm", {{"addr", At(0x1000)}, {"function", true}, {"save", file}}));
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1000)}, {"function", true}, {"save", {{"file", file}}}}));
     CHECK(saved["saved_rows"] == 4);
     CHECK(saved["stop"] == "walk end");
     CHECK(std::filesystem::file_size(file) > 0);
     // resume in a one-byte chunk: walked too.
-    const Json resume{{"function", true}, {"resume", true}, {"save", file}};
+    const Json resume{{"function", true}, {"resume", true}, {"save", {{"file", file}}}};
     const auto chunk = Result(CallText("disasm", With({{"addr", At(0x1200)}}, resume)));
     CHECK(chunk["saved_rows"] == 3);
     // Without save the listing is the same walk.
@@ -597,11 +597,11 @@ TEST_CASE("disasm with save walks past a one-byte decoy entry and refuses an emp
 
 TEST_CASE("find with limit pages until N rows and continues after the last") {
     TheFixture();
-    const auto first = Result(CallText("find", {{"text", "Extra_"}, {"limit", 30}}));
+    const auto first = Result(CallText("find", {{"text", "Extra_"}, {"view", {{"limit", 30}}}}));
     REQUIRE(first["rows"].size() == 30);
     CHECK(first["total"] == 150);
     CHECK(first["rows"][29]["name"] == "Extra_29");
-    const auto rest = Result(CallText("find", {{"text", "Extra_"}, {"limit", 200}, {"start", first["next_cursor"]}}));
+    const auto rest = Result(CallText("find", {{"text", "Extra_"}, {"view", {{"limit", 200}, {"start", first["next_cursor"]}}}}));
     REQUIRE(rest["rows"].size() == 120);
     CHECK(rest["rows"][0]["name"] == "Extra_30");
     CHECK_FALSE(rest.contains("next_cursor"));
@@ -685,7 +685,7 @@ TEST_CASE("--packs is a ceiling: a verb of another pack is refused, inside a bat
     CHECK(records[3]["result"]["tool_packs"] == Json{"explore", "native"});
     // A batch is explore; its items obey the ceiling one by one.
     const auto batch = RunLines(CallText("batch", {{"calls", Json::array({health,
-        CallOf("call-pure", {{"object", "Thing"}, {"function", "GetScore"}, {"each", true}})})}}), "explore");
+        CallOf("call-each", {{"cls", "Thing"}, {"function", "GetScore"}})})}}), "explore");
     REQUIRE(batch.size() == 1);
     const auto& rows = batch[0]["result"]["rows"];
     REQUIRE(rows.size() == 2);
@@ -766,7 +766,7 @@ TEST_CASE("rows reads a curve table's keys and evaluates them with at") {
     CHECK(at["at"] == 3.5);
     CHECK(at["rows"][0]["value"] == 1.15);
     CHECK(Result(rows(tables.simple, {{"at", 9}}).dump())["rows"][0]["value"] == 1.3);
-    const auto flat = Result(rows(tables.simple, {{"at", -1}, {"match", "flat"}}).dump());
+    const auto flat = Result(rows(tables.simple, {{"at", -1}, {"view", {{"match", "flat"}}}}).dump());
     REQUIRE(flat["rows"].size() == 1);
     CHECK(flat["total"] == 1);
     CHECK(flat["rows"][0]["interp"] == "constant");
@@ -784,7 +784,7 @@ TEST_CASE("rows reads a curve table's keys and evaluates them with at") {
 
     // A subclass of CurveTable is read too; refusals name both table kinds and the wrong args.
     CHECK(Result(rows(tables.derived).dump())["rows"][0]["name"] == "Pitch");
-    const auto refused = RunLines(CallsText({rows(tables.thing), rows(tables.simple, {{"fields", PathsOf("A")}}),
+    const auto refused = RunLines(CallsText({rows(tables.thing), rows(tables.simple, {{"view", {{"fields", PathsOf("A")}}}}),
         rows(tables.simple, {{"at", "x"}})}));
     REQUIRE(refused.size() == 3);
     CHECK(refused[0]["error"]["message"] == "neither a data table (no RowStruct field) nor a curve table (no CurveTable class)");
@@ -824,7 +824,7 @@ TEST_CASE("export-assets writes each object's fields and a table's rows, one fil
     CHECK(thing);
     CHECK(tables == result["tables"]);
     CHECK(tables == 3); // CT_Derived too: a subclass of the class asked for.
-    const auto sway = Result(CallText("export-assets", {{"dir", dir.string()}, {"cls", Json::array({"CurveTable"})}, {"match", "sway"}}));
+    const auto sway = Result(CallText("export-assets", {{"dir", dir.string()}, {"cls", Json::array({"CurveTable"})}, {"view", {{"match", "sway"}}}}));
     CHECK(sway["exported"] == 1);
     CHECK(sway["rows"][0]["table_rows"] == 2);
     // A missing cls is refused before running.
@@ -833,7 +833,7 @@ TEST_CASE("export-assets writes each object's fields and a table's rows, one fil
 
 TEST_CASE("disasm with save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {
     const auto file = SaveFile("switch.jsonl");
-    const auto saved = Result(CallText("disasm", {{"addr", At(0x1400)}, {"function", true}, {"save", file}}));
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1400)}, {"function", true}, {"save", {{"file", file}}}}));
     REQUIRE(saved.contains("tables"));
     CHECK(saved["tables"] == Json::parse(R"([{"jump": ")" + At(0x141d) + R"(", "table": ")" + At(0x1508) +
                                          R"(", "targets": 5}])"));

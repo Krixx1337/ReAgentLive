@@ -53,8 +53,8 @@ def C(verb, args=None):
 
 # A result past its budget: the console's digest, with the call narrowed.
 DIGEST = {'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
-          'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['match', 'fields', 'limit'],
-          'next': json.dumps({'verb': 'rows', 'args': {'object': '0x10#1:1', 'fields': 'Cost', 'limit': 40}})}
+          'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['view.match', 'view.fields', 'view.limit'],
+          'next': json.dumps({'verb': 'rows', 'args': {'object': '0x10#1:1', 'view': {'fields': [['Cost']], 'limit': 40}}})}
 
 # Replies by call: [call as the client sends it, reply].
 CALLS = [
@@ -122,15 +122,15 @@ CALLS = [
                           'ranges': [RANGE, RANGE], 'file': 'cap.jsonl',
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x28}, 'data': '0000000000000040', 'expect': '000000000000f03f',
-                 'undo': 5, 'owner': REF, 'object': '0x2000'}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
+                 'undo': {'after': 5, 'owner': REF, 'object': '0x2000'}}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
     [C('writes', {'clear': True, 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
-    [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
-    [C('get', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
+    [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'start': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
+    [C('get', {'object': REF, 'mode': 'changed'}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
                                                      'truncated': False, 'capped': False})],
-    [C('get', {'object': REF, 'match': 'Ammo', 'changed': True}), ok({
+    [C('get', {'object': REF, 'mode': 'changed', 'view': {'match': 'Ammo'}}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False})],
-    [C('get', {'object': REF, 'snap': True}), ok({'ref': REF, 'rows': [], 'snap': {'size': 1264}})],
+    [C('get', {'object': REF, 'mode': 'snap'}), ok({'ref': REF, 'rows': [], 'snap': {'size': 1264}})],
     [C('census', {'cls': 'Actor', 'diff': True}), ok({'classes': 4, 'instances': 11, 'before': {'classes': 3, 'instances': 9},
                                                        'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
@@ -236,7 +236,7 @@ class SessionTests(unittest.TestCase):
         self.assertIsInstance(digest, dl.Digest)
         self.assertIs(self.session.digest, digest)
         self.assertEqual(digest['chars'], 90000)
-        self.assertEqual(digest.next_call()['args'], {'object': REF, 'fields': 'Cost', 'limit': 40})
+        self.assertEqual(digest.next_call()['args'], {'object': REF, 'view': {'fields': [['Cost']], 'limit': 40}})
         self.assertEqual(self.sent()[-1]['budget'], 25000)        # The line flag, beside args.
         self.c.read('0x1000', len=4)
         self.assertIsNone(self.session.digest)                    # Each call sets it again.
@@ -273,10 +273,11 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(read.parameters['type'].kind, inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(read.return_annotation.__name__, 'ReadResult')
         write = inspect.signature(self.gen.Console.write)
-        self.assertIsNone(write.parameters['owner'].default)                          # A flag: optional, by name.
-        self.assertEqual(write.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIsNone(write.parameters['undo'].default)                           # Optional: by name.
+        self.assertEqual(write.parameters['undo'].kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIn('dict', str(write.parameters['undo'].annotation))                # An object arg is a dict.
         find = inspect.signature(self.gen.UeVerbs.find)
-        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'outer', 'start', 'limit'])
+        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'outer', 'view'])
         self.assertIn('Literal', str(inspect.signature(self.gen.Console.search).parameters['type'].annotation))
         self.assertIn('class_size', self.gen.Object.__annotations__)              # Named types are classes.
         self.assertIn('Chain', str(self.gen.ReadResult.__annotations__['chain']))
@@ -349,7 +350,7 @@ class SessionTests(unittest.TestCase):
         self.c.disasm(GAME, count=8, function=True, follow=True)
         self.c.xrefs(GAME, module='engine.dll', all=True)
         self.c.touches(GAME, offsets=[0x538, 0x540], range=0x1000)
-        self.c.ue.find(text='A', cls='Pawn', start=24)
+        self.c.ue.find(text='A', cls='Pawn', view={'start': 24})
         self.assertEqual(self.sent(), [
             C('read', {'addr': '0x10', 'type': 'cstr'}),
             C('read', {'addr': {'base': REF, 'offset': 0x538}, 'type': 'u8 phase, pad 1'}),
@@ -358,7 +359,7 @@ class SessionTests(unittest.TestCase):
             C('disasm', {'addr': GAME, 'count': 8, 'function': True, 'follow': True}),
             C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'all': True}),
             C('touches', {'addr': GAME, 'offsets': [0x538, 0x540], 'range': 0x1000}),
-            C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24})])
+            C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'start': 24}})])
 
     def test_converters_and_the_batch_helper(self):
         # The helpers read their results as strict Records, so a key they spell that the table lacks fails here.
@@ -382,8 +383,8 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(held['timed']['id'], 'hold:1')
         self.assertEqual([row['mode'] for row in self.c.writes()['rows']], ['undo', 'hold'])
         self.assertEqual(self.c.writes(clear=True, id='hold:1')['cleared'], 1)
-        row = self.c.write({'base': REF, 'offset': 0x28}, dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0), owner=REF,
-                           object='0x2000', undo=5)['timed']
+        row = self.c.write({'base': REF, 'offset': 0x28}, dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0),
+                           undo={'after': 5, 'owner': REF, 'object': '0x2000'})['timed']
         self.assertIsNone(row['guard'])
         self.assertIsNone(row['writes'])                     # A --hold key, absent on an --undo write.
         self.assertEqual(self.c.writes(clear=True, id='undo:1')['rows'][0]['state'], 'restored')
@@ -398,9 +399,9 @@ class SessionTests(unittest.TestCase):
 
     def test_pack_verbs(self):
         self.assertEqual(self.c.ue.find(text='A', cls='Pawn')['total'], 2)
-        self.assertEqual(self.c.ue.get(REF, snap=True)['snap']['size'], 1264)
-        self.assertEqual(self.c.ue.get(REF, changed=True)['rows'][0]['before'], 5)
-        self.c.ue.get(REF, match='Ammo', changed=True)
+        self.assertEqual(self.c.ue.get(REF, mode='snap')['snap']['size'], 1264)
+        self.assertEqual(self.c.ue.get(REF, mode='changed')['rows'][0]['before'], 5)
+        self.c.ue.get(REF, mode='changed', view={'match': 'Ammo'})
         diff = self.c.ue.census(cls='Actor', diff=True)
         self.assertEqual(diff['rows'][0]['count'], 2)
         self.assertEqual(diff['before']['instances'], 9)

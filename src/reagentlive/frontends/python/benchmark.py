@@ -50,17 +50,17 @@ def main():
         seconds, timing, envelope = timed(s, 'get', {'object': args.object})
         out['get_all'] = {'ms': seconds * 1000, **timing, 'bytes': len(json.dumps(envelope)),
                        'ticks_per_second': rate()}
-        _, timing, envelope = timed(s, 'get', {'object': args.object, 'nonzero': True})
+        _, timing, envelope = timed(s, 'get', {'object': args.object, 'view': {'nonzero': True}})
         out['get_all_nonzero_bytes'] = len(json.dumps(envelope))
-        seconds, snap, _ = timed(s, 'get', {'object': args.object, 'snap': True})
-        seconds2, diff, _ = timed(s, 'get', {'object': args.object, 'changed': True})
+        seconds, snap, _ = timed(s, 'get', {'object': args.object, 'mode': 'snap'})
+        seconds2, diff, _ = timed(s, 'get', {'object': args.object, 'mode': 'changed'})
         out['snap_diff'] = {'ms': (seconds + seconds2) * 1000, 'trips': snap.get('trips', 0) + diff.get('trips', 0)}
         if args.path:
             seconds, timing, envelope = timed(s, 'get', {'object': args.object, 'paths': [args.path.split('.')]})
             out['get'] = {'ms': seconds * 1000, **timing, 'same_tick': envelope.get('result', {}).get('same_tick')}
     if args.class_name:
         runs = []
-        call = json.dumps({'verb': 'get', 'args': {'object': args.class_name, 'types': True}})
+        call = json.dumps({'verb': 'get', 'args': {'object': args.class_name, 'mode': 'types'}})
         for _ in range(2):
             started = time.perf_counter()
             subprocess.run([args.console, '-c', call], capture_output=True, check=False)

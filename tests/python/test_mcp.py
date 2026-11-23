@@ -60,8 +60,8 @@ class McpTests(unittest.TestCase):
                                                                                'size': 4096}]}, 'tick': 4}]}}],
                 [call('rows', {'object': REF}), {'ok': True, 'digest': {
                     'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
-                    'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['match', 'fields', 'limit'],
-                    'next': json.dumps(call('rows', {'object': REF, 'fields': 'Cost', 'limit': 40}))}}],
+                    'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['view.match', 'view.fields', 'view.limit'],
+                    'next': json.dumps(call('rows', {'object': REF, 'view': {'fields': [['Cost']], 'limit': 40}}))}}],
                 [call('call', {'object': REF, 'function': 'Buy'}), {'ok': True, 'digest': {
                     'chars': 40000, 'budget': 25000, 'largest': [], 'file': 'C:/temp/r.json'}}],
                 [call('read', {'addr': '0x10', 'len': 5000}), {'ok': False, 'error': {
@@ -251,7 +251,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(narrowed.structured_content['digest']['chars'], 90000)
         text = narrowed.content[0].text
         self.assertIn('past the budget of 25000', text)
-        self.assertIn('Call next: ue_rows {"object": "0x10#1:1", "fields": "Cost", "limit": 40}', text)
+        self.assertIn('Call next: ue_rows {"object": "0x10#1:1", "view": {"fields": [["Cost"]], "limit": 40}}', text)
         self.assertIn('rows[].value.Icon (60000)', text)
         self.assertFalse(kept.is_error, kept.content[0].text)
         self.assertIn('must not run again', kept.content[0].text)

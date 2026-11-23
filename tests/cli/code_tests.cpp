@@ -551,11 +551,10 @@ TEST_CASE("fast-lane calls") {
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 300, "function": true}})")->limit == 300);
     CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 2049, "function": true}})"));
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "resume": true}})")->resume);
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": "fn.jsonl"}})")->file == "fn.jsonl");
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl"}}})")->file == "fn.jsonl");
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "resume": true}})").error().starts_with("resume"));
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "save": "fn.jsonl"}})").error().starts_with("save"));
-    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": "fn.jsonl",
-        "callees": true, "labels": "l.jsonl"}})");
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "save": {"file": "fn.jsonl"}}})").error().starts_with("save"));
+    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl", "callees": true, "labels": "l.jsonl"}}})");
     REQUIRE(callees);
     CHECK(callees->callees);
     CHECK(callees->labels == "l.jsonl");
@@ -571,16 +570,17 @@ TEST_CASE("fast-lane calls") {
     CHECK(xrefs->all);
     CHECK_FALSE(Call(R"({"verb": "xrefs"})"));
 
-    auto text = Call(R"({"verb": "search", "args": {"type": "text", "value": "Weapon.cpp", "module": "Game.exe"}})");
+    auto text = Call(R"({"verb": "search", "args": {"type": "text", "value": "Weapon.cpp", "scope": {"module": "Game.exe"}}})");
     REQUIRE(text);
     CHECK(text->request.length == 10);
     CHECK(std::memcmp(text->request.data, "Weapon.cpp", 10) == 0);
-    auto wide = Call(R"({"verb": "search", "args": {"type": "text", "value": "Aim", "wide": true}})");
+    auto wide = Call(R"({"verb": "search", "args": {"type": "wtext", "value": "Aim"}})");
     REQUIRE(wide);
     CHECK(wide->request.length == 6);
     CHECK(wide->request.data[1] == 0);
     CHECK(wide->request.data[2] == 'i');
-    CHECK(Call(R"({"verb": "search", "args": {"type": "hex", "value": "01", "wide": true}})").error().starts_with("wide"));
+    const Json wideKey = {{"verb", "search"}, {"args", {{"type", "hex"}, {"value", "01"}, {"wide", true}}}};
+    CHECK(Call(wideKey.dump()).error().starts_with("unknown key 'wide'"));
     const Json tooLong = {{"verb", "search"}, {"args", {{"type", "text"}, {"value", std::string(65, 'x')}}}};
     CHECK(Call(tooLong.dump()).error().starts_with("value"));
 }

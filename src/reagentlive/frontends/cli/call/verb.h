@@ -111,6 +111,8 @@ inline std::string Notation(const Type& type, bool full = false) {
 //   point    a trace end: [x, y, z] in cm, a ref, or {"object": <ref>, "socket": "Name"}
 //   scalar   a string or a number
 //   calls    batch's: a list of {"verb": "...", "args": {...}}
+//   obj      an object of named keys, each an Arg of this vocabulary (fields): view, a
+//            search's scope, a disasm's save; checked as a call's own keys are
 //   a|b      one of the words
 // An arg marked `list` takes a JSON list of its type.
 namespace arg {
@@ -125,7 +127,7 @@ inline bool OneOf(std::string_view type, std::string_view word) {
 }
 // Every type the vocabulary has; a row naming another fails the table tests.
 inline constexpr std::string_view Types[] = {"bool", "int", "num", "dur", "str", "text", "file", "bytes", "pattern",
-    "layout", "addr", "chain", "ref", "path", "filter", "params", "range", "point", "scalar", "calls"};
+    "layout", "addr", "chain", "ref", "path", "filter", "params", "range", "point", "scalar", "calls", "obj"};
 inline bool Known(std::string_view type) { return Enum(type) || std::ranges::find(Types, type) != std::end(Types); }
 }
 
@@ -189,7 +191,45 @@ struct Arg {
     bool required = false;
     bool list = false;          // A JSON list of `type`.
     std::string_view example = {};
+    std::vector<Arg> fields = {};       // obj: its keys, one level deep.
 };
+
+// The most own args a verb takes beside `view` (J4: a new option replaces
+// one or says in the verb's notes why nothing else covers it).
+inline constexpr size_t MaxOwnArgs = 6;
+
+// The shared output-shaping keys: one schema for every list-returning verb's
+// `view`. A verb takes the ones that apply to its result (a key it does not
+// take is refused); its notes say what match matches and what limit 0 means.
+inline const std::vector<Arg>& ViewKeys() {
+    static const std::vector<Arg> keys = {
+        {"start", "int", "a page's next_cursor: the page after it"},
+        {"limit", "int", "rows at most (the verb's notes say whether 0 means all)"},
+        {"match", "str", "keep rows whose name contains the text, any case (the verb's notes say which name)"},
+        {"fields", "path", "the row members to keep (paths into structs and arrays)", {}, false, true},
+        {"nonzero", "bool", "leave out zero members inside values (0, false, empty, None)"},
+        {"elements", "int", "elements shown per array, set or map (1..256)", "8"},
+    };
+    return keys;
+}
+// A verb's `view`: the shared keys it takes, by name ("start limit"), and
+// its own default for limit.
+inline Arg View(std::string_view keys, std::string_view limit = {}) {
+    Arg view{"view", "obj", "how the result is shown: page, row limit, filters (the shared view keys)"};
+    for (const auto& key : ViewKeys()) {
+        bool listed = false;
+        for (std::string_view rest = keys; !rest.empty();) {
+            const size_t space = rest.find(' ');
+            listed = listed || rest.substr(0, space) == key.key;
+            rest = space == std::string_view::npos ? std::string_view{} : rest.substr(space + 1);
+        }
+        if (!listed) continue;
+        Arg copy = key;
+        if (key.key == "limit" && !limit.empty()) copy.fallback = limit;
+        view.fields.push_back(std::move(copy));
+    }
+    return view;
+}
 
 // A call's arguments once check.h accepted them: every key is one of the
 // row's and every value has its type, so a builder reads them without
@@ -275,5 +315,24 @@ inline const Verb* FindVerb(std::span<const Verb> verbs, std::string_view name) 
 inline const Arg* FindArg(const Verb& verb, std::string_view key) {
     const auto found = std::ranges::find(verb.args, key, &Arg::key);
     return found == verb.args.end() ? nullptr : &*found;
+}
+// An arg by its path: "limit" for an own key, "view.limit" for an object's.
+inline const Arg* FindKey(const Verb& verb, std::string_view path) {
+    const size_t dot = path.find('.');
+    const Arg* top = FindArg(verb, path.substr(0, dot));
+    if (!top || dot == std::string_view::npos) return top;
+    const auto found = std::ranges::find(top->fields, path.substr(dot + 1), &Arg::key);
+    return found == top->fields.end() ? nullptr : &*found;
+}
+// A key's path in the row: "limit" -> "view.limit" when an object holds it,
+// itself when it is an own key, empty when the row has neither. An object's
+// keys are read as the verb's own once checked (check.h), so a row never
+// uses one name twice.
+inline std::string KeyPath(const Verb& verb, std::string_view key) {
+    if (FindArg(verb, key)) return std::string(key);
+    for (const auto& arg : verb.args)
+        if (std::ranges::find(arg.fields, key, &Arg::key) != arg.fields.end())
+            return std::string(arg.key) + "." + std::string(key);
+    return {};
 }
 }

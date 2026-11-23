@@ -15,15 +15,13 @@ Parsed Disasm(const Args& args, const ParseContext& context) {
     if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
     if (!count || count > most) return Fail("count must be 1.." + std::to_string(most));
     command.resume = args.Has("resume");
-    command.file = args.Str("save");
-    if (args.Has("save") && command.file.empty()) return Fail("save needs a file");
+    command.file = args.Str("file"); // save's file.
+    if (args.Has("save") && command.file.empty()) return Fail("file: save needs a file");
     if (!command.function && command.resume) return Fail("resume needs function");
     if (!command.function && !command.file.empty()) return Fail("save needs function");
     command.callees = args.Has("callees");
     command.labels = args.Str("labels");
     if (args.Has("labels") && command.labels.empty()) return Fail("labels needs a file");
-    if (command.file.empty() && command.callees) return Fail("callees needs save");
-    if (command.file.empty() && !command.labels.empty()) return Fail("labels needs save");
     command.follow = args.Has("follow");
     command.kind = Kind::Disasm;
     command.limit = static_cast<uint32_t>(count);

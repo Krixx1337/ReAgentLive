@@ -164,8 +164,6 @@ Parsed Write(const Args& args, const ParseContext& context) {
     request.address = place->address;
     const bool hold = args.Has("hold"), undo = args.Has("undo"), timed = hold || undo;
     if (hold && undo) return Fail("hold: undo and hold do not combine; hold already ends on its own");
-    if (!undo && (args.Has("owner") || args.Has("object")))
-        return Fail("owner: owner and object go with undo" + std::string(hold ? "; hold guards a ref-based addr on its object" : ""));
     const size_t most = !timed ? MaxWrite : hold ? MaxPinBytes : MaxTrialBytes;
     if (!Bytes(args.Str("data"), request.data, most, request.length) || !request.length)
         return Fail("data must be hex pairs, at most " + std::to_string(most));
@@ -180,9 +178,9 @@ Parsed Write(const Args& args, const ParseContext& context) {
         request.op = op::Write;
         return command;
     }
-    const uint64_t n = args.Milliseconds(hold ? "hold" : "undo");
+    const uint64_t n = args.Milliseconds(hold ? "hold" : "after");
     const uint32_t longest = hold ? MaxPinMilliseconds : MaxTrialMilliseconds;
-    if (n > longest) return Fail(std::string(hold ? "hold" : "undo") + ": a timed write lasts at most " +
+    if (n > longest) return Fail(std::string(hold ? "hold" : "after") + ": a timed write lasts at most " +
         std::to_string(longest / 1000) + " s");
     command.milliseconds = static_cast<uint32_t>(n);
     if (hold) {
@@ -193,8 +191,7 @@ Parsed Write(const Args& args, const ParseContext& context) {
         return command;
     }
     command.kind = Kind::Trial;
-    if (!args.Has("owner")) return Fail("owner: undo needs owner and expect");
-    if (!expect) return Fail("expect: undo needs owner and expect");
+    if (!expect) return Fail("expect: undo needs expect (the bytes it restores over)");
     if (!LiteralRef(args.Str("owner"), command.owner) || command.owner.index < 0)
         return Fail("owner is a literal ref (the object's identity is guarded)");
     if (args.Has("object")) {
@@ -235,7 +232,8 @@ Parsed Modules(const Args&, const ParseContext&) {
 Parsed Search(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;
-    const std::string type = args.Str("type");
+    const bool wide = args.Str("type") == "wtext";
+    const std::string type = wide ? std::string("text") : args.Str("type");
     const Json& given = args.At("value");
     const std::string value = given.is_string() ? given.get<std::string>() : given.dump();
     if (value.empty()) return Fail("value is empty");
@@ -245,11 +243,9 @@ Parsed Search(const Args& args, const ParseContext& context) {
         request.length = size;
         align = size;
     };
-    const bool wide = args.Has("wide");
-    if (wide && type != "text") return Fail("wide is for type text");
     const bool wide64 = type == "u64" || type == "ptr";
     if (!wide64 && (type == "text" || type == "hex") != given.is_string())
-        return Fail("value: type " + type + " takes " + (given.is_string() ? "a number" : "a string"));
+        return Fail("value: type " + args.Str("type") + " takes " + (given.is_string() ? "a number" : "a string"));
     if (type == "text") {
         // The text's bytes, no terminator: an exact search for any string holding it.
         const size_t size = value.size() * (wide ? 2 : 1);
@@ -296,7 +292,7 @@ Parsed Search(const Args& args, const ParseContext& context) {
     for (const auto* key : {"start", "to"}) {
         if (!args.Has(key)) continue;
         auto place = value::Address(args.At(key), context.modules);
-        if (!place) return Fail(std::string(key) + ": " + place.error());
+        if (!place) return Fail("scope: " + std::string(key) + ": " + place.error());
         (key[0] == 's' ? request.address : request.args[0]) = place->address;
     }
     if (args.Has("align")) {
@@ -309,7 +305,7 @@ Parsed Search(const Args& args, const ParseContext& context) {
         if (!n || n > MaxSearchJobHits) return Fail("max is 1.." + std::to_string(MaxSearchJobHits));
         request.args[1] = n;
     }
-    if (!command.target.empty() && (request.address || request.args[0])) return Fail("module replaces start and to");
+    if (!command.target.empty() && (request.address || request.args[0])) return Fail("scope: module replaces start and to");
     request.flags |= align | SearchJobStart;
     request.op = op::Search;
     if (Check(request) != Status::Ok) return Fail("invalid search: align 1, 2, 4, 8 or 16; max 1.." +

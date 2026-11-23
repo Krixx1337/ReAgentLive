@@ -52,7 +52,7 @@ Json Refused(std::string_view text) {
         refusal = args.error();
     } else {
         const auto built = Build(verb, *args);
-        REQUIRE_FALSE(built.has_value());
+        REQUIRE_MESSAGE(!built.has_value(), text);
         refusal = {built.error(), KeyOf(verb, built.error())};
     }
     return RefusalJson(verb, given, refusal);
@@ -129,6 +129,77 @@ TEST_CASE("a value of the wrong type is refused with what its type takes") {
     CHECK(enumError["arg"]["enum"][0] == "hex");
     CHECK(enumError["example"]["args"] == Json::parse(R"({"type": "hex", "value": "41 42"})"));
     CHECK(Refused(cases[7].call)["example"]["args"]["indices"] == Json::array({16}));
+}
+
+TEST_CASE("an object arg's keys are checked by path; one given at the top goes inside it") {
+    // A view key at the top: refused with its path, and the example moves it into view.
+    Json error = Refused(R"({"verb": "find", "args": {"text": "Pawn", "limit": 5}})");
+    CHECK(error["key"] == "view.limit");
+    CHECK(error["message"].get<std::string>().starts_with("'limit' goes inside view"));
+    CHECK(error["arg"]["key"] == "limit");
+    CHECK(error["example"] == Json::parse(R"({"verb": "find", "args": {"text": "Pawn", "view": {"limit": 5}}})"));
+    CHECK(Builds(error["example"]));
+    // A view key the verb does not take: the view's own list, the example without it.
+    error = Refused(R"({"verb": "find", "args": {"text": "Pawn", "view": {"limit": 5, "nonzero": true}}})");
+    CHECK(error["key"] == "view");
+    CHECK(error["message"].get<std::string>().starts_with("unknown key 'view.nonzero'; view takes start, limit"));
+    CHECK(error["example"]["args"]["view"] == Json{{"limit", 5}});
+    // A wrong value inside: its path and its part of the schema; the example drops it.
+    error = Refused(R"({"verb": "census", "args": {"view": {"limit": "many", "match": "Pawn"}}})");
+    CHECK(error["key"] == "view.limit");
+    CHECK(error["message"].get<std::string>().starts_with("view.limit: a whole number"));
+    CHECK(error["arg"]["type"] == "int");
+    CHECK(error["example"]["args"]["view"] == Json{{"match", "Pawn"}});
+    CHECK(Builds(error["example"]));
+    // A required key inside an object.
+    error = Refused(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"callees": true}}})");
+    CHECK(error["key"] == "save.file");
+    CHECK(error["message"].get<std::string>().starts_with("missing save.file: "));
+    CHECK(Builds(error["example"]));
+    // A builder's message about an object's key names its path.
+    CHECK(KeyOf(Row("find"), "limit must be 1..1000") == "view.limit");
+    CHECK(KeyOf(Row("search"), "start: bad") == "scope.start");
+    CHECK(KeyOf(Row("write"), "after: a timed write lasts at most 60 s") == "undo.after");
+    // Once checked, an object's keys read as the verb's own.
+    const auto args = CheckCall(Row("rows"), Json::parse(R"({"object": "0x1000#5:9", "view": {"limit": 3, "nonzero": true}})"));
+    REQUIRE(args);
+    CHECK(args->Int("limit") == 3);
+    CHECK(args->Has("nonzero"));
+}
+
+TEST_CASE("view is one schema; no verb takes more than six own args beside it") {
+    for (const auto& verb : AllVerbs()) {
+        size_t own = 0;
+        std::set<std::string_view> names;
+        for (const auto& param : verb.args) {
+            if (param.key != "view") ++own;
+            CHECK_MESSAGE(names.insert(param.key).second, verb.name << "." << param.key);
+            // Only an object has keys, one level deep.
+            CHECK_MESSAGE((param.type == "obj") == !param.fields.empty(), verb.name << "." << param.key);
+            for (const auto& field : param.fields) {
+                CHECK_MESSAGE(field.fields.empty(), verb.name << "." << param.key << "." << field.key);
+                // An object's keys read as the verb's own once checked: never a name twice.
+                CHECK_MESSAGE(names.insert(field.key).second, verb.name << "." << param.key << "." << field.key);
+            }
+            // Output shaping lives in view alone (a key of the same name and another type means another thing:
+            // trace's start is a point).
+            if (param.key != "view")
+                for (const auto& shared : ViewKeys())
+                    CHECK_MESSAGE(!(param.key == shared.key && param.type == shared.type), verb.name << "." << param.key << " belongs in view");
+            if (param.key != "view") continue;
+            CHECK(param.type == "obj");
+            CHECK(param.help == View("limit").help);
+            for (const auto& field : param.fields) {
+                const auto shared = std::ranges::find(ViewKeys(), field.key, &Arg::key);
+                REQUIRE_MESSAGE(shared != ViewKeys().end(), verb.name << ".view." << field.key);
+                CHECK(field.type == shared->type);
+                CHECK(field.list == shared->list);
+                CHECK(field.help == shared->help);
+                if (field.key != "limit") CHECK(field.fallback == shared->fallback);
+            }
+        }
+        CHECK_MESSAGE(own <= MaxOwnArgs, verb.name << " takes " << own << " own args");
+    }
 }
 
 TEST_CASE("a builder's refusal names the key its message starts with") {
@@ -245,7 +316,7 @@ TEST_CASE("ArgJson lists an arg's key, type, default, enum and help") {
     CHECK(ArgJson(*FindArg(Row("read"), "len"))["default"] == 64);
     CHECK(ArgJson(*FindArg(Row("touches"), "range"))["default"] == "0x80000");
     const Json type = ArgJson(*FindArg(Row("search"), "type"));
-    CHECK(type["enum"] == Json::parse(R"(["hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text"])"));
+    CHECK(type["enum"] == Json::parse(R"(["hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text", "wtext"])"));
     CHECK(type["required"] == true);
     CHECK(ArgJson(*FindArg(Row("name"), "indices"))["list"] == true);
 }
@@ -278,10 +349,10 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"addr": {"base": "0x1000", "chain": [16, 8]}})"}},
         {"peek", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 1, "label": true, "name": "Foo"})"}},
         {"modules", {R"({})"}},
-        {"search", {R"({"type": "f32", "value": 1.5})", R"({"type": "text", "value": "abc", "wide": true, "wait": 0, "max": 8})"}},
+        {"search", {R"({"type": "f32", "value": 1.5})", R"({"type": "wtext", "value": "abc", "wait": 0, "max": 8})"}},
         {"search-job", {R"({"job": 3})", R"({"job": 3, "stop": true})"}},
         {"mem-snap", {R"({"addr": "0x1000", "len": 64})"}},
-        {"mem-diff", {R"({"test": "changed", "type": "f32"})", R"({"test": "increased", "type": "i32", "keep": true, "limit": 4})"}},
+        {"mem-diff", {R"({"test": "changed", "type": "f32"})", R"({"test": "increased", "type": "i32", "keep": true, "view": {"limit": 4}})"}},
         {"watch-start", {R"({"duration": 5, "ranges": [{"addr": "0x1000", "len": 8}]})",
             R"({"duration": 5, "ranges": [{"addr": "0x1000", "type": "f32"}], "every": 0.1, "file": "w.jsonl"})"}},
         {"watch-read", {R"({})", R"({"all": true})"}},
@@ -291,32 +362,33 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"labels-sign", {R"({})", R"({"again": true})"}},
         {"labels-port", {R"({})"}},
         {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
-            R"({"addr": "0x1000", "function": true, "save": "f.json", "callees": true})"}},
+            R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": true}})"}},
         {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
         {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})"}},
         {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "count": 4, "resolve": true, "rtti": true})"}},
-        {"find", {R"({"text": "Pawn"})", R"({"cls": "Pawn", "live": true, "limit": 5})"}},
+        {"find", {R"({"text": "Pawn"})", R"({"cls": "Pawn", "live": true, "view": {"limit": 5}})"}},
         {"census", {R"({})", R"({"cls": "Pawn", "diff": true})"}},
         {"name-find", {R"({"text": "Health"})"}},
         {"name", {R"({"indices": [1, 2]})"}},
         {"each", {R"({"cls": "Pawn", "paths": [["Health"]]})", R"({"cls": "Pawn", "paths": [["Health"]], "seconds": 5})",
-            R"({"cls": "Pawn", "paths": [["Health"]], "where": {"field": ["Name"], "contains": "a"}, "limit": 0})"}},
+            R"({"cls": "Pawn", "paths": [["Health"]], "where": {"field": ["Name"], "contains": "a"}, "view": {"limit": 0}})"}},
         {"call-pure", {R"({"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation"})",
             R"({"object": "0x1000#5:9", "function": "GetSocket", "params": {"SocketName": "#42"}})",
-            R"({"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "dry": true})",
-            R"({"object": "Pawn", "function": "GetHealth", "each": true, "seconds": 5})"}},
+            R"({"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "dry": true})"}},
+        {"call-each", {R"({"cls": "Pawn", "function": "GetHealth"})", R"({"cls": "Pawn", "function": "GetHealth", "seconds": 5})",
+            R"({"cls": "Pawn", "function": "GetHealth", "outer": "Level", "view": {"limit": 0, "nonzero": true}})"}},
         {"label", {R"({"object": "0x1000#5:9", "offset": "0x10", "type": "f32", "name": "Speed"})"}},
         {"export-labels", {R"({})", R"({"file": "out.jsonl"})"}},
         {"export-assets", {R"({"dir": "out", "cls": ["DataTable"]})",
-            R"({"dir": "out", "cls": ["DataTable", "CurveTable"], "match": "Weapon"})"}},
+            R"({"dir": "out", "cls": ["DataTable", "CurveTable"], "view": {"match": "Weapon"}})"}},
         {"layout-export", {R"({"file": "out.json", "classes": ["Pawn"]})", R"({"file": "out.json", "classes": ["Pawn"], "closure": 1})",
             R"({"file": "out.json", "classes": ["Pawn"], "closure": 2})"}},
         {"layout-check", {R"({"file": "out.json"})"}},
-        {"entries", {R"({"object": "0x1000#5:9", "field": "Items"})", R"({"object": "0x1000#5:9", "field": "Items", "start": 8})"}},
-        {"rows", {R"({"object": "0x1000#5:9"})", R"({"object": "0x1000#5:9", "match": "a", "fields": [["b"]]})"}},
+        {"entries", {R"({"object": "0x1000#5:9", "field": "Items"})", R"({"object": "0x1000#5:9", "field": "Items", "view": {"start": 8}})"}},
+        {"rows", {R"({"object": "0x1000#5:9"})", R"({"object": "0x1000#5:9", "view": {"match": "a", "fields": [["b"]]}})"}},
         {"get", {R"({"object": "0x1000#5:9"})", R"({"object": "0x1000#5:9", "paths": [["Health"]]})",
-            R"({"object": "Pawn", "types": true})", R"({"object": "0x1000#5:9", "snap": true})",
-            R"({"object": "0x1000#5:9", "changed": true})"}},
+            R"({"object": "Pawn", "mode": "types"})", R"({"object": "0x1000#5:9", "mode": "snap"})",
+            R"({"object": "0x1000#5:9", "mode": "changed"})"}},
         {"trace", {R"({"start": [0, 0, 0], "end": [1, 1, 1], "ignore": "0x1000#5:9"})"}},
         {"describe", {R"({"object": "0x1000#5:9"})", R"({"index": 5, "serial": 9})"}},
         {"func", {R"({"object": "0x1000#5:9", "function": "GetHealth"})"}},
@@ -324,7 +396,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"object": "Pawn", "function": "ExecuteUbergraph_Pawn", "decode": true, "entry": "0x1c"})"}},
         {"enum", {R"({"enum": "EMode"})"}},
         {"refs", {R"({"name": "Health"})", R"({"index": 42})"}},
-        {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "text": "Get", "start": 4})"}},
+        {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"start": 4, "match": "Get"}})"}},
     };
     for (const auto& verb : AllVerbs()) {
         if (verb.pack == ToolPack::Modify) continue;
@@ -390,7 +462,7 @@ TEST_CASE("a module address needs the module list and stays inside the image") {
     REQUIRE(read.has_value());
     CHECK(read->request.address == 0x7ff600000010);
     CHECK(Why(R"({"verb": "read", "args": {"addr": {"module": "base", "rva": "0x10"}}})").starts_with("addr: no loaded module"));
-    const auto search = Call(R"({"verb": "search", "args": {"type": "u32", "value": 1, "start": {"module": "app.exe", "rva": "0x20"}}})",
+    const auto search = Call(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"start": {"module": "app.exe", "rva": "0x20"}}}})",
         Loaded);
     REQUIRE(search.has_value());
     CHECK(search->request.address == 0x7ff600000020);
@@ -453,7 +525,7 @@ TEST_CASE("a path is a list of names joined by '.'; a step holds no '.' and the 
 }
 
 TEST_CASE("each's where filters on a field's value; a filter is exactly field and contains") {
-    auto each = Call(R"({"verb": "each", "args": {"cls": "ItemDefinition", "paths": [["ItemId"]], "where": {"field": ["DisplayName"], "contains": "rifle"}, "limit": 5}})");
+    auto each = Call(R"({"verb": "each", "args": {"cls": "ItemDefinition", "paths": [["ItemId"]], "where": {"field": ["DisplayName"], "contains": "rifle"}, "view": {"limit": 5}}})");
     REQUIRE(each.has_value());
     CHECK(each->whereField == "DisplayName");
     CHECK(each->match == "rifle");
@@ -534,7 +606,7 @@ TEST_CASE("search values: text and hex as strings, numbers by type, u64 also as 
     CHECK(parsed->seconds == 10);
     CHECK(Check(parsed->request) == Status::Ok);
 
-    parsed = Call(R"({"verb": "search", "args": {"type": "ptr", "value": "0x7ff7bb2a7740", "writable": true, "max": 8, "start": "0x10000", "to": "0x20000"}})");
+    parsed = Call(R"({"verb": "search", "args": {"type": "ptr", "value": "0x7ff7bb2a7740", "max": 8, "scope": {"start": "0x10000", "to": "0x20000", "writable": true}}})");
     REQUIRE(parsed.has_value());
     uint64_t pointer = 0;
     memcpy(&pointer, parsed->request.data, 8);
@@ -561,7 +633,7 @@ TEST_CASE("search values: text and hex as strings, numbers by type, u64 also as 
     CHECK(negative == -5);
 
     // Text exactly as given: spaces, quotes and backslashes kept.
-    parsed = Call(R"({"verb": "search", "args": {"type": "text", "value": "two  spaces; and -- dashes", "module": "lib.dll", "max": 1}})");
+    parsed = Call(R"({"verb": "search", "args": {"type": "text", "value": "two  spaces; and -- dashes", "max": 1, "scope": {"module": "lib.dll"}}})");
     REQUIRE(parsed.has_value());
     CHECK(text(*parsed) == "two  spaces; and -- dashes");
     CHECK(parsed->target == "lib.dll");
@@ -570,7 +642,7 @@ TEST_CASE("search values: text and hex as strings, numbers by type, u64 also as 
     parsed = Call(R"({"verb": "search", "args": {"type": "text", "value": "say \"hi\" from C:\\dir\\x"}})");
     REQUIRE(parsed.has_value());
     CHECK(text(*parsed) == R"(say "hi" from C:\dir\x)");
-    parsed = Call(R"({"verb": "search", "args": {"type": "text", "value": "ab c", "wide": true}})");
+    parsed = Call(R"({"verb": "search", "args": {"type": "wtext", "value": "ab c"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->textSearch == 2);
     CHECK(parsed->request.length == 8);
@@ -589,7 +661,7 @@ TEST_CASE("search values: text and hex as strings, numbers by type, u64 also as 
         {R"({"type": "u64", "value": "abc"})", "value must be a 64-bit"},
         {R"({"type": "u64", "value": -1})", "value must be a 64-bit"},
         {R"({"type": "text", "value": ""})", "value is empty"},
-        {R"({"type": "hex", "value": "41", "wide": true})", "wide is for type text"},
+        {R"({"type": "hex", "value": "41", "wide": true})", "unknown key 'wide'"},
         {R"({"type": "str", "value": "abc"})", "type: "},
         {R"({"type": "u32", "value": [1]})", "value: "},
     };
@@ -602,7 +674,7 @@ TEST_CASE("search values: text and hex as strings, numbers by type, u64 also as 
 }
 
 TEST_CASE("search options: ranges, filters, limits and its job") {
-    auto parsed = Call(R"({"verb": "search", "args": {"type": "ptr", "value": "0x1234", "heap": true, "paged": true, "wait": 30, "module": "app.exe"}})");
+    auto parsed = Call(R"({"verb": "search", "args": {"type": "ptr", "value": "0x1234", "wait": 30, "scope": {"module": "app.exe", "heap": true, "paged": true}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->seconds == 30);
     CHECK((parsed->request.flags & SearchBackground) == 0);
@@ -610,11 +682,11 @@ TEST_CASE("search options: ranges, filters, limits and its job") {
     CHECK((parsed->request.flags & SearchPaged) != 0);
     CHECK(parsed->target == "app.exe");
     CHECK(Check(parsed->request) == Status::Ok);
-    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "module": "app.exe", "start": "0x1000"}})").starts_with("module replaces"));
+    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"module": "app.exe", "start": "0x1000"}}})").starts_with("scope: module replaces"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "wait": 61}})").starts_with("wait is"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "align": 3}})").starts_with("invalid search"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "max": 0}})").starts_with("max is"));
-    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "start": "0x2000", "to": "0x1000"}})").starts_with("invalid search"));
+    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"start": "0x2000", "to": "0x1000"}}})").starts_with("invalid search"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32"}})").starts_with("missing value"));
     parsed = Call(R"({"verb": "search-job", "args": {"job": 7, "stop": true}})");
     REQUIRE(parsed.has_value());
@@ -719,7 +791,7 @@ TEST_CASE("write takes hex bytes, bounded by the agent's write limit; expect gua
 }
 
 TEST_CASE("write undo needs an owner ref and expected bytes") {
-    auto parsed = Call(R"({"verb": "write", "args": {"addr": {"base": "0x1000#5:9", "offset": "0x10"}, "data": "2a 00 00 00", "undo": 5, "owner": "0x1000#5:9", "expect": "07 00 00 00"}})");
+    auto parsed = Call(R"({"verb": "write", "args": {"addr": {"base": "0x1000#5:9", "offset": "0x10"}, "data": "2a 00 00 00", "expect": "07 00 00 00", "undo": {"after": 5, "owner": "0x1000#5:9"}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Trial);
     CHECK(parsed->request.op == op::Trial);
@@ -730,18 +802,18 @@ TEST_CASE("write undo needs an owner ref and expected bytes") {
     CHECK(parsed->owner == One);
     CHECK(parsed->object == 0);
     CHECK(parsed->milliseconds == 5000);
-    parsed = Call(R"({"verb": "write", "args": {"addr": "0x5008", "data": "01", "undo": 0.5, "owner": "0x1000#5:9", "object": "0x5000", "expect": "00"}})");
+    parsed = Call(R"({"verb": "write", "args": {"addr": "0x5008", "data": "01", "expect": "00", "undo": {"after": 0.5, "owner": "0x1000#5:9", "object": "0x5000"}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->object == 0x5000);
     CHECK(parsed->milliseconds == 500);
     const struct { std::string_view args, message; } bad[] = {
-        {R"({"addr": "0x1000", "data": "01", "undo": 5, "expect": "00"})", "owner: undo needs"},
-        {R"({"addr": "0x1000", "data": "01", "undo": 5, "owner": "0x1000#5:9"})", "expect: undo needs"},
-        {R"({"addr": "0x1000", "data": "01", "undo": 5, "owner": "0x1000", "expect": "00"})", "owner is a literal ref"},
-        {R"({"addr": "0x1000", "data": "01", "undo": 61, "owner": "0x1000#5:9", "expect": "00"})", "undo: a timed write lasts at most 60 s"},
-        {R"({"addr": "0x1000", "data": "01", "owner": "0x1000#5:9", "expect": "00"})", "owner: owner and object go with undo"},
-        {R"({"addr": "0x1000", "data": "01", "undo": 5, "hold": 5, "owner": "0x1000#5:9", "expect": "00"})", "hold: undo and hold"},
-        {R"({"addr": "0x1000", "data": "01", "hold": 5, "owner": "0x1000#5:9"})", "owner: owner and object go with undo"},
+        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 5}, "expect": "00"})", "missing undo.owner"},
+        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 5, "owner": "0x1000#5:9"}})", "expect: undo needs"},
+        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 5, "owner": "0x1000"}, "expect": "00"})", "owner is a literal ref"},
+        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 61, "owner": "0x1000#5:9"}, "expect": "00"})", "after: a timed write lasts at most 60 s"},
+        {R"({"addr": "0x1000", "data": "01", "undo": 5, "expect": "00"})", "undo: an object {after, owner, object?}"},
+        {R"({"addr": "0x1000", "data": "01", "owner": "0x1000#5:9", "expect": "00"})", "'owner' goes inside undo"},
+        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 5, "owner": "0x1000#5:9"}, "hold": 5, "expect": "00"})", "hold: undo and hold"},
     };
     for (const auto& each : bad) {
         const Json call{{"verb", "write"}, {"args", Json::parse(each.args)}};
@@ -799,11 +871,11 @@ TEST_CASE("release is a call with the release flag and an optional block") {
     CHECK(Why(R"({"verb": "release", "args": {"object": "0x1000#5:9"}})").starts_with("missing function"));
 }
 
-TEST_CASE("each reads fields only; call-pure with each calls a function on every instance") {
+TEST_CASE("each reads fields only; call-each calls a function on every instance") {
     // Owner:Function is a function: each never calls.
     CHECK(Why(R"({"verb": "each", "args": {"cls": "Character", "paths": [["Character:CanJump"]]}})")
-              .starts_with("paths: Character:CanJump is a function: call-pure with each"));
-    auto parsed = Call(R"({"verb": "call-pure", "args": {"object": "Character", "function": "Character:CanJump", "each": true, "seconds": 10, "limit": 5}})");
+              .starts_with("paths: Character:CanJump is a function: call-each"));
+    auto parsed = Call(R"({"verb": "call-each", "args": {"cls": "Character", "function": "Character:CanJump", "seconds": 10, "view": {"limit": 5}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Each);
     CHECK(parsed->eachCall);
@@ -811,16 +883,14 @@ TEST_CASE("each reads fields only; call-pure with each calls a function on every
     CHECK(parsed->fields == std::vector<std::string>{"Character:CanJump"});
     CHECK(parsed->seconds == 10);
     CHECK(parsed->limit == 5);
-    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "Character", "function": "CanJump", "each": true, "block": "00"}})")
-              .starts_with("params: "));                                        // No inputs.
-    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "Character", "function": "CanJump", "each": true, "params": {}}})")
-              .starts_with("params: "));
-    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "Character", "function": "CanJump", "each": true, "dry": true}})")
-              .starts_with("dry: "));
-    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "CanJump", "each": true}})")
-              .starts_with("object is a class name"));                          // A class, not an object.
+    // No inputs and no dry run: the row has no such keys.
+    for (const char* key : {"block", "params", "dry"})
+        CHECK(Why(Json{{"verb", "call-each"}, {"args", {{"cls", "Character"}, {"function", "CanJump"}, {key, true}}}})
+                  .starts_with(std::string("unknown key '") + key + "'"));
+    CHECK(Why(R"({"verb": "call-each", "args": {"cls": "0x1000#5:9", "function": "CanJump"}})")
+              .starts_with("cls is a class name"));                             // A class, not an object.
     CHECK(Why(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "seconds": 2}})")
-              .starts_with("seconds needs each"));
+              .starts_with("unknown key 'seconds'"));
     // game-thread acts; status reads its state.
     CHECK(Call(R"({"verb": "game-thread", "args": {"action": "on"}})")->request.flags ==
           static_cast<uint32_t>(ue::GameThreadAction::On));
@@ -861,38 +931,38 @@ TEST_CASE("a call's object can be a default object by name, never a class") {
 }
 
 TEST_CASE("a typed call's fields, start and limit page its returned arrays") {
-    auto rows = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "fields": [["ItemTag"], ["Variations", "Price"]], "start": 100, "limit": 0}})");
+    auto rows = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "view": {"fields": [["ItemTag"], ["Variations", "Price"]], "start": 100, "limit": 0}}})");
     REQUIRE(rows.has_value());
     CHECK(rows->kind == Kind::TypedCall); // Implied: no params needed.
     CHECK(rows->rowPaths == std::vector<std::string>{"ItemTag", "Variations.Price"});
     CHECK(rows->from == 100);
     CHECK(rows->limit == 0);
-    CHECK(Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "params": {"Count": 2}, "limit": 5}})")
+    CHECK(Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "params": {"Count": 2}, "view": {"limit": 5}}})")
               ->fields == std::vector<std::string>{"Count=2"});
-    CHECK(Why(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "block": "00", "limit": 5}})")
+    CHECK(Why(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "block": "00", "view": {"limit": 5}}})")
               .starts_with("block: "));                                          // A raw block has no rows.
-    CHECK(Why(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "fields": [["a.b"]]}})")
+    CHECK(Why(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "view": {"fields": [["a.b"]]}}})")
               .starts_with("fields: "));
-    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "fields": [["a"]]}})")
-              .starts_with("unknown key 'fields'"));                              // Arrays own memory: call only.
+    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "view": {"fields": [["a"]]}}})")
+              .starts_with("unknown key 'view'"));                              // Arrays own memory: call only.
 }
 
 TEST_CASE("nonzero: get, each, rows and a typed call; objects by Default__ name") {
-    const auto call = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "nonzero": true}})");
+    const auto call = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "view": {"nonzero": true}}})");
     REQUIRE(call.has_value());
     CHECK(call->kind == Kind::TypedCall); // Implied, as fields is.
     CHECK(call->nonzero);
-    CHECK(Why(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "F", "block": "00", "nonzero": true}})").starts_with("block: "));
-    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"], ["Stats"]], "nonzero": true}})")->nonzero);
+    CHECK(Why(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "F", "block": "00", "view": {"nonzero": true}}})").starts_with("block: "));
+    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"], ["Stats"]], "view": {"nonzero": true}}})")->nonzero);
     CHECK_FALSE(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]]}})")->nonzero);
     // A default object by name, as call takes it; the console finds it before reading.
     CHECK(Call(R"({"verb": "get", "args": {"object": "Default__PhysicsSettings", "paths": [["PhysicalSurfaces"]]}})")->className ==
           "Default__PhysicsSettings");
-    CHECK(Call(R"({"verb": "rows", "args": {"object": "Default__Table", "limit": 5}})")->className == "Default__Table");
+    CHECK(Call(R"({"verb": "rows", "args": {"object": "Default__Table", "view": {"limit": 5}}})")->className == "Default__Table");
     CHECK(Call(R"({"verb": "entries", "args": {"object": "Default__Settings", "field": "Map"}})")->className == "Default__Settings");
     CHECK(Why(R"({"verb": "get", "args": {"object": "PhysicsSettings", "paths": [["PhysicalSurfaces"]]}})").contains("types")); // A class is not an object.
-    CHECK(Call(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "nonzero": true}})")->nonzero);
-    CHECK(Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "nonzero": true, "limit": 0}})")->nonzero);
+    CHECK(Call(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "view": {"nonzero": true}}})")->nonzero);
+    CHECK(Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "view": {"nonzero": true, "limit": 0}}})")->nonzero);
 }
 
 TEST_CASE("literal refs round-trip and work wherever an object or address goes") {
@@ -907,7 +977,7 @@ TEST_CASE("literal refs round-trip and work wherever an object or address goes")
     const auto read = Call(R"({"verb": "read", "args": {"addr": {"base": "0x1b3eec26700#185680:9", "offset": "0x330"}, "len": 24}})");
     REQUIRE(read.has_value());
     CHECK(read->request.address == 0x1b3eec26700 + 0x330);
-    const auto snap = Call(R"({"verb": "get", "args": {"object": "0x1b3eec26700#185680:9", "snap": true}})");
+    const auto snap = Call(R"({"verb": "get", "args": {"object": "0x1b3eec26700#185680:9", "mode": "snap"}})");
     REQUIRE(snap.has_value());
     CHECK(ue::GetRef(snap->request) == ref);
     CHECK_FALSE(text::LiteralRef("0x1000#-1:0", parsed));
@@ -927,50 +997,49 @@ TEST_CASE("get with no paths reads every field; types reads the layout") {
     CHECK(Why(R"({"verb": "get", "args": {"object": "Character"}})").contains("Default__Character"));
     CHECK(Call(R"({"verb": "get", "args": {"object": "Default__Character"}})")->kind == Kind::Dump);
 
-    parsed = Call(R"({"verb": "get", "args": {"object": "0x2000#7:0", "types": true}})");
+    parsed = Call(R"({"verb": "get", "args": {"object": "0x2000#7:0", "mode": "types"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Remote);
     CHECK(parsed->request.op == ue::op::Fields);
     CHECK(ue::GetRef(parsed->request) == Two);
     CHECK(parsed->request.length == 0); // First page.
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    CHECK(ue::GetRef(Call(R"({"verb": "get", "args": {"object": "0x4000", "types": true}})")->request).index == -1);
-    CHECK(Call(R"({"verb": "get", "args": {"object": "Character", "types": true, "own": true, "match": "aim"}})")->className == "Character");
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]], "types": true}})").starts_with("paths: "));
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "types": true, "nonzero": true}})").starts_with("types reads no values"));
+    CHECK(ue::GetRef(Call(R"({"verb": "get", "args": {"object": "0x4000", "mode": "types"}})")->request).index == -1);
+    CHECK(Call(R"({"verb": "get", "args": {"object": "Character", "own": true, "mode": "types", "view": {"match": "aim"}}})")->className == "Character");
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]], "mode": "types"}})").starts_with("paths: "));
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "mode": "types", "view": {"nonzero": true}}})").starts_with("mode: types reads no values"));
 }
 
 TEST_CASE("get snap keeps a baseline in an optional file; changed reads it") {
-    const auto snap = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "snap": true, "file": "ctrl.snap"}})");
+    const auto snap = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "file": "ctrl.snap", "mode": "snap"}})");
     REQUIRE(snap.has_value());
     CHECK(snap->kind == Kind::Snap);
     CHECK(snap->file == "ctrl.snap");
-    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "snap": true}})")->file.empty());
-    const auto changed = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "changed": true, "file": "ctrl.snap"}})");
+    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "mode": "snap"}})")->file.empty());
+    const auto changed = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "file": "ctrl.snap", "mode": "changed"}})");
     REQUIRE(changed.has_value());
     CHECK(changed->kind == Kind::Dump);
     CHECK(changed->changed);
     CHECK(changed->file == "ctrl.snap");
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000", "snap": true}})").starts_with("object: snap and changed need a literal ref"));
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "snap": true, "changed": true}})").starts_with("snap and changed"));
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "snap": true, "nonzero": true}})").starts_with("snap keeps"));
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]], "changed": true}})").starts_with("paths: "));
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000", "mode": "snap"}})").starts_with("object: snap and changed need a literal ref"));
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "mode": "snap", "view": {"nonzero": true}}})").starts_with("mode: snap keeps"));
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]], "mode": "changed"}})").starts_with("paths: "));
     CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "file": "ctrl.snap"}})").starts_with("file goes with"));
 }
 
 TEST_CASE("get filters: match, nonzero and changed together") {
-    auto parsed = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "match": "aim", "nonzero": true, "changed": true, "file": "before.snap"}})");
+    auto parsed = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "file": "before.snap", "mode": "changed", "view": {"match": "aim", "nonzero": true}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Dump);
     CHECK(parsed->match == "aim");
     CHECK(parsed->nonzero);
     CHECK(parsed->changed);
     CHECK(parsed->file == "before.snap");
-    parsed = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "changed": true, "nonzero": true}})");
+    parsed = Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "mode": "changed", "view": {"nonzero": true}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->file.empty());
     CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "bogus": true}})").starts_with("unknown key 'bogus'"));
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]], "match": "aim"}})").starts_with("paths: "));
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Health"]], "view": {"match": "aim"}}})").starts_with("paths: "));
 }
 
 TEST_CASE("describe takes an object, or an object-table slot and serial") {
@@ -1011,15 +1080,15 @@ TEST_CASE("func resolves a named entry without a call payload") {
 }
 
 TEST_CASE("funcs pages the functions; func reads the signature too") {
-    auto functions = Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "text": "Socket", "start": 32}})");
+    auto functions = Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"start": 32, "match": "Socket"}}})");
     REQUIRE(functions.has_value());
     CHECK(functions->request.op == ue::op::Functions);
     CHECK(ue::GetRef(functions->request) == One);
     CHECK(std::string_view(functions->request.text) == "Socket");
     CHECK(functions->request.length == 32);
     CHECK(ue::Check(functions->request) == Status::Ok);
-    CHECK(Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "start": 32}})").has_value());
-    CHECK(Why(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "text": "Socket", "start": 99999}})").starts_with("start is"));
+    CHECK(Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"start": 32}}})").has_value());
+    CHECK(Why(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"start": 99999, "match": "Socket"}}})").starts_with("start is"));
     const auto signature = Call(R"({"verb": "func", "args": {"object": "0x1000#5:9", "function": "SceneComponent:GetSocketTransform"}})");
     REQUIRE(signature.has_value());
     CHECK(signature->request.op == ue::op::Function);
@@ -1137,15 +1206,15 @@ TEST_CASE("outer takes an object or an outer's name, on find, each and census; e
     const Json longOuter{{"verb", "find"}, {"args", {{"outer", std::string(64, 'x')}}}};
     CHECK(Why(longOuter).starts_with("outer is"));
     // elements: 1..256 on get (paths or every field) and each.
-    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Map"]], "elements": 16}})")->elements == 16);
-    CHECK(Call(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Map"]], "elements": 256}})")->elements == 256);
-    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "elements": 3}})")->elements == 3);
-    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Map"]], "elements": 0}})").starts_with("elements is"));
-    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Map"]], "elements": 257}})").starts_with("elements is"));
+    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Map"]], "view": {"elements": 16}}})")->elements == 16);
+    CHECK(Call(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Map"]], "view": {"elements": 256}}})")->elements == 256);
+    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "view": {"elements": 3}}})")->elements == 3);
+    CHECK(Why(R"({"verb": "get", "args": {"object": "0x1000#5:9", "paths": [["Map"]], "view": {"elements": 0}}})").starts_with("elements is"));
+    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Map"]], "view": {"elements": 257}}})").starts_with("elements is"));
 }
 
 TEST_CASE("find takes text, a class filter, a cursor and a row limit") {
-    const auto both = Call(R"({"verb": "find", "args": {"text": "Vendor", "cls": "Character", "start": 4096}})");
+    const auto both = Call(R"({"verb": "find", "args": {"text": "Vendor", "cls": "Character", "view": {"start": 4096}}})");
     REQUIRE(both.has_value());
     CHECK(both->request.op == ue::op::Find);
     CHECK(std::string_view(both->request.text) == "Vendor");
@@ -1154,9 +1223,9 @@ TEST_CASE("find takes text, a class filter, a cursor and a row limit") {
     CHECK(both->request.args[1] == 4096);
     CHECK(ue::Check(both->request) == Status::Ok);
     CHECK(both->limit == 0);
-    CHECK(Call(R"({"verb": "find", "args": {"text": "Vendor", "limit": 50}})")->limit == 50);
-    CHECK(Why(R"({"verb": "find", "args": {"text": "Vendor", "limit": 0}})").starts_with("limit must be"));
-    CHECK(Why(R"({"verb": "find", "args": {"text": "Vendor", "limit": 1001}})").starts_with("limit must be"));
+    CHECK(Call(R"({"verb": "find", "args": {"text": "Vendor", "view": {"limit": 50}}})")->limit == 50);
+    CHECK(Why(R"({"verb": "find", "args": {"text": "Vendor", "view": {"limit": 0}}})").starts_with("limit must be"));
+    CHECK(Why(R"({"verb": "find", "args": {"text": "Vendor", "view": {"limit": 1001}}})").starts_with("limit must be"));
     const auto classOnly = Call(R"({"verb": "find", "args": {"cls": "DataTable"}})");
     REQUIRE(classOnly.has_value());
     CHECK(classOnly->request.text[0] == 0);
@@ -1166,16 +1235,16 @@ TEST_CASE("find takes text, a class filter, a cursor and a row limit") {
     REQUIRE(live.has_value());
     CHECK(live->request.flags == ue::FindLive);
     CHECK(ue::Check(live->request) == Status::Ok);
-    CHECK(std::string_view(Call(R"({"verb": "find", "args": {"text": "two words", "start": 1}})")->request.text) == "two words");
+    CHECK(std::string_view(Call(R"({"verb": "find", "args": {"text": "two words", "view": {"start": 1}}})")->request.text) == "two words");
     CHECK(Why(R"({"verb": "find"})").starts_with("text: give text, cls or outer"));
     CHECK(Why(R"({"verb": "find", "args": {"cls": "A B"}})").starts_with("cls is"));
-    CHECK(Why(R"({"verb": "find", "args": {"text": "x", "start": -1}})").starts_with("start: "));
+    CHECK(Why(R"({"verb": "find", "args": {"text": "x", "view": {"start": -1}}})").starts_with("view.start: "));
 }
 
 TEST_CASE("object verbs take a bare class name for the console to resolve") {
-    for (const char* call : {R"({"verb": "get", "args": {"object": "Character", "types": true}})",
-                             R"({"verb": "get", "args": {"object": "BP_Door_C", "types": true}})",
-                             R"({"verb": "funcs", "args": {"object": "Character", "text": "Jump"}})",
+    for (const char* call : {R"({"verb": "get", "args": {"object": "Character", "mode": "types"}})",
+                             R"({"verb": "get", "args": {"object": "BP_Door_C", "mode": "types"}})",
+                             R"({"verb": "funcs", "args": {"object": "Character", "view": {"match": "Jump"}}})",
                              R"({"verb": "func", "args": {"object": "Character", "function": "CanJump"}})"}) {
         const auto parsed = Call(call);
         REQUIRE_MESSAGE(parsed.has_value(), call);
@@ -1186,9 +1255,9 @@ TEST_CASE("object verbs take a bare class name for the console to resolve") {
     REQUIRE(func.has_value());
     CHECK(func->className == "Character");
     CHECK(func->request.op == ue::op::Function);
-    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "types": true}})")->className.empty());
-    CHECK(Why(R"({"verb": "get", "args": {"object": "12abc", "types": true}})").starts_with("object is"));
-    CHECK(Why(R"({"verb": "get", "args": {"object": "Some-Thing", "types": true}})").starts_with("object is"));
+    CHECK(Call(R"({"verb": "get", "args": {"object": "0x1000#5:9", "mode": "types"}})")->className.empty());
+    CHECK(Why(R"({"verb": "get", "args": {"object": "12abc", "mode": "types"}})").starts_with("object is"));
+    CHECK(Why(R"({"verb": "get", "args": {"object": "Some-Thing", "mode": "types"}})").starts_with("object is"));
     CHECK(Why(R"({"verb": "func", "args": {"object": "Character", "function": ":Bad"}})").starts_with("function: "));
 }
 
@@ -1199,17 +1268,17 @@ TEST_CASE("census takes an optional class, a match, a page and diff") {
     CHECK(parsed->limit == DefaultCensusLimit);
     CHECK_FALSE(parsed->changed);
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    parsed = Call(R"({"verb": "census", "args": {"cls": "Actor", "limit": 0}})");
+    parsed = Call(R"({"verb": "census", "args": {"cls": "Actor", "view": {"limit": 0}}})");
     REQUIRE(parsed.has_value());
     CHECK(std::string_view(reinterpret_cast<const char*>(parsed->request.data)) == "Actor");
     CHECK(parsed->limit == 0);
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    parsed = Call(R"({"verb": "census", "args": {"diff": true, "cls": "Actor", "match": "proj", "limit": 5}})");
+    parsed = Call(R"({"verb": "census", "args": {"diff": true, "cls": "Actor", "view": {"match": "proj", "limit": 5}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->changed);
     CHECK(parsed->match == "proj");
     CHECK(parsed->limit == 5);
-    parsed = Call(R"({"verb": "census", "args": {"cls": "Actor", "match": "zone", "start": 100, "limit": 50}})");
+    parsed = Call(R"({"verb": "census", "args": {"cls": "Actor", "view": {"match": "zone", "start": 100, "limit": 50}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->from == 100);
     CHECK(parsed->limit == 50);
@@ -1221,13 +1290,13 @@ TEST_CASE("census takes an optional class, a match, a page and diff") {
 }
 
 TEST_CASE("name-find takes text and a cursor") {
-    const auto parsed = Call(R"({"verb": "name-find", "args": {"text": "Jump", "start": 131072}})");
+    const auto parsed = Call(R"({"verb": "name-find", "args": {"text": "Jump", "view": {"start": 131072}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.op == ue::op::NameFind);
     CHECK(std::string_view(parsed->request.text) == "Jump");
     CHECK(parsed->request.args[1] == 131072);
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    CHECK(Why(R"({"verb": "name-find", "args": {"start": 3}})").starts_with("missing text"));
+    CHECK(Why(R"({"verb": "name-find", "args": {"view": {"start": 3}}})").starts_with("missing text"));
     Request empty{};
     empty.op = ue::op::NameFind;
     CHECK(ue::Check(empty) == Status::BadRequest);
@@ -1316,7 +1385,7 @@ TEST_CASE("calls-start takes an owner, a function and a duration; read and stop 
     CHECK(Why(R"({"verb": "calls-start", "args": {"owner": "0x1000#5:9", "function": "Fire"}})").starts_with("missing duration"));
     CHECK(Why(R"({"verb": "calls-start", "args": {"owner": "0x1000#5:9", "function": "Fire", "duration": 5, "object": "7"}})")
               .starts_with("object is a literal ref"));
-    const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "start": 40}})");
+    const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "view": {"start": 40}}})");
     REQUIRE(read.has_value());
     CHECK(read->target == "read");
     CHECK(read->callsSlot == 3);
@@ -1371,13 +1440,13 @@ TEST_CASE("entries takes an object, a field and an optional cursor") {
     CHECK(parsed->request.op == ue::op::Entries);
     CHECK(parsed->target == "Comp:Attributes");
     CHECK(parsed->limit == 0);
-    CHECK(Call(R"({"verb": "entries", "args": {"object": "0x1000#5:9", "field": "Attributes", "start": 12}})")->limit == 12);
+    CHECK(Call(R"({"verb": "entries", "args": {"object": "0x1000#5:9", "field": "Attributes", "view": {"start": 12}}})")->limit == 12);
     CHECK(Why(R"({"verb": "entries", "args": {"object": "0x1000#5:9"}})").starts_with("missing field"));
     CHECK(Why(R"({"verb": "entries", "args": {"object": "0x1000#5:9", "field": ""}})").starts_with("field is"));
 }
 
 TEST_CASE("rows pages a data table with call's row options") {
-    auto rows = Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "match": "Rifle", "fields": [["Price"], ["Item", "TagName"]], "start": 10, "limit": 0}})");
+    auto rows = Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "view": {"match": "Rifle", "fields": [["Price"], ["Item", "TagName"]], "start": 10, "limit": 0}}})");
     REQUIRE(rows.has_value());
     CHECK(rows->kind == Kind::Rows);
     CHECK(ue::GetRef(rows->request) == One);
@@ -1388,8 +1457,8 @@ TEST_CASE("rows pages a data table with call's row options") {
     CHECK(Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9"}})")->limit == DefaultCallRows);
     CHECK(Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "at": 1.5}})")->curveAt == 1.5f);
     CHECK(Why(R"({"verb": "rows", "args": {"object": "DataTable"}})").starts_with("object is"));
-    CHECK(Why(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "fields": [[".a"]]}})").starts_with("fields: "));
-    CHECK(Why(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "at": 1, "fields": [["a"]]}})").starts_with("at reads curve tables"));
+    CHECK(Why(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "view": {"fields": [[".a"]]}}})").starts_with("fields: "));
+    CHECK(Why(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "at": 1, "view": {"fields": [["a"]]}}})").starts_with("at reads curve tables"));
 }
 
 TEST_CASE("watch-start ranges: an address with a length or a type, a field, or offsets from a root") {
@@ -1533,7 +1602,7 @@ TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an elemen
     CHECK(parsed->range == 4096);
     CHECK(Why(R"({"verb": "mem-snap", "args": {"addr": "0x10000", "len": 0}})").starts_with("len must be"));
     CHECK(Why(R"({"verb": "mem-snap", "args": {"addr": "0x10000", "len": 2000000}})").starts_with("len must be"));
-    parsed = Call(R"({"verb": "mem-diff", "args": {"test": "decreased", "type": "f32", "keep": true, "limit": 10}})");
+    parsed = Call(R"({"verb": "mem-diff", "args": {"test": "decreased", "type": "f32", "keep": true, "view": {"limit": 10}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::MemDiff);
     CHECK(parsed->target == "decreased");
@@ -1542,7 +1611,7 @@ TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an elemen
     CHECK(parsed->limit == 10);
     CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "bigger", "type": "f32"}})").starts_with("test: one of"));
     CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "changed", "type": "cstr"}})").starts_with("type is"));
-    CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "changed", "type": "f32", "limit": 257}})").starts_with("limit is"));
+    CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "changed", "type": "f32", "view": {"limit": 257}}})").starts_with("limit is"));
     const auto vtable = Call(R"({"verb": "vtable", "args": {"addr": "0x10000", "offset": "0x620", "rtti": true}})");
     REQUIRE(vtable.has_value());
     CHECK(vtable->kind == Kind::Vtable);

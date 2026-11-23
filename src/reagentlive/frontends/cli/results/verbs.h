@@ -42,7 +42,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "From the usage log beside the console; works with no target (then: the log's latest session). out is "
             "characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
             "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
-            "verb: unfiltered (it takes match, nonzero, own, changed, cls or limit, the call gave none and "
+            "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and "
             "printed whole), repeated (the same input again in its session), refused (by error kind). A batch's "
             "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log."},
@@ -70,16 +70,18 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"write", "core", ToolPack::Modify, "write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while",
             {{"addr", "addr", at, {}, true}, {"data", "bytes", hex, {}, true},
              {"expect", "bytes", "write only while memory still holds these bytes (with undo: required, restored afterwards)"},
-             {"undo", "dur", "restore the bytes after this long (up to 60 s; needs owner and expect)"},
-             {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"},
-             {"owner", "ref", "with undo: the live actor or component holding the address (a pack names it)"},
-             {"object", "addr", "with undo: a native object inside the owner whose vtable is guarded too"}},
+             {"undo", "obj", "restore the bytes after a while, guarded on their owner (needs expect)", {}, false, false, {},
+              {{"after", "dur", "restore after this long (up to 60 s)", {}, true},
+               {"owner", "ref", "the live actor or component holding the address (a pack names it)", {}, true},
+               {"object", "addr", "a native object inside the owner whose vtable is guarded too"}}},
+             {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"}},
             Of<shape::Write>, build::Write,
             "A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, "
             "the timed write as writes lists it; up to 64 bytes. undo stops as conflict if the game changes the "
             "value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without "
             "one it is refused. hold on an addr based on a literal ref ({\"base\": <ref>, \"offset\": N}) stops "
-            "when that object is freed or replaced.", true},
+            "when that object is freed or replaced. Options: expect guards every write; undo and hold are the two "
+            "timed forms (undo's owner and object only guard an undo, so they live inside it).", true},
         {"writes", "core", ToolPack::Modify, "the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones",
             {{"clear", "bool", "end them"},
              {"id", "str", "with clear: one write's id as writes lists it (undo:N or hold:N); default all"}},
@@ -89,23 +91,25 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
             {}, Of<shape::Modules>, build::Modules},
         {"search", "core", ToolPack::Native, "addresses holding a value in resident, cacheable memory, as a job the agent runs",
-            {{"type", "hex|u32|i32|u64|ptr|f32|f64|text", "the value's type", {}, true},
+            {{"type", "hex|u32|i32|u64|ptr|f32|f64|text|wtext", "the value's type (wtext: text as UTF-16)", {}, true},
              {"value", "scalar", "the value: text or hex pairs as a string, a number otherwise (u64 and ptr also \"0x...\")", {}, true, false,
               "\"00 00 80 3f\""},
-             {"wide", "bool", "text as UTF-16"},
-             {"start", "addr", "start, or a job's next_cursor"},
-             {"to", "addr", "end"}, {"module", "str", "in place of start and to"},
+             {"scope", "obj", "where to look (default: the main module's resident pages)", {}, false, false, {},
+              {{"module", "str", "one module, in place of start and to"},
+               {"start", "addr", "start, or a job's next_cursor"},
+               {"to", "addr", "end"},
+               {"writable", "bool", "writable memory only, every module and heap"},
+               {"heap", "bool", "private memory only (heaps, stacks)"},
+               {"paged", "bool", "also non-resident pages (slow)"}}},
              {"align", "int", "1, 2, 4, 8 or 16 (typed values default to their size)"},
-             {"writable", "bool", "writable memory only, every module and heap"},
-             {"heap", "bool", "private memory only (heaps, stacks)"},
-             {"paged", "bool", "also non-resident pages (slow)"},
              {"wait", "int", "seconds to wait for the job before answering with it running (0..60)", "10"},
              {"max", "int", "hits at most; the job stops when full", "64"}},
             Of<shape::Search>, build::Search,
-            "The range is the main module unless module, start, to, heap or writable says otherwise; start alone "
-            "ends with the module it lies in. A job still running after wait comes back with state running and its "
-            "hits so far: search-job with its id for more, with stop to end it. A new search stops the last job. "
-            "next_cursor (a stopped or full job) resumes as start."},
+            "The range is the main module unless scope says otherwise; scope.start alone ends with the module it "
+            "lies in. A job still running after wait comes back with state running and its hits so far: search-job "
+            "with its id for more, with stop to end it. A new search stops the last job. next_cursor (a stopped or "
+            "full job) resumes as scope.start. Options: scope picks the memory, align the step, wait how long the "
+            "call blocks, max when the job stops (what the agent does, so not a view)."},
         {"search-job", "core", ToolPack::Native, "a search job's state and hits so far; stop ends it first",
             {{"job", "int", "the job a search returned", {}, true},
              {"stop", "bool", "end the job first; its next_cursor resumes it"}},
@@ -120,11 +124,12 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"type", "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start", {}, true, false,
               "\"f32\""},
              {"keep", "bool", "keep only the matches as candidates and today's bytes as the new baseline"},
-             {"limit", "int", "rows shown (1..256)", "64"}},
+             View("limit", "64")},
             Of<shape::MemDiff>, build::MemDiff,
             "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
             "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 with keep, act, mem-diff ... with "
-            "keep until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
+            "keep until few remain; matched counts all, rows show the first (view.limit: 1..256). A snap from another agent "
+            "instance is refused."},
         {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min with every); returns at once",
             {{"duration", "dur", "how long, in seconds", {}, true},
              {"ranges", "range", "a range to sample: {\"addr\": <addr>, \"len\": N}, {\"addr\": <addr>, \"type\": \"f64\", "
@@ -184,9 +189,11 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (with function: up to 2048)", "24"},
              {"function", "bool", "list the whole containing function (exception table; else walk from addr)"},
              {"resume", "bool", "with function: start at addr (a cut listing's next), not the function's start"},
-             {"save", "file", "with function: write the function and its read-only data for a static tool, not the rows"},
-             {"callees", "bool", "with save: also save each function it calls directly (one level, up to 16)"},
-             {"labels", "file", "with save: name from this labels file (default: the console's and the host's names file)"},
+             {"save", "obj", "with function: write the function and its read-only data for a static tool, not the rows",
+              {}, false, false, {},
+              {{"file", "file", "the file to write", {}, true},
+               {"callees", "bool", "also save each function it calls directly (one level, up to 16)"},
+               {"labels", "file", "name from this labels file (default: the console's and the host's names file)"}}},
              {"follow", "bool", "step through up to 3 unconditional direct jumps"}},
             Of<shape::Disasm>, build::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
             "value a read-only [rip + disp] load reads; the listing names the module once. meta adds each row's module "
@@ -200,7 +207,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             "(chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets "
             "still unsaved in jumpouts_left; callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
             "256 KB). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
-            "piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume."},
+            "piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume. Options: count and function decide what is read (not a view: "
+            "they bound the decoding), resume continues a cut listing, save writes files, follow steps through jumps."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", at, {}, true},
              {"module", "str", "scan another loaded module"},

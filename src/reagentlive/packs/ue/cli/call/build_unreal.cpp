@@ -177,7 +177,7 @@ Parsed CensusOptions(const Args& args) {
     return command;
 }
 
-// each and call-pure's each form: the class, the columns and the options both take.
+// each and call-each: the class, the columns and the options both take.
 Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::string> columns) {
     Command command;
     if (auto why = Outer(args, command); !why.empty()) return Fail(std::move(why));
@@ -234,14 +234,8 @@ Parsed Find(const Args& args, const ParseContext&) {
 Parsed Call(const Args& args, const ParseContext&) { return CallArgs(args, 0); }
 
 // The agent refuses, before calling, a function that is not const or pure
-// or whose outputs own memory (ue::CallPure). each: the function called on
-// every instance of the class (EachCall).
-Parsed CallPure(const Args& args, const ParseContext& context) {
-    if (args.Has("each")) return EachCall(args, context);
-    for (const char* key : {"seconds", "outer", "limit", "nonzero"})
-        if (args.Has(key)) return Fail(std::string(key) + " needs each");
-    return CallArgs(args, ue::CallPure);
-}
+// or whose outputs own memory (ue::CallPure). On every instance: call-each (EachCall).
+Parsed CallPure(const Args& args, const ParseContext&) { return CallArgs(args, ue::CallPure); }
 
 // Drops a kept call result: one more call with zeroed inputs (or the given
 // block), so the engine releases what the kept block held.
@@ -259,9 +253,9 @@ Parsed Funcs(const Args& args, const ParseContext&) {
     uint64_t cursor = 0;
     if (!Cursor(args, ue::MaxFieldStart, cursor)) return Fail("start is a cursor");
     request.length = static_cast<uint32_t>(cursor);
-    if (args.Str("text").size() >= MaxText) return Fail("text is too long");
+    if (args.Str("match").size() >= MaxText) return Fail("match is too long");
     request.op = ue::op::Functions;
-    CopyText(request.text, args.Str("text"));
+    CopyText(request.text, args.Str("match"));
     return command;
 }
 
@@ -447,23 +441,23 @@ Parsed Get(const Args& args, const ParseContext&) {
     Command command;
     if (!ObjectOrClass(args.Str("object"), command))
         return Fail("object is a literal ref, \"0x...\", a Default__ name, or with types a class name");
-    const bool types = args.Has("types"), snap = args.Has("snap"), changed = args.Has("changed");
+    const std::string mode = args.Has("mode") ? args.Str("mode") : std::string("values");
+    const bool types = mode == "types", snap = mode == "snap", changed = mode == "changed";
     const bool named = !command.className.empty() && !command.className.starts_with("Default__");
     if (named && !types)
-        return Fail("object: a class or struct by name has no values: add types for its layout, or give an object "
+        return Fail("object: a class or struct by name has no values: mode types gives its layout, or give an object "
                     "(Default__" + command.className + " for its defaults)");
     if (auto why = Paths(args, "paths", command.fields); !why.empty()) return Fail(why);
     const bool paths = !command.fields.empty();
     if (paths && (args.Has("match") || args.Has("own") || snap || changed || types))
-        return Fail("paths: match, own, types, snap and changed take no paths");
-    if (types && (args.Has("nonzero") || args.Has("elements") || snap || changed))
-        return Fail("types reads no values: no nonzero, elements, snap or changed");
-    if (snap && changed) return Fail("snap and changed are separate calls: snap, act, then changed");
-    if (args.Has("file") && !snap && !changed) return Fail("file goes with snap or changed");
+        return Fail("paths: match, own and the modes types, snap and changed take no paths");
+    if (types && (args.Has("nonzero") || args.Has("elements")))
+        return Fail("mode: types reads no values: no nonzero or elements");
+    if (args.Has("file") && !snap && !changed) return Fail("file goes with mode snap or changed");
     if ((snap || changed) && command.className.empty() && ue::GetRef(command.request).index < 0)
         return Fail("object: snap and changed need a literal ref (0x<address>#<index>:<serial>)");
     if (snap && (args.Has("match") || args.Has("nonzero") || args.Has("own") || args.Has("elements")))
-        return Fail("snap keeps the whole object: no filters");
+        return Fail("mode: snap keeps the whole object: no filters");
     command.nonzero = args.Has("nonzero");
     if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
     command.own = args.Has("own");
@@ -607,23 +601,21 @@ Parsed NameFind(const Args& args, const ParseContext&) {
     return command;
 }
 
-// each: reads only; a function is call-pure's (each), and Owner:Function is refused here already.
+// each: reads only; a function is call-each's, and Owner:Function is refused here already.
 Parsed Each(const Args& args, const ParseContext&) {
     std::vector<std::string> columns;
     if (auto why = Paths(args, "paths", columns, "columns"); !why.empty()) return Fail(why);
     for (const auto& path : columns)
         if (path.find(':') != std::string::npos)
-            return Fail("paths: " + path + " is a function: call-pure with each calls it on every instance");
+            return Fail("paths: " + path + " is a function: call-each calls it on every instance");
     return EachArgs(args, "cls", std::move(columns));
 }
 
-// call-pure with each: the one column a function with no inputs.
+// call-each: the one column a function with no inputs.
 Parsed EachCall(const Args& args, const ParseContext&) {
-    if (args.Has("dry")) return Fail("dry: each takes no dry run");
-    if (args.Has("params") || args.Has("block")) return Fail("params: each calls a function with no inputs");
     std::string function = args.Str("function");
     if (function.empty() || function.size() >= MaxText) return Fail("function is 1.." + std::to_string(MaxText - 1) + " characters");
-    auto command = EachArgs(args, "object", {function});
+    auto command = EachArgs(args, "cls", {function});
     if (command) command->eachCall = true;
     return command;
 }

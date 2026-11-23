@@ -131,8 +131,16 @@ def argument(kind):
 
 
 def arg_schema(arg):
-    """One `args` item as JSON Schema: its type (an enum's words, a list of it), help line and default."""
-    schema = argument(arg['type'])
+    """One `args` item as JSON Schema: its type (an enum's words, a list of it, an object's keys), help line and
+    default."""
+    if arg['type'] == 'obj':
+        schema = {'type': 'object', 'properties': {field['key']: arg_schema(field) for field in arg['fields']},
+                  'additionalProperties': False}
+        required = [field['key'] for field in arg['fields'] if field.get('required')]
+        if required:
+            schema['required'] = required
+    else:
+        schema = argument(arg['type'])
     if 'enum' in arg:
         schema = {'type': 'string', 'enum': list(arg['enum'])}
     if arg.get('list'):

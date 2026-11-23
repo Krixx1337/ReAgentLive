@@ -6,6 +6,7 @@
 #pragma once
 #include <algorithm>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,6 +36,11 @@ inline std::string Takes(const Arg& arg) {
         if (type == "calls") return "a list of {\"verb\": ..., \"args\": {...}}";
         return "a string";
     };
+    if (arg.type == "obj") {
+        std::string keys;
+        for (const auto& field : arg.fields) keys += (keys.empty() ? "" : ", ") + std::string(field.key) + (field.required ? "" : "?");
+        return "an object {" + keys + "}";
+    }
     return arg.list ? "a list, each " + one(arg.type) : one(arg.type);
 }
 
@@ -63,6 +69,14 @@ inline Json Example(std::string_view type) {
 }
 inline Json Example(const Arg& arg) {
     if (!arg.example.empty()) return Json::parse(arg.example);
+    if (arg.type == "obj") {
+        // Its required keys; with none, its first.
+        Json out = Json::object();
+        for (const auto& field : arg.fields)
+            if (field.required) out[std::string(field.key)] = Example(field);
+        if (out.empty() && !arg.fields.empty()) out[std::string(arg.fields.front().key)] = Example(arg.fields.front());
+        return out;
+    }
     return arg.list ? Json::array({Example(arg.type)}) : Example(arg.type);
 }
 
@@ -120,6 +134,14 @@ inline bool Fits(std::string_view type, const Json& value) {
     return value.is_string(); // str, text, file, bytes, pattern, layout, ref.
 }
 inline bool Fits(const Arg& arg, const Json& value) {
+    if (arg.type == "obj") {
+        if (!value.is_object()) return false;
+        for (const auto& [key, item] : value.items()) {
+            const auto field = std::ranges::find(arg.fields, std::string_view(key), &Arg::key);
+            if (field == arg.fields.end() || !Fits(*field, item)) return false;
+        }
+        return std::ranges::all_of(arg.fields, [&](const Arg& field) { return !field.required || value.contains(field.key); });
+    }
     if (!arg.list) return Fits(arg.type, value);
     return value.is_array() && !value.empty() && std::ranges::all_of(value, [&](const Json& item) { return Fits(arg.type, item); });
 }
@@ -178,8 +200,38 @@ inline std::string ArgKeys(const Verb& verb) {
     return keys.empty() ? std::string("none") : keys;
 }
 
+namespace check {
+// One value against its arg; an object's keys as a call's are, named by their path ("view.limit").
+inline std::optional<Refusal> Value(const Arg& arg, const Json& value, const std::string& path) {
+    const auto wrong = [](const Arg& at, const Json& item, const std::string& key) {
+        return Refusal{key + ": " + Takes(at) + ", not " + item.dump(-1, ' ', true, Json::error_handler_t::replace), key};
+    };
+    if (arg.type != "obj") {
+        if (!Fits(arg, value)) return wrong(arg, value, path);
+        return std::nullopt;
+    }
+    if (!value.is_object()) return wrong(arg, value, path);
+    for (const auto& [key, item] : value.items()) {
+        const auto field = std::ranges::find(arg.fields, std::string_view(key), &Arg::key);
+        if (field == arg.fields.end()) {
+            std::string keys;
+            for (const auto& each : arg.fields) keys += (keys.empty() ? "" : ", ") + std::string(each.key);
+            return Refusal{"unknown key '" + path + "." + key + "'; " + path + " takes " + (keys.empty() ? "none" : keys), path};
+        }
+        if (!Fits(*field, item)) return wrong(*field, item, path + "." + key);
+    }
+    for (const auto& field : arg.fields)
+        if (field.required && !value.contains(field.key))
+            return Refusal{"missing " + path + "." + std::string(field.key) + ": " + Takes(field) +
+                (field.help.empty() ? "" : " (" + std::string(field.help) + ")"), path + "." + std::string(field.key)};
+    return std::nullopt;
+}
+}
+
 // A call's args checked against the row: unknown keys, then missing required
-// ones, then each value's type.
+// ones, then each value's type. An object's keys are then also set as the
+// verb's own (view's limit as limit), so a builder reads them by name; a row
+// never uses one name twice (a table test).
 inline std::expected<Args, Refusal> CheckCall(const Verb& verb, const Json& given) {
     using Out = std::expected<Args, Refusal>;
     if (!given.is_null() && !given.is_object()) return Out(std::unexpect, Refusal{"args is an object of named arguments", {}});
@@ -188,6 +240,12 @@ inline std::expected<Args, Refusal> CheckCall(const Verb& verb, const Json& give
         for (const auto& [key, value] : given.items()) {
             const Arg* arg = FindArg(verb, key);
             if (arg) continue;
+            // An object's key given as the verb's own: say where it goes.
+            if (const auto path = KeyPath(verb, key); !path.empty()) {
+                const auto parent = path.substr(0, path.find('.'));
+                return Out(std::unexpect, Refusal{"'" + key + "' goes inside " + parent + ": {\"" + parent + "\": {\"" + key +
+                    "\": ...}}", path});
+            }
             const Arg* closest = check::Nearest(verb, key);
             return Out(std::unexpect, Refusal{"unknown key '" + key + "'" +
                 (closest ? " (did you mean " + std::string(closest->key) + "?)" : "") + "; " + std::string(verb.name) +
@@ -203,24 +261,29 @@ inline std::expected<Args, Refusal> CheckCall(const Verb& verb, const Json& give
             continue;
         }
         const Json& value = given[key];
-        if (!check::Fits(arg, value))
-            return Out(std::unexpect, Refusal{key + ": " + check::Takes(arg) + ", not " +
-                value.dump(-1, ' ', true, Json::error_handler_t::replace), key});
+        if (auto refusal = check::Value(arg, value, key)) return Out(std::unexpect, std::move(*refusal));
         args.values[key] = value;
+        if (arg.type == "obj")
+            for (const auto& [inner, item] : value.items()) args.values[inner] = item;
     }
     return args;
 }
 
 // The key a builder's message is about: a message that starts with one of
-// the row's keys ("count must be 1..64") names it.
+// the row's keys ("count must be 1..64") names it; an object's key by its
+// path ("limit must be ..." is view.limit).
 inline std::string KeyOf(const Verb& verb, std::string_view message) {
-    const Arg* best = nullptr;
+    std::string_view best;
+    const auto consider = [&](std::string_view key) {
+        if (!message.starts_with(key)) return;
+        const char next = message.size() > key.size() ? message[key.size()] : ' ';
+        if ((next == ' ' || next == ':' || next == ',') && key.size() > best.size()) best = key;
+    };
     for (const auto& arg : verb.args) {
-        if (!message.starts_with(arg.key)) continue;
-        const char next = message.size() > arg.key.size() ? message[arg.key.size()] : ' ';
-        if ((next == ' ' || next == ':' || next == ',') && (!best || arg.key.size() > best->key.size())) best = &arg;
+        consider(arg.key);
+        for (const auto& field : arg.fields) consider(field.key);
     }
-    return best ? std::string(best->key) : std::string();
+    return best.empty() ? std::string() : KeyPath(verb, best);
 }
 
 // One call that the row accepts, built from the given one: its values that
@@ -231,10 +294,36 @@ inline Json ExampleCall(const Verb& verb, const Json& given = Json(), std::strin
     Json args = Json::object();
     if (given.is_object()) {
         for (const auto& [key, value] : given.items()) {
+            // An object's key given as the verb's own moves into its object.
+            if (!FindArg(verb, key)) {
+                const auto path = KeyPath(verb, key);
+                const Arg* field = path.empty() ? nullptr : FindKey(verb, path);
+                if (field) {
+                    // Moved even when it is the key at fault: its place was the fault, not its value.
+                    const auto parent = path.substr(0, path.find('.'));
+                    if (!given.contains(parent) && check::Fits(*field, value)) args[parent][key] = value;
+                    continue;
+                }
+            }
             const Arg* arg = FindArg(verb, key);
             if (!arg) arg = check::Nearest(verb, key);
-            if (!arg || arg->key == fault || args.contains(arg->key) || (arg->key != key && given.contains(arg->key)) ||
-                !check::Fits(*arg, value)) continue;
+            if (!arg || args.contains(arg->key) || (arg->key != key && given.contains(arg->key))) continue;
+            // An object at fault keeps the keys of it that fit; another arg at fault is dropped.
+            if (arg->key == fault && !(arg->type == "obj" && value.is_object())) continue;
+            if (arg->type == "obj" && value.is_object()) {
+                // Its keys that fit, less the one at fault.
+                Json kept = Json::object();
+                for (const auto& [inner, item] : value.items()) {
+                    const auto field = std::ranges::find(arg->fields, std::string_view(inner), &Arg::key);
+                    if (field != arg->fields.end() && std::string(arg->key) + "." + inner != fault && check::Fits(*field, item))
+                        kept[inner] = item;
+                }
+                for (const auto& field : arg->fields)
+                    if (field.required && !kept.contains(field.key)) kept[std::string(field.key)] = check::Example(field);
+                if (!kept.empty()) args[std::string(arg->key)] = std::move(kept);
+                continue;
+            }
+            if (!check::Fits(*arg, value)) continue;
             args[std::string(arg->key)] = value;
         }
     }
@@ -267,6 +356,11 @@ inline Json ArgJson(const Arg& arg) {
         out["enum"] = std::move(words);
     }
     if (!arg.help.empty()) out["help"] = arg.help;
+    if (arg.type == "obj") {
+        Json fields = Json::array();
+        for (const auto& field : arg.fields) fields.push_back(ArgJson(field));
+        out["fields"] = std::move(fields);
+    }
     return out;
 }
 
@@ -274,7 +368,7 @@ inline Json ArgJson(const Arg& arg) {
 // part of the schema (else the whole row's args), and the corrected example.
 inline Json RefusalJson(const Verb& verb, const Json& given, const Refusal& refusal) {
     Json error = {{"kind", "schema"}, {"message", refusal.message}};
-    const Arg* arg = refusal.key.empty() ? nullptr : FindArg(verb, refusal.key);
+    const Arg* arg = refusal.key.empty() ? nullptr : FindKey(verb, refusal.key);
     if (arg) {
         error["key"] = refusal.key;
         error["arg"] = ArgJson(*arg);
@@ -284,7 +378,7 @@ inline Json RefusalJson(const Verb& verb, const Json& given, const Refusal& refu
         for (const auto& each : verb.args) args.push_back(ArgJson(each));
         error["args"] = std::move(args);
     }
-    error["example"] = ExampleCall(verb, given, arg ? std::string_view(arg->key) : std::string_view{});
+    error["example"] = ExampleCall(verb, given, arg ? std::string_view(refusal.key) : std::string_view{});
     return error;
 }
 }

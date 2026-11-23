@@ -27,6 +27,21 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **Output options are one `view` object:** `start` (a page's cursor),
+  `limit`, `match`, `fields`, `nonzero` and `elements` go inside `view`
+  (`{"view": {"limit": 5}}`) on every verb that takes them; one given at
+  the top is refused with where it goes. `get`'s `types`/`snap`/`changed`
+  are `mode`; `search`'s `module`/`start`/`to`/`writable`/`heap`/`paged`
+  are `scope: {...}` and `wide` is `type: "wtext"`; `write`'s
+  `undo`/`owner`/`object` are `undo: {"after", "owner", "object"}`;
+  `disasm`'s `save`/`callees`/`labels` are `save: {"file", "callees",
+  "labels"}`; `funcs`' `text` is `view.match`. `call-pure` with `each` is
+  the verb `call-each` (`cls`, `function`); `call-pure` takes no view. A
+  digest's `narrow` and `next` name view keys by path (`view.limit`).
+  No verb takes more than six own args beside `view`
+  ([JSON-only contract](docs/tool-interface.md#json-only-contract)).
+  Regenerate Python modules and restart MCP servers.
+
 - **The console takes JSON calls only:** the text grammar is gone. A call
   is `{"verb": ..., "args": {...}}`, one per line on stdin, through `-c
   '<call or list of calls>'` or `-c @<file>`; `batch` takes `{"calls":
