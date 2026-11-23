@@ -41,7 +41,8 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"usage", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
             {{"all", "bool", "every session in the log, and the verbs none called"},
              {"sessions", "bool", "the log's sessions, newest first: one row each"},
-             {"session", "str", "one session from the log, by its id"}},
+             {"session", "str", "one session from the log, by its id"},
+             {"advice", "bool", "verbs often digested or unfiltered, with a proposed default view.limit or a hint"}},
             Of<shape::UsageReport>, build::Usage,
             "From the usage log beside the console; works with no target (then: the log's latest session). calls "
             "counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a "
@@ -57,7 +58,10 @@ inline const std::vector<Verb>& CoreVerbs() {
             "sessions as session_rows, with totals over the whole log. One session's report adds context: chars "
             "(what its tool-caller results put into an agent's context), limit (the console's --context-limit, "
             "default 400000; 0: none) and over; past it every envelope a tool caller gets carries context_warning, "
-            "one line. Nothing stops: max_chars stays the per-result cap."},
+            "one line. Nothing stops: max_chars stays the per-result cap. advice lists verbs with at least two digested "
+            "or unfiltered calls (or half their calls), most first: limit proposes a smaller default view.limit "
+            "(the default scaled to what the cap held of the largest digested result), hint one line on what else "
+            "to change in the row or its help. A report: nothing changes by itself."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
             {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,

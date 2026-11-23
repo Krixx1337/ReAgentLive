@@ -82,7 +82,8 @@ std::expected<shape::UsageReport, std::string> BuildUsage(const std::filesystem:
                                                     const Command& command, std::optional<std::string> current,
                                                     uint64_t contextLimit) {
     const auto lines = path.empty() ? std::vector<UsageLine>{} : ParseUsage(ReadFile(path));
-    return UsageFor(lines, verbs, {command.all, command.listSessions, command.target, contextLimit}, std::move(current));
+    return UsageFor(lines, verbs, {command.all, command.listSessions, command.advice, command.target, contextLimit},
+                    std::move(current));
 }
 }
 

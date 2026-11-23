@@ -104,6 +104,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **`usage` with `advice`:** the verbs most often digested or unfiltered,
+  each with a proposed smaller default `view.limit` or a hint for its row
+  or help. A report: nothing changes by itself.
 - **`usage` shows digest follow-through:** per verb, `followed` (the next
   call changed its narrowing args) and `raised` (it only raised
   `max_chars`), so verbs that need better filters stand out.

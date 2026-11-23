@@ -76,6 +76,7 @@ struct Command {
     // usage: `all` is all. watch-read, watch-stop: `all` is all (every sample).
     bool hashOnly = false;
     bool listSessions = false;  // usage sessions; session <id> is `target`.
+    bool advice = false;        // usage advice: verbs often digested or unfiltered, with a proposed change.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     bool capped = false;        // sig-bytes: the length asked passed sig::MaxPattern and was cut to it.
     sig::Pattern pattern;

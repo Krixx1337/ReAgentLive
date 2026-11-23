@@ -142,7 +142,7 @@ TEST_CASE("usage counts digests and what they kept out, and lists and picks sess
     CHECK(big->digest == 430000u);
 
     // sessions: newest first, totals over the whole log, no verb rows.
-    const auto list = UsageFor(lines, AllVerbs(), {false, true, {}}, std::nullopt);
+    const auto list = UsageFor(lines, AllVerbs(), {false, true, false, {}}, std::nullopt);
     REQUIRE(list.has_value());
     const auto json = Checked(*list);
     REQUIRE(list->sessionRows.has_value());
@@ -162,11 +162,11 @@ TEST_CASE("usage counts digests and what they kept out, and lists and picks sess
     CHECK_FALSE(json.contains("never_called"));
 
     // session: that one, or a refusal naming stats with sessions.
-    const auto old = UsageFor(lines, AllVerbs(), {false, false, "old"}, std::string("new"));
+    const auto old = UsageFor(lines, AllVerbs(), {false, false, false, "old"}, std::string("new"));
     REQUIRE(old.has_value());
     CHECK(old->session == "old");
     CHECK(old->totals.calls == 1);
-    const auto missing = UsageFor(lines, AllVerbs(), {false, false, "gone"}, std::nullopt);
+    const auto missing = UsageFor(lines, AllVerbs(), {false, false, false, "gone"}, std::nullopt);
     REQUIRE_FALSE(missing.has_value());
     CHECK(missing.error().find("usage with sessions") != std::string::npos);
     // Neither: the current session, else the log's latest.
@@ -174,12 +174,12 @@ TEST_CASE("usage counts digests and what they kept out, and lists and picks sess
     CHECK(UsageFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
 
     // context: one session's tool output against the console's --context-limit.
-    const auto within = UsageFor(lines, AllVerbs(), {false, false, {}, 400000}, std::string("new"));
+    const auto within = UsageFor(lines, AllVerbs(), {false, false, false, {}, 400000}, std::string("new"));
     REQUIRE(within->context.has_value());
     CHECK(within->context->chars == 20900);
     CHECK(within->context->limit == 400000);
     CHECK_FALSE(within->context->over);
-    const auto past = UsageFor(lines, AllVerbs(), {false, false, {}, 20000}, std::string("new"));
+    const auto past = UsageFor(lines, AllVerbs(), {false, false, false, {}, 20000}, std::string("new"));
     CHECK(past->context->over);
     CHECK(ContextChars(lines, "old") == 0);                    // A shell's output is no context.
     CHECK_FALSE(list->context.has_value());                    // sessions and all: no one session's context.
@@ -254,4 +254,42 @@ TEST_CASE("usage: repeated is the same input and the same result; same_args the 
     CHECK(read.repeated == 1u);
     CHECK_FALSE(read.sameArgs.has_value());
     CHECK(ParseUsageLine(UsageText(lines[1]))->outHash == "outB");
+}
+
+TEST_CASE("usage advice: verbs often digested or unfiltered, with a smaller default limit or a hint") {
+    std::vector<UsageLine> lines;
+    const auto add = [&](std::string verb, uint64_t out, uint64_t digest, std::optional<uint64_t> cap) {
+        UsageLine usage;
+        usage.time = "2026-01-02T03:04:05Z";
+        usage.session = "s";
+        usage.verb = std::move(verb);
+        usage.origin = "ue";
+        usage.caller = "tool";
+        usage.hash = std::to_string(lines.size());
+        usage.out = out;
+        usage.digest = digest;
+        usage.cap = cap;
+        lines.push_back(std::move(usage));
+    };
+    add("census", 900, 75000, 25000);       // Twice past the cap: the largest needs a quarter of the rows.
+    add("census", 900, 40000, 25000);
+    add("census", 0, 0, 100000);            // Raised after: more raised than followed.
+    add("modules", 9000, 0, std::nullopt);  // Big, but no filter to give: not unfiltered, not listed.
+    add("find", 300, 0, std::nullopt);      // Small: no advice.
+    const auto report = UsageFor(lines, AllVerbs(), {false, false, true, "s", 0}, std::nullopt);
+    REQUIRE(report.has_value());
+    Checked(*report);
+    REQUIRE(report->advice.has_value());
+    REQUIRE(report->advice->size() == 1);
+    const auto& census = report->advice->front();
+    CHECK(census.verb == "census");
+    CHECK(census.digested == 2);
+    CHECK(census.raised == 1);
+    REQUIRE(census.limit.has_value());
+    CHECK(census.limit->key == "view.limit");
+    CHECK(census.limit->now == 100);
+    CHECK(census.limit->proposed == 25);    // 100 * 25000 * 0.75 / 75000.
+    CHECK(census.hint.find("raised max_chars") != std::string::npos);
+    // Without advice: no list.
+    CHECK_FALSE(UsageFor(lines, AllVerbs(), {}, std::string("s"))->advice.has_value());
 }

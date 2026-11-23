@@ -127,6 +127,7 @@ Parsed Usage(const Args& args, const ParseContext&) {
     command.all = args.Has("all");
     command.listSessions = args.Has("sessions");
     command.target = args.Str("session");
+    command.advice = args.Has("advice");
     if (command.all + command.listSessions + !command.target.empty() > 1)
         return Fail("all, sessions and session are one at a time");
     return command;

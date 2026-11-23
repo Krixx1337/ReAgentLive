@@ -348,7 +348,10 @@ the generated functions, the MCP tools), so one log covers them
 target: the log's latest); with `session` (an id), one session of the log;
 with `all`, every session in the log, plus `never_called`, the verbs of
 this table none of them used; with `sessions`, the log's sessions, newest
-first. Ranked by output, largest first, with per-verb marks
+first; with `advice`, also the verbs most often digested or unfiltered,
+each with a proposed smaller default `view.limit` or a one-line hint for
+its row or help (a report: nothing changes by itself). Ranked by output,
+largest first, with per-verb marks
 (`unfiltered`, `repeated`, `refused`); every key and mark:
 [reference](reference.md#usage).
 

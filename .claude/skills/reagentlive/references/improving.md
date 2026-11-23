@@ -49,9 +49,10 @@ Run it only when the task ran 10 or more calls, or any mark or refusal
 appeared. Otherwise delete the scratch file, if any, and stop. Budget: one
 `usage` call and at most 10 lines of review.
 
-1. `usage` for the session (`{"verb": "usage", "args": {"session": "<id>"}}`
-   when the session has ended, e.g. after an MCP restart); copy its marks
-   into Friction.
+1. `usage` for the session with `advice`
+   (`{"verb": "usage", "args": {"session": "<id>", "advice": true}}`; drop
+   `session` while it runs); copy its marks and its `advice` rows into
+   Friction.
 2. Turn Friction and Wrong turns into candidates. Apply the rubric to each;
    drop any that fails one question:
    - Would it have saved a step, a refusal or an approval round?

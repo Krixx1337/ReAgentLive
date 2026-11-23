@@ -11,6 +11,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include "reagentlive/frontends/cli/results/budget.h"
 #include "reagentlive/frontends/cli/results/schema.h"
 #include "reagentlive/frontends/cli/state/usage.h"
 
@@ -91,6 +92,33 @@ struct UsageContext {
         v("over", &UsageContext::over);
     }
 };
+// usage with advice: a verb often digested or unfiltered, and what to
+// change in its row (a person or an agent applies it as a reviewed change).
+struct UsageLimit {
+    std::string key;                    // By path: view.limit.
+    uint64_t now = 0, proposed = 0;     // now: the row's default (0: none or all).
+    template<class V> static void Describe(V& v) {
+        v("key", &UsageLimit::key);
+        v("now", &UsageLimit::now);
+        v("proposed", &UsageLimit::proposed);
+    }
+};
+struct UsageAdvice {
+    std::string verb;
+    uint64_t calls = 0, digested = 0, unfiltered = 0, followed = 0, raised = 0;
+    std::optional<UsageLimit> limit;    // A smaller default row limit, from its digests' sizes.
+    std::string hint;                   // What else to change, one line.
+    template<class V> static void Describe(V& v) {
+        v("verb", &UsageAdvice::verb);
+        v("calls", &UsageAdvice::calls);
+        v("digested", &UsageAdvice::digested);
+        v("unfiltered", &UsageAdvice::unfiltered);
+        v("followed", &UsageAdvice::followed);
+        v("raised", &UsageAdvice::raised);
+        v("limit", &UsageAdvice::limit);
+        v("hint", &UsageAdvice::hint);
+    }
+};
 // usage with sessions: one session of the log.
 struct UsageSession {
     std::string session, since, until;  // Its first and last call.
@@ -121,6 +149,7 @@ struct UsageReport {
     std::optional<std::vector<std::string>> neverCalled;
     std::optional<std::vector<UsageSession>> sessionRows;
     std::optional<UsageContext> context;
+    std::optional<std::vector<UsageAdvice>> advice;
     template<class V> static void Describe(V& v) {
         v("session", &UsageReport::session);
         v("sessions", &UsageReport::sessions);
@@ -131,6 +160,7 @@ struct UsageReport {
         v("never_called", &UsageReport::neverCalled);
         v("session_rows", &UsageReport::sessionRows);
         v("context", &UsageReport::context);
+        v("advice", &UsageReport::advice);
     }
 };
 }
@@ -270,6 +300,52 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
     return stats;
 }
 
+// usage with advice: verbs whose calls were often digested or unfiltered
+// (at least two, or half their calls), each with a smaller default
+// view.limit when its digests show one (the default scaled by the share of
+// the cap the largest digested result would fit in) and one line on what
+// else to change. A report only: nothing changes by itself.
+inline std::vector<shape::UsageAdvice> MakeAdvice(std::span<const UsageLine> lines,
+                                                  const std::optional<std::string>& session,
+                                                  const shape::UsageReport& report, std::span<const Verb> verbs) {
+    std::vector<shape::UsageAdvice> out;
+    for (const auto& row : report.rows) {
+        const Verb* verb = FindVerb(verbs, row.verb);
+        const uint64_t digested = row.digested.value_or(0), unfiltered = row.unfiltered.value_or(0);
+        const uint64_t heavy = digested + unfiltered;
+        if (!verb || !heavy || (heavy < 2 && heavy * 2 < row.calls)) continue;
+        shape::UsageAdvice advice{row.verb, row.calls, digested, unfiltered, row.followed.value_or(0), row.raised.value_or(0)};
+        // The largest result past its cap, as a share the cap would hold (a quarter kept for the envelope).
+        double fit = 1;
+        for (const auto& line : lines)
+            if ((!session || line.session == *session) && line.verb == row.verb && line.digest && line.cap.value_or(0))
+                fit = std::min(fit, static_cast<double>(*line.cap) * 0.75 / static_cast<double>(line.digest));
+        const auto limitPath = KeyPath(*verb, "limit");
+        if (!limitPath.empty() && fit < 1) {
+            const Arg* limit = FindKey(*verb, limitPath);
+            uint64_t now = 0;
+            if (limit && !limit->fallback.empty()) now = std::strtoull(std::string(limit->fallback).c_str(), nullptr, 10);
+            const uint64_t base = now ? now : 100;
+            advice.limit = shape::UsageLimit{limitPath, now, std::max<uint64_t>(1, static_cast<uint64_t>(base * fit))};
+        }
+        const auto narrowing = budget::NarrowingArgs(*verb);
+        std::string names;
+        for (const auto& name : narrowing) names += (names.empty() ? "" : ", ") + name;
+        if (narrowing.empty())
+            advice.hint = "no arg narrows its result: give its row a view or a filter, or keep its result small";
+        else if (advice.raised > advice.followed)
+            advice.hint = "callers raised max_chars more often than they narrowed: make the digest's next and the "
+                "help example use " + names;
+        else if (unfiltered >= digested)
+            advice.hint = "callers rarely filter: show " + names + " in its help example and notes";
+        else
+            advice.hint = advice.limit ? "lower its default row limit" : "its results are large: narrow by " + names;
+        out.push_back(std::move(advice));
+    }
+    std::ranges::stable_sort(out, std::greater{}, [](const shape::UsageAdvice& a) { return a.digested + a.unfiltered; });
+    return out;
+}
+
 // The session `usage` reports when no target is attached: the log's latest.
 inline std::string LatestSession(std::span<const UsageLine> lines) {
     return lines.empty() ? std::string() : lines.back().session;
@@ -313,16 +389,21 @@ inline shape::UsageReport MakeSessionList(std::span<const UsageLine> lines, std:
 // What `usage` asked for: `all`, `sessions`, one `session`, or the current
 // session (`current`; nullopt with no target: the log's latest).
 struct UsageQuery {
-    bool all = false, sessions = false;
+    bool all = false, sessions = false, advice = false;
     std::string session;
     uint64_t contextLimit = 0;      // The console's --context-limit (0: none), shown with one session.
 };
 inline std::expected<shape::UsageReport, std::string> UsageFor(std::span<const UsageLine> lines, std::span<const Verb> verbs,
                                                          const UsageQuery& query, std::optional<std::string> current) {
     if (query.sessions) return MakeSessionList(lines, verbs);
-    if (query.all) return MakeUsage(lines, std::nullopt, verbs);
+    if (query.all) {
+        auto report = MakeUsage(lines, std::nullopt, verbs);
+        if (query.advice) report.advice = MakeAdvice(lines, std::nullopt, report, verbs);
+        return report;
+    }
     const auto one = [&](const std::string& session) {
         auto report = MakeUsage(lines, session, verbs);
+        if (query.advice) report.advice = MakeAdvice(lines, session, report, verbs);
         const uint64_t chars = ContextChars(lines, session);
         report.context = shape::UsageContext{chars, query.contextLimit, query.contextLimit && chars > query.contextLimit};
         return report;
