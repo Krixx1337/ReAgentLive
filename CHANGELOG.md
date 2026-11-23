@@ -128,6 +128,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **Limits that refused real calls:** `find --limit N` gathers up to 1,000
+  rows over pages; `disasm <addr> <count>` takes up to 1,024 instructions;
+  `sig-bytes` cuts a length past 96 to 96 (`capped: true`) instead of
+  refusing ([fast lane](docs/commands/fast-lane.md#disasm)).
 - **IDA's `decompile_all()` waits for analysis first:** right after a load
   or `add_saved`, or in a script that loads and decompiles at once, queued
   analysis could leave the pseudocode incomplete.

@@ -156,7 +156,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "and warnings for unmasked addresses."},
         {"sig-file", "core", "check a file of signatures (one JSON line each); names the first that holds",
             {{"file", "patterns file", One, "path", "a JSON-lines file, one signature per line"}}, {}, Of<shape::SigFile>, parse::SigFile},
-        {"sig-bytes", "core", "live bytes (default 64, up to 96) in both pattern forms, address fields wildcarded",
+        {"sig-bytes", "core", "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}}, {},
             Of<shape::SigBytes>, parse::SigBytes},
         {"labels-sign", "core", "a byte signature on each of this build's user and global names, so they survive a patch",
@@ -176,7 +176,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "search per anchor). One match appends a row for this build with the same sig and ported_from (the old "
             "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
             "rows stay."},
-        {"disasm", "core", "instructions decoded from live bytes: 1..64 (default 24, 512 bytes), or a whole function",
+        {"disasm", "core", "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions (--function: up to 2048)", "24"}},
             {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},
              {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},

@@ -29,13 +29,15 @@ inline const std::vector<Verb>& UnrealVerbs() {
     static const Flag classMatch{"--match", Takes::One, "str", "text", "keep class names containing text, any case"};
     static const Flag fieldMatch{"--match", Takes::One, "str", "text", "field names or readable labels containing text, any case"};
     static const std::vector<Verb> verbs = {
-        {"find", "ue", "objects whose name contains text and/or instances of a class; 24 per page",
+        {"find", "ue", "objects whose name contains text and/or instances of a class; 24 per page, or --limit N",
             {{"text", "text", Any, "text", "part of the object's name, any case"}},
             {cls,
              {"--live", Takes::Nothing, "bool", "", "live instances only: no Default__ or archetype objects"},
              outer,
-             cursor},
-            Of<shape::Find>, parse::Find, "The rows become $1..$N. Only the first page counts total."},
+             cursor,
+             {"--limit", Takes::One, "int", "N", "rows at most (1..1000), over as many pages as it takes"}},
+            Of<shape::Find>, parse::Find, "The rows become $1..$N. Only the first page counts total. --limit pages "
+            "until N rows or the end; next_cursor continues after the last row."},
         {"census", "ue", "live instances per class, most first; pages of 100 rows",
             {},
             {cls,

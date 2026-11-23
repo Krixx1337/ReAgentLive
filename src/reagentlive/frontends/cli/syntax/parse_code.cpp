@@ -177,13 +177,15 @@ Parsed LabelsPort(const Args& args, const ParseContext&) {
     return command;
 }
 
-// sig-bytes <addr> [len]: live bytes to start a signature from.
+// sig-bytes <addr> [len]: live bytes to start a signature from; a longer len is cut to sig::MaxPattern.
 Parsed SigBytes(const Args& args, const ParseContext& context) {
     Command command;
     uint64_t length = sig::DefaultBytes;
     if (!Address(args.At(0), context.refs, context.modules, command.request.address)) return Fail();
     if (!args.At(1).empty() && !Number(args.At(1), length)) return Fail("length must be a number");
-    if (!length || length > sig::MaxPattern) return Fail("length must be 1.." + std::to_string(sig::MaxPattern));
+    if (!length) return Fail("length must be at least 1");
+    command.capped = length > sig::MaxPattern;
+    length = std::min<uint64_t>(length, sig::MaxPattern);
     command.kind = Kind::Sig;
     command.sigMode = Command::SigMode::Bytes;
     command.request.op = op::Read;

@@ -383,7 +383,12 @@ TEST_CASE("sig parses --resolve, --file and --bytes") {
     CHECK(parsed->sigMode == Command::SigMode::Bytes);
     CHECK(parsed->request.length == 64);
     CHECK(Parse("sig-bytes 0x140001000 96", NoRefs)->request.length == 96);
-    CHECK_FALSE(Parse("sig-bytes 0x140001000 97", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-bytes 0x140001000 96", NoRefs)->capped);
+    const auto capped = Parse("sig-bytes 0x140001000 200", NoRefs); // Cut to the longest pattern, not refused.
+    REQUIRE(capped.has_value());
+    CHECK(capped->request.length == sig::MaxPattern);
+    CHECK(capped->capped);
+    CHECK_FALSE(Parse("sig-bytes 0x140001000 0", NoRefs).has_value());
     CHECK_FALSE(Parse("sig-bytes", NoRefs).has_value());
 }
 

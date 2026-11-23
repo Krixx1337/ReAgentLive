@@ -679,6 +679,10 @@ TEST_CASE("find takes a class filter and a cursor") {
     CHECK(both->request.length == 10);
     CHECK(both->request.args[1] == 4096);
     CHECK(ue::Check(both->request) == Status::Ok);
+    CHECK(both->limit == 0);
+    CHECK(Parse("find Vendor --limit 50", NoRefs)->limit == 50);
+    CHECK_FALSE(Parse("find Vendor --limit 0", NoRefs).has_value());
+    CHECK_FALSE(Parse("find Vendor --limit 1001", NoRefs).has_value());
     const auto classOnly = Parse("find --cls DataTable", NoRefs);
     REQUIRE(classOnly.has_value());
     CHECK(classOnly->request.text[0] == 0);

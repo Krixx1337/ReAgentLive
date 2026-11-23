@@ -101,7 +101,7 @@ Parsed CensusOptions(const Args& args, std::span<const Ref> refs, bool changed) 
 }
 }
 
-// find [text] [--cls Class] [--live] [--start cursor]; text keeps its inner spaces.
+// find [text] [--cls Class] [--live] [--start cursor] [--limit N]; text keeps its inner spaces.
 Parsed Find(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;
@@ -111,6 +111,12 @@ Parsed Find(const Args& args, const ParseContext& context) {
     uint64_t from = 0;
     if (!Cursor(args, INT32_MAX, from)) return Fail("cursor must be a slot number");
     request.args[1] = from;
+    if (args.Has("--limit")) {
+        uint64_t limit = 0;
+        if (!Number(args.Value("--limit"), limit) || !limit || limit > MaxFindRows)
+            return Fail("--limit must be 1.." + std::to_string(MaxFindRows));
+        command.limit = static_cast<uint32_t>(limit);
+    }
     if (text.empty() && !request.length && command.outer.empty()) return Fail();
     if (text.size() >= MaxText) return Fail("search text too long");
     request.op = ue::op::Find;

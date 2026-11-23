@@ -168,9 +168,25 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     case ue::op::Find: {
         const std::string_view className = request.length ? reinterpret_cast<const char*>(request.data) : "";
         const auto from = static_cast<uint32_t>(request.args[1]);
-        auto found = ue::Find(client, request.text, {className, from, false, (request.flags & ue::FindLive) != 0,
-            {command.outerText, command.outerRef}});
+        const ue::FindOptions options{className, from, false, (request.flags & ue::FindLive) != 0,
+            {command.outerText, command.outerRef}};
+        auto found = ue::Find(client, request.text, options);
         if (!found) return CommandError(session, jsonCommand, found.error());
+        // --limit: more pages until N rows or the end, then cut at N; the
+        // cursor goes on from the slot after the last row kept.
+        if (command.limit) {
+            for (auto more = options; found->objects.size() < command.limit && found->next;) {
+                more.from = found->next;
+                auto page = ue::Find(client, request.text, more);
+                if (!page) return CommandError(session, jsonCommand, page.error());
+                found->objects.insert(found->objects.end(), page->objects.begin(), page->objects.end());
+                found->next = page->next;
+            }
+            if (found->objects.size() > command.limit) {
+                found->objects.resize(command.limit);
+                found->next = static_cast<uint32_t>(found->objects.back().ref.index + 1);
+            }
+        }
         refs.clear();
         for (const auto& object : found->objects) refs.push_back(object.ref);
         // Each row's owner, named in one describe-many of the distinct outers.

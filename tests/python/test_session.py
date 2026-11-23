@@ -268,7 +268,7 @@ class SessionTests(unittest.TestCase):
         self.assertIs(trial.parameters['owner'].default, inspect.Parameter.empty)   # A required flag.
         self.assertEqual(trial.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
         find = inspect.signature(self.gen.UeVerbs.find)
-        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'outer', 'start'])
+        self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'outer', 'start', 'limit'])
         self.assertIn('Literal', str(inspect.signature(self.gen.Console.search).parameters['type'].annotation))
         self.assertIn('class_size', self.gen.Object.__annotations__)              # Named types are classes.
         self.assertIn('Chain', str(self.gen.ReadResult.__annotations__['chain']))

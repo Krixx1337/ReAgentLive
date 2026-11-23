@@ -543,7 +543,8 @@ TEST_CASE("fast-lane syntax") {
     CHECK(disasm->function);
     CHECK(disasm->follow);
     CHECK(Parse("disasm 0x1000", refs)->limit == DefaultDisasm);
-    CHECK_FALSE(Parse("disasm 0x1000 65", refs));
+    CHECK(Parse("disasm 0x1000 1024", refs)->limit == 1024);
+    CHECK_FALSE(Parse("disasm 0x1000 1025", refs));
     // --function: the whole function by default, a count up to its cap; --resume and --save need it.
     CHECK(Parse("disasm 0x1000 --function", refs)->limit == dis::MaxFunctionInstructions);
     CHECK(Parse("disasm 0x1000 300 --function", refs)->limit == 300);

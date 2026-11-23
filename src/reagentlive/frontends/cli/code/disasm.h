@@ -22,7 +22,7 @@
 
 namespace reagentlive::cli::dis {
 using ReadFn = sig::ReadFn;
-constexpr size_t MaxInstructions = 64, MaxBytes = 512, DefaultCount = 24;
+constexpr size_t MaxBytes = 512, DefaultCount = 24;
 // --function lists the whole function, up to these; a cut listing gives `next`.
 constexpr size_t MaxFunctionInstructions = MaxFunctionDisasm, MaxFunctionBytes = 0x4000;
 constexpr size_t ReadChunk = MaxRead - sizeof(Status); // Bytes per read request.

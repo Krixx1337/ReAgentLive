@@ -156,7 +156,8 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         options.count = count;
         options.follow = follow;
         options.walk = walking;
-        if (command.function) options.bytes = dis::MaxFunctionBytes;
+        options.bytes = command.function ? dis::MaxFunctionBytes :
+            std::clamp<size_t>(count * DisasmBytes, dis::MaxBytes, dis::MaxFunctionBytes);
         if (command.function && !walking) options.bound = [&session](uint64_t at) { return EntryEnd(session, at); };
         auto listing = dis::List(AgentRead(session), start, options);
         if (!listing) return std::unexpected(listing.error());

@@ -144,7 +144,9 @@ void RunSigBytes(Session& session, const Command& command, std::string_view json
     // The address is the reader's instruction boundary: decode from it.
     ExactFields exact;
     exact.fields = dis::ExactFields(sig::FromBytes(*bytes), *bytes, request.address, LoadedModules(session), &exact.decoded);
-    Emit(session, jsonCommand, MakeSigBytes(request.address, *bytes, LoadedModules(session), exact));
+    auto out = MakeSigBytes(request.address, *bytes, LoadedModules(session), exact);
+    if (command.capped) out.capped = true;
+    Emit(session, jsonCommand, std::move(out));
 }
 }
 

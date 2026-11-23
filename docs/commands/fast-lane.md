@@ -45,8 +45,9 @@ one-byte decoys at a fixed stride that would cut it into slivers.
 
 ## disasm
 
-`disasm` decodes up to `count` instructions (1..64, default 24) and 512
-bytes of live memory from `addr`, which must be an instruction boundary
+`disasm` decodes up to `count` instructions (1..1024, default 24) and
+8 bytes per instruction asked (at least 512, at most 16 KB) of live memory
+from `addr`, which must be an instruction boundary
 (the decoder is Zydis, in the console only). Reads of up to 4 KB; when part
 of one is unreadable, up to the page end and on from there.
 - `--function` lists the whole function holding `addr`, from its start to
@@ -371,7 +372,8 @@ with the same module and anchor. `winner` is the line number of the first
 that is unique and, when it has an `rva`, resolves. So the agent tries
 several candidates in one call, and a host checks every signature it ships.
 
-`sig-bytes <addr> [len]` (default 64, up to 96) prints the live bytes in
+`sig-bytes <addr> [len]` (default 64, up to 96: a longer `len` is cut to
+96 and the result says `capped: true`) prints the live bytes in
 both forms with `module` and `rva`, and `suggested`: the same bytes with
 the address fields wildcarded, each listed with where it points. `addr` is
 taken as an instruction boundary, so the fields come from the decoder

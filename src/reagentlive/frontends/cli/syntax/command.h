@@ -37,7 +37,7 @@ struct Command {
     std::string className;
     std::string target;         // A name the verb acts on (a function, a member, a watch action).
     uint32_t seconds = 0;       // each: repeat for this long, printing changes.
-    uint32_t limit = 0;         // census, call: rows to print, 0 = all.
+    uint32_t limit = 0;         // census, call: rows to print, 0 = all. find: rows at most, 0 = one agent page.
     uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
     std::string view;           // read --type: element type or layout for decoded values.
     // pin and watch: per target (watch: per range in `reads`), the object an
@@ -76,6 +76,7 @@ struct Command {
     bool hashOnly = false;
     bool listSessions = false;  // stats --sessions; --session <id> is `target`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
+    bool capped = false;        // sig-bytes: the length asked passed sig::MaxPattern and was cut to it.
     sig::Pattern pattern;
     std::optional<uint64_t> expect;
     uint64_t offset = 0;
@@ -143,7 +144,10 @@ inline bool TestName(std::string_view name) {
 constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows = 200;
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.
 constexpr size_t MaxSearchText = 96; // search text: characters shown each side of a hit.
-constexpr uint64_t MaxDisasm = 64, DefaultDisasm = 24, MaxFunctionDisasm = 2048; // The last: disasm --function.
+// disasm: up to MaxDisasm instructions (DisasmBytes per instruction asked, at
+// least dis::MaxBytes), MaxFunctionDisasm with --function.
+constexpr uint64_t MaxDisasm = 1024, DefaultDisasm = 24, MaxFunctionDisasm = 2048, DisasmBytes = 8;
+constexpr uint64_t MaxFindRows = 1000; // find --limit: rows gathered over the agent's pages.
 namespace touch {
 constexpr size_t MaxOffsets = 8;
 constexpr uint64_t DefaultRange = 0x80000, MaxRange = 0x400000; // Bytes each side of the address.

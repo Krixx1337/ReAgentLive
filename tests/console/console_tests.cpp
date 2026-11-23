@@ -465,3 +465,26 @@ TEST_CASE("disasm --save walks past a one-byte decoy entry and refuses an empty 
     CHECK(records[1]["ok"].get<bool>());
     std::filesystem::remove(file);
 }
+
+TEST_CASE("find --limit pages until N rows and continues after the last") {
+    TheFixture();
+    const auto first = Result("find Extra_ --limit 30");
+    REQUIRE(first["rows"].size() == 30);
+    CHECK(first["total"] == 150);
+    CHECK(first["rows"][29]["name"] == "Extra_29");
+    const auto rest = Result("find Extra_ --limit 200 --start " + std::to_string(first["next_cursor"].get<uint32_t>()));
+    REQUIRE(rest["rows"].size() == 120);
+    CHECK(rest["rows"][0]["name"] == "Extra_30");
+    CHECK_FALSE(rest.contains("next_cursor"));
+    CHECK(Result("find Extra_")["rows"].size() == 24);   // One agent page without it.
+}
+
+TEST_CASE("disasm counts past 64 instructions and sig-bytes caps a long length") {
+    const auto listed = Result("disasm " + At(0x2000) + " 200");
+    CHECK(listed["rows"].size() == 200);
+    CHECK(listed["stop"] == "count");
+    const auto bytes = Result("sig-bytes " + At(0x2000) + " 200");
+    CHECK(bytes["length"] == 96);
+    CHECK(bytes["capped"] == true);
+    CHECK_FALSE(Result("sig-bytes " + At(0x2000) + " 16").contains("capped"));
+}
