@@ -629,7 +629,7 @@ Pack `observe`.
 
 Result: `{filter?: str, classes: u64, instances: u64, before?: {classes: u64, instances: u64}, ms: i64, rows: [{class: str, ref: ref, count: u32, before?: u32, samples: [ref]}], total: u64, from: u64, next_cursor?: u64, hint?: str}`
 
-view.match keeps class names; view.limit is rows per page (0: all); view.start (next_cursor) pages the stored census without a new scan. Every census becomes the next diff's baseline. diff takes a new census and answers classes and instances as {before, after}, rows with before, after and change; refused with no earlier census under the same filter.
+view.match keeps class names; view.limit is rows per page (0: all); view.start (next_cursor) pages the stored census without a new scan. Every census becomes the next diff's baseline. diff takes a new census and answers only the classes whose count changed, each row's count now with before, and before as the earlier census's classes and instances; refused with no earlier census under the same filter.
 
 ```json
 {"args":{},"verb":"census"}
@@ -823,7 +823,7 @@ Pack `native`.
 
 Result: `{path: str, module: str, timestamp: u32, total: u64, globals: u64, user: u64, exec: u64, vtables: u64, interfaces: u64, interface_lookups: u64, other_builds: u64, capped: bool}`
 
-Native exec thunks, vtables and interface implementations, merged into the file: names a static tool wrote back (user), globals peek's label confirmed, kinds not derived now and other builds' lines are kept; per address the highest rank wins (user, global, exec, interface, vtable). After another tool's mappings: kinds ["interface", "global"].
+Native exec thunks, vtables and interface implementations, merged into the file: names a static tool wrote back (user), globals peek's label confirmed, kinds not derived now and other builds' lines are kept; per address the highest rank wins (user, global, exec, interface, vtable). global derives nothing (peek's label writes those). After another tool's mappings: kinds ["interface"].
 
 ```json
 {"args":{},"verb":"export-labels"}

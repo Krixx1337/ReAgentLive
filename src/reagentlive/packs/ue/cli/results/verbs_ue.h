@@ -43,9 +43,9 @@ inline const std::vector<Verb>& UnrealVerbs() {
              View("match start limit", "100")},
             Of<shape::Census>, build::Census,
             "view.match keeps class names; view.limit is rows per page (0: all); view.start (next_cursor) pages the "
-            "stored census without a new scan. Every census becomes the next diff's baseline. diff takes a new census and answers classes and "
-            "instances as {before, after}, rows with before, after and change; refused with no earlier census under "
-            "the same filter."},
+            "stored census without a new scan. Every census becomes the next diff's baseline. diff takes a new census and answers "
+            "only the classes whose count changed, each row's count now with before, and before as the earlier census's classes "
+            "and instances; refused with no earlier census under the same filter."},
         {"name-find", "ue", ToolPack::Explore, "FName indices whose text contains text (gameplay tags, row names)",
             {{"text", "text", "part of the pooled name", {}, true}, View("start")}, Of<shape::NameFind>, build::NameFind},
         {"name", "ue", ToolPack::Explore, "FName comparison indices as text (FName #N in dumps)",
@@ -115,8 +115,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
             Of<shape::ExportLabels>, build::ExportLabels,
             "Native exec thunks, vtables and interface implementations, merged into the file: names a static tool "
             "wrote back (user), globals peek's label confirmed, kinds not derived now and other builds' lines are "
-            "kept; per address the highest rank wins (user, global, exec, interface, vtable). After another tool's "
-            "mappings: kinds [\"interface\", \"global\"]."},
+            "kept; per address the highest rank wins (user, global, exec, interface, vtable). global derives nothing "
+            "(peek's label writes those). After another tool's mappings: kinds [\"interface\"]."},
         {"export-assets", "ue", ToolPack::Native, "each object of the classes into its own JSON file: every nonzero field, and a table's rows",
             {{"dir", "file", "the folder to write (created when missing)", {}, true},
              {"cls", "str", "the classes (and their subclasses) to export, up to 16", {}, true, true},
