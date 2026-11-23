@@ -68,7 +68,7 @@ auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
   ([host verbs](hosting.md#host-verbs) for commands of your own).
 - Commands that exist only in the console (`get`, `batch`,
   `entries`, the cache, output budgets) are reached through its JSON calls,
-  as the Python client does ([design](design.md#frontends)). So is
+  as the Python client does ([design](design/architecture.md#frontends)). So is
   `game-thread`, which has no typed wrapper.
 
 ## Generated Python functions
@@ -99,7 +99,7 @@ with Session(r'path\to\console.exe') as s:
   (`c.read`, `c.sig_check`), a pack's and the host's under their origin
   (`c.ue.find`, `c.host.world`). Required arguments first (by
   position or name), the others keyword-only, named by the console's keys
-  (the table refuses a Python keyword: `cls`, `start`, `type`). An
+  (the table refuses a Python keyword, so `cls`, never `class`). An
   argument that takes several values takes a list, an object a dict, except bytes, patterns and text, which are one string (or
   `bytes`). Each docstring is the verb's usage, arguments and notes.
 - **Every verb but `quit`:** a host's blocking ones are there too and
@@ -133,9 +133,9 @@ module calls through it; scripts use it for the rest.
   objects, named types and list rows are strict too. A key guessed wrong
   fails on the line that guessed it, never as a quiet `None` or a caught
   `KeyError`. `record.raw` is the plain dict.
-- `s.call(verb, args)` sends one JSON call with arguments named as
-  `help` with `verb` shows them (None and False left out, bytes as hex) and
-  returns the strict result. `s.help('<verb>')` shows a verb's arguments
+- `s.call(verb, args, budget=None)` sends one JSON call with arguments
+  named as `help` with `verb` shows them (None and False left out, bytes
+  as hex) and returns the strict result. `s.help('<verb>')` shows a verb's arguments
   and result keys; `s.send(line)` is the raw exchange (the envelope as
   plain dicts).
 - **Two helpers, for what a generated function cannot do:**
@@ -146,6 +146,14 @@ module calls through it; scripts use it for the rest.
   `next_cursor` with `view.start`, or use the verb's `view.limit`
   (0 for every row on `census`).
 - `s.table_hash` is the console's `table_hash`.
+- **Output budget:** a result past the call's `budget` (characters; 0
+  none) comes back as a `Digest` in place of the record, and
+  `s.digest` holds the last one (else `None`): its size, largest parts and
+  `next`, the call narrowed, or `file`, where the console kept the whole
+  result of a call that must not run again
+  ([output budgets](commands/console.md#fewer-round-trips)). A session
+  started with `caller='tool'` has the console's tool budget by
+  default; `'script'` has none.
 - `Session(console, args, caller='script')` starts the console with
   `--caller`: its [usage log](commands/console.md#usage-log-and-stats)
   counts a script's output apart from an agent's context. Pass
@@ -242,7 +250,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   again gets the new list with no reconnect; one that ignores the notice
   keeps working for verbs whose arguments and result did not change, and
   needs a reconnect for the rest ([design](tool-interface.md#tool-interface)).
-- **Results past the budget:** 25,000 characters by default; past it the
+- **Results past the budget** (the console's tool budget by default): the
   tool returns the console's `digest` and a text naming the call to make
   next, or the file holding the result of a call that must not run again
   ([output budgets](commands/console.md#fewer-round-trips)).
@@ -274,11 +282,8 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 Not interfaces: they never drive the agent.
 
 - **IDA side** (`frontends/ida/reagentlive_ida.py`, one file in IDA's
-  loaders folder): loads what `disasm`'s `save` wrote, so IDA decompiles it
-  without the whole image
-  ([saving a function](commands/fast-lane.md#saving-a-function-for-a-static-tool)),
-  and carries names both ways: `import_labels` brings in the console's
-  labels file, `export_names` writes the names you gave back into it
-  ([labels for a static tool](commands/unreal.md#labels-for-a-static-tool)).
+  loaders folder): opens what `disasm`'s `save` wrote, so IDA decompiles
+  it without the whole image, and carries names both ways through the
+  labels file ([IDA loader](commands/ida-loader.md)).
 - **Round-trip timings** (`frontends/python/benchmark.py`): measures calls
   against a running host.

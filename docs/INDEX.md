@@ -20,6 +20,7 @@ are under `src/reagentlive/`.
 | Know what works where, and my tier | [tiers](tiers.md) |
 | Pick how to drive it (MCP tools, console, Python, C++ client) | [clients](client.md) |
 | Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
+| Decompile live functions in IDA, carry names both ways | [IDA loader](commands/ida-loader.md), [labels](commands/labels.md) |
 | Know what a command takes and returns | `help` with `verb` in the console, the [verb reference](commands/reference.md), or [result shapes](commands/results.md) |
 | Have an AI agent set it all up, or update it | [for AI agents](#for-ai-agents) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
@@ -29,7 +30,7 @@ are under `src/reagentlive/`.
 | Keep a mod's logic or a tool outside the game, with a lean DLL inside | [outside programs](outside-programs.md) |
 | Add a command or change the code | [contributing](contributing.md) |
 | Change ReAgentLive with an AI agent | [AGENTS.md](../AGENTS.md) (commands, hard rules, large changes) |
-| Know why something is built this way, or was rejected | [design](design.md); for `help`, scripts and tools: [tool interface](tool-interface.md) |
+| Know why something is built this way, or was rejected | [design](design.md): [console costs](design/console-costs.md), [architecture](design/architecture.md), [Unreal pack](design/unreal.md), [native code](design/native.md); for `help`, scripts and tools: [tool interface](tool-interface.md) |
 | Pick the next feature, or check it is not ruled out | [ideas](ideas.md) |
 | Describe the project | [positioning](positioning.md) |
 | Let an AI agent investigate a live game | the [`reagentlive` skill](../.claude/skills/reagentlive/SKILL.md) (method, pitfalls, references by question) |
@@ -45,33 +46,6 @@ the README's paste prompts send an agent there.
 | [setup](agents/setup.md) | first install: build, MCP tools, skill, check, setup record |
 | [update](agents/update.md) | update a clone: pull, rebuild, skill, MCP server, re-inject, check `commit` |
 
-## Pages
-
-| Page | What |
-|---|---|
-| [../README.md](../README.md) | the pitch: tiers at a glance, a demo, use cases, where to start, the setup and update prompts |
-| [tiers.md](tiers.md) | the tier ladder T0-T4: what each gives, needs and ships in; reading your tier from `status` |
-| [agents/README.md](agents/README.md) | which agent procedure when, and the rules every procedure shares |
-| [agents/setup.md](agents/setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
-| [agents/update.md](agents/update.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
-| [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
-| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write` (and timed writes, `writes`), `search`, captures (`watch-start`), typed layouts |
-| [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search` for text, `sig-check` |
-| [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`rtti`), pointer chains, regions, strings |
-| [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `get`, labels, readable names, native members |
-| [commands/capture.md](commands/capture.md) | which command for which question about change; `get` snapshots, timing an action |
-| [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
-| [commands/reference.md](commands/reference.md) | every verb in full (args with their help, result, notes, an example call), the general notes, the shared `view` keys and the error kinds, generated from the verb table |
-| [hosting.md](hosting.md) | Unreal and own-thread examples, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
-| [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
-| [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |
-| [protocol.md](protocol.md) | shared section, exchange and hold, handshake, ops, statuses, limits |
-| [design.md](design.md) | principles, decisions, rejected alternatives, not now |
-| [tool-interface.md](tool-interface.md) | the self-describing console and the tool interface: verb table, `help` with `json`, generated functions, MCP tools, their decisions |
-| [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
-| [ideas.md](ideas.md) | backlog with triggers; what is out |
-| [positioning.md](positioning.md) | the pitch, role among other tools, low footprint, safety model, what it is not |
-
 ## Commands
 
 Every console verb, the [tier](tiers.md) it needs and its page. **T0**
@@ -84,35 +58,37 @@ offers (`packs`). **T3** commands also need the game thread
 | Command | Needs | Page |
 |---|---|---|
 | `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
-| `write` with `hold`, `writes` | T0 | [memory](commands/memory.md#timed-writes) |
+| `write` with `hold` or `undo`, `writes` | T0; `undo`'s owner check needs T1 | [memory](commands/memory.md#timed-writes) |
 | `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
-| `write` with `undo` | T0; the owner check needs T1 | [memory](commands/memory.md#timed-writes) |
 | `search`, `search-job` | T0 | [memory](commands/memory.md#search) (text: [fast lane](commands/fast-lane.md#search-text)) |
 | `read` with a layout `type` | T0 | [memory](commands/memory.md#typed-layouts) |
 | `read` with `type` `cstr\|wstr`, pointer chains, `vtable`, its `rtti` | T0 | [native objects](commands/native-objects.md) |
 | `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |
 | `disasm`, `xrefs`, `touches` | T0 | [fast lane](commands/fast-lane.md) |
 | `sig-check` (one `pattern` or a `file`), `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
-| `labels-sign`, `labels-port` | T0 | [labels](commands/unreal.md#names-that-survive-a-patch) |
-| `find`, `describe`, `name`, `name-find` | T1 | [Unreal pack](commands/unreal.md) |
-| `get` with `mode` `types`, `entries`, `func`, `funcs`, `enum` | T2 (`func`'s `params`: T3) | [Unreal pack](commands/unreal.md) |
-| `rows` | T2 | [Unreal pack](commands/unreal.md#rows) |
-| `call`, `call-pure`, `release`, `script`, `refs`, `trace` | T3 | [Unreal pack](commands/unreal.md) |
-| `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal pack](commands/unreal.md) |
-| `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal pack](commands/unreal.md#call-recorder) |
-| `layout-export`, `layout-check` | T2 | [Unreal pack](commands/unreal.md#layouts-in-bulk) |
-| `export-assets` | T2 | [Unreal pack](commands/unreal.md#assets-to-files) |
-| `each` | T3 | [Unreal pack](commands/unreal.md#each) |
-| `census`, its `diff` | T1 | [Unreal pack](commands/unreal.md#census) |
-| `get` (every field, `view.match`, `view.nonzero`, `own`) | T2 | [Unreal pack](commands/unreal.md#get), paths: [console](commands/console.md#fewer-round-trips) |
-| `export-labels` | T3 (native exec thunks); other `kinds` T2 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
-| `peek` with `label` | T0 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
-| `label` | T2 | [Unreal pack](commands/unreal.md#native-members) |
-| `get` with `mode` `snap` or `changed` | T2 | [capture](commands/capture.md) |
-| `get` with `paths`, `meta` | T2 | [console](commands/console.md#fewer-round-trips) |
+| `peek` with `label`, `labels-sign`, `labels-port` | T0 | [labels](commands/labels.md) |
+| `export-labels` | T3 (exec thunks); other `kinds` T2 | [labels](commands/labels.md#export-labels) |
+| `find`, `describe`, `name`, `name-find`, `census` (and its `diff`) | T1 | [Unreal objects](commands/unreal-objects.md) |
+| `enum`, `export-assets` | T2 | [Unreal objects](commands/unreal-objects.md) |
+| `each` | T3 | [Unreal objects](commands/unreal-objects.md#each) |
+| `get` (every mode), `entries`, `rows`, `label`, `layout-export`, `layout-check` | T2 | [Unreal fields](commands/unreal-fields.md) (snapshots over time: [capture](commands/capture.md)) |
+| `func`, `funcs` | T2 (`func`'s `params`: T3) | [Unreal calls](commands/unreal-calls.md#func-and-funcs) |
+| `call`, `call-pure`, `call-each`, `release`, `trace` | T3 | [Unreal calls](commands/unreal-calls.md) |
+| `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal calls](commands/unreal-calls.md#call-recorder) |
+| `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal calls](commands/unreal-calls.md#game-thread) |
+| `script` with `decode` | T2 (any thread) | [Unreal code](commands/unreal-code.md#decode) |
+| `script`, `refs` | T3 | [Unreal code](commands/unreal-code.md) |
 | `batch`, `timing` | T0 | [console](commands/console.md#fewer-round-trips) |
+| `run` (plan files) | T0 | [console](commands/console.md#plans) |
 | `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
 | `stats`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-stats) |
+
+A host's own verbs (`help` lists them under its origin) come from the
+host, not this library: see the host's docs.
+
+What each verb takes and returns: [verb reference](commands/reference.md)
+and [result shapes](commands/results.md). The Unreal pack's shared rules
+(identity, layout groups, thread rules): [Unreal pack](commands/unreal.md).
 
 ## Glossary
 
@@ -142,8 +118,8 @@ offers (`packs`). **T3** commands also need the game thread
 | Ref | an object address with its table slot and serial, `0x<address>#<index>:<serial>`, so a replaced object is detected; pass the literal ref a result printed ([console](commands/console.md#addresses-and-refs)) |
 | `module` + `rva` | an address as module and offset, stable across launches; the bridge to static tools |
 | Fast lane | one-address code questions answered from live bytes, no database ([fast lane](commands/fast-lane.md)) |
-| Pin | bytes rewritten every tick until it expires: `write` with `hold` ([memory](commands/memory.md#timed-writes)) |
-| Trial | one guarded write that restores itself on expiry or clear ([memory](commands/memory.md)) |
+| Hold | bytes rewritten every tick until it expires, then left as they are: `write` with `hold` ([memory](commands/memory.md#timed-writes)) |
+| Undo | one guarded write that restores itself on expiry or clear: `write` with `undo` ([memory](commands/memory.md#timed-writes)) |
 | Root | an object the host can always find again, for `watch-start` with `follow` |
 | Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](tool-interface.md#self-describing-console)) |
 | JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the console's only input form ([console](commands/console.md#json-calls)) |

@@ -1,6 +1,6 @@
 # Fast lane
 
-*Home of:* code questions from live bytes: `disasm` (and saves for a static tool), `xrefs`, `touches`, `search` with `type` `text` and the signature commands. Why the lane is built this way: [design](../design.md#fast-lane).
+*Home of:* code questions from live bytes: `disasm` (and saves for a static tool), `xrefs`, `touches`, `search` with `type` `text` and the signature commands. Why the lane is built this way: [design](../design/native.md#fast-lane).
 
 **TL;DR:** Ask about one address and get an answer from the code as it is
 loaded right now, in well under a second, with no disassembler database:
@@ -8,13 +8,10 @@ its instructions, who references it, which code touches a field, whether
 a byte signature still matches. It answers one address at a time; whole
 functions, types and call graphs stay with a static tool.
 
-Questions about one address, answered from live bytes in well under a
-second with no database. Use it while the static tool has no analysed
-database for this build, or for a quick check; switch to the static tool
-for whole functions, types, call graphs and anything that needs the whole
-program ([design](../design.md#fast-lane)). The lane: `peek` (what a global
-holds), `func` (a reflected function's native entry), `disasm`, `xrefs`,
-`touches` and `sig-check`.
+Use it while the static tool has no analysed database for this build, or
+for a quick check. The lane: `peek` (what a global holds), `func` (a
+reflected function's native entry), `disasm`, `xrefs`, `touches` and
+`sig-check`.
 
 ```json
 {"verb": "disasm", "args": {"addr": "0x140001000", "function": true}}
@@ -92,8 +89,9 @@ of one is unreadable, up to the page end and on from there.
   on the call adds each row's `module`, every `target_module` and
   `fields`; the generated tools do not pass it. Under `function` rows are
   more compact still: no `bytes`, and `rva` only on the first row (targets
-  keep `target_rva`); `meta` brings back full rows. For masks to build a signature from, `sig-bytes` gives the
-  same fields.
+  keep `target_rva`); `meta` brings back full rows. For masks to build a
+  signature from, use `sig-bytes`: its fields are kinded by what they
+  point at (`call`, `jump`, `branch`, `rip`, `absolute`), not by encoding.
 - `strings` (with `function`): each distinct string the rows reference,
   once, with `at`: the rows using it, in order. Only strings the code
   points at directly: text built at run time, reached through a pointer
@@ -148,8 +146,8 @@ then `capped: true`; targets of the function still unsaved are listed in
   first), and each target left out in `skipped` with `why`: `depth` (a
   call of the deepest level), `count`, `bytes` or `unreadable`. Three
   levels is the most: past that a call graph is the static tool's job.
-- **Names** come from the console's labels file when it exists, or
-  `save.labels` ([labels](unreal.md#labels-for-a-static-tool)): names
+- **Names** come from the console's labels file and the host's names
+  file, or `save.labels` alone ([labels](labels.md#labels-files)): names
   you gave in IDA (`user`), the globals `peek` with `label` confirmed, exec
   thunks and interface implementations; the highest-ranked row per address.
 - **Types travel with the save.** With an engine pack, each saved function
@@ -182,149 +180,11 @@ JSON lines:
 | `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
 | `layout` | a `layout-export` line (`kind` `class`, `struct`, `field` or `enum`, with its keys): the layouts of the saved methods' classes, last in the file |
 
-`frontends/ida/reagentlive_ida.py` is the IDA loader: copy it into IDA's
-user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and
-open the file; IDA's headless library reads the same folder, so an
-automated session opens it too. It builds an x64 database (Visual C++, so
-the decompiler uses the Windows calling convention) with one segment per
-run of `code` and `data` rows (rows that overlap with identical bytes, or
-touch, are joined; rows that overlap with different bytes refuse the file)
-at its live address, makes each function and
-applies the names. A name outside the saved bytes gets a one-byte `STUB`
-segment, so the decompiler shows `fn_6fa0aa0(...)` or a label instead of
-a bare address. Writable globals are not saved (their values change). The
-`rva`s cross back to a full database of the same build.
-
-`add_saved(<path>)`, called from IDA's Python on an open database, adds
-another save of the same build to it, so one workspace database grows
-through a whole investigation: open the first save, `add_saved` every
-later one, close it at the end. Bytes the database already holds are cut
-from the new save and must match byte for byte (one build has one set of
-bytes). A new run that overlaps or touches a segment of its kind joins it
-into one segment, so a function never ends at a segment's edge, and stubs
-are replaced by the code that arrives. Names you gave and comments already
-there stay. It returns a summary: `added` (new segments), `joined`
-(existing segments grown), `cut` (new bytes already held), each as
-`start-end` ranges, and `stubs_replaced`. A save with `layout` rows also
-declares them as local types (as `import_layouts`: types of the same name
-are replaced, not duplicated) and types its functions `Class *this` (as
-`apply_this`): `types` (declared), `types_failed`, `this_typed` and
-`this_skipped` (`'<name>: why'`). Opening such a save declares the types at
-once and types `this` when auto-analysis ends (the decompiler is not there
-while loading); one it could not type then waits for the next `add_saved`. It raises `SaveError` instead of
-loading less than the file holds: a file it cannot parse, another build, a
-byte that differs from the database, or a saved function or chunk start
-left without bytes.
-
-- **Install name.** Any file name in the loaders folder works; IDA offers
-  every loader there. After updating ReAgentLive, copy the repo's file over
-  the installed one (`reagentlive_ida.py`, which also replaces the
-  retired `load_function.py` and `import_labels.py`): a loader older than
-  the file refuses it at the first
-  row kind it does not know ("this loader is older than the file"), so a
-  save never loads with its chunks or names silently missing.
-- **Which loader ran.** The loader claims the file by its first line (a
-  `function` row), not by its extension. It ran when the functions are
-  named `fn_<rva>` (or their labels) and carry a
-  `reagentlive: <module>+<rva>` comment; a database with one segment at 0
-  came from IDA's own binary loader (the loader is missing or failed: its
-  warning says why).
-- **Start at the function's start.** Find it first when the address is a
-  call site in unlisted code: an `xrefs` row marked `unlisted` gives the
-  piece holding the call, whose start may sit behind junk bytes
-  ([disasm](#disasm)).
-- **From an automated session** (an IDA bridge with Python): open the
-  saved file, then load this file as a module and call it:
-
-  ```python
-  import importlib.util, os, idaapi
-  path = os.path.join(idaapi.get_user_idadir(), 'loaders', 'reagentlive_ida.py')
-  spec = importlib.util.spec_from_file_location('reagentlive_ida', path)
-  rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
-  rl.fetch('0x<addr>', depth=2, decompile_dir='<dir>')   # save, add, type, decompile: one call
-  rl.decompile_all()            # every function's pseudocode, one string
-  rl.add_saved('<next save>')   # grow the database; returns the summary
-  rl.export_names('<console>.labels.jsonl')   # names you gave, for later saves
-  rl.decompile_to(['0x<addr>', '<name>'], '<dir>', grep=r'this->\w+')   # .c files + summary
-  rl.import_layouts('<file>')   # layout-export with closure → local types
-  rl.apply_this('<console>.labels.jsonl')   # Class *this on Class_Method functions
-  ```
-
-  The pseudocode already shows the saved constants' values: no need to
-  read them again. Close the database once read, and before opening a new
-  save under the same name delete the database files beside it.
-
-`decompile_to(targets, out_dir, grep=None)` takes addresses (an int or
-`'0x..'` text; an address inside a function means that function) or names,
-and writes one `<name>.c` per function into `out_dir`: characters a file
-name cannot hold become `_`, the name is cut to 120, and a name already
-taken (ignoring case) gets the address appended. A function asked twice is
-written once. It returns one summary per function: `address`, `name`,
-`path`, `lines` and, with `grep` (a regex, or a plain substring when it is
-no valid regex), `matches` as `'<line>: <text>'`, at most 40, the rest
-counted in `matches_more`. A failed decompile writes the error into its file
-and adds `error`; a target that names no function comes back as `{target,
-error}`. Read the summary first and open only the files it points to.
-
-`import_layouts(<file>)` turns a `layout-export` file
-([layouts in bulk](unreal.md#layouts-in-bulk); `closure` brings the types
-the fields name) into local types, replacing types of the same name. Each
-class or struct becomes a packed struct of its size with every field at its
-reflected offset: its `super` is the base class when the file holds it,
-else that part is padding. Fields are typed by property: numbers, a bool
-as a byte (bitfield bools sharing a byte become one member named after all
-of them), `FName`, `FString`, `FWeakObjectPtr` and `FScriptInterface` as
-engine structs, an object or class pointer as a pointer to its class's type
-when the file holds it (else `void *`), a struct by value and an enum when
-the file holds them (else an enum property is its integer), a `TArray` as
-`TArray_<element>` {Data, Num, Max} (plain `TArray` when its element has no
-C type), a static array as an array. Gaps become `pad_<offset>` bytes; sets,
-maps, delegates and soft pointers are untyped byte blobs of their size.
-A file from an agent without `class` and `enum` keys imports too: its
-pointers are `void *` and its enum fields their integer. It returns lists: `types`, `enums`, `arrays` (the
-`TArray_` types made), `untyped` (fields left as bytes, with why),
-`skipped` (overlapping fields, a super not in the file, enum values that do
-not fit), `lines_skipped` (lines it could not read) and `failed`
-(declarations IDA refused; those types are missing, the rest are in).
-
-`apply_this(<labels file>)` types the first argument `Class *this` on each
-function a label of this build names `Class::Method`, or `Class_Method`
-with the longest `Class` prefix that is a local struct type (class names
-hold `_` too), so the decompiler shows `this->Field`. Other arguments and
-the return type stay as IDA has them. It returns `typed` (a count) and
-`skipped` (`'<name>: why'`). Run `import_layouts` first.
-
-### From an address to pseudocode in one call
-
-`fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None)`,
-called from IDA's Python on an open save database, is the whole loop: it
-runs the console (`console`: its path or a command list, else the
-environment variable `REAGENTLIVE_CONSOLE`) with one `disasm` save per
-address (`save.callees` = `depth` unless `callees` is false) as a JSON call
-file (`-c @<file>`, `--caller script`, `--packs native`), `add_saved`s each
-file into the open database (types and `this` included), and with
-`decompile_dir` runs `decompile_to` over every saved function. One address
-or a list; each an int or `'0x..'` text.
-
-```python
-out = rl.fetch(0x140001000, depth=2, decompile_dir='<dir>', grep=r'this->\w+')
-```
-
-It returns `functions` (every saved one), `skipped` (the console's rows),
-`add_saved`'s keys summed over the files (`added`, `joined`, `cut`,
-`stubs_replaced`, `types`, `this_typed`, `this_skipped`), `decompiled`
-(`decompile_to`'s summaries) and `seconds` (`console`, `load`,
-`decompile`). A console refusal raises `FetchError` before anything loads,
-with the console's error object in `refusal`; a file that does not load
-raises `SaveError`. The scratch files go when it returns.
-
-`tools/fetch_timing.py` times the loop inside IDA, hop by hop: `time_fetch`
-(live: the console's save, `add_saved`, `decompile_to` per address) and
-`time_saves` (offline: saved files, no console); outside IDA, `python
-tools/fetch_timing.py opens <session.jsonl>` counts the databases an IDA MCP
-session opened. Offline, on an open save database, one function took
-0.04 s and five one-function hops 0.34 s (`add_saved` under 0.02 s each,
-the rest decompiling); live adds the console's save per hop.
+The [IDA loader](ida-loader.md) opens a save as a small database, grows
+one workspace database from later saves (`add_saved`, `fetch`) and
+decompiles them. Start a save at the function's start: when the address
+is a call site in unlisted code, an `xrefs` row marked `unlisted` gives
+the piece holding it, whose start may sit behind junk bytes.
 
 ## xrefs
 
@@ -369,8 +229,7 @@ reflected ones. Give an address next to that code (a reflected function's
 offsets that should appear together.
 - Every exception-directory entry starting within `range` bytes of the
   address (default 0x80000, at most 0x400000, each side) is decoded whole;
-  the code is read once, 4 KB per held request (1 MB, 5,858 functions
-  took 0.5 s live).
+  the code is read once, 4 KB per held request.
 - Executable code no entry lists (leaf functions, code a packed image
   leaves out of its directory) is decoded too, in pieces cut after each
   return and around int3 padding. Its rows carry `unlisted: true`, with the
@@ -427,8 +286,7 @@ Running that chain over every table is a script over the Python client, or
 the static tool's job, not a command. No verb learns a reference chain:
 `run` executes a plan of calls and stays a generic runner, and `fetch`
 in IDA takes the addresses a hop gave and returns their pseudocode, one hop
-at a time. Callee depth stops at 3, inside the save's caps, with what it
-left out in `skipped`: past that, the call graph is the static tool's.
+at a time.
 
 ## Signatures
 
@@ -459,7 +317,7 @@ Every arg: the [reference](reference.md#sig-check).
 - **Unique** means one match in the whole module image, data included:
   stricter than "one match in code", and safe whichever sections a scanner
   reads. No match is a result, not an error. `total` counts the matches;
-  `rows` shows the first of them.
+  `rows` shows the first 16.
 - **`expect`** (any address form: `{"module": "game.exe", "rva": "0x1a2b3c"}`)
   adds `resolves`: whether the only match is that address. `offset` N is
   for a signature that starts N bytes inside the function: the match must
