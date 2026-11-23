@@ -153,7 +153,7 @@ TEST_CASE("an object arg's keys are checked by path; one given at the top goes i
     CHECK(error["example"]["args"]["view"] == Json{{"match", "Pawn"}});
     CHECK(Builds(error["example"]));
     // A required key inside an object.
-    error = Refused(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"callees": true}}})");
+    error = Refused(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"callees": 1}}})");
     CHECK(error["key"] == "save.file");
     CHECK(error["message"].get<std::string>().starts_with("missing save.file: "));
     CHECK(Builds(error["example"]));
@@ -364,7 +364,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"labels-sign", {R"({})", R"({"again": true})"}},
         {"labels-port", {R"({})"}},
         {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
-            R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": true}})"}},
+            R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": 2}})"}},
         {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
         {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})"}},
         {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "count": 4, "resolve": true, "rtti": true})"}},

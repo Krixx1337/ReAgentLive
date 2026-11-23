@@ -554,9 +554,12 @@ TEST_CASE("fast-lane calls") {
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl"}}})")->file == "fn.jsonl");
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "resume": true}})").error().starts_with("resume"));
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "save": {"file": "fn.jsonl"}}})").error().starts_with("save"));
-    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl", "callees": true, "labels": "l.jsonl"}}})");
+    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl", "callees": 2, "labels": "l.jsonl"}}})");
     REQUIRE(callees);
-    CHECK(callees->callees);
+    CHECK(callees->calleeDepth == 2);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "f", "callees": 0}}})").error().starts_with("callees must be 1..3"));
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "f", "callees": 4}}})").error().starts_with("callees must be 1..3"));
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "f", "callees": true}}})")); // A depth, not a bool.
     CHECK(callees->labels == "l.jsonl");
     CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "callees": true}})")); // Needs save.
     CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "labels": "l.jsonl"}})"));

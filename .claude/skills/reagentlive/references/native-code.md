@@ -47,7 +47,7 @@ Answer one-address questions live, with no database:
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
 - **No database of this build, or not worth one:**
-  `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "fn.json", "callees": true}}}`
+  `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "fn.json", "callees": 1}}}`
   (named from the console's and host's labels) and the IDA
   loader (`src/reagentlive/frontends/ida/reagentlive_ida.py`) give the function,
   its chunks and callees in seconds; decompile all in one Python call,

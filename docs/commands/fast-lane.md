@@ -112,7 +112,7 @@ for a static tool, so it decompiles that one function without analysing
 the whole image:
 
 ```json
-{"verb": "disasm", "args": {"addr": "0x140001000", "function": true, "save": {"file": "fn.jsonl", "callees": true}}}
+{"verb": "disasm", "args": {"addr": "0x140001000", "function": true, "save": {"file": "fn.jsonl", "callees": 1}}}
 ```
 
 The result names the file in `saved` and counts its
@@ -133,13 +133,17 @@ a table after the jump starts) and listed in `tables` (`jump`, `table`,
 then `capped: true`; targets of the function still unsaved are listed in
 `jumpouts_left`.
 
-- **`save.callees`** also saves each function it calls directly or reaches by
-  a tail jump (a direct `jmp` out of the function and its chunks), one
-  level deep, each once, up to 16 functions or 256 KB of code, each listed from
-  the call target (an entry that begins elsewhere only bounds its end): calls between
-  saved functions then read as names, and every callee decompiles from the
-  same database. The result lists each saved function in `functions` and
-  the call targets past the cap in `skipped`.
+- **`save.callees`** (1..3) also saves the functions it calls directly or
+  reaches by a tail jump (a direct `jmp` out of a function and its chunks),
+  that many levels deep, breadth-first, each once, each listed from the
+  call target (an entry that begins elsewhere only bounds its end): calls
+  between saved functions then read as names, and every callee decompiles
+  from the same database. The caps hold for the whole save: 16 functions
+  besides the first and 256 KB of code (every function and chunk). The
+  result lists each saved function in `functions` with its `depth` (0: the
+  first), and each target left out in `skipped` with `why`: `depth` (a
+  call of the deepest level), `count`, `bytes` or `unreadable`. Three
+  levels is the most: past that a call graph is the static tool's job.
 - **Names** come from the console's labels file when it exists, or
   `save.labels` ([labels](unreal.md#labels-for-a-static-tool)): names
   you gave in IDA (`user`), the globals `peek` with `label` confirmed, exec

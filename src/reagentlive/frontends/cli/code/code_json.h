@@ -111,14 +111,28 @@ struct DisasmHop {
         v.flat("to_", &DisasmHop::toWhere);
     }
 };
-// disasm --save --callees: one saved function, its bounds and instruction count.
+// disasm save: one saved function or chunk, its bounds and instruction
+// count; a function saved with callees also its call depth (0: the first).
 struct SavedFunction {
     Addr start, end;
     uint64_t rows = 0;
+    std::optional<uint32_t> depth;
     template<class V> static void Describe(V& v) {
         v("start", &SavedFunction::start);
         v("end", &SavedFunction::end);
         v("rows", &SavedFunction::rows);
+        v("depth", &SavedFunction::depth);
+    }
+};
+// disasm save with callees: a call or tail-jump target left unsaved, and
+// why: "depth" (past the depth asked), "count" or "bytes" (a cap of the
+// whole save), "unreadable" (nothing listed there).
+struct SkippedCall {
+    Addr address;
+    std::string why;
+    template<class V> static void Describe(V& v) {
+        v("address", &SkippedCall::address);
+        v("why", &SkippedCall::why);
     }
 };
 // disasm --save: a switch found in the saved code: its indirect jump, its
@@ -146,8 +160,8 @@ struct Disasm {
     std::optional<std::vector<DisasmString>> strings;
     std::optional<std::string> saved;    // --save: the file written; rows and strings are left out.
     std::optional<uint64_t> savedRows;   // --save: the instructions the file holds.
-    std::optional<std::vector<SavedFunction>> functions; // --callees: each saved function, the first included.
-    std::optional<std::vector<Addr>> skipped;            // --callees: call targets past the cap, not saved.
+    std::optional<std::vector<SavedFunction>> functions; // callees: each saved function, the first included.
+    std::optional<std::vector<SkippedCall>> skipped;     // callees: call targets the depth or a cap left out.
     std::optional<std::vector<SavedFunction>> chunks;    // --save: each chunk saved with its function.
     std::optional<std::vector<JumpTable>> tables;        // --save: the switches whose targets were followed.
     std::optional<std::vector<Addr>> jumpoutsLeft;       // --save: the function's jump targets still unsaved.

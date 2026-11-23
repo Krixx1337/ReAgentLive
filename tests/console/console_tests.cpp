@@ -508,7 +508,8 @@ namespace {
 // lists: a function's start (0x1000) and a chained chunk (0x1200); and a
 // switch (0x1400) whose targets lie in its own entry, a chained chunk
 // (0x1500) that also holds its table, code no entry lists (0x1600) and
-// undecodable bytes (0x1610).
+// undecodable bytes (0x1610); a call chain (0x1700) and a function calling
+// one more than the callee cap (0x1800).
 uint64_t TheCode() {
     static const uint64_t base = [] {
         auto& image = TheImage();
@@ -520,8 +521,8 @@ uint64_t TheCode() {
         image.Put(0x94, {0xf0, 0});         // SizeOfOptionalHeader.
         image.Put(0x98, {0x0b, 0x02});
         image.Put32(0x98 + 108, 16);
-        image.Put32(0x80 + 160, 0x5000);    // Exception directory: three entries.
-        image.Put32(0x80 + 164, 5 * 12);
+        image.Put32(0x80 + 160, 0x5000);    // Exception directory.
+        image.Put32(0x80 + 164, 11 * 12);
         const uint64_t sections = 0x98 + 0xf0;
         image.Put(sections, {'.', 't', 'e', 'x', 't', 0, 0, 0});
         image.Put32(sections + 8, 0x4000);
@@ -541,6 +542,10 @@ uint64_t TheCode() {
         entry(2, 0x1200, 0x1201, 0x5000 + 1 * 12 + 1); // A decoy chunk, chained to entry 1.
         entry(3, 0x1400, 0x1480, 0x6020);
         entry(4, 0x1500, 0x1520, 0x5000 + 3 * 12 + 1); // The switch's chained chunk, holding its table.
+        uint32_t index = 5;                            // The call chain's functions.
+        for (const auto& [begin, end] : {std::pair{0x1700, 0x1706}, {0x1720, 0x172a}, {0x1740, 0x1746}, {0x1760, 0x1766},
+                                         {0x1780, 0x1786}, {0x17a0, 0x17a1}})
+            entry(index++, begin, end, 0x6000);
         image.Put(0x6020, {0x01, 0x04, 0x00, 0x00});
         // cmp ecx, 4; ja 0x1478; lea rdx, [image base]; movsxd rax, ecx; mov ecx, [rdx + rax*4 + 0x1508];
         // add rcx, rdx; jmp rcx; then two cases (mov eax, N; ret) and the default at 0x1478; the table at
@@ -562,6 +567,22 @@ uint64_t TheCode() {
         // mov rax, rcx; add rsp, 0x28; ret
         image.Put(0x1200, {0x48, 0x8b, 0xc1, 0x48, 0x83, 0xc4, 0x28, 0xc3});
         image.Put(0x1300, {0x06});          // Undecodable in 64-bit mode.
+        // A call chain, each function in its entry: 0x1700 calls 0x1720, which calls 0x1740 and
+        // tail-jumps to 0x1760; 0x1740 calls 0x1780, which calls 0x17a0.
+        image.Put(0x1700, {0xe8, 0x1b, 0, 0, 0, 0xc3});
+        image.Put(0x1720, {0xe8, 0x1b, 0, 0, 0, 0xe9, 0x36, 0, 0, 0});
+        image.Put(0x1740, {0xe8, 0x3b, 0, 0, 0, 0xc3});
+        image.Put(0x1760, {0xb8, 0x05, 0, 0, 0, 0xc3});
+        image.Put(0x1780, {0xe8, 0x1b, 0, 0, 0, 0xc3});
+        image.Put(0x17a0, {0xc3});
+        // 0x1800 calls 17 one-byte functions (0x1900, 0x1910, ...): one more than the cap.
+        for (uint32_t i = 0; i < 17; ++i) {
+            const uint32_t at = 0x1800 + i * 5, target = 0x1900 + i * 0x10;
+            image.Put(at, {0xe8});
+            image.Put32(at + 1, target - (at + 5));
+            image.Put(target, {0xc3});
+        }
+        image.Put(0x1800 + 17 * 5, {0xc3});
         std::fill(image.bytes + 0x3000, image.bytes + 0x3100, uint8_t{0x90}); // Nops: no signature is unique.
         return image.Base();
     }();
@@ -592,6 +613,38 @@ TEST_CASE("disasm with save walks past a one-byte decoy entry and refuses an emp
     CHECK_FALSE(records[0]["ok"].get<bool>());
     CHECK(records[0]["error"]["kind"] == "start");
     CHECK(records[1]["ok"].get<bool>());
+    std::filesystem::remove(file);
+}
+
+TEST_CASE("disasm save callees follows calls and tail jumps breadth-first to the depth, inside the caps") {
+    const auto file = SaveFile("callees.jsonl");
+    const auto save = [&](uint32_t rva, int depth) {
+        return Result(CallText("disasm", {{"addr", At(rva)}, {"function", true}, {"save", {{"file", file}, {"callees", depth}}}}));
+    };
+    const auto starts = [](const Json& saved) {
+        std::vector<std::pair<std::string, int>> out;
+        for (const auto& one : saved["functions"]) out.push_back({one["start"].get<std::string>(), one["depth"].get<int>()});
+        return out;
+    };
+    using Starts = std::vector<std::pair<std::string, int>>;
+    // Depth 1: the call and nothing past it; the next level is listed as left out by depth.
+    const auto one = save(0x1700, 1);
+    CHECK(starts(one) == Starts{{At(0x1700), 0}, {At(0x1720), 1}});
+    CHECK(one["skipped"] == Json::parse(R"([{"address": ")" + At(0x1740) + R"(", "why": "depth"}, {"address": ")" +
+                                         At(0x1760) + R"(", "why": "depth"}])"));
+    // Depth 3: the call, then its call and tail jump, then the call below those.
+    const auto three = save(0x1700, 3);
+    CHECK(starts(three) == Starts{{At(0x1700), 0}, {At(0x1720), 1}, {At(0x1740), 2}, {At(0x1760), 2}, {At(0x1780), 3}});
+    CHECK(three["skipped"] == Json::parse(R"([{"address": ")" + At(0x17a0) + R"(", "why": "depth"}])"));
+    size_t functionRows = 0;
+    std::ifstream in(file);
+    for (std::string line; std::getline(in, line);) functionRows += Json::parse(line)["row"] == "function";
+    in.close();
+    CHECK(functionRows == 5);
+    // The count cap holds for the whole save: 16 callees, the 17th skipped.
+    const auto capped = save(0x1800, 1);
+    CHECK(capped["functions"].size() == 17);
+    CHECK(capped["skipped"] == Json::parse(R"([{"address": ")" + At(0x1900 + 16 * 0x10) + R"(", "why": "count"}])"));
     std::filesystem::remove(file);
 }
 

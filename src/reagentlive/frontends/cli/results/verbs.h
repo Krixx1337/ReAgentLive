@@ -206,7 +206,7 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"save", "obj", "with function: write the function and its read-only data for a static tool, not the rows",
               {}, false, false, {},
               {{"file", "file", "the file to write", {}, true},
-               {"callees", "bool", "also save each function it calls directly (one level, up to 16)"},
+               {"callees", "int", "also save the functions it calls or tail-jumps to, this many levels deep (1..3)"},
                {"labels", "file", "name from this labels file (default: the console's and the host's names file)"}}},
              {"follow", "bool", "step through up to 3 unconditional direct jumps"}},
             Of<shape::Disasm>, build::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
@@ -219,8 +219,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             "names are not seen. save leaves rows and strings out of the result (the file holds them) and adds saved "
             "and saved_rows, and saves each chunk the function jumps into: chained entries and switch targets "
             "(chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets "
-            "still unsaved in jumpouts_left; callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
-            "256 KB). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
+            "still unsaved in jumpouts_left; callees follows direct calls and tail jumps breadth-first and adds functions (each saved one, "
+            "with its depth) and skipped (each target left out, why: depth, count past 16 callees, bytes past 256 KB of code in the whole "
+            "save, unreadable). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
             "piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume. Options: count and function decide what is read (not a view: "
             "they bound the decoding), resume continues a cut listing, save writes files, follow steps through jumps."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",

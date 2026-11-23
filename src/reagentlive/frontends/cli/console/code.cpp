@@ -320,45 +320,61 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         return {};
     };
     if (auto added = addChunks(address); !added) return JsonError(session, jsonCommand, ErrorKind::Unwind, added.error());
-    // --callees: each function the first calls directly (its chunks too), once, up to the caps.
-    std::vector<Addr> skipped;
-    size_t calleeBytes = 0;
-    if (command.callees) {
-        // Calls, then tail jumps out of the function and its chunks.
+    // callees: breadth-first, the functions each level calls directly or
+    // reaches by a tail jump (their chunks too), each once, down to the depth
+    // asked; the caps (functions, bytes) hold for the whole save.
+    std::vector<shape::SkippedCall> skipped;
+    std::map<uint64_t, uint32_t> depths{{address, 0}};
+    const auto skip = [&](uint64_t target, const char* why) {
+        if (std::ranges::none_of(skipped, [target](const shape::SkippedCall& one) { return one.address.value == target; }))
+            skipped.push_back({target, why});
+    };
+    const auto saveBytes = [&] {
+        size_t bytes = 0;
+        for (const auto& part : listings)
+            for (const auto& row : part.rows) bytes += row.bytes.size();
+        return bytes;
+    };
+    std::vector<uint64_t> level{address};
+    for (uint32_t depth = 1; command.calleeDepth && !level.empty(); ++depth) {
+        // Calls, then tail jumps out of every part this level holds.
         std::vector<save::Range> parts;
         for (const auto& part : listings)
             if (!part.rows.empty())
                 parts.push_back({part.rows.front().address, part.rows.back().address + part.rows.back().bytes.size()});
         std::vector<uint64_t> targets;
-        for (size_t part = 0; part < listings.size(); ++part)
-            for (const uint64_t target : save::Callees(listings[part].rows, *module, address))
-                if (std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
-        for (size_t part = 0; part < listings.size(); ++part)
-            for (const uint64_t target : save::TailJumps(listings[part].rows, *module, parts))
-                if (std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
+        const auto add = [&](uint64_t target) {
+            if (!depths.contains(target) && std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
+        };
+        for (const uint64_t fn : level)
+            for (size_t part = 0; part < listings.size(); ++part)
+                if (starts[part] == fn || owners[part] == fn)
+                    for (const uint64_t target : save::Callees(listings[part].rows, *module, fn)) add(target);
+        for (const uint64_t fn : level)
+            for (size_t part = 0; part < listings.size(); ++part)
+                if (starts[part] == fn || owners[part] == fn)
+                    for (const uint64_t target : save::TailJumps(listings[part].rows, *module, parts)) add(target);
+        std::vector<uint64_t> next;
         for (const uint64_t target : targets) {
-            if (static_cast<size_t>(std::ranges::count(owners, 0)) > save::MaxCallees || calleeBytes >= save::MaxCalleeBytes) {
-                skipped.push_back(target);
-                continue;
-            }
+            if (depth > command.calleeDepth) { skip(target, "depth"); continue; }
+            if (depths.size() > save::MaxCallees) { skip(target, "count"); continue; }
+            if (saveBytes() >= save::MaxSaveBytes) { skip(target, "bytes"); continue; }
             // A call target is a start, even where an entry says otherwise
             // (one that begins a few bytes early); the entry bounds the end.
             auto entry = FunctionAt(session, target);
             if (!entry) return JsonError(session, jsonCommand, ErrorKind::Unwind, entry.error());
-            const uint64_t start = target;
-            if (std::ranges::find(starts, start) != starts.end()) continue;
-            auto callee = list(start, MaxFunctionDisasm, !*entry, false);
-            if (!callee || callee->rows.empty()) {
-                skipped.push_back(target);
-                continue;
-            }
+            auto callee = list(target, MaxFunctionDisasm, !*entry, false);
+            if (!callee || callee->rows.empty()) { skip(target, "unreadable"); continue; }
             tables.push_back(findTables(*callee));
-            for (const auto& row : callee->rows) calleeBytes += row.bytes.size();
-            starts.push_back(start);
+            starts.push_back(target);
             owners.push_back(0);
             listings.push_back(std::move(*callee));
-            if (auto added = addChunks(start); !added) return JsonError(session, jsonCommand, ErrorKind::Unwind, added.error());
+            depths[target] = depth;
+            next.push_back(target);
+            if (auto added = addChunks(target); !added) return JsonError(session, jsonCommand, ErrorKind::Unwind, added.error());
         }
+        if (depth > command.calleeDepth) break;
+        level = std::move(next);
     }
     // A table that one part found may lie inside another (a chunk that runs
     // through it): every part stops where a table starts inside it.
@@ -440,9 +456,10 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         if (owners[i]) {
             if (!out.chunks) out.chunks.emplace();
             out.chunks->push_back(one);
-        } else if (command.callees) {
+        } else if (command.calleeDepth) {
             if (!out.functions) out.functions.emplace();
             out.functions->push_back(one);
+            out.functions->back().depth = depths[starts[i]];
         }
     }
     if (!skipped.empty()) out.skipped = std::move(skipped);

@@ -86,9 +86,10 @@ struct Command {
     // (`resume`: start at the address, a cut listing's next; `file`: save);
     // step through unconditional direct jumps. xrefs: list unknown hits too.
     bool function = false, follow = false, all = false, resume = false;
-    // disasm save: also save the functions it calls (callees), and name
-    // addresses from a labels file (labels, export-labels' format).
-    bool callees = false;
+    // disasm save: also save the functions it calls, breadth-first to this
+    // depth (callees; 0: none), and name addresses from a labels file
+    // (labels, export-labels' format).
+    uint32_t calleeDepth = 0;
     std::string labels;
     // peek label: append the qword's label (to `file`, else the console's labels file).
     bool label = false;
@@ -158,6 +159,8 @@ constexpr size_t MaxSearchText = 96; // search text: characters shown each side 
 // disasm: up to MaxDisasm instructions (DisasmBytes per instruction asked, at
 // least dis::MaxBytes), MaxFunctionDisasm with function.
 constexpr uint64_t MaxDisasm = 1024, DefaultDisasm = 24, MaxFunctionDisasm = 2048, DisasmBytes = 8;
+// disasm save callees: how many levels of calls a save follows.
+constexpr uint32_t MaxCalleeDepth = 3;
 constexpr uint64_t MaxFindRows = 1000; // find limit: rows gathered over the agent's pages.
 namespace touch {
 constexpr size_t MaxOffsets = 8;

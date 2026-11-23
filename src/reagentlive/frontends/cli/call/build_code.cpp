@@ -19,7 +19,11 @@ Parsed Disasm(const Args& args, const ParseContext& context) {
     if (args.Has("save") && command.file.empty()) return Fail("file: save needs a file");
     if (!command.function && command.resume) return Fail("resume needs function");
     if (!command.function && !command.file.empty()) return Fail("save needs function");
-    command.callees = args.Has("callees");
+    if (args.Has("callees")) {
+        const uint64_t depth = args.Int("callees");
+        if (!depth || depth > MaxCalleeDepth) return Fail("callees must be 1.." + std::to_string(MaxCalleeDepth));
+        command.calleeDepth = static_cast<uint32_t>(depth);
+    }
     command.labels = args.Str("labels");
     if (args.Has("labels") && command.labels.empty()) return Fail("labels needs a file");
     command.follow = args.Has("follow");

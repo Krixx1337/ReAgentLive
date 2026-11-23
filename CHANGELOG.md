@@ -27,6 +27,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **`save.callees` is a depth:** `"callees": 1` saves what `true` did;
+  2 or 3 follow calls and tail jumps further, breadth-first, inside the
+  same caps, now counted over the whole save. `skipped` rows are
+  `{address, why}` (`depth`, `count`, `bytes`, `unreadable`) and each
+  `functions` row has its `depth`
+  ([fast lane](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+
 - **Output options are one `view` object:** `start` (a page's cursor),
   `limit`, `match`, `fields`, `nonzero` and `elements` go inside `view`
   (`{"view": {"limit": 5}}`) on every verb that takes them; one given at
