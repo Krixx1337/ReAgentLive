@@ -317,6 +317,10 @@ path. So JSON is the only input.
 - **Input:** `-c` takes one call, a JSON list of calls, or `@<file>` (one
   call per line, or a list), which avoids shell quoting; stdin takes one
   call (or a list) per line. `batch` takes a list of calls.
+- **Plan files for scripted runs** (`call/plan.h`): `run` executes a JSON
+  list of steps (`{verb, args, expect?, repeat?}`) as its own calls and
+  writes NDJSON lines and a report; the file is the replay key
+  ([plans](commands/console.md#plans)). Interactive verbs stay one call.
 - **One `view` for output shaping.** What only shapes a result (a page's
   `start`, `limit`, `match`, `fields`, `nonzero`, `elements`) is one
   object, `view`, with one schema (`ViewKeys` in `call/verb.h`) on every

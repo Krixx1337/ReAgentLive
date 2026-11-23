@@ -39,6 +39,8 @@
 
 namespace reagentlive::cli::detail {
 
+std::string ConsoleCommit() { return REAGENTLIVE_COMMIT; }
+
 void PrintStatus(Session& session, std::string_view jsonCommand) {
     Client& client = session.client;
     constexpr auto MinInterval = std::chrono::milliseconds(100);

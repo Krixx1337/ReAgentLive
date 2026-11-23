@@ -60,7 +60,7 @@ Parsed Stats(const Args& args, const ParseContext&) {
 namespace {
 // Verbs with nothing for a batch to hold.
 bool NotInBatch(std::string_view verb) {
-    return verb == "batch" || verb == "quit" || verb == "help" || verb == "status" || verb == "stats";
+    return verb == "batch" || verb == "run" || verb == "quit" || verb == "help" || verb == "status" || verb == "stats";
 }
 }
 
@@ -75,6 +75,17 @@ Parsed Batch(const Args& args, const ParseContext&) {
         command.fields.push_back(call.dump());
     }
     command.kind = Kind::Batch;
+    return command;
+}
+
+// run: a plan file and where its lines go; the console reads and checks the plan.
+Parsed Run(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::Run;
+    command.file = args.Str("plan");
+    command.target = args.Str("out");
+    if (command.file.empty()) return Fail("plan is the plan file's path");
+    if (args.Has("out") && command.target.empty()) return Fail("out is a file path");
     return command;
 }
 }

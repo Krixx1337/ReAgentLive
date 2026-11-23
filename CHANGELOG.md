@@ -121,6 +121,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Plan files:** `{"verb": "run", "args": {"plan": "plan.json", "out":
+  "lines.jsonl"}}` runs a list of steps (`{verb, args, expect?, repeat?:
+  {every, for}}`), each as its own call under the console's `--packs`, and
+  writes one NDJSON line per result and a report (counts, refusals by
+  kind, expects met and failed, step timings, console and agent builds).
+  Rerun the file to replay an investigation
+  ([plans](docs/commands/console.md#plans)).
+
 - **Asset data to files:** `export-assets <dir> --cls <Class>... [--match
   <text>]` writes each live instance's nonzero fields, and a data or curve
   table's rows, to one JSON file per object with an index, so a run reads

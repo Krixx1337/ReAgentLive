@@ -142,6 +142,8 @@ void RunWrites(Session& session, const Command& command, std::string_view jsonCo
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
 // One call's JSON text run as a batch item (its records go to session.capture when set).
 void ExecuteLine(Session& session, std::string_view line);
+// The console's source commit (memory.cpp holds the generated header).
+std::string ConsoleCommit();
 // search (a job: started, then polled up to wait) and search-job.
 void RunSearch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWatch(Session& session, const Command& command, std::string_view jsonCommand);

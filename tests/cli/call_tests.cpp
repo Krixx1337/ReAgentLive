@@ -1,6 +1,7 @@
 // reagentlive CLI calls: the schema checks of a JSON call, the verb table's
 // rows, the typed values and each verb's builder.
 #include "reagentlive/frontends/cli/call/build.h"
+#include "reagentlive/frontends/cli/call/plan.h"
 #include "reagentlive/packs/ue/protocol_ue.h"
 #include "reagentlive/version.h"
 #include "doctest.h"
@@ -345,6 +346,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"quit", {R"({})"}},
         {"stats", {R"({})", R"({"all": true})", R"({"sessions": true})", R"({"session": "abc"})"}},
         {"batch", {R"({"calls": [{"verb": "read", "args": {"addr": "0x1000", "len": 8}}, {"verb": "modules"}]})"}},
+        {"run", {R"({"plan": "plan.json"})", R"({"plan": "plan.json", "out": "lines.jsonl"})"}},
         {"read", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 16, "type": "f32"})",
             R"({"addr": {"base": "0x1000", "chain": [16, 8]}})"}},
         {"peek", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 1, "label": true, "name": "Foo"})"}},
@@ -409,6 +411,47 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             if (parsed) CHECK_MESSAGE(!WritesOrCalls(*parsed), call.dump());
         }
     }
+}
+
+TEST_CASE("a plan is a list of steps: verb, args, expect and repeat, checked before any runs") {
+    auto steps = plan::Parse(R"([{"verb": "status"}, {"verb": "read", "args": {"addr": "0x10"}, "expect": {"ok": true}},
+        {"verb": "modules", "repeat": {"every": 0.5, "for": 2}}])");
+    REQUIRE(steps);
+    REQUIRE(steps->size() == 3);
+    CHECK((*steps)[0].call == Json::parse(R"({"verb": "status", "args": {}})"));
+    CHECK((*steps)[1].expect == Json{{"ok", true}});
+    CHECK((*steps)[0].Runs() == 1);
+    CHECK((*steps)[2].Runs() == 5);
+    const struct { const char* text; const char* message; } bad[] = {
+        {"{", "plan: not JSON"},
+        {"[]", "plan: a JSON list of steps"},
+        {R"({"verb": "status"})", "plan: a JSON list of steps"},
+        {R"([{"verb": "status", "wait": 1}])", "plan step 1: unknown key 'wait'"},
+        {R"([{"args": {}}])", "plan step 1: verb is"},
+        {R"([{"verb": "status"}, {"verb": "quit"}])", "plan step 2: quit is not allowed"},
+        {R"([{"verb": "status", "args": []}])", "plan step 1: args is an object"},
+        {R"([{"verb": "status", "expect": true}])", "plan step 1: expect is an object"},
+        {R"([{"verb": "status", "repeat": {"every": 1}}])", "plan step 1: repeat is"},
+        {R"([{"verb": "status", "repeat": {"every": 0, "for": 1}}])", "plan step 1: repeat: every above 0"},
+        {R"([{"verb": "status", "repeat": {"every": 1, "for": 601}}])", "plan step 1: repeat: every above 0"},
+        {R"([{"verb": "status", "repeat": {"every": 0.001, "for": 10}}])", "plan step 1: repeat: at most 1000 runs"},
+    };
+    for (const auto& each : bad) {
+        const auto parsed = plan::Parse(each.text);
+        REQUIRE_FALSE_MESSAGE(parsed.has_value(), each.text);
+        CHECK_MESSAGE(parsed.error().starts_with(each.message), parsed.error());
+    }
+}
+
+TEST_CASE("an expect is a subset of the envelope; a mismatch names its path") {
+    const Json envelope = Json::parse(R"({"command": "status", "ok": true, "result": {"pid": 4, "packs": ["ue"], "rate": 60.0}})");
+    CHECK(plan::Mismatch(Json::parse(R"({"ok": true})"), envelope).empty());
+    CHECK(plan::Mismatch(Json::parse(R"({"result": {"pid": 4, "packs": ["ue"], "rate": 60}})"), envelope).empty());
+    CHECK(plan::Mismatch(Json::parse(R"({"ok": false})"), envelope) == "ok: wanted false, got true");
+    CHECK(plan::Mismatch(Json::parse(R"({"result": {"tick": 1}})"), envelope) == "result.tick: wanted 1, absent");
+    CHECK(plan::Mismatch(Json::parse(R"({"result": {"packs": []}})"), envelope) == "result.packs: wanted a list of 0, got [\"ue\"]");
+    CHECK(plan::Mismatch(Json::parse(R"({"result": {"packs": ["x"]}})"), envelope) == "result.packs[0]: wanted \"x\", got \"ue\"");
+    CHECK(plan::Mismatch(Json::parse(R"({"result": {"pid": {"a": 1}}})"), envelope) == "result.pid: wanted an object, got 4");
 }
 
 TEST_CASE("removed verbs are not in the table") {

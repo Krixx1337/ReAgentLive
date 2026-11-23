@@ -26,6 +26,7 @@ Parsed Status(const Args& args, const ParseContext& context);
 Parsed Quit(const Args& args, const ParseContext& context);
 Parsed Stats(const Args& args, const ParseContext& context);
 Parsed Batch(const Args& args, const ParseContext& context);
+Parsed Run(const Args& args, const ParseContext& context);
 Parsed Read(const Args& args, const ParseContext& context);
 Parsed MemSnap(const Args& args, const ParseContext& context);
 Parsed MemDiff(const Args& args, const ParseContext& context);

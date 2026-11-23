@@ -28,6 +28,8 @@
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/call/build.h"
+#include "reagentlive/frontends/cli/call/plan.h"
+#include "reagentlive/version.h"
 #include "reagentlive/frontends/cli/values/format.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/frontends/cli/state/usage.h"
@@ -442,6 +444,96 @@ void RunBatch(Session& session, const Command& command, std::string_view jsonCom
     Emit(session, jsonCommand, std::move(result));
 }
 
+// run: a plan's steps, each run as its own call (its pack checked, its hold
+// its own) with its envelope captured into a line; then the report.
+void RunPlan(Session& session, const Command& command, std::string_view jsonCommand) {
+    std::ifstream in(command.file, std::ios::binary);
+    if (!in) return JsonError(session, jsonCommand, "file", "plan: cannot read " + command.file);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    auto steps = plan::Parse(text);
+    if (!steps) return JsonError(session, jsonCommand, "schema", steps.error());
+    std::ofstream out;
+    if (!command.target.empty()) {
+        out.open(command.target, std::ios::binary | std::ios::trunc);
+        if (!out) return JsonError(session, jsonCommand, "file", "out: cannot write " + command.target);
+    }
+    const auto began = Clock::now();
+    const auto since = [](Clock::time_point from) {
+        return std::chrono::duration<double, std::milli>(Clock::now() - from).count();
+    };
+    const auto tenths = [](double ms) { return static_cast<double>(static_cast<int64_t>(ms * 10 + 0.5)) / 10; };
+    plan::Tally tally;
+    shape::Run result;
+    std::vector<Json> rows;
+    const auto write = [&](const Json& line) {
+        ++result.lines;
+        if (out.is_open()) out << line.dump(-1, ' ', true, Json::error_handler_t::replace) << '\n';
+        else rows.push_back(line);
+    };
+    std::vector<Json>* outer = session.capture;
+    for (size_t index = 0; index < steps->size(); ++index) {
+        const plan::Step& step = (*steps)[index];
+        plan::Tally::StepTime time{index + 1, step.verb};
+        const size_t runs = step.Runs();
+        const auto stepBegan = Clock::now();
+        for (size_t run = 0; run < runs; ++run) {
+            // A repeat keeps its pace from the step's start, not from the last call's end.
+            if (run) {
+                const auto due = stepBegan + std::chrono::duration_cast<Clock::duration>(
+                    std::chrono::duration<double>(step.every * static_cast<double>(run)));
+                if (const auto now = Clock::now(); due > now) std::this_thread::sleep_until(due);
+            }
+            std::vector<Json> records;
+            session.capture = &records;
+            const auto callBegan = Clock::now();
+            Execute(session, ReadLine(step.call.dump()), false);
+            const double ms = since(callBegan);
+            session.capture = outer;
+            Json envelope = records.empty() ? Json{{"command", step.verb}, {"ok", false},
+                {"error", {{"kind", "internal"}, {"message", "no result"}}}} : std::move(records.back());
+            Json line = {{"step", index + 1}};
+            if (runs > 1) line["run"] = run + 1;
+            line["at_ms"] = tenths(since(began));
+            line["ms"] = tenths(ms);
+            for (auto& [key, value] : envelope.items()) line[key] = std::move(value);
+            if (step.expect) {
+                const auto why = plan::Mismatch(*step.expect, line);
+                line["expect"] = why.empty() ? "met" : "failed";
+                if (!why.empty()) line["expect_failed"] = why;
+                ++(why.empty() ? tally.expectMet : tally.expectFailed);
+            }
+            tally.Count(line);
+            ++time.calls;
+            time.ms += ms;
+            write(line);
+        }
+        tally.steps.push_back(std::move(time));
+    }
+    shape::RunReport& report = result.report;
+    report.steps = steps->size();
+    report.calls = tally.calls;
+    report.ok = tally.ok;
+    report.failed = tally.failed;
+    if (!tally.refused.empty()) report.refused = tally.refused;
+    report.expectMet = tally.expectMet;
+    report.expectFailed = tally.expectFailed;
+    report.ms = tenths(since(began));
+    for (const auto& time : tally.steps) report.timings.push_back({time.step, time.verb, time.calls, tenths(time.ms)});
+    report.console = Version;
+    report.commit = ConsoleCommit();
+    report.agent = session.client.AgentBuild();
+    report.tableHash = session.tableHash;
+    if (out.is_open()) {
+        out << Json{{"report", ToJson(report)}}.dump(-1, ' ', true, Json::error_handler_t::replace) << '\n';
+        out.flush();
+        if (!out) return JsonError(session, jsonCommand, "file", "out: cannot write " + command.target);
+        result.file = command.target;
+    } else {
+        result.rows = std::move(rows);
+    }
+    Emit(session, jsonCommand, std::move(result));
+}
+
 // One command line; true on quit. Inside a batch the batch's hold covers it.
 bool Execute(Session& session, const InputLine& input, bool inBatch) {
     Client& client = session.client;
@@ -560,6 +652,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::Writes: RunWrites(session, *parsed, jsonCommand); return false;
     case Kind::Watch: RunWatch(session, *parsed, jsonCommand); return false;
     case Kind::Batch: RunBatch(session, *parsed, jsonCommand); return false;
+    case Kind::Run: RunPlan(session, *parsed, jsonCommand); return false;
     case Kind::Sig: RunSig(session, *parsed, jsonCommand); return false;
     case Kind::Disasm: RunDisasm(session, *parsed, jsonCommand); return false;
     case Kind::Xrefs: RunXrefs(session, *parsed, jsonCommand); return false;

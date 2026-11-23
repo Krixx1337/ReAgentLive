@@ -543,6 +543,55 @@ struct Batch {
     }
 };
 
+// run: a plan's report, its last NDJSON line too ({"report": RunReport}).
+struct RunStep {
+    uint64_t step = 0;
+    std::string verb;
+    uint64_t calls = 0;
+    double ms = 0;
+    template<class V> static void Describe(V& v) {
+        v("step", &RunStep::step);
+        v("verb", &RunStep::verb);
+        v("calls", &RunStep::calls);
+        v("ms", &RunStep::ms);
+    }
+};
+struct RunReport {
+    uint64_t steps = 0, calls = 0, ok = 0, failed = 0, expectMet = 0, expectFailed = 0;
+    std::optional<std::map<std::string, uint64_t>> refused;  // Failed calls by error kind.
+    double ms = 0;
+    std::vector<RunStep> timings;
+    std::string console, commit, agent, tableHash;           // The console's version and commit, the agent's build.
+    static constexpr std::string_view TypeName = "RunReport";
+    template<class V> static void Describe(V& v) {
+        v("steps", &RunReport::steps);
+        v("calls", &RunReport::calls);
+        v("ok", &RunReport::ok);
+        v("failed", &RunReport::failed);
+        v("refused", &RunReport::refused);
+        v("expect_met", &RunReport::expectMet);
+        v("expect_failed", &RunReport::expectFailed);
+        v("ms", &RunReport::ms);
+        v("timings", &RunReport::timings);
+        v("console", &RunReport::console);
+        v("commit", &RunReport::commit);
+        v("agent", &RunReport::agent);
+        v("table_hash", &RunReport::tableHash);
+    }
+};
+struct Run {
+    std::optional<std::string> file;        // out: where the lines went.
+    uint64_t lines = 0;                     // Result lines, the report's not counted.
+    std::optional<std::vector<Json>> rows;  // No out: the lines themselves.
+    RunReport report;
+    template<class V> static void Describe(V& v) {
+        v("file", &Run::file);
+        v("lines", &Run::lines);
+        v("rows", &Run::rows);
+        v("report", &Run::report);
+    }
+};
+
 struct Status {
     uint32_t pid = 0;
     std::string build, version;

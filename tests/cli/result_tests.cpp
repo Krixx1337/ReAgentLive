@@ -307,9 +307,9 @@ TEST_CASE("named types: listed once in the table, by name in the rows that use t
         "{ref: ref, name: str, class: str, class_size?: u32, outer?: {name: str, ref: ref}}");
     // Origins give their own titles; only origins with rows are listed.
     CHECK(table["origins"] == Json{{{"origin", "core"}, {"title", "Core"}}, {{"origin", "ue"}, {"title", "Unreal pack"}}});
-    // Blocking verbs are marked so a tool client can leave them out: only a host's may block
-    // (a countdown capture); the core's and the pack's return at once.
-    for (const auto& verb : AllVerbs()) CHECK_FALSE(verb.blocks);
+    // Blocking verbs are marked so a tool client can leave them out: a host's may block (a
+    // countdown capture), and run (a plan's repeats); the other core and pack verbs return at once.
+    for (const auto& verb : AllVerbs()) CHECK(verb.blocks == (verb.name == "run"));
 }
 
 TEST_CASE("find and describe results") {

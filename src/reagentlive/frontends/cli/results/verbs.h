@@ -50,7 +50,20 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}}", {}, true}},
             Of<shape::Batch>, build::Batch,
             "rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, "
-            "status, stats, quit and batch are not allowed inside."},
+            "status, stats, quit, batch and run are not allowed inside."},
+        {"run", "core", ToolPack::Explore, "a plan file's steps, each its own call: one NDJSON line per result, then a report",
+            {{"plan", "file", "the plan: a JSON list of {\"verb\", \"args\"?, \"expect\"?, \"repeat\"?: {\"every\", \"for\"}}", {}, true},
+             {"out", "file", "write the lines here (rewritten), not in the result"}},
+            Of<shape::Run>, build::Run,
+            "Each step runs as its own call under this console's --packs: a step of a pack outside them is a "
+            "refused line, not a stop, so a plan with modify steps needs modify in --packs (and its approval). "
+            "repeat runs the step every `every` seconds for `for` seconds (up to 600 s, 1000 runs). A line is "
+            "{step, run?, at_ms, ms, command, ok, result|error|digest}, plus expect (met or failed) and "
+            "expect_failed (where the envelope departs) when the step has expect: a subset of the envelope, "
+            "{\"ok\": true, \"result\": {...}}. The report (the result's, and out's last line as {report}) counts "
+            "calls, ok, failed, refused by kind and expects, with each step's time and the console's and agent's "
+            "builds. Up to 256 steps; run and quit are not allowed in a plan. A plan file is the replay key: run it "
+            "again to repeat an investigation.", false, true},
         {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); type decodes values",
             {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes", "64"},
              {"type", "layout", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": a layout"}},

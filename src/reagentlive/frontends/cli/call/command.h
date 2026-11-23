@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Writes, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
-    MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread, ExportAssets };
+    MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread, ExportAssets, Run };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;

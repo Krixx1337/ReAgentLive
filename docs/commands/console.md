@@ -257,6 +257,39 @@ request costs up to a host tick. The console cuts both:
   client process, so a round trip costs the host's tick, not Windows' 15.6 ms
   timer.
 
+## Plans
+
+A scripted run is a plan file, not a loop in a script: `run` reads a JSON
+list of steps and runs each as its own call, so the file alone replays the
+investigation.
+
+```json
+[{"verb": "status", "expect": {"ok": true}},
+ {"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "paths": [["Health"]]},
+  "repeat": {"every": 0.5, "for": 10}}]
+```
+
+`{"verb": "run", "args": {"plan": "plan.json", "out": "lines.jsonl"}}`
+
+- **One line per result:** `{step, run?, at_ms, ms}` and the call's
+  envelope (`command`, `ok`, `result`, `error` or `digest`). With `out` the
+  lines go to the file, followed by `{"report": ...}`; without it they come
+  back as the result's `rows`.
+- **`expect`** is a subset of the envelope (`{"ok": true}`, `{"result":
+  {"state": "done"}}`); a line adds `expect` (`met` or `failed`) and
+  `expect_failed`, the first path where the envelope departs.
+- **`repeat`** runs a step every `every` seconds for `for` seconds, paced
+  from the step's start (up to 600 s and 1000 runs).
+- **The packs ceiling applies per step:** a step of a pack outside
+  `--packs` is a refused line (kind `pack`) and the plan goes on, so a plan
+  with `modify` steps needs `modify` in `--packs` and the user's approval.
+- **The report** counts calls, `ok`, `failed`, `refused` by error kind and
+  expects, times each step, and names the console (`console`, `commit`),
+  the agent's `build` and the `table_hash`.
+- A plan is checked whole before a step runs (256 steps at most; `run` and
+  `quit` are not allowed in it). `run` blocks while its repeats run, so MCP
+  leaves it out; scripts call it through the Python session or `-c`.
+
 ## One-shot use
 
 `<console> [pid] -c "find PC_; get $1"` attaches and runs the commands in

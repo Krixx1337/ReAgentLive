@@ -671,6 +671,72 @@ TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unl
     std::filesystem::remove(file);
 }
 
+TEST_CASE("run: a plan's steps as NDJSON lines, under the packs ceiling, with expects, repeats and a report") {
+    const Json health = CallOf("get", GetArgs(PathsOf("Health")));
+    const auto planFile = SaveFile("plan.json");
+    const Json steps = Json::array({
+        {{"verb", "get"}, {"args", health["args"]}, {"expect", {{"ok", true}}}},
+        {{"verb", "write"}, {"args", {{"addr", "0x1000"}, {"data", "00"}}}},          // modify: outside the ceiling.
+        {{"verb", "status"}, {"expect", {{"result", {{"tool_packs", Json{"explore"}}}}}}},
+        {{"verb", "status"}, {"expect", {{"result", {{"tool_packs", Json{"modify"}}}}}}},
+        {{"verb", "modules"}, {"repeat", {{"every", 0.05}, {"for", 0.1}}}},
+    });
+    std::ofstream(planFile, std::ios::binary) << steps.dump();
+    // No out: the lines come back in the result.
+    const auto records = RunLines(CallText("run", {{"plan", planFile}}), "explore");
+    REQUIRE(records.size() == 1);
+    REQUIRE(records[0].value("ok", false));
+    const Json& result = records[0]["result"];
+    const Json& rows = result["rows"];
+    REQUIRE(rows.size() == 7);
+    CHECK(result["lines"] == 7);
+    CHECK(rows[0]["step"] == 1);
+    CHECK(rows[0]["command"] == "get");
+    CHECK(rows[0]["expect"] == "met");
+    CHECK(rows[0].contains("at_ms"));
+    CHECK(rows[1]["error"]["kind"] == "pack");                                    // Refused, and the plan goes on.
+    CHECK(rows[2]["expect"] == "met");
+    CHECK(rows[3]["expect"] == "failed");
+    CHECK(rows[3]["expect_failed"].get<std::string>().starts_with("result.tool_packs[0]: wanted \"modify\""));
+    CHECK(rows[4]["run"] == 1);
+    CHECK(rows[6]["run"] == 3);
+    const Json& report = result["report"];
+    CHECK(report["steps"] == 5);
+    CHECK(report["calls"] == 7);
+    CHECK(report["ok"] == 6);
+    CHECK(report["failed"] == 1);
+    CHECK(report["refused"] == Json{{"pack", 1}});
+    CHECK(report["expect_met"] == 2);
+    CHECK(report["expect_failed"] == 1);
+    REQUIRE(report["timings"].size() == 5);
+    CHECK(report["timings"][4]["calls"] == 3);
+    CHECK(report["timings"][4]["ms"].get<double>() >= 0);
+    CHECK_FALSE(report["console"].get<std::string>().empty());
+    CHECK_FALSE(report["table_hash"].get<std::string>().empty());
+    // out: the lines and a last report line go to the file; the result keeps the report.
+    const auto outFile = SaveFile("plan-out.jsonl");
+    const auto written = Result(CallText("run", {{"plan", planFile}, {"out", outFile}}));
+    CHECK(written["file"] == outFile);
+    CHECK_FALSE(written.contains("rows"));
+    std::vector<Json> lines;
+    {
+        std::ifstream in(outFile, std::ios::binary);
+        for (std::string line; std::getline(in, line);) lines.push_back(Json::parse(line));
+    }
+    REQUIRE(lines.size() == 8);
+    CHECK(lines[1].value("error", Json::object()).value("kind", "") != "pack");    // Every pack: the write is tried.
+    CHECK(lines[7]["report"]["calls"] == 7);
+    CHECK(lines[7]["report"]["steps"] == 5);
+    // A bad plan is refused before any step runs; run is not allowed in a plan.
+    std::ofstream(planFile, std::ios::binary) << R"([{"verb": "status"}, {"verb": "run", "args": {"plan": "x"}}])";
+    const auto refused = Envelope(CallText("run", {{"plan", planFile}}));
+    CHECK(refused["error"]["kind"] == "schema");
+    CHECK(refused["error"]["message"] == "plan step 2: run is not allowed in a plan");
+    CHECK(Envelope(CallText("run", {{"plan", SaveFile("missing.json")}}))["error"]["kind"] == "file");
+    std::filesystem::remove(planFile);
+    std::filesystem::remove(outFile);
+}
+
 TEST_CASE("--packs is a ceiling: a verb of another pack is refused, inside a batch too") {
     const Json health = CallOf("get", GetArgs(PathsOf("Health")));
     // explore and native: a write and a capture are refused by name, reads run.
