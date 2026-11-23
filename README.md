@@ -154,5 +154,5 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
 ## License
 
 MIT ([LICENSE](LICENSE)). Dependencies, all MIT: nlohmann/json and Zydis
-(with Zycore) for the console, fetched at configure; doctest for the tests,
-in `third_party/`.
+(with Zycore) for the console and doctest for the tests, each fetched at
+configure at a pinned version.

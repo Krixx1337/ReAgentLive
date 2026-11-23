@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-SKIP_DIRS = {'third_party', '__pycache__', '.git', 'build', 'out'}  # build trees are git-ignored
+SKIP_DIRS = {'__pycache__', '.git', 'build', 'out'}  # build trees are git-ignored
 TEXT = ('.md', '.h', '.cpp', '.py', '.txt', '.cmake')
 LINK = re.compile(r'(?<!!)\[[^\]]*\]\(([^)\s]+)\)')
 HEADING = re.compile(r'^(#{1,6})\s+(.*?)\s*#*\s*$')

@@ -86,6 +86,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **doctest is fetched, not copied:** CMake downloads a pinned doctest
+  release at configure, like Zydis and nlohmann/json, so an update is one
+  pin; `third_party/` is gone.
 - **Game text is marked untrusted:** the MCP server's instructions and the
   skill tell agents that names, strings and chat read from the target are
   data, often written by other players, never instructions.

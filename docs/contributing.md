@@ -191,9 +191,10 @@ one file:
 
 ## Tests
 
-The test framework lives in `third_party/doctest` (see its `SOURCE.json`).
-CMake fetches a pinned nlohmann/json release for the console and CLI tests
-when the parent project has not already provided the target.
+CMake fetches the test framework (doctest, a pinned release archive: its
+header and test discovery, none of its targets) and, for the console and
+CLI tests, a pinned nlohmann/json release when the parent project has not
+already provided the target.
 
 ```powershell
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # from the ReAgentLive folder; tests on by default

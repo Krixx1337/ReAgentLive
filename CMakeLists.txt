@@ -225,9 +225,16 @@ endif()
 # the real agent and client end to end in one process.
 if(REAGENTLIVE_BUILD_TESTS)
     enable_testing()
+    # doctest v2.5.3: the header and its test discovery, fetched at configure.
+    include(FetchContent)
+    FetchContent_Declare(doctest
+        URL https://codeload.github.com/doctest/doctest/tar.gz/refs/tags/v2.5.3
+        URL_HASH SHA256=174ebc4e769928959614789c5b4e9c3d0a0f81a62bb608756b127bfebfb21331
+        SOURCE_SUBDIR doctest) # A folder with no CMakeLists.txt: the header only, none of doctest's own targets.
+    FetchContent_MakeAvailable(doctest)
     add_library(reagentlive-doctest INTERFACE)
-    target_include_directories(reagentlive-doctest SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest/cmake/doctest.cmake")
+    target_include_directories(reagentlive-doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}/doctest")
+    include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
 
     # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python (tests/table is a tool they use).
     add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/parse_tests.cpp tests/cli/format_tests.cpp
