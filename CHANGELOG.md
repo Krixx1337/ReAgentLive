@@ -27,330 +27,189 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
-- **`save.callees` is a depth:** `"callees": 1` saves what `true` did;
-  2 or 3 follow calls and tail jumps further, breadth-first, inside the
-  same caps, now counted over the whole save. `skipped` rows are
-  `{address, why}` (`depth`, `count`, `bytes`, `unreadable`) and each
-  `functions` row has its `depth`
-  ([fast lane](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
-
-- **Output options are one `view` object:** `start` (a page's cursor),
-  `limit`, `match`, `fields`, `nonzero` and `elements` go inside `view`
-  (`{"view": {"limit": 5}}`) on every verb that takes them; one given at
-  the top is refused with where it goes. `get`'s `types`/`snap`/`changed`
-  are `mode`; `search`'s `module`/`start`/`to`/`writable`/`heap`/`paged`
-  are `scope: {...}` and `wide` is `type: "wtext"`; `write`'s
-  `undo`/`owner`/`object` are `undo: {"after", "owner", "object"}`;
-  `disasm`'s `save`/`callees`/`labels` are `save: {"file", "callees",
-  "labels"}`; `funcs`' `text` is `view.match`. `call-pure` with `each` is
-  the verb `call-each` (`cls`, `function`); `call-pure` takes no view. A
-  digest's `narrow` and `next` name view keys by path (`view.limit`).
-  No verb takes more than six own args beside `view`
+- **The console takes JSON calls only:** the text grammar is gone. A call
+  is `{"verb": ..., "args": {...}}`, one per line on stdin, through `-c`
+  (one call or a list) or `-c @<file>`; `batch` takes `{"calls": [...]}`.
+  Every arg is named and typed (`help` with `verb` shows them and an
+  example call), and unknown keys, missing required keys and wrong types
+  are refused with kind `schema`, the key's schema and a corrected
+  example. Values are typed: paths are lists (`["Info", "Owner"]`),
+  chains `{"base": <addr>, "chain": [16, 8]}`, module addresses
+  `{"module": "x.dll", "rva": "0x10"}`, call inputs `params`, durations
+  seconds. `$N` is gone (pass the literal `ref`), and so are `?`, `exit`,
+  `q` and the line-end flags (`meta`, `timing` and `budget` are call
+  keys). The usage log's and `stats`' `flags` are `keys`
   ([JSON-only contract](docs/tool-interface.md#json-only-contract)).
   Regenerate Python modules and restart MCP servers.
+- **Output options are one `view` object:** `start`, `limit`, `match`,
+  `fields`, `nonzero` and `elements` go inside `view`
+  (`{"view": {"limit": 5}}`); one given at the top is refused with where
+  it goes, and a digest's `narrow` and `next` name them by path
+  (`view.limit`). Related options are one object: `search`'s `scope`,
+  `write`'s `undo`, `disasm`'s `save`
+  ([reference](docs/commands/reference.md#view)).
+- **Verbs merged or renamed** (each old form is refused):
 
-- **The console takes JSON calls only:** the text grammar is gone. A call
-  is `{"verb": ..., "args": {...}}`, one per line on stdin, through `-c
-  '<call or list of calls>'` or `-c @<file>`; `batch` takes `{"calls":
-  [...]}`; `$N`, typed lines, `?`/`exit`/`q` and `--meta`/`--timing`/
-  `--budget` at a line's end are gone (pass `meta`, `timing`, `budget` as
-  call keys). Every verb's args are named and typed (`help` with `verb`
-  shows them and an example call); unknown keys, missing required keys
-  and wrong types are refused with kind `schema` (no more `syntax`), the
-  key's schema and a corrected example. Values are typed: paths are lists
-  (`["Info", "Owner"]`), chains `{"base": <addr>, "chain": [16, 8]}`,
-  module addresses `{"module": "x.dll", "rva": "0x10"}` (`base+off` is
-  gone), `each`'s `where` `{"field": [...], "contains": "..."}`, call
-  inputs `params: {"Name": value}` (a raw block is `block`; `--typed` is
-  `params: {}`), trace ends `[x, y, z]` or `{"object", "socket"}`, watch
-  ranges objects, durations seconds. Renamed: `writes clear` is `clear:
-  true`; `describe #i:s` is `index` and `serial`; `refs #i` is `index`;
-  `get --snap/--changed [file]` are bools plus `file`; `peek --label
-  [file]` is `label` plus `file`; `write --hold` takes seconds; the usage
-  log's and `stats`' `flags` are `keys`
-  ([JSON-only contract](docs/tool-interface.md#json-only-contract),
-  [result shapes](docs/commands/results.md)). Regenerate Python modules
-  and restart MCP servers.
+  | Was | Now |
+  |---|---|
+  | `dump`, `fields`, `snap` | `get` (every field; `mode` `types`; `mode` `snap` and `changed`, with `file`); path rows' `object` is `holder`, `get` rows carry `raw` |
+  | `params` | `func` (`params`, `block_size`; `params_error` off the game thread) |
+  | `trial`, `trial-list`, `trial-clear` | `write` with `undo` (`after`, `owner`, `object`) and `expect`; `writes`, `writes` with `clear` |
+  | `pin`, `pin-list`, `pin-clear` | `write` with `hold` (seconds); `writes`, `writes` with `clear` (ids `undo:N`, `hold:N`) |
+  | `watch`, `record`, the console's `--replay` | `watch-start` (field ranges, `file`), then `watch-read` or `watch-stop`; a script that waits: the Python session's `watch(seconds, ranges)` |
+  | `each` with a function, `call-pure` over a class | `call-each` (`cls`, `function`, `seconds`); `each` only reads |
+  | `game-thread` status | `status`'s `game_thread`; `game-thread` takes `action` `on` or `off` |
+  | `census-diff` | `census` with `diff` (rows `count` and `before`; `before` holds `classes` and `instances`) |
+  | `rtti` | `vtable` with `rtti` |
+  | `sig-file` | `sig-check` with `file` (rows are `lines`) |
+  | `base` | `modules` (the exe first) |
+  | `region` | `read` and `peek` add `region` |
+  | `read-batch` | `batch` of `read`s, or `get` |
+  | `peek` with a label file | `peek` with `label` and `file` |
+  | `funcs`' `text` | `view.match` |
+  | `search` with `wide` | `type` `wtext` |
 
 - **`search` is a job, in the main module by default:** it answers within
-  `--wait` seconds (default 10) with `job`, `state`, `to` and `scanned`; a
+  `wait` seconds (default 10) with `job`, `state`, `to` and `scanned`; a
   scan still running keeps going in the agent while other commands run,
-  and `search-job <id> [--stop]` reads or ends it. `--background` is gone
-  (the agent uses its worker when the host allows it). A search without
-  `--module`, `--start`, `--to`, `--heap` or `--writable` now covers the
-  main module only: add `--heap` or `--writable` for data in memory
-  ([search](docs/commands/memory.md#search)). Regenerate Python modules and
-  restart MCP servers. Protocol change: rebuild and re-inject.
-
+  and `search-job` reads or (with `stop`) ends it. The agent uses its
+  worker when the host allows it. A search with no `scope` covers the
+  main module only: add `scope.heap` or `scope.writable` for data
+  ([search](docs/commands/memory.md#search)).
+  Protocol change: rebuild and re-inject.
 - **MCP tool packs replace `--families` and `--read-only`:** the adapter
-  serves `--packs` (default `explore`) and lets the agent enable `--allow`
-  packs through the always-served `packs` tool; `modify` only when named.
-  Every console it starts gets that ceiling. A server that used
-  `--read-only` now runs with no flag; one that needs every tool takes
-  `--packs explore,native,observe,modify`. Restart MCP servers
+  serves `--packs` (default `explore`) and lets the agent turn on the
+  `--allow` packs through the always-served `packs` tool; `modify` only
+  when named. A server that used `--read-only` now runs with no flag; one
+  that needs every tool takes `--packs explore,native,observe,modify`
   ([MCP tools](docs/client.md#mcp-tools)).
-- **Exact write marks:** `each` reads fields only and is no longer marked
-  `writes`; a getter over every instance is `call-pure <Class> <Fn> --each
-  [--seconds N]` (read-only, same table, `mode: call`). `game-thread` takes
-  only `on` or `off`; `status` carries its state as `game_thread`. Replace
-  `each <C> <Fn>` with `call-pure <C> <Fn> --each` and `game-thread status`
-  with `status`; regenerate Python modules and restart MCP servers.
-- **Fewer verbs, same answers:** `params` is gone, `func` returns the
-  signature too (`params`, `block_size`; `params_error` off the game
-  thread). `rtti` is `vtable --rtti`, `census-diff` is `census --diff` (rows
-  carry `count` and `before`, the result `before: {classes, instances}`),
-  `sig-file <f>` is `sig-check --file <f>` (rows are `lines`). `base` is gone:
-  `modules` lists the exe first. `region` is gone: `read` and `peek` add
-  `region: {kind, base, size, protect}`. `read-batch` is gone: use `batch`
-  or `get`. Regenerate Python modules and restart MCP servers.
-- **One field reader, `get`:** `dump`, `fields` and `snap` are gone.
-  `get <obj>` lists every field (as `dump` did, same filters), `get <obj>
-  <path>...` reads paths (rows add `path`; `object` is now `holder`),
-  `get <obj|Class> --types` gives the layout (as `fields`; rows carry
-  `raw` in place of `label`), `get <ref> --snap [file]` keeps a baseline
-  and `get <ref> --changed [file]` compares with it. A path that names no
-  field lists the closest field names. A class by name needs `--types`.
-- **One write verb:** `trial` is `write --undo <duration> --owner <ref>
-  --expect <hex>`, `pin` is `write --hold [duration]`; both answer
-  the write with `timed`. `writes` lists every timed write (ids `undo:N`,
-  `hold:N`) and `writes clear [id]` ends them, replacing `trial-list`,
-  `trial-clear`, `pin-list` and `pin-clear`.
-- **One capture family:** the blocking `watch` (and `--then`) and `record`
-  are gone, and so is the console's `--replay`. `watch-start` takes
-  `<ref>.<Field>` ranges and `--file <path>` (every sample as JSON lines,
-  written by each `watch-read` and `watch-stop`); a script that waits uses
-  the Python session's `watch(seconds, ranges)`: start, wait, stop.
-
 - **The MCP adapter needs the MCP Python SDK 2:** run
   `python -m pip install --upgrade "mcp>=2"` in the Python your MCP config
-  starts (SDK 1 stops it with that line). Clients on the 2026-07-28
-  protocol hear a rebuilt console's tool list on their listen stream.
+  starts (SDK 1 stops it with that line).
+- **One IDA file:** `frontends/ida/reagentlive_ida.py` replaces
+  `import_labels.py`; copy it into IDA's loaders folder, delete the old
+  file, and copy it again after every update
+  ([IDA loader](docs/commands/ida-loader.md#install)).
 
 ### New
 
+- **Decompile live functions without a whole-image database:** `disasm`
+  with `function` lists a whole function (up to 2,048 instructions, the
+  value each read-only constant load reads, a `strings` summary), and
+  with `save` writes it for the IDA loader, which opens it as a small
+  database. A save carries the function's chained chunks and switch
+  targets (then no `JUMPOUT`), with `save.callees` (1..3) the functions it
+  calls or tail-jumps to, breadth-first inside whole-save caps, names from
+  the labels files, and the layouts of its methods' classes, so the first
+  decompile shows `this->Field`. `add_saved` grows one workspace
+  database, and a save that would hold only part of a function is
+  refused
+  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 - **`fetch` in IDA:** `rl.fetch(addrs, depth=..., decompile_dir=...)` runs
   the console's save, adds it to the open database and decompiles it: one
-  call from a live address to pseudocode
-  ([fast lane](docs/commands/fast-lane.md#from-an-address-to-pseudocode-in-one-call)).
-
-- **Types travel with a save:** a saved function whose label names a
-  reflected class brings that class's layout into the file, and the IDA
-  loader makes it a local type and types the function `Class *this` on
-  open and on `add_saved`: the first decompile shows `this->Field`
-  ([fast lane](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
-  Copy the new `reagentlive_ida.py` into IDA's loaders folder.
-
-- **A generated verb reference:** [docs/commands/reference.md](docs/commands/reference.md)
-  lists every verb with its args and their help, result, notes and an
-  example call, the shared `view` keys and every error kind with its
-  message shape. Every example in the docs and the skill is a JSON call; a
-  host can check its own docs against its table (unknown verbs or args,
-  leftover text-grammar forms) with `tests/python/check_verb_names.py
-  --table <console>`.
-
-- **Plan files:** `{"verb": "run", "args": {"plan": "plan.json", "out":
-  "lines.jsonl"}}` runs a list of steps (`{verb, args, expect?, repeat?:
-  {every, for}}`), each as its own call under the console's `--packs`, and
-  writes one NDJSON line per result and a report (counts, refusals by
-  kind, expects met and failed, step timings, console and agent builds).
-  Rerun the file to replay an investigation
-  ([plans](docs/commands/console.md#plans)).
-
-- **Asset data to files:** `export-assets <dir> --cls <Class>... [--match
-  <text>]` writes each live instance's nonzero fields, and a data or curve
-  table's rows, to one JSON file per object with an index, so a run reads
-  asset data offline instead of live again
-  ([assets to files](docs/commands/unreal.md#assets-to-files)).
-
-- **Blueprint logic as statements:** `script <obj|Class> <Fn> --decode`
-  decodes the Kismet bytecode into readable statements with byte offsets
+  call from a live address to pseudocode. `decompile_to` writes a `.c`
+  file per function with a grep summary; `import_layouts` and `apply_this`
+  give types
+  ([IDA loader](docs/commands/ida-loader.md#from-an-address-to-pseudocode-in-one-call)).
+- **Names round trip with IDA:** `<console>.labels.jsonl` holds derived
+  names (`export-labels` merges into it and keeps what it does not
+  derive), and a host's names file (`ConsoleConfig::labelsFile`) the
+  names people confirm (`peek` with `label`, IDA's `export_names`), apart
+  and under version control; saves read both
+  ([labels](docs/commands/labels.md#labels-files)).
+- **Names that survive a patch:** `labels-sign` stores a byte signature on
+  each confirmed name; after a patch `labels-port` finds them in the new
+  build and adds them to the file, listing only what changed. A row it
+  cannot sign is marked and skipped on later calls on that build (`again`
+  retries it)
+  ([labels](docs/commands/labels.md#names-that-survive-a-patch)).
+- **Blueprint logic as statements:** `script` with `decode` reads the
+  Kismet bytecode as statements with byte offsets
   (`if !(Speed > Limit) goto +0x58`), names properties by their readable
   names and needs no game thread; on an uber graph it lists each event's
-  entry offset, and `--entry <offset>` reads one event alone
-  ([Unreal pack](docs/commands/unreal.md)).
-- **IDA loader types and pseudocode files:** `decompile_to` writes a `.c`
-  file per function with a grep summary, `import_layouts` turns a
-  `layout-export --closure` file into local types and `apply_this` types
-  `this` on labelled methods
-  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+  entry offset, and `entry` reads one event alone
+  ([Unreal code](docs/commands/unreal-code.md#decode)).
 - **Layouts for a static tool's types:** `layout-export` writes a `class`
   or `struct` line (super, size) before each type's fields, field lines
-  name the struct, class or enum they hold (and containers' element, key
-  and value), enums get their values, and `--closure [depth]` also exports
-  what the fields reference; `get --types` shows the class or enum as
-  `subtype`. `layout-check` skips the type lines
-  ([layouts in bulk](docs/commands/unreal.md#layouts-in-bulk)).
+  name the struct, class or enum they hold, enums get their values, and
+  `closure` also exports what the fields reference; `get` with `mode`
+  `types` shows the class or enum as `subtype`
+  ([layouts in bulk](docs/commands/unreal-fields.md#layouts-in-bulk)).
   Protocol change: rebuild and re-inject.
 - **`rows` reads curve tables:** a `CurveTable`'s rows come back with their
-  keys (`curve: simple|rich`; rich keys with interp mode and tangents), and
-  `--at <t>` gives each curve's value at `t`, evaluated per key mode
-  ([rows](docs/commands/unreal.md#rows)).
-- **Tool packs:** every verb belongs to one workflow pack, `explore`,
-  `native`, `observe` or `modify` (every verb that writes or calls is in
-  `modify`). `help` groups the verbs by pack; `help --json` rows carry
-  `pack` and the table lists `packs`
-  ([tool interface](docs/tool-interface.md#tool-packs)).
-- **A console's ceiling, `--packs`:** `--packs explore,native` runs only
-  those packs' verbs; others, `batch` items included, are refused with
-  kind `pack`. `status` lists `tool_packs`; `stats` counts
-  `calls_by_pack` ([console](docs/commands/console.md#one-shot-use)).
-- **Python sessions take packs:** `Session(console, packs=[...])` passes
-  the ceiling; a refused call raises `ReAgentLiveError` with `kind`
-  `pack` ([clients](docs/client.md#python-session)).
-- **Names that survive a patch:** `labels-sign` stores a byte signature on
-  each name people confirmed (functions and globals); after a patch
-  `labels-port` finds them in the new build and adds them to the file,
-  listing only what changed. A row it cannot sign is marked and skipped on
-  later calls on that build (`--again` retries it). `export-labels` and
-  IDA's `export_names` keep the signatures
-  ([labels](docs/commands/unreal.md#names-that-survive-a-patch)).
-- **A host's names file:** `ConsoleConfig::labelsFile` holds names people
-  confirm (`user` rows from IDA's `export_names`, `global` rows from
-  `peek --label`, its default) apart from the derived names in
-  `<console>.labels.jsonl`; `disasm --save` reads both, and IDA's
-  `import_labels` takes a list of files. A host can keep it under version
-  control ([hosting](docs/hosting.md#names-files)).
-- **Names round trip with IDA:** one labels file per console,
-  `<console>.labels.jsonl`, is the default for `export-labels`,
-  `peek --label` and `disasm --save` (read when it exists). `export-labels`
-  now merges into it and keeps what it does not derive (names given in IDA,
-  confirmed globals, other builds). The IDA side is one file,
-  `frontends/ida/reagentlive_ida.py`: the save loader plus `import_labels`
-  (full or save databases), `export_names` (your names back as `user`
-  rows, which outrank every derived name; library names stay out) and
-  `decompile_all`. Breaking:
-  `load_function.py` and `import_labels.py` are gone; copy
-  `reagentlive_ida.py` into IDA's loaders folder and delete the old files
-  ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).
-- **Tail calls saved like calls:** `disasm --save --callees` also saves
-  the functions a direct `jmp` out of the function (or its chunks) reaches,
-  and names unsaved tail targets (`tail` rows), so a wrapper no longer
-  decompiles as a bare `JUMPOUT`. Copy the new loader into IDA's loaders folder.
-- **Chained chunks saved with their function:** `disasm --save` follows a
-  function's jumps into exception entries chained to it and saves those
-  chunks (`chunks` in the result, `chunk` rows in the file); the IDA loader
-  attaches them as function tails, so the pseudocode no longer ends in
-  `JUMPOUT`. Copy the new loader into IDA's loaders folder.
-- **A function and its callees in one database:** `disasm --save
-  --callees` saves each function it calls directly (one level, up to 16),
-  `--labels` names functions, call targets and globals from an
-  `export-labels` file, and the IDA loader stubs named addresses so calls
-  read as names. A save never holds overlapping code, and the loader joins
-  rows that overlap with identical bytes or touch. `add_saved(path)` grows
-  the open database by a later save and returns what it added, joined and
-  cut; it raises `SaveError` rather than load less than the file holds.
-  Breaking: a save file holds one `function` row per saved function; copy
-  the new loader into IDA's loaders folder
-  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
-- **No partial saves:** a `disasm --function` walk from more than 32 bytes
-  into unlisted code adds `piece`, and `--save` refuses unless `--resume`.
-- **Whole functions in one call:** `disasm --function` lists the function
-  to its end (up to 2,048 instructions) with compact rows, the value each
-  read-only constant load reads, and a `strings` summary
-  ([disasm](docs/commands/fast-lane.md#disasm)).
-- **Decompile one function without a whole-image database:**
-  `disasm --function --save <file>` and the IDA loader
-  `frontends/ida/reagentlive_ida.py`
-  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+  keys (`curve: simple|rich`), and `at` gives each curve's value at that
+  time, evaluated per key mode
+  ([rows](docs/commands/unreal-fields.md#rows)).
+- **Asset data to files:** `export-assets` writes each live instance's
+  nonzero fields, and a data or curve table's rows, to one JSON file per
+  object with an index, so a run reads asset data offline
+  ([assets to files](docs/commands/unreal-objects.md#assets-to-files)).
+- **Plan files:** `run` runs a JSON list of steps (`{verb, args, expect?,
+  repeat?: {every, for}}`), each as its own call, and writes one NDJSON
+  line per result and a report. Rerun the file to replay an investigation
+  ([plans](docs/commands/console.md#plans)).
+- **Tool packs and a ceiling:** every verb belongs to one workflow pack,
+  `explore`, `native`, `observe` or `modify` (every verb that writes or
+  calls is in `modify`); `help` groups by pack. The console's `--packs`
+  and the Python session's `packs=` refuse verbs outside the ceiling with
+  kind `pack`, `batch` items included; `status` lists `tool_packs`, `stats`
+  counts `calls_by_pack`
+  ([tool packs](docs/tool-interface.md#tool-packs)).
+- **A generated verb reference:** [docs/commands/reference.md](docs/commands/reference.md)
+  lists every verb with its args, result, notes and an example call, the
+  `view` keys and every error kind. A host checks its own docs against its
+  table with `tests/python/check_verb_names.py --table <console>`.
 
 ### Improved
 
-- **`find --cls` and `each` use a class index:** the agent keeps each
-  object-table slot's object and class and, per query, rereads only the
-  slots that changed, so a class lookup no longer walks every object
-  ([find](docs/commands/unreal.md#unreal-pack)). Text without `--cls`
-  still walks the whole table. Rebuild and re-inject the agent.
-- **Saves follow switches:** `disasm --save` reads each jump table
-  (bounded by the `cmp` before it), saves it as data and each target as a
-  chunk, so switch functions decompile without `JUMPOUT`; up to 256 chunks
-  (then `capped`), with the targets still unsaved in `jumpouts_left` and
-  the tables in `tables` ([saving](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
-- **doctest is fetched, not copied:** CMake downloads a pinned doctest
-  release at configure, like Zydis and nlohmann/json, so an update is one
-  pin; `third_party/` is gone.
-- **Game text is marked untrusted:** the MCP server's instructions and the
-  skill tell agents that names, strings and chat read from the target are
-  data, often written by other players, never instructions.
-- **`disasm --save` returns a summary, not the listing:** the file holds the
-  rows, so the result keeps `saved`, the new `saved_rows`, the bounds and
-  why it stopped, and leaves out `rows` and `strings`
-  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
-- **`xrefs` bounds callers outside the exception directory:** a code row
-  with no entry carries `unlisted`, its `function` the piece holding it,
-  cut as `touches` cuts unlisted code
-  ([xrefs](docs/commands/fast-lane.md#xrefs)).
-- **One-byte decoy entries no longer slice unlisted code:** `xrefs` and
-  `touches` ignore exception entries under 4 bytes when bounding it, so a
-  packed image's decoys stop cutting pieces every few dozen bytes
-  ([function bounds](docs/commands/fast-lane.md#function-bounds)).
-- **`touches` finds code outside the exception directory:** leaf functions
-  and the code packed images leave unlisted are scanned too, marked
-  `unlisted`; `--reads` ranks by offsets read and drops struct copies
-  ([touches](docs/commands/fast-lane.md#touches)).
-- **`disasm --function` walks where no entry holds the address:** it lists
-  to the function's last return instead of refusing
-  ([disasm](docs/commands/fast-lane.md#disasm)).
-- **A digest keeps `saved` and `next`:** a `disasm --save` too large to
-  print still names its file, and a cut listing its resume address
-  ([digests](docs/commands/console.md)).
+- **`find` by `cls` and `each` use a class index:** the agent rereads only
+  the object-table slots that changed, so a class lookup no longer walks
+  every object ([find](docs/commands/unreal-objects.md#find)). Rebuild and
+  re-inject the agent.
+- **Code outside the exception directory:** `xrefs` and `touches` bound
+  it as `unlisted` pieces, ignore one-byte decoy entries, and `touches`
+  scans leaf functions too; `touches` with `reads` ranks by offsets read
+  ([fast lane](docs/commands/fast-lane.md#function-bounds)).
+- **A digest keeps `saved` and `next`:** a call too large to print still
+  names the file it wrote, and a cut listing its resume address
+  ([output budgets](docs/commands/console.md#fewer-round-trips)).
 - **`get`, `rows` and `entries` take a `Default__` name**, as `call` does
-  (`get Default__GameSettings Scale`)
-  ([class names](docs/commands/unreal.md#class-names)).
-- **`search text` rows carry the string they hit** (`text`), so finding
-  a string's start needs no reads
+  ([class names](docs/commands/unreal-objects.md#class-names)).
+- **`search` text rows carry the string they hit** (`text`)
   ([search text](docs/commands/fast-lane.md#search-text)).
 - **`each` rows carry the instance's `name`**
-  ([each](docs/commands/unreal.md#each)).
-- **IDA label import:** one undo step, a wait box that cancels, and
-  `apply(path)` for headless sessions
-  ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).
+  ([each](docs/commands/unreal-objects.md#each)).
+- **IDA label import:** one undo step and a wait box that cancels it.
+- **Game text is marked untrusted:** the MCP server's instructions and the
+  skill tell agents that names, strings and chat read from the target are
+  data, never instructions.
+- **doctest is fetched, not copied:** CMake downloads a pinned release at
+  configure, like Zydis and nlohmann/json; `third_party/` is gone.
 
 ### Fixed
 
-- **`Host::backgroundSearch` is checked on every search:** once the worker
-  had started, a host that turned the opt-in off still had searches run on
-  it; now they scan in tick slices or are refused.
-- **`name-find` and `refs` scan the whole name pool:** where obfuscated
-  entries carry a header longer or shorter than their 22 characters, the walk
-  stopped mid-block and missed about a sixth of the names. `name <index>`
-  now returns empty for an index that is not an entry start instead of
-  decoding text as a header.
-- **Limits that refused real calls:** `find --limit N` gathers up to 1,000
-  rows over pages; `disasm <addr> <count>` takes up to 1,024 instructions;
-  `sig-bytes` cuts a length past 96 to 96 (`capped: true`) instead of
-  refusing ([fast lane](docs/commands/fast-lane.md#disasm)).
-- **IDA's `decompile_all()` waits for analysis first:** right after a load
-  or `add_saved`, or in a script that loads and decompiles at once, queued
-  analysis could leave the pseudocode incomplete.
-- **No junk import names:** a DLL import with no name table is left
-  unnamed in `disasm` and saves instead of read from resolved addresses.
-- **Decoy exception entries no longer break function bounds:** unwind data
-  of an unknown version counts as a plain entry, as the OS unwinder treats it.
-- **`disasm --save` no longer exits the console on an empty listing:** it
-  refuses with `start`, and a one-byte decoy entry or chunk is walked past
-  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+- **A request after a timeout can no longer run half-written:** the agent
+  could copy the shared request while the console overwrote it with the
+  next one, and run a mix of both. The request number is now a seqlock.
+  Protocol change: rebuild and re-inject.
+- **`Host::backgroundSearch` is checked on every search:** a host that
+  turned the opt-in off still had searches run on the worker.
+- **`name-find` and `refs` scan the whole name pool:** obfuscated entries
+  made the walk stop mid-block and miss about a sixth of the names; `name`
+  returns empty for an index that is not an entry start.
+- **Limits that refused real calls:** `find`'s `view.limit` gathers up to
+  1,000 rows over pages; `disasm` takes up to 1,024 instructions;
+  `sig-bytes` cuts a length past 96 to 96 (`capped: true`).
+- **Function bounds on packed images:** unwind data of an unknown version
+  counts as a plain entry, as the OS unwinder treats it, and a DLL import
+  with no name table is left unnamed instead of named from resolved
+  addresses.
 - **The Unreal pack's agent cannot crash on a guard page or hide a stack
   overflow:** its startup checks look at the memory region before reading,
   and name decoding catches only bad-memory faults.
-- **A request after a timeout can no longer run half-written:** the agent
-  could copy the shared request while the console overwrote it with the
-  next one, and run a mix of both (a write at the wrong address). The
-  request number is now a seqlock. Protocol change: rebuild and re-inject.
-- **A stale IDA loader loaded newer saves silently:** the loader now
-  refuses a row kind it does not know and says to copy the new
-  `reagentlive_ida.py`, instead of loading the file without its chunks or names.
-- **Functions whose exception entry begins early listed nothing:** a
-  packed image can start an entry a few bytes before the code, on bytes
-  that do not decode. `disasm --function` then lists from the address given,
-  and `--callees` always lists from the call target, the entry bounding the end.
-- **`touches` rows lost their `text` on long instructions:** its formatter
-  buffer was 96 characters; it is now 256, as Zydis's examples use. The
-  sweep also decodes operands only for instructions whose raw displacement
-  can match (always for EVEX and MVEX, whose 8-bit displacement is scaled),
-  and its length-only passes use Zydis's minimal decoder mode.
-- **IDA label import refused every database loaded the default way:** it
-  read the build from header bytes IDA does not load; it now reads the PE
-  header IDA keeps.
+- **`touches` rows no longer lose their `text` on long instructions.**
+- **IDA label import refused databases loaded the default way:** it reads
+  the PE header IDA keeps.
 
 ## 0.4.0
 
@@ -367,7 +226,7 @@ that costs an agent far less.
 - **`game-thread on`:** engine calls work in hosts that tick on their own
   thread, through a tick on the game viewport's Draw.
   Protocol change: rebuild and re-inject.
-- **Call recorder** ([unreal](docs/commands/unreal.md#call-recorder)):
+- **Call recorder** ([unreal](docs/commands/unreal-calls.md#call-recorder)):
   `calls-start` records a reflected function's calls with decoded
   parameters for up to 60 s, without writing code or vtables.
   Protocol change: rebuild and re-inject.
