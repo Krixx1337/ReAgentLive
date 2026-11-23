@@ -414,15 +414,20 @@ Progress NamesBody(const Request& request, Response& response, bool, const Host&
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
-    const uint32_t count = request.length / 4;
+    const uint32_t count = request.length / 4 < MaxNames ? request.length / 4 : MaxNames;
+    int32_t indices[MaxNames];
+    bool starts[MaxNames];
+    memcpy(indices, request.data, count * 4);
+    NameStarts(indices, count, starts, host);
     size_t used = 0;
     uint32_t done = 0;
     char name[256];
     for (; done < count; ++done) {
-        int32_t index;
-        memcpy(&index, request.data + done * 4, 4);
+        const int32_t index = indices[done];
         size_t length = 0;
-        if (index < 0 || !GuardedName(index, name, sizeof(name), length)) length = 0; // Undecodable: empty.
+        // Not an entry start or undecodable: empty. Decoding a slot inside an
+        // entry would read its text as a header.
+        if (!starts[done] || !GuardedName(index, name, sizeof(name), length)) length = 0;
         if (used + length + 1 > MaxRead) break;
         memcpy(response.data + used, name, length);
         response.data[used + length] = 0;

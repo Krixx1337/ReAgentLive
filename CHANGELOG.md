@@ -160,6 +160,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **`name-find` and `refs` scan the whole name pool:** where obfuscated
+  entries carry a header longer or shorter than their 22 characters, the walk
+  stopped mid-block and missed about a sixth of the names. `name <index>`
+  now returns empty for an index that is not an entry start instead of
+  decoding text as a header.
 - **Limits that refused real calls:** `find --limit N` gathers up to 1,000
   rows over pages; `disasm <addr> <count>` takes up to 1,024 instructions;
   `sig-bytes` cuts a length past 96 to 96 (`capped: true`) instead of

@@ -127,6 +127,9 @@ Progress GuardedRead(Handler body, const Request& request, Response& response, b
 bool PoolName(int32_t index, char* out, size_t capacity, size_t& length);
 // The located pool and its entry layout, or 0.
 uint64_t NamePool(const names::Layout*& layout);
+// starts[i]: indices[i] is where a pooled entry starts (its block walked
+// from the first entry); false for an index inside an entry or past the end.
+void NameStarts(const int32_t* indices, uint32_t count, bool* starts, const Host& host);
 Ref Identify(const Object* object, const Context& pack);
 Object* Resolve(const Ref& ref, const Context& pack);
 Object* ResolveRequestObject(const Request& request, const Context& pack);

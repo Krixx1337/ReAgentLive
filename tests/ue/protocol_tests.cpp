@@ -340,15 +340,27 @@ TEST_CASE("census and each pages fit one response") {
 }
 
 namespace {
+// A name entry: plain text, or (the hashed layout) an obfuscated kind whose
+// text is fixedLength characters while its header keeps `header` as length.
+struct BlockName {
+    std::string_view text;
+    uint8_t kind = 0;
+    uint32_t header = 0;
+    BlockName(const char* plain) : text(plain) {}
+    BlockName(std::string_view fixed, uint8_t kind, uint32_t header) : text(fixed), kind(kind), header(header) {}
+};
 // One block of name entries in a layout, as the engine lays them out.
-std::vector<uint8_t> NameBlock(const ue::names::Layout& layout, std::initializer_list<std::string_view> names) {
+std::vector<uint8_t> NameBlock(const ue::names::Layout& layout, std::initializer_list<BlockName> names) {
     std::vector<uint8_t> bytes;
-    for (const auto name : names) {
+    for (const auto& name : names) {
         const size_t at = bytes.size();
-        bytes.resize(at + layout.textOffset + name.size());
-        const auto header = static_cast<uint16_t>(name.size() << 6);
+        const uint32_t length = name.kind ? name.header : static_cast<uint32_t>(name.text.size());
+        const size_t slot = name.kind ? std::max<size_t>(name.header, name.text.size()) : name.text.size();
+        bytes.resize(at + layout.textOffset + slot);
+        const auto header = static_cast<uint16_t>(length << 6);
         memcpy(bytes.data() + at + layout.headerOffset, &header, sizeof(header));
-        memcpy(bytes.data() + at + layout.textOffset, name.data(), name.size());
+        if (layout.kindOffset) bytes[at + layout.kindOffset] = name.kind;
+        memcpy(bytes.data() + at + layout.textOffset, name.text.data(), name.text.size());
         bytes.resize((bytes.size() + layout.stride - 1) / layout.stride * layout.stride);
     }
     bytes.resize(bytes.size() + 16); // Zero header: the block's end.
@@ -382,6 +394,32 @@ TEST_CASE("name pool entries walk in both layouts") {
     // The hashed layout as seen live: None, then ByteProperty two strides later.
     const auto& hashed = ue::names::Layouts[1];
     CHECK(Walk(NameBlock(hashed, {"None", "ByteProperty"}), hashed)[1].first == (3 << 16 | 2));
+}
+
+TEST_CASE("obfuscated name entries take the longer of header and fixed length") {
+    const auto& layout = ue::names::Layouts[1];
+    constexpr std::string_view fixed = "Qx7Lm2Pz9Rt4Vb8Nc1Wd5K"; // fixedLength characters.
+    static_assert(fixed.size() == 22);
+    const auto block = NameBlock(layout, {"None", {fixed, 2, 16}, {fixed, 2, 34}, {fixed, 1, 10},
+        "Attribute.Gameplay.Health.Wheel.Left"});
+    const auto names = Walk(block, layout);
+    REQUIRE(names.size() == 5);
+    CHECK(names[1].second == fixed);                    // Fixed kind: fixedLength shown.
+    CHECK(names[2].second == fixed);                    // Header past fixedLength: slot 34, text as before.
+    CHECK(names[3].second == fixed.substr(0, 10));      // Kind 1: the header's length shown, slot 22.
+    CHECK(names[4].second == "Attribute.Gameplay.Health.Wheel.Left");
+    CHECK(names[4].first == (3 << 16 | 18));            // 0, 16, 56, 104, 144 bytes.
+    // A name-find style scan reaches the last entry.
+    int32_t found = -1;
+    for (const auto& [index, text] : names)
+        if (text.find("Wheel.Left") != std::string::npos) found = index;
+    CHECK(found == (3 << 16 | 18));
+    // `name`: an index one stride into an entry is no entry start.
+    const std::span<const uint8_t> view(block);
+    CHECK(ue::names::EntryAtOrAfter(view, 0, 104, layout) == 104);
+    CHECK(ue::names::EntryAtOrAfter(view, 56, 144, layout) == 144);
+    CHECK(ue::names::EntryAtOrAfter(view, 0, 64, layout) == 104);
+    CHECK(ue::names::EntryAtOrAfter(view, 0, 152, layout) != 152);
 }
 
 TEST_CASE("name pool walking stops at truncated entries and narrows wide text") {

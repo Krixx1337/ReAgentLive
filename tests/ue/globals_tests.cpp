@@ -175,19 +175,33 @@ TEST_CASE("a wrong pool or a wrong class name index is refused") {
     CHECK_FALSE(globals::DecodeName(memory, engine.poolAddress, names::Layouts[0], -1, text, sizeof(text), length));
 }
 
-TEST_CASE("the hashed layout's kind byte: fixed-length kind, unknown kinds are no name") {
+TEST_CASE("the hashed layout's kind byte: obfuscated kinds take the longer slot, unknown kinds are no name") {
     const auto& layout = names::Layouts[1];
-    std::vector<uint8_t> entry(layout.textOffset + 24, 'a');
-    const uint16_t header = 0; // The header's length is not used for the fixed kind.
-    memcpy(entry.data() + layout.headerOffset, &header, sizeof(header));
-    entry[layout.kindOffset] = static_cast<uint8_t>(layout.fixedKind);
-    uint32_t length = 0;
+    std::vector<uint8_t> entry(layout.textOffset + 40, 'a');
+    const auto at = [&](uint32_t headerLength, uint8_t kind) {
+        const auto header = static_cast<uint16_t>(headerLength << 6);
+        memcpy(entry.data() + layout.headerOffset, &header, sizeof(header));
+        entry[layout.kindOffset] = kind;
+    };
+    uint32_t length = 0, slot = 0;
     bool wide = true;
-    CHECK(names::HeaderAt(entry.data(), layout, length, wide));
+    at(34, static_cast<uint8_t>(layout.fixedKind)); // Live: the header's length counts when past fixedLength.
+    CHECK(names::HeaderAt(entry.data(), layout, length, slot, wide));
     CHECK(length == layout.fixedLength);
+    CHECK(slot == 34);
     CHECK_FALSE(wide);
-    entry[layout.kindOffset] = static_cast<uint8_t>(layout.fixedKind + 1);
-    CHECK_FALSE(names::HeaderAt(entry.data(), layout, length, wide));
+    at(16, static_cast<uint8_t>(layout.fixedKind));
+    CHECK(names::HeaderAt(entry.data(), layout, length, slot, wide));
+    CHECK(slot == layout.fixedLength);
+    at(10, 1);
+    CHECK(names::HeaderAt(entry.data(), layout, length, slot, wide));
+    CHECK(length == 10);
+    CHECK(slot == layout.fixedLength);
+    at(5, 0);
+    CHECK(names::HeaderAt(entry.data(), layout, length, slot, wide));
+    CHECK((length == 5 && slot == 5));
+    at(5, static_cast<uint8_t>(layout.fixedKind + 1));
+    CHECK_FALSE(names::HeaderAt(entry.data(), layout, length, slot, wide));
 }
 
 TEST_CASE("the section scan finds a table placed anywhere in a section") {

@@ -17,29 +17,35 @@ struct PoolHeader { uint64_t lock; uint32_t currentBlock, currentByteCursor; };
 constexpr size_t BlocksOffset = sizeof(PoolHeader);
 
 // kindOffset (0: none): a byte beside the header naming the entry's kind;
-// kinds above fixedKind are not names, and fixedKind entries have
-// fixedLength characters whatever the header's length says.
+// kinds above fixedKind are not names. Kinds 1..fixedKind hold obfuscated
+// text, always fixedLength characters zero-padded, while the header keeps the
+// original name's length: such an entry's slot is the longer of the two. A
+// fixedKind entry shows fixedLength characters, a lower kind the header's.
 struct Layout { uint32_t stride, headerOffset, textOffset, kindOffset = 0, fixedKind = 0, fixedLength = 0; };
 // Stock UE5 (header first, 2-byte stride) and a variant with an 8-byte hash
 // before a 4-byte header slot (header, then a kind byte) and an 8-byte stride,
-// whose kind-2 entries are 22 characters.
+// whose kind-1 and kind-2 entries hold 22 characters.
 constexpr Layout Layouts[] = {{2, 0, 2}, {8, 8, 12, 10, 2, 22}};
 
 constexpr uint64_t BlockBytes(const Layout& layout) { return uint64_t{layout.stride} << BlockOffsetBits; }
 
-struct Entry { uint32_t offset, length; bool wide; };
+// length: the characters shown; slot: the characters the entry takes.
+struct Entry { uint32_t offset, length, slot; bool wide; };
 
-// Length and width from an entry's first textOffset bytes; false when they
-// hold no name (a zero length or an unknown kind).
-inline bool HeaderAt(const uint8_t* head, const Layout& layout, uint32_t& length, bool& wide) {
+// Length, slot and width from an entry's first textOffset bytes; false when
+// they hold no name (a zero length or an unknown kind).
+inline bool HeaderAt(const uint8_t* head, const Layout& layout, uint32_t& length, uint32_t& slot, bool& wide) {
     uint16_t header;
     memcpy(&header, head + layout.headerOffset, sizeof(header));
-    length = header >> 6;
+    length = slot = header >> 6;
     wide = header & 1;
     if (layout.kindOffset) {
         const uint8_t kind = head[layout.kindOffset];
         if (kind > layout.fixedKind) return false;
-        if (kind == layout.fixedKind) length = layout.fixedLength;
+        if (kind != 0) {
+            slot = length > layout.fixedLength ? length : layout.fixedLength;
+            if (kind == layout.fixedKind) length = layout.fixedLength;
+        }
     }
     return length != 0;
 }
@@ -51,18 +57,31 @@ inline uint64_t TextBytes(uint32_t length, bool wide) { return uint64_t{length} 
 // header or not enough bytes).
 inline bool EntryAt(std::span<const uint8_t> block, uint32_t offset, const Layout& layout, Entry& out) {
     if (uint64_t{offset} + layout.textOffset > block.size()) return false;
-    uint32_t length;
+    uint32_t length, slot;
     bool wide;
-    if (!HeaderAt(block.data() + offset, layout, length, wide) ||
-        uint64_t{offset} + layout.textOffset + TextBytes(length, wide) > block.size()) return false;
-    out = {offset, length, wide};
+    if (!HeaderAt(block.data() + offset, layout, length, slot, wide) ||
+        uint64_t{offset} + layout.textOffset + TextBytes(slot, wide) > block.size()) return false;
+    out = {offset, length, slot, wide};
     return true;
 }
 
 // Byte offset of the entry after `entry`.
 inline uint64_t NextOffset(const Entry& entry, const Layout& layout) {
-    const uint64_t end = uint64_t{entry.offset} + layout.textOffset + TextBytes(entry.length, entry.wide);
+    const uint64_t end = uint64_t{entry.offset} + layout.textOffset + TextBytes(entry.slot, entry.wide);
     return (end + layout.stride - 1) / layout.stride * layout.stride;
+}
+
+// Walks a block from `from` (an entry start, or 0) to the first entry at or
+// past `target`; returns its offset, or the block's size when the walk ends
+// first. `target` is an entry start exactly when the result equals it.
+inline uint64_t EntryAtOrAfter(std::span<const uint8_t> block, uint32_t from, uint32_t target, const Layout& layout) {
+    uint64_t offset = from;
+    Entry entry{};
+    while (offset < target) {
+        if (!EntryAt(block, static_cast<uint32_t>(offset), layout, entry)) return block.size();
+        offset = NextOffset(entry, layout);
+    }
+    return offset < block.size() ? offset : block.size();
 }
 
 inline int32_t Index(uint32_t block, uint32_t offset, const Layout& layout) {

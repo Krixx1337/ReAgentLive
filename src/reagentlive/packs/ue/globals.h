@@ -148,14 +148,14 @@ inline bool DecodeName(const Memory& memory, uint64_t pool, const names::Layout&
         !memory.Get(pool + names::BlocksOffset + uint64_t{block} * sizeof(uint64_t), data) || !Pointer(data)) return false;
     const uint64_t entry = data + names::Offset(index, layout);
     uint8_t bytes[16 + 2 * 1024];
-    uint32_t count;
+    uint32_t count, slot;
     bool wide;
     if (layout.textOffset > 16 || !memory.Get(entry, bytes, layout.textOffset) ||
-        !names::HeaderAt(bytes, layout, count, wide) || count > 1023 ||
+        !names::HeaderAt(bytes, layout, count, slot, wide) || count > 1023 ||
         !memory.Get(entry + layout.textOffset, bytes + layout.textOffset, static_cast<size_t>(names::TextBytes(count, wide))))
         return false;
     const std::span<const uint8_t> view(bytes, layout.textOffset + static_cast<size_t>(names::TextBytes(count, wide)));
-    length = names::Text(view, {0, count, wide}, layout, out, capacity);
+    length = names::Text(view, {0, count, count, wide}, layout, out, capacity);
     return true;
 }
 

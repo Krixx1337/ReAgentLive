@@ -154,6 +154,33 @@ std::span<const uint8_t> BlockBytes(const Pool& pool, uint32_t block, const name
 }
 }
 
+void NameStarts(const int32_t* indices, uint32_t count, bool* starts, const Host& host) {
+    for (uint32_t i = 0; i < count; ++i) starts[i] = false;
+    const names::Layout* located = nullptr;
+    Pool pool{};
+    if (count > MaxNames || !ReadPool(NamePool(located), host, pool)) return;
+    const auto& layout = *located;
+    // In index order, one walk per block from its first entry.
+    uint8_t order[MaxNames];
+    for (uint32_t i = 0; i < count; ++i) order[i] = static_cast<uint8_t>(i);
+    std::sort(order, order + count, [&](uint8_t a, uint8_t b) { return indices[a] < indices[b]; });
+    uint32_t walked = UINT32_MAX;
+    std::span<const uint8_t> block;
+    uint64_t cursor = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        const int32_t index = indices[order[i]];
+        if (index < 0 || names::Block(index) > pool.header.currentBlock) continue;
+        if (names::Block(index) != walked) {
+            walked = names::Block(index);
+            block = BlockBytes(pool, walked, layout, host);
+            cursor = 0;
+        }
+        const uint32_t target = names::Offset(index, layout);
+        if (cursor < block.size()) cursor = names::EntryAtOrAfter(block, static_cast<uint32_t>(cursor), target, layout);
+        starts[order[i]] = cursor == target && cursor < block.size();
+    }
+}
+
 Progress NameFindBody(const Request& request, Response& response, bool first, const Host& host) {
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
