@@ -237,6 +237,7 @@ left without bytes.
   path = os.path.join(idaapi.get_user_idadir(), 'loaders', 'reagentlive_ida.py')
   spec = importlib.util.spec_from_file_location('reagentlive_ida', path)
   rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
+  rl.fetch('0x<addr>', depth=2, decompile_dir='<dir>')   # save, add, type, decompile: one call
   rl.decompile_all()            # every function's pseudocode, one string
   rl.add_saved('<next save>')   # grow the database; returns the summary
   rl.export_names('<console>.labels.jsonl')   # names you gave, for later saves
@@ -288,6 +289,30 @@ with the longest `Class` prefix that is a local struct type (class names
 hold `_` too), so the decompiler shows `this->Field`. Other arguments and
 the return type stay as IDA has them. It returns `typed` (a count) and
 `skipped` (`'<name>: why'`). Run `import_layouts` first.
+
+### From an address to pseudocode in one call
+
+`fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None)`,
+called from IDA's Python on an open save database, is the whole loop: it
+runs the console (`console`: its path or a command list, else the
+environment variable `REAGENTLIVE_CONSOLE`) with one `disasm` save per
+address (`save.callees` = `depth` unless `callees` is false) as a JSON call
+file (`-c @<file>`, `--caller script`, `--packs native`), `add_saved`s each
+file into the open database (types and `this` included), and with
+`decompile_dir` runs `decompile_to` over every saved function. One address
+or a list; each an int or `'0x..'` text.
+
+```python
+out = rl.fetch(0x140001000, depth=2, decompile_dir='<dir>', grep=r'this->\w+')
+```
+
+It returns `functions` (every saved one), `skipped` (the console's rows),
+`add_saved`'s keys summed over the files (`added`, `joined`, `cut`,
+`stubs_replaced`, `types`, `this_typed`, `this_skipped`), `decompiled`
+(`decompile_to`'s summaries) and `seconds` (`console`, `load`,
+`decompile`). A console refusal raises `FetchError` before anything loads,
+with the console's error object in `refusal`; a file that does not load
+raises `SaveError`. The scratch files go when it returns.
 
 ## xrefs
 

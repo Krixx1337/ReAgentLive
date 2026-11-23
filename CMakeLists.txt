@@ -342,6 +342,9 @@ if(REAGENTLIVE_BUILD_TESTS)
         add_test(NAME reagentlive.ida-types
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_ida_types.py")
         set_tests_properties(reagentlive.ida-types PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        add_test(NAME reagentlive.ida-fetch
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_ida_fetch.py")
+        set_tests_properties(reagentlive.ida-fetch PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         # frontends/cli layering; hosts list their sources that include the
         # console in REAGENTLIVE_HOST_SOURCES, so the test checks them too.
         set(host_args)

@@ -128,6 +128,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **`fetch` in IDA:** `rl.fetch(addrs, depth=..., decompile_dir=...)` runs
+  the console's save, adds it to the open database and decompiles it: one
+  call from a live address to pseudocode
+  ([fast lane](docs/commands/fast-lane.md#from-an-address-to-pseudocode-in-one-call)).
+
 - **Types travel with a save:** a saved function whose label names a
   reflected class brings that class's layout into the file, and the IDA
   loader makes it a local type and types the function `Class *this` on

@@ -29,6 +29,10 @@ same folder. Then:
 - `decompile_to(targets, out_dir, grep=None)`: one `.c` file per function
   (addresses or names), a short summary each, the lines matching `grep`.
   `decompile_all()`: every function's pseudocode, one string.
+- `fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None)`:
+  the console's save of each address (and its callees, `depth` levels),
+  added to the open database, decompiled into `decompile_dir`: one call
+  from an address to pseudocode.
 - `import_layouts(path)`: local types from a `layout-export` file, a packed
   struct per class or struct and an enum per enum.
 - `apply_this(path)`: type the first argument `Class *this` on functions a
@@ -1133,6 +1137,140 @@ def _type_this(named):
         else:
             skipped.append(f"{label}: IDA refused the type")
     return {'typed': typed, 'skipped': skipped, 'left': left}
+
+
+# --- One call from an address to decompiled text --------------------------
+
+_CONSOLE_ENV = 'REAGENTLIVE_CONSOLE'
+
+
+class FetchError(RuntimeError):
+    """fetch could not save what it asked: `refusal` is the console's error object (kind, message, ...)
+    when the console refused a call, else None (no console, no reply)."""
+
+    def __init__(self, message, refusal=None):
+        super().__init__(message)
+        self.refusal = refusal
+
+
+def _address_text(address):
+    """An address as the console takes it: '0x..' text from an int or text."""
+    if isinstance(address, int):
+        return f'{address:#x}'
+    text = str(address).strip()
+    int(text, 16)  # ValueError for no address.
+    return text if text.lower().startswith('0x') else f'0x{text}'
+
+
+def fetch_calls(addrs, folder, callees=True, depth=1):
+    """The console calls fetch sends, one `disasm` save per address into `folder`, and the files:
+    (calls, paths). `addrs` is one address (an int or '0x..' text) or a list of them."""
+    import os
+
+    if isinstance(addrs, (str, int)):
+        addrs = [addrs]
+    calls, paths = [], []
+    for index, address in enumerate(addrs):
+        path = os.path.join(folder, f'fetch_{index}.jsonl')
+        save = {'file': path}
+        if callees:
+            save['callees'] = depth
+        calls.append({'verb': 'disasm', 'args': {'addr': _address_text(address), 'function': True, 'save': save}})
+        paths.append(path)
+    return calls, paths
+
+
+def console_results(text, count):
+    """The `count` results in a console's output (one JSON envelope per line), or FetchError for the
+    first refusal (its error object attached) or a missing reply."""
+    replies = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith('{'):
+            continue
+        try:
+            replies.append(json.loads(line))
+        except ValueError:
+            continue
+    for reply in replies:
+        if not reply.get('ok'):
+            error = reply.get('error') or {}
+            raise FetchError(f"console refused {reply.get('command', 'a call')}: {error.get('message', reply)}", error)
+    if len(replies) < count:
+        raise FetchError(f'console answered {len(replies)} of {count} calls')
+    return [reply.get('result') or {} for reply in replies[:count]]
+
+
+def _console_command(console):
+    """The console to run, as a command list: the argument (a path or a list), else REAGENTLIVE_CONSOLE."""
+    import os
+
+    console = console or os.environ.get(_CONSOLE_ENV)
+    if not console:
+        raise FetchError(f'no console: pass console= or set {_CONSOLE_ENV} to the console executable')
+    return list(console) if isinstance(console, (list, tuple)) else [console]
+
+
+def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None, timeout=120):
+    """IDA: save the functions at `addrs` from the live process and add them to the open database in
+    one call: runs the console (`console`, a path or a command list, else REAGENTLIVE_CONSOLE) with one
+    `disasm` save per address (`save.callees` = `depth` unless `callees` is false; the native packs
+    ceiling) through `-c @<file>`, then add_saved for each file, then with `decompile_dir`
+    decompile_to every saved function (`grep` as decompile_to takes it).
+
+    Returns {'functions': ['0x..' every saved function], 'skipped': the console's skipped rows,
+    'added', 'joined', 'cut', 'stubs_replaced' (add_saved's, over every file), 'types', 'this_typed',
+    'this_skipped', 'decompiled': decompile_to's summaries, 'seconds': {'console', 'load', 'decompile'}}.
+    Raises FetchError with the console's refusal attached, SaveError when a file does not load."""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    import time
+
+    if not 1 <= depth <= 3:
+        raise ValueError('depth is 1..3')
+    command = _console_command(console)
+    folder = tempfile.mkdtemp(prefix='reagentlive-fetch-')
+    try:
+        calls, paths = fetch_calls(addrs, folder, callees, depth)
+        calls_file = os.path.join(folder, 'calls.json')
+        with open(calls_file, 'w', encoding='utf-8') as handle:
+            json.dump(calls, handle)
+        started = time.perf_counter()
+        try:
+            ran = subprocess.run(command + ['--caller', 'script', '--packs', 'native', '-c', '@' + calls_file],
+                                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise FetchError(f'console {command[0]}: {error}') from error
+        try:
+            results = console_results(ran.stdout, len(calls))
+        except FetchError as error:
+            if not ran.stdout.strip() and ran.stderr.strip():
+                raise FetchError(f'{error}; stderr: {ran.stderr.strip()[-400:]}', error.refusal) from None
+            raise
+        seconds = {'console': round(time.perf_counter() - started, 3)}
+        out = {'functions': [], 'skipped': [], 'added': [], 'joined': [], 'cut': [], 'stubs_replaced': [],
+               'types': 0, 'this_typed': 0, 'this_skipped': []}
+        started = time.perf_counter()
+        for path, result in zip(paths, results):
+            loaded = add_saved(path)
+            for key in ('added', 'joined', 'cut', 'stubs_replaced', 'this_skipped'):
+                out[key] += loaded.get(key, [])
+            out['types'] += loaded.get('types', 0)
+            out['this_typed'] += loaded.get('this_typed', 0)
+            saved = [one['start'] for one in result.get('functions', [])] or [result.get('address')]
+            out['functions'] += [start for start in saved if start and start not in out['functions']]
+            out['skipped'] += result.get('skipped', [])
+        seconds['load'] = round(time.perf_counter() - started, 3)
+        if decompile_dir:
+            started = time.perf_counter()
+            out['decompiled'] = decompile_to([int(start, 16) for start in out['functions']], decompile_dir, grep)
+            seconds['decompile'] = round(time.perf_counter() - started, 3)
+        out['seconds'] = seconds
+        return out
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 if __name__ == '__main__':
