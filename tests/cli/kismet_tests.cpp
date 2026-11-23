@@ -178,3 +178,53 @@ TEST_CASE("unresolved operands keep their addresses") {
     const auto texts = Texts(Decode(b.b));
     CHECK(texts == std::vector<std::string>{"prop@0x30000000 = obj@0x40000000", "fn@0x50000000(#9())"});
 }
+
+TEST_CASE("an object-to-interface cast reads no class pointer") {
+    // Public decoders read the cast byte, then the expression: no pointer.
+    Bytes b;
+    b.op(ex::Let).ptr(0).local(Vehicle).op(ex::Cast).op(cast::ObjectToInterface).local(Vehicle);
+    b.op(ex::EndOfScript);
+    const auto decoded = Decode(b.b);
+    CHECK(decoded.stopped.empty());
+    CHECK(Texts(decoded) == std::vector<std::string>{"Vehicle = interface(Vehicle)", "end"});
+    Operands operands;
+    for (const auto& s : decoded.statements) Collect(s, operands);
+    CHECK(operands.objects.empty());
+}
+
+TEST_CASE("newer opcodes: field paths, instrumentation, transactions and markers") {
+    Bytes b;
+    b.op(ex::EndParmValue).op(ex::DeprecatedOp4A);
+    b.op(ex::FieldPathConst).op(ex::PropertyConst).ptr(Speed);
+    b.op(ex::InstrumentationEvent).op(7);
+    b.op(ex::InstrumentationEvent).op(instrumentation::InlineEvent).name(Alive);
+    b.op(ex::AutoRtfmTransact).put<int32_t>(3).put<uint32_t>(0x80)
+        .op(ex::Let).ptr(Speed).local(Speed).op(ex::IntOne)
+        .op(ex::AutoRtfmAbortIfNot).local(Result)
+        .op(ex::AutoRtfmStopTransact).put<int32_t>(3).op(1);
+    b.op(ex::AutoRtfmAbort);
+    b.op(ex::EndOfScript);
+    const auto decoded = Decode(b.b);
+    CHECK(decoded.stopped.empty());
+    CHECK(Texts(decoded) == std::vector<std::string>{"end parm value", "nop 4a", "field property Speed", "instrument 7",
+        "instrument inline 'State.Alive'", "transact 3 {Speed = 1, if !Faster abort transact}", "abort transact", "end"});
+    REQUIRE(decoded.statements.size() == 8);
+    CHECK(decoded.statements[5].children.back().op == ex::AutoRtfmStopTransact);
+    CHECK(OpName(ex::AutoRtfmTransact) == "AutoRtfmTransact");
+
+    Bytes open; // A transaction without its stop is cut.
+    open.op(ex::AutoRtfmTransact).put<int32_t>(1).put<uint32_t>(0).op(ex::IntOne);
+    CHECK(Decode(open.b).stopped.starts_with("truncated at"));
+}
+
+TEST_CASE("string constants decode to UTF-8") {
+    Bytes b; // Latin-1 "café"; UTF-16 "é€😀" and an unpaired high surrogate.
+    b.op(ex::StringConst).op('c').op('a').op('f').op(0xE9).op(0);
+    b.op(ex::UnicodeStringConst).put<uint16_t>(0xE9).put<uint16_t>(0x20AC).put<uint16_t>(0xD83D).put<uint16_t>(0xDE00)
+        .put<uint16_t>(0xD800).put<uint16_t>('x').put<uint16_t>(0);
+    const auto decoded = Decode(b.b);
+    CHECK(decoded.stopped.empty());
+    REQUIRE(decoded.statements.size() == 2);
+    CHECK(decoded.statements[0].text == "caf\xC3\xA9");
+    CHECK(decoded.statements[1].text == "\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80\xEF\xBF\xBDx");
+}

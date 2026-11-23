@@ -37,7 +37,14 @@ constexpr uint8_t LocalVariable = 0x00, InstanceVariable = 0x01, DefaultVariable
     AddMulticastDelegate = 0x5C, ClearMulticastDelegate = 0x5D, Tracepoint = 0x5E, LetObj = 0x5F,
     LetWeakObjPtr = 0x60, BindDelegate = 0x61, RemoveMulticastDelegate = 0x62, CallMulticastDelegate = 0x63,
     LetValueOnPersistentFrame = 0x64, ArrayConst = 0x65, EndArrayConst = 0x66, SoftObjectConst = 0x67,
-    CallMath = 0x68, SwitchValue = 0x69, ArrayGetByRef = 0x6B, ClassSparseDataVariable = 0x6C;
+    CallMath = 0x68, SwitchValue = 0x69, ArrayGetByRef = 0x6B, ClassSparseDataVariable = 0x6C, EndParmValue = 0x15,
+    DeprecatedOp4A = 0x4A, InstrumentationEvent = 0x6A, FieldPathConst = 0x6D, AutoRtfmTransact = 0x70,
+    AutoRtfmStopTransact = 0x71, AutoRtfmAbortIfNot = 0x72, AutoRtfmAbort = 0x73;
+}
+// EScriptInstrumentation::Type (EX_InstrumentationEvent's operand); an inline
+// event carries a script name after it.
+namespace instrumentation {
+constexpr uint8_t InlineEvent = 4;
 }
 // ECastToken (EX_Cast's first operand).
 namespace cast {
@@ -91,29 +98,40 @@ public:
         return value;
     }
     ScriptName Name() { ScriptName n; n.index = Read<int32_t>(); n.display = Read<int32_t>(); n.number = Read<int32_t>(); return n; }
+    // EX_StringConst: Latin-1 bytes, one code point each.
     std::string Ansi() {
         std::string out;
         while (!Failed()) {
-            const auto c = Read<uint8_t>();
+            const uint32_t c = Read<uint8_t>();
             if (!c) break;
-            out += static_cast<char>(c);
+            Utf8(out, c);
         }
         return out;
     }
+    // EX_UnicodeStringConst: UTF-16; a surrogate pair is one code point, an
+    // unpaired surrogate becomes U+FFFD.
     std::string Utf16() {
         std::string out;
         while (!Failed()) {
-            const uint32_t c = Read<uint16_t>();
+            uint32_t c = Read<uint16_t>();
             if (!c) break;
-            if (c < 0x80) out += static_cast<char>(c);
-            else if (c < 0x800) { out += static_cast<char>(0xC0 | c >> 6); out += static_cast<char>(0x80 | (c & 0x3F)); }
-            else {
-                out += static_cast<char>(0xE0 | c >> 12);
-                out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
-                out += static_cast<char>(0x80 | (c & 0x3F));
+            if (c >= 0xD800 && c <= 0xDBFF && at_ <= bytes_.size() && bytes_.size() - at_ >= 2) {
+                uint16_t low = 0;
+                memcpy(&low, bytes_.data() + at_, 2);
+                if (low >= 0xDC00 && low <= 0xDFFF) { at_ += 2; c = 0x10000 + ((c - 0xD800) << 10) + (low - 0xDC00); }
             }
+            if (c >= 0xD800 && c <= 0xDFFF) c = 0xFFFD;
+            Utf8(out, c);
         }
         return out;
+    }
+    static void Utf8(std::string& out, uint32_t c) {
+        if (c < 0x80) { out += static_cast<char>(c); return; }
+        if (c < 0x800) { out += static_cast<char>(0xC0 | c >> 6); out += static_cast<char>(0x80 | (c & 0x3F)); return; }
+        if (c < 0x10000) out += static_cast<char>(0xE0 | c >> 12);
+        else { out += static_cast<char>(0xF0 | c >> 18); out += static_cast<char>(0x80 | ((c >> 12) & 0x3F)); }
+        out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (c & 0x3F));
     }
     void Fail(std::string why) { if (error_.empty()) error_ = std::move(why); }
 
@@ -142,7 +160,7 @@ public:
         case ClassSparseDataVariable: case PropertyConst: case ObjectConst:
             e.pointer = Read<uint64_t>(); break;
         case Return: case ComputedJump: case PopExecutionFlowIfNot: case InterfaceContext: case SoftObjectConst:
-        case ClearMulticastDelegate:
+        case ClearMulticastDelegate: case FieldPathConst: case AutoRtfmAbortIfNot:
             child(); break;
         case Jump: case PushExecutionFlow: case SkipOffsetConst:
             e.target = Read<uint32_t>(); break;
@@ -152,7 +170,18 @@ public:
             e.integer = Read<uint16_t>(); e.sub = Read<uint8_t>(); child(); break;
         case Nothing: case EndOfScript: case Self: case IntZero: case IntOne: case True: case False: case NoObject:
         case NoInterface: case PopExecutionFlow: case Breakpoint: case WireTracepoint: case Tracepoint:
+        case EndParmValue: case DeprecatedOp4A: case AutoRtfmAbort:
             break;
+        case InstrumentationEvent:
+            e.sub = Read<uint8_t>();
+            if (e.sub == instrumentation::InlineEvent) e.name = Name();
+            break;
+        case AutoRtfmTransact: // Its body runs to an EX_AutoRtfmStopTransact, kept as the last child.
+            e.integer = Read<int32_t>(); e.target = Read<uint32_t>();
+            while (child() && e.children.back().op != AutoRtfmStopTransact) {}
+            break;
+        case AutoRtfmStopTransact:
+            e.integer = Read<int32_t>(); e.sub = Read<uint8_t>(); break;
         case NothingInt32: case IntConst:
             e.integer = Read<int32_t>(); break;
         case Let:
@@ -197,8 +226,7 @@ public:
             break;
         case Cast:
             e.sub = Read<uint8_t>();
-            if (e.sub == cast::ObjectToInterface) e.pointer = Read<uint64_t>();
-            else if (e.sub > cast::FloatToDouble) { Fail(std::format("unknown cast 0x{:02x} at +0x{:x}", e.sub, e.offset)); break; }
+            if (e.sub > cast::FloatToDouble) { Fail(std::format("unknown cast 0x{:02x} at +0x{:x}", e.sub, e.offset)); break; }
             child();
             break;
         case StructConst:
@@ -285,9 +313,10 @@ inline void Collect(const Expr& e, Operands& out) {
     case MetaCast: case DynamicCast: case ObjToInterfaceCast: case CrossInterfaceCast: case InterfaceToObjCast:
     case StructConst:
         out.objects.insert(e.pointer); break;
-    case Cast: case TextConst: if (e.pointer) out.objects.insert(e.pointer); break;
+    case TextConst: if (e.pointer) out.objects.insert(e.pointer); break;
     case NameConst: case VirtualFunction: case LocalVirtualFunction: case InstanceDelegate: case BindDelegate:
         out.names.insert(e.name.index); break;
+    case InstrumentationEvent: if (e.sub == instrumentation::InlineEvent) out.names.insert(e.name.index); break;
     default: break;
     }
     for (const auto& child : e.children) Collect(child, out);
@@ -473,7 +502,7 @@ public:
             case cast::DoubleToFloat: return "float(" + at(0) + ")";
             case cast::FloatToDouble: return "double(" + at(0) + ")";
             case cast::ObjectToBool: case cast::InterfaceToBool: return "bool(" + at(0) + ")";
-            default: return "Cast<" + ObjectName(e.pointer) + ">(" + at(0) + ")";
+            default: return "interface(" + at(0) + ")";
             }
         case MetaCast: return "CastClass<" + ObjectName(e.pointer) + ">(" + at(0) + ")";
         case DynamicCast: case ObjToInterfaceCast: case CrossInterfaceCast: case InterfaceToObjCast:
@@ -511,6 +540,18 @@ public:
         case Breakpoint: return "breakpoint";
         case Tracepoint: return "tracepoint";
         case WireTracepoint: return "wire tracepoint";
+        case EndParmValue: return "end parm value";
+        case DeprecatedOp4A: return "nop 4a";
+        case FieldPathConst: return "field " + at(0);
+        case InstrumentationEvent:
+            return e.sub == instrumentation::InlineEvent ? "instrument inline '" + Name(e.name) + "'" : std::format("instrument {}", e.sub);
+        case AutoRtfmTransact: {
+            const size_t body = c.empty() || c.back().op != AutoRtfmStopTransact ? c.size() : c.size() - 1;
+            return std::format("transact {} {{", e.integer) + Arguments(std::span(c).first(body)) + "}";
+        }
+        case AutoRtfmStopTransact: return std::format("stop transact {} mode {}", e.integer, e.sub);
+        case AutoRtfmAbortIfNot: return "if " + (c.empty() ? "?" : Condition(c[0])) + " abort transact";
+        case AutoRtfmAbort: return "abort transact";
         default: return std::format("op 0x{:02x}", e.op);
         }
     }
@@ -562,7 +603,11 @@ inline std::string_view OpName(uint8_t op) {
     case CallMulticastDelegate: return "CallMulticastDelegate"; case LetValueOnPersistentFrame: return "LetValueOnPersistentFrame";
     case ArrayConst: return "ArrayConst"; case SoftObjectConst: return "SoftObjectConst"; case CallMath: return "CallMath";
     case SwitchValue: return "SwitchValue"; case ArrayGetByRef: return "ArrayGetByRef";
-    case ClassSparseDataVariable: return "ClassSparseDataVariable";
+    case ClassSparseDataVariable: return "ClassSparseDataVariable"; case EndParmValue: return "EndParmValue";
+    case DeprecatedOp4A: return "DeprecatedOp4A"; case InstrumentationEvent: return "InstrumentationEvent";
+    case FieldPathConst: return "FieldPathConst"; case AutoRtfmTransact: return "AutoRtfmTransact";
+    case AutoRtfmStopTransact: return "AutoRtfmStopTransact"; case AutoRtfmAbortIfNot: return "AutoRtfmAbortIfNot";
+    case AutoRtfmAbort: return "AutoRtfmAbort";
     default: return {};
     }
 }
