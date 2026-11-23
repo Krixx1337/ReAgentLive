@@ -295,7 +295,7 @@ a byte signature; ReAgentLive checks it against the live image, which is what a
 host's scanner reads, and says what to change when it fails.
 
 ```json
-{"verb": "sig-check", "args": {"pattern": "48 8b 05 ?? ?? ?? ?? 48 85 c0", "expect": {"module": "game.exe", "rva": "0x1a2b3c"}}}
+{"verb": "sig-check", "args": {"pattern": "48 8b 05 ?? ?? ?? ?? 48 85 c0 74", "expect": {"module": "game.exe", "rva": "0x1a2b3c"}}}
 {"verb": "sig-check", "args": {"file": "patterns.jsonl"}}
 {"verb": "sig-bytes", "args": {"addr": "0x140001000", "len": 32}}
 ```

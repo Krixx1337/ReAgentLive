@@ -39,6 +39,6 @@
   fields feed a node (often a Control Rig).
   `{"verb": "find", "args": {"text": "<GUID>"}}` gives its
   `EvaluateGraphExposedInputs` function. `script` with `decode` on it:
-  `{"verb": "script", "args": {"object": "<AnimClass>", "function": "<Function>", "decode": true}}`.
+  `{"verb": "script", "args": {"object": "0x1f2e3d4c50#123:4", "function": "EvaluateGraphExposedInputs_Node", "decode": true}}`.
   It calls the uber graph at an entry offset; `script` with `decode` and
   `entry` set to that offset on the uber graph reads that event.

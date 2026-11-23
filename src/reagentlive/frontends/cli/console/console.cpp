@@ -150,22 +150,6 @@ void RunHelp(Session& session, const Command& command, std::string_view jsonComm
 std::vector<Verb> AllVerbs(const ConsoleConfig& config) { return TableRows(PackVerbs(), config.verbs); }
 std::vector<Origin> AllOrigins() { return TableOrigins(PackOrigins()); }
 
-// A JSON call's own keys: the verb, its args, and the console's call flags.
-std::string CallProblem(const Json& call) {
-    if (!call.is_object() || !call.contains("verb") || !call["verb"].is_string())
-        return "a call is {\"verb\": \"<verb>\", \"args\": {...}}";
-    for (const auto& [key, value] : call.items()) {
-        if (key == "verb" || key == "args") continue;
-        if (key == "budget") {
-            if (!value.is_number_unsigned()) return "budget is a number of characters (0: none)";
-            continue;
-        }
-        if (key != "meta" && key != "timing" && key != "big")
-            return "unknown key '" + key + "' (a call has verb, args, meta, timing, budget, big)";
-        if (!value.is_boolean()) return key + " is true or false";
-    }
-    return {};
-}
 bool CallFlag(const Json& call, const char* key) { return call.contains(key) && call[key].is_boolean() && call[key].get<bool>(); }
 
 // One call, read once: its JSON, its verb and the console's call flags.
@@ -225,23 +209,10 @@ std::vector<std::string> SplitCalls(std::string_view text) {
     return calls;
 }
 
-// A call checked against its verb's row and built into a command; a refusal
-// is the error object (kind schema, the key's schema, a corrected example).
+// A call checked against its verb's row and built into a command (build.h).
 std::expected<Command, Json> BuildLine(std::span<const Verb> verbs, const InputLine& input,
                                        std::span<const Module> modules) {
-    const Verb* verb = FindVerb(verbs, input.name);
-    if (!verb) {
-        std::string message = "unknown verb '" + input.name + "'";
-        const auto closest = check::NearestVerbs(verbs, input.name);
-        for (size_t i = 0; i < closest.size(); ++i) message += (i ? ", " : " (did you mean ") + closest[i];
-        message += closest.empty() ? " (help lists them)" : "?)";
-        return std::unexpected(Json{{"kind", KindName(ErrorKind::Schema)}, {"message", message}});
-    }
-    auto args = CheckCall(*verb, input.Args());
-    if (!args) return std::unexpected(RefusalJson(*verb, input.Args(), args.error()));
-    auto built = Build(*verb, *args, modules);
-    if (!built) return std::unexpected(RefusalJson(*verb, input.Args(), {built.error(), KeyOf(*verb, built.error())}));
-    return std::move(*built);
+    return BuildChecked(verbs, input.name, input.Args(), modules);
 }
 
 // One-shot lines that are all `help` or `stats`: answered from the table and
@@ -775,6 +746,33 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
     return failed;
 }
 
+// --check: each call checked as it would be before it runs (build.h
+// CheckWithoutTarget), with no target attached. One line per call: ok with
+// {"checked": true}, or the refusal; exit 1 if any was refused.
+int RunCheck(std::span<const Verb> verbs, const std::vector<std::string>* lines,
+             const std::function<bool(std::string&)>& readStdin) {
+    int failed = 0;
+    size_t next = 0;
+    std::string line;
+    while (lines ? next < lines->size() : readStdin(line)) {
+        if (lines) line = (*lines)[next++];
+        if (text::Trim(line).empty()) continue;
+        const Json call = Json::parse(line, nullptr, false);
+        const std::string name = call.is_object() && call.contains("verb") && call["verb"].is_string() ?
+            call["verb"].get<std::string>() : "call";
+        Json envelope = ResultEnvelope(name, {{"checked", true}});
+        if (call.is_discarded()) {
+            envelope = ErrorEnvelope("call", ErrorKind::Schema, "not JSON: a call is {\"verb\": \"<verb>\", \"args\": {...}}");
+        } else if (auto refused = CheckWithoutTarget(verbs, call)) {
+            envelope = Json{{"command", name}, {"ok", false}, {"error", std::move(*refused)}};
+        }
+        failed |= envelope["ok"].get<bool>() ? 0 : 1;
+        std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
+    }
+    std::fflush(stdout);
+    return failed;
+}
+
 // The log trimmed to its cap (state/usage.h), written whole then renamed.
 void TrimUsageFile(const std::filesystem::path& path) {
     const auto trimmed = TrimUsage(ReadFile(path));
@@ -796,7 +794,7 @@ using namespace detail;
 
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     constexpr const char* usage = "Usage: <console> [pid] [-c '<call or list of calls>' | -c @<file>] [--names <file>] "
-        "[--caller tool|script|shell] [--session <id>] [--no-usage] [--packs explore,native,observe,modify]";
+        "[--caller tool|script|shell] [--session <id>] [--no-usage] [--packs explore,native,observe,modify] [--check]";
     // Before a session exists: print the envelope directly.
     const auto printStartup = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
@@ -809,7 +807,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     Names names;
     uint32_t pid = 0;
     std::filesystem::path namesFile, usagePath, labelsPath;
-    bool namesRequired = false, record = true;
+    bool namesRequired = false, record = true, check = false;
     ToolPackSet toolPacks = AllToolPacks;
     std::string caller = "shell", sessionId;
     wchar_t module[MAX_PATH];
@@ -856,6 +854,8 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             for (const wchar_t c : value) sessionId += static_cast<char>(c);
         } else if (arg == L"--no-usage") {
             record = false;
+        } else if (arg == L"--check") {
+            check = true;
         } else if (arg == L"--packs" && i + 1 < argc) {
             std::string list;
             for (const wchar_t c : std::wstring_view(argv[++i])) list += c < 0x80 ? static_cast<char>(c) : '?';
@@ -886,6 +886,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         line = pending[pendingAt++];
         return true;
     };
+    if (check) return RunCheck(verbs, lines, readStdin);
     const auto offline = [&](std::string_view why, ErrorKind kind = ErrorKind::Startup) {
         if (!oneShot) std::fprintf(stderr, "  no target: help and stats only (%.*s)\n", static_cast<int>(why.size()), why.data());
         return RunOffline(verbs, origins, tableHash, usagePath, lines, readStdin, kind, why);

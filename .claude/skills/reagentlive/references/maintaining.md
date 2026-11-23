@@ -20,10 +20,12 @@ improvement reference.
   SKILL.md's resolver maps them to the user's build. Links between skill
   files stay relative.
 - A verb in prose stands alone (`find`), an arg by its key or path (`cls`,
-  `view.limit`), never as `--flag`. Examples are one-line JSON calls,
-  checked by the `reagentlive.verb-names` test. MCP-only or Python-only
+  `view.limit`), never as `--flag`. Examples are one-line JSON calls with
+  real-looking values (`"0x7ff6a1b2c3d0"`, a literal ref, a class name),
+  never `<placeholder>` where a value is typed, checked by the
+  `reagentlive.verb-names` and `reagentlive.json-examples` tests. MCP-only or Python-only
   syntax appears only in `interfaces.md` and `console-driving.md`. Refs: a
-  literal-looking ref (`0x1f2e3d4c50#123:4`) or `<ref>`, never `$N`.
+  literal-looking ref (`0x1f2e3d4c50#123:4`) in a call, `<ref>` in prose, never `$N`.
 - Agent-only style: triggers, rules, steps, checks. No summaries,
   motivation or beginner explanations.
 

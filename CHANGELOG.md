@@ -159,6 +159,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   lists every verb with its args, result, notes and an example call, the
   `view` keys and every error kind. A host checks its own docs against its
   table with `tests/python/check_verb_names.py --table <console>`.
+- **`--check`:** the console checks calls without a target, each answered
+  `{"checked": true}` or with the refusal it would get before running
+  ([one-shot use](docs/commands/console.md#one-shot-use)). A host checks the
+  JSON examples in its docs with
+  `tests/python/check_json_examples.py --table <console>`.
 
 ### Improved
 

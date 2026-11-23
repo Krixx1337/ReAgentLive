@@ -329,6 +329,15 @@ if(REAGENTLIVE_BUILD_TESTS)
         add_test(NAME reagentlive.verb-names-check
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_verb_names.py")
         set_tests_properties(reagentlive.verb-names-check PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # Every JSON call the docs and the skill show passes the console's own checks (and the checker's tests).
+        add_test(NAME reagentlive.json-examples
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/check_json_examples.py"
+                --table "$<TARGET_FILE:reagentlive-table>")
+        set_tests_properties(reagentlive.json-examples PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        add_test(NAME reagentlive.json-examples-check
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_json_examples.py"
+                --table "$<TARGET_FILE:reagentlive-table>")
+        set_tests_properties(reagentlive.json-examples-check PROPERTIES LABELS "reagentlive" TIMEOUT 60)
         # Engine offsets have one home, engine_layout.h.
         add_test(NAME reagentlive.engine-layout
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_engine_layout.py")

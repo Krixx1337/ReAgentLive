@@ -38,7 +38,8 @@ ctest --test-dir build --output-on-failure
   `build/reagentlive-table --write-reference docs/commands/reference.md`
   (`reagentlive.results-doc` and `reagentlive.reference-doc` fail while
   stale; `reagentlive.verb-names` fails on a doc naming a verb or arg the
-  table lacks).
+  table lacks, `reagentlive.json-examples` on a doc's JSON call the
+  console would refuse).
 - A change is done only when every test passes. What each suite covers:
   [contributing: tests](docs/contributing.md#tests).
 

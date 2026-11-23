@@ -276,7 +276,9 @@ path. So JSON is the only input.
   `reagentlive.verb-names`) fails on a doc that names a verb or arg the
   table lacks, or still writes a call in the removed text grammar (a verb
   followed by words or flags, `-c` without JSON); a host runs it on its
-  own docs. Error kinds and their
+  own docs. `check_json_examples.py` (`reagentlive.json-examples`) runs
+  every JSON call a doc shows through the console's own checks with no
+  target, the way the help examples are tested. Error kinds and their
   message templates are one catalogue (`ErrorKinds`, `call/refusals.h`):
   a handler names an `ErrorKind`, never a string.
 - **Plan files for scripted runs** (`call/plan.h`): `run` executes a JSON

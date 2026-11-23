@@ -238,7 +238,11 @@ baselines and last `get` `snap` from the [cache file](#fewer-round-trips)
 ([across runs](capture.md)). Literal refs always work. Without `-c`, send one JSON call (or list) per
 stdin line. The console keeps the baseline until EOF or `quit`.
 
-Console arguments: `<console> [pid] [-c '{...}' | -c @<file>] [--names <file>] [--caller tool|script|shell] [--session <id>] [--no-usage] [--packs <list>]`.
+Console arguments: `<console> [pid] [-c '{...}' | -c @<file>] [--names <file>] [--caller tool|script|shell] [--session <id>] [--no-usage] [--packs <list>] [--check]`.
+`--check` attaches to nothing: each call (from `-c` or stdin) is checked as
+it would be before it runs (schema, builder, a `batch`'s calls, a plan
+step's `expect` and `repeat`; any `{"module": ...}` counts as loaded) and
+answered `{"checked": true}` or with its refusal.
 `--caller`, `--no-usage` and the session option (`<console> --session <id>`) are the
 [usage log](#usage-log-and-stats)'s. `--names <file>` loads a
 [names file](unreal-fields.md#readable-names).

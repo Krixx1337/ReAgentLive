@@ -4,14 +4,14 @@
 
 - "What exists in this world?": `{"verb": "census", "args": {"cls": "Actor"}}`
   before guessing class names; zero live instances means a lead can't be tested now.
-- "What spawns when I do X?": `{"verb": "census", "args": {"cls": "<Base>"}}`,
-  the user acts, `{"verb": "census", "args": {"cls": "<Base>", "diff": true}}`.
+- "What spawns when I do X?": `{"verb": "census", "args": {"cls": "ActorComponent"}}`,
+  the user acts, `{"verb": "census", "args": {"cls": "ActorComponent", "diff": true}}`.
   Pick a base class (`Actor`, `ActorComponent`, a game base) to keep engine
   churn out; the changed rows' samples are only new for classes absent
   before (else `find` with `cls`). Objects living a tick or two fall between
   censuses: capture them, or `each` with `seconds`.
 - "Which instance has state X?":
-  `{"verb": "call-each", "args": {"cls": "<Class>", "function": "<Owner:PureGetter>"}}`;
+  `{"verb": "call-each", "args": {"cls": "Pawn", "function": "Pawn:IsControlled"}}`;
   add `seconds` while the user acts to see which rows flip.
 
 ## Gameplay tags
@@ -41,7 +41,7 @@
   `xrefs` the string's start: one `lea` in a start-up function that
   registers it; `disasm` there: the `lea rcx, [rip+…]` before the
   registration call is the tag's global.
-  `{"verb": "xrefs", "args": {"addr": "<global>"}}`: its `load` rows
+  `{"verb": "xrefs", "args": {"addr": "0x7ff6a1b2c3d0"}}`: its `load` rows
   are the code that uses the tag. Try this before `touches` when the
   system raises tagged events or cues.
 
@@ -78,7 +78,7 @@
   keys, `at` set to a level for each curve's value there; never decode
   `RowMap` or curve keys by hand.
 - A byte or enum field prints a number:
-  `{"verb": "enum", "args": {"enum": "<EnumName>"}}`. Obfuscated enum
+  `{"verb": "enum", "args": {"enum": "EMovementMode"}}`. Obfuscated enum
   value names are missing from the name pool (`#index`); read the enum in
   the SDK headers if there is a dump.
 
@@ -86,7 +86,7 @@
 
 - "What blocks this line?": `trace` before guessing from geometry or
   rebuilding a host:
-  `{"verb": "trace", "args": {"start": "<camera manager ref>", "end": [0, 0, 0], "ignore": "<pawn ref>"}}`.
+  `{"verb": "trace", "args": {"start": "0x1f2e3d4c50#123:4", "end": [0, 0, 0], "ignore": "0x1f2e3d5d60#456:2"}}`.
   Ends are points, objects or a mesh component and socket; `ignore` with
   your pawn keeps your own body out of a camera line. A
   collision shell or a material the game treats specially (glass, foliage)
@@ -111,10 +111,10 @@
 - Lists named `Auth_...` and server-only subsystem state are empty on a
   client; an empty list there is not evidence of nothing.
 - Replicated state of other players often sits in a component's array
-  (`{"verb": "each", "args": {"cls": "<Component>", "paths": [["<Array>"]]}}`):
+  (`{"verb": "each", "args": {"cls": "StateComponent", "paths": [["Entries"]]}}`):
   one table, cheaper than a getter per actor.
 - Before trusting a design doc's formula, run `script` with `decode` on the
   Blueprint function that applies it and read the formula from its statements.
 - One asset's subobjects (the bodies of one physics asset, the parts of one
-  mesh): `{"verb": "each", "args": {"cls": "<Class>", "paths": [["<Field>"]], "outer": "<asset>"}}`,
+  mesh): `{"verb": "each", "args": {"cls": "BodySetup", "paths": [["AggGeom"]], "outer": "0x1f2e3d4c50#123:4"}}`,
   not the whole class.

@@ -8,12 +8,16 @@
 //   reagentlive-table --check <file>               exit 1 when the file differs (stale)
 //   reagentlive-table --write-reference <file>     docs/commands/reference.md, likewise
 //   reagentlive-table --check-reference <file>
+//   reagentlive-table --check-calls                one call per stdin line, checked as a console
+//                                                  checks it before it runs (a console's --check)
 #include <cstdio>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/results/docs.h"
 #include "reagentlive/packs/ue/cli/results/verbs_ue.h"
 #include "reagentlive/frontends/cli/results/verbs.h"
@@ -30,6 +34,22 @@ int main(int argc, char** argv) {
     if (mode.empty()) {
         std::puts(table.dump().c_str());
         return 0;
+    }
+    if (mode == "--check-calls") {
+        int failed = 0;
+        for (std::string line; std::getline(std::cin, line);) {
+            if (line.find_first_not_of(" 	") == std::string::npos) continue;
+            const Json call = Json::parse(line, nullptr, false);
+            const std::string name = call.is_object() && call.contains("verb") && call["verb"].is_string() ?
+                call["verb"].get<std::string>() : "call";
+            Json envelope = ResultEnvelope(name, {{"checked", true}});
+            if (call.is_discarded()) envelope = ErrorEnvelope("call", ErrorKind::Schema, "not JSON");
+            else if (auto refused = CheckWithoutTarget(verbs, call))
+                envelope = Json{{"command", name}, {"ok", false}, {"error", std::move(*refused)}};
+            failed |= envelope["ok"].get<bool>() ? 0 : 1;
+            std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
+        }
+        return failed;
     }
     // What the reference adds to the table: the general notes, the view keys, the error kinds.
     Json extra = {{"notes", GeneralNotes()}, {"view", Json::array()}, {"errors", Json::array()}};
@@ -58,6 +78,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::fputs("usage: reagentlive-table [--markdown | --write <file> | --check <file> | --write-reference <file> | "
-               "--check-reference <file>]\n", stderr);
+               "--check-reference <file> | --check-calls]\n", stderr);
     return 2;
 }
