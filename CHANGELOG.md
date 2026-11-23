@@ -234,6 +234,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **`Host::backgroundSearch` is checked on every search:** once the worker
+  had started, a host that turned the opt-in off still had searches run on
+  it; now they scan in tick slices or are refused.
 - **`name-find` and `refs` scan the whole name pool:** where obfuscated
   entries carry a header longer or shorter than their 22 characters, the walk
   stopped mid-block and missed about a sixth of the names. `name <index>`

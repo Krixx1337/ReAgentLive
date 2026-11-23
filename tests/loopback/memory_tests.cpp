@@ -473,6 +473,45 @@ TEST_CASE("a search job runs in tick slices or on the worker, answers its state 
     CHECK(again->state == SearchJobState::Stopped);
 }
 
+TEST_CASE("without the host's opt-in the agent starts no thread") {
+    // ctest runs each case in its own process: there the count starts at zero.
+    Client client = Attach();
+    TheAgent().background = false;
+    const uint32_t before = reagentlive::detail::ThreadsStarted();
+    std::vector<uint8_t> block(2 * 4096);
+    const uint8_t marker[] = {0x5d, 0x8e, 0x21, 0xf7, 0x0a, 0xc3, 0x64, 0x9b};
+    memcpy(block.data() + 64, marker, sizeof(marker));
+    SearchQuery query;
+    query.pattern.assign(std::begin(marker), std::end(marker));
+    query.from = reinterpret_cast<uint64_t>(block.data());
+    query.to = query.from + block.size();
+    REQUIRE(client.Search(query, 10s));                       // A slice search.
+    auto job = client.SearchStart(query);                     // A job: tick slices.
+    REQUIRE(job);
+    for (int i = 0; i < 500 && job->state == SearchJobState::Running; ++i) {
+        Sleep(2);
+        job = client.SearchPoll(job->id, false);
+        REQUIRE(job);
+    }
+    CHECK(job->state == SearchJobState::Done);
+    query.background = true;                                  // Refused, not started.
+    CHECK_FALSE(client.Search(query, 10s));
+    XrefQuery xrefs;
+    xrefs.target = query.from;
+    xrefs.from = query.from;
+    xrefs.to = query.to;
+    REQUIRE(client.Xrefs(xrefs, 10s));
+    CHECK(reagentlive::detail::ThreadsStarted() == before);
+
+    // The opt-in starts the one worker, once (a case run before this one in
+    // the same process may have started it already).
+    TheAgent().background = true;
+    REQUIRE(client.Search(query, 10s));
+    REQUIRE(client.Search(query, 10s));
+    TheAgent().background = false;
+    CHECK(reagentlive::detail::ThreadsStarted() == 1);
+}
+
 TEST_CASE("search skips other views of the agent's own section") {
     Client client = Attach();
     // A second view, as an agent injected earlier into the same process holds.

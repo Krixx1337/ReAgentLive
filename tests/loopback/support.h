@@ -20,6 +20,7 @@
 #include <thread>
 #include <vector>
 #include "reagentlive/core/agent.h"
+#include "reagentlive/core/agent_internal.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/packs/ue/client_ue.h"
 #include "reagentlive/frontends/cli/syntax/parse.h"

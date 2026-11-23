@@ -11,4 +11,7 @@ bool InAgentState(uintptr_t address);
 // At the start of every tick: the search job's slice when it runs on the
 // tick (no worker), or taking its end from the worker.
 void TickSearchJob();
+// The threads the agent has started: only the search worker, and only when
+// the host sets Host::backgroundSearch. For tests.
+uint32_t ThreadsStarted();
 }

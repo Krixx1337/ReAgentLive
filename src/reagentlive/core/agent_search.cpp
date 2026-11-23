@@ -62,6 +62,7 @@ std::atomic<bool> g_workerCancel{false};
 SearchJob* g_workerJob;
 HANDLE g_workerWake;
 bool g_workerFailed;
+uint32_t g_threadsStarted; // Every thread the agent starts goes through EnsureWorker.
 
 bool Searchable(const MEMORY_BASIC_INFORMATION& info, uint32_t flags) {
     // Write-combined and uncached pages are GPU or device mappings: very slow
@@ -239,10 +240,13 @@ DWORD WINAPI SearchWorker(void*) {
         g_workerState.store(WorkerDone, std::memory_order_release);
     }
 }
-// Starts the worker once; false if the host forbids it or it cannot start.
+// Starts the worker once; false if the host forbids it (checked on every
+// use, so a started worker takes nothing once the opt-in is off) or it
+// cannot start.
 bool EnsureWorker(const Host& host) {
+    if (!host.backgroundSearch) return false;
     if (g_workerWake) return true;
-    if (!host.backgroundSearch || g_workerFailed) return false;
+    if (g_workerFailed) return false;
     g_workerFailed = true;
     HANDLE wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     HANDLE thread = wake ? CreateThread(nullptr, 64 * 1024, &SearchWorker, nullptr, 0, nullptr) : nullptr;
@@ -251,6 +255,7 @@ bool EnsureWorker(const Host& host) {
         return false;
     }
     CloseHandle(thread); // Runs for the process; the agent never unloads.
+    ++g_threadsStarted;
     g_workerWake = wake;
     g_workerFailed = false;
     return true;
@@ -367,6 +372,8 @@ Progress SearchJobRequest(const Request& request, Response& response, bool first
 }
 
 namespace detail {
+uint32_t ThreadsStarted() { return g_threadsStarted; }
+
 void TickSearchJob() {
     if (!g_searchJob || g_jobState.state != SearchJobState::Running) return;
     if (g_jobState.onWorker) { TakeWorkerJob(); return; }
