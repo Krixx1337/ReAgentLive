@@ -54,6 +54,9 @@ class Table:
     def __init__(self, help_json):
         self.rows = {row['verb']: row for row in help_json['rows']}
         self.keys = set()
+        # Top-level result keys (status's host_thread): a span naming one is no tool name.
+        self.result_keys = {key for row in self.rows.values()
+                            for key in ((row.get('type') or {}).get('struct') or {}) if isinstance(row.get('type'), dict)}
         for row in self.rows.values():
             for arg in row.get('args', []):
                 self.keys.add(arg['key'])
@@ -187,7 +190,8 @@ def span_problems(table, span):
     span = span.strip()
     out = []
     tool = TOOL_NAME.match(span)
-    if tool and table.has_origin(tool.group(1)) and not table.python_verb(tool.group(1), tool.group(2)):
+    if (tool and table.has_origin(tool.group(1)) and not table.python_verb(tool.group(1), tool.group(2))
+            and span not in table.result_keys):
         out.append('no such tool')
     path = KEY_PATH.match(span)
     if path and path.group(2) not in table.keys:

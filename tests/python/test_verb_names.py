@@ -39,6 +39,12 @@ class VerbNames(unittest.TestCase):
         self.assertEqual(problems('`ue_find` `view.limit`'), [])
         self.assertEqual(problems('`ue_fields`'), ['doc.md: no such tool: `ue_fields`'])
         self.assertEqual(problems('`view.max`'), ['doc.md: no such key: `view.max`'])
+        # A result key that looks like a tool name (status's host_thread) is not one.
+        hosted = names.Table({'rows': [
+            {'verb': 'world', 'origin': 'host', 'args': []},
+            {'verb': 'status', 'origin': 'core', 'args': [], 'type': {'struct': {'host_thread': {'type': 'str'}}}}]})
+        self.assertEqual(names.check_text(hosted, '`host_thread` `host_world`', 'doc.md'), [])
+        self.assertEqual(names.check_text(hosted, '`host_wrold`', 'doc.md'), ['doc.md: no such tool: `host_wrold`'])
 
     def test_text_grammar_and_flags_are_stale(self):
         self.assertEqual(problems('`find PC_` `read 0x10 --len 4`'), [
