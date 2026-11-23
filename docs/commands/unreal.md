@@ -61,7 +61,10 @@ result keys: `help <verb>` or [result shapes](results.md).
   type and stride when available. Single struct fields and arrays of structs
   carry the struct's ref and name; the console shows the name (`Vector`) in
   place of `StructProperty`. Bool rows carry their bit mask, so bitfield bools
-  sharing a byte are told apart.
+  sharing a byte are told apart. `subtype` names the class an object-like
+  property points to or the enum an enum or byte property holds (a
+  container's element or key; `value_subtype` a map value's); an agent
+  built before it leaves both out.
 
 ## Before the first command
 
@@ -299,12 +302,34 @@ costs a full scan.
 
 ## Layouts in bulk
 
-`layout-export <file> <Class>...` (up to 256 names) writes one JSON line
-per field each class itself declares: `owner`, `field`, `offset` (as
-`"0x.."`), `size`, `type`; names that are no class or struct come back in
-`missing`. `layout-check <file>` reads such lines (written by
-`layout-export`, by hand, or by a tool from an SDK; `size` and `type` are
-optional) and answers only what the live layout does not hold: rows of
+`layout-export <file> <Name>... [--closure [depth]]` (up to 256 classes,
+structs or enums) writes JSON lines, each with a `kind`, for
+`layout-check` and for a static tool's types (the IDA loader's
+`import_layouts`):
+
+- `class` or `struct`: `name`, `super` (its parent, when it has one) and
+  `size` (`"0x.."`, the inherited part included), then one `field` line
+  per field the type itself declares, by offset.
+- `field`: `owner`, `field`, `offset` (`"0x.."`; a bitfield bool's byte),
+  `size`, `type`, and where they apply `bool_mask`, `struct` (a struct
+  property's struct), `class` (the class an object, class, soft or
+  interface property points to), `enum` (an enum property's or a byte
+  property's enum), `element` (arrays and sets) or `key` and `value`
+  (maps) as `{type, size, struct?, class?, enum?}`, and `stride` and
+  `value_offset` (`"0x.."`) for a set's or map's slot. `class` and `enum`
+  need an agent that reports them.
+- `enum`: `name`, `size` (the bytes a field gives it, when one does) and
+  `values`, `[[name, value], ...]` in the engine's order, names as stored.
+
+Types come in the order found, enums last. `--closure` also exports what
+the named types' fields reference, up to `depth` steps (default 1, at
+most 8; 1024 types, then `capped`), each with its super chain, and every
+enum a written field names; a type past the depth stays a name in its
+field lines. Names that are no class, struct or enum come back in
+`missing`. `layout-check <file>` reads the field lines (written by
+`layout-export`, by hand, or by a tool from an SDK; lines with no `kind`
+are field lines; `size` and `type` are optional; `class`, `struct` and
+`enum` lines are skipped) and answers only what the live layout does not hold: rows of
 `owner`, `field`, `problem` (`no class`, `no field`, `offset`, `size`,
 `type`, checked in that order), `expected` and `found`, at most 200
 (`capped`), with `ok` when every line holds. Each class costs one lookup

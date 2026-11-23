@@ -38,6 +38,9 @@ consteval EngineLayout SdkLayout() {
     out.setElement = at(offsetof(SDK::FSetProperty, ElementProperty));
     out.mapKey = at(offsetof(SDK::FMapProperty, KeyProperty));
     out.mapValue = at(offsetof(SDK::FMapProperty, ValueProperty));
+    out.propertyClass = at(offsetof(SDK::FObjectPropertyBase, PropertyClass));
+    out.enumPropertyEnum = at(offsetof(SDK::FEnumProperty, Enum));
+    out.bytePropertyEnum = at(offsetof(SDK::FByteProperty, Enum));
     out.functionFlags = at(offsetof(SDK::UFunction, FunctionFlags));
     out.execFunction = at(offsetof(SDK::UFunction, ExecFunction));
     out.enumNames = at(offsetof(SDK::UEnum, Names));

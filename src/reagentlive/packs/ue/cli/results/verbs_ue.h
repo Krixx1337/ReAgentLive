@@ -123,11 +123,14 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "wrote back (user), globals peek --label confirmed, kinds not derived now and other builds' lines are "
             "kept; per address the highest rank wins (user, global, exec, interface, vtable). After another tool's "
             "mappings: --kinds interface,global."},
-        {"layout-export", "ue", ToolPack::Native, "the reflected fields classes declare, into a file (JSON lines) for layout-check",
-            {{"file", "file", One, "path", path}, {"classes", "Class", Some, "str", "a class or struct name, per class (up to 256)"}},
-            {}, Of<shape::LayoutExport>, parse::LayoutExport,
-            "One line per field the class itself declares: owner, field, offset, size, type. A line may be written "
-            "by hand or by a tool from an SDK. missing lists names that are no class or struct."},
+        {"layout-export", "ue", ToolPack::Native, "classes', structs' and enums' reflected layouts into a file (JSON lines): for layout-check and a static tool's types",
+            {{"file", "file", One, "path", path}, {"classes", "Name", Some, "str", "a class, struct or enum name, per type (up to 256)"}},
+            {{"--closure", Takes::Maybe, "int", "depth", "also the types their fields reference, to this depth (default 1), and each one's super chain"}},
+            Of<shape::LayoutExport>, parse::LayoutExport,
+            "A class or struct line (name, super, size) then one field line per field it declares: owner, field, "
+            "offset, size, type, and the struct, class or enum it names, with element, key and value parts for "
+            "containers; an enum line holds its values. missing lists names that are no class, struct or enum; "
+            "capped: --closure stopped at 1024 types."},
         {"layout-check", "ue", ToolPack::Native, "a file of expected fields against the live layout; only the mismatches",
             {{"file", "file", One, "path", path}}, {}, Of<shape::LayoutCheck>, parse::LayoutCheck,
             "Lines as layout-export writes them; offset as a number or \"0x..\", size and type optional. problem: "

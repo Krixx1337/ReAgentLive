@@ -73,6 +73,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Layouts for a static tool's types:** `layout-export` writes a `class`
+  or `struct` line (super, size) before each type's fields, field lines
+  name the struct, class or enum they hold (and containers' element, key
+  and value), enums get their values, and `--closure [depth]` also exports
+  what the fields reference; `get --types` shows the class or enum as
+  `subtype`. `layout-check` skips the type lines
+  ([layouts in bulk](docs/commands/unreal.md#layouts-in-bulk)).
+  Protocol change: rebuild and re-inject.
 - **`rows` reads curve tables:** a `CurveTable`'s rows come back with their
   keys (`curve: simple|rich`; rich keys with interp mode and tangents), and
   `--at <t>` gives each curve's value at `t`, evaluated per key mode

@@ -43,7 +43,7 @@ inline std::string FieldLine(const ue::Field& f) {
         << (f.structType.address ? RefText(f.structType) : "-") << '\t' << f.type << '\t' << f.name << '\t'
         << f.owner << '\t' << f.elementType << '\t' << f.structName << '\t' << f.stride << '\t' << f.valueOffset << '\t'
         << f.valueSize << '\t' << f.valueType << '\t' << (f.valueStructType.address ? RefText(f.valueStructType) : "-")
-        << '\t' << f.valueStructName;
+        << '\t' << f.valueStructName << '\t' << f.subtype << '\t' << f.valueSubtype;
     return out.str();
 }
 
@@ -51,7 +51,7 @@ inline std::optional<ue::Field> ParseFieldLine(std::string_view line) {
     const auto parts = cache_detail::SplitTabs(line);
     uint64_t offset, size, mask, elementSize, stride, valueOffset, valueSize;
     ue::Field f{};
-    if (parts.size() != 17 || parts[0] != "field" || !text::Number(parts[1], offset) || !text::Number(parts[2], size) ||
+    if (parts.size() != 19 || parts[0] != "field" || !text::Number(parts[1], offset) || !text::Number(parts[2], size) ||
         !text::Number(parts[3], mask) || !text::Number(parts[4], elementSize) || offset > UINT32_MAX ||
         size > UINT32_MAX || mask > 0xff || elementSize > UINT32_MAX ||
         (parts[5] != "-" && !text::LiteralRef(parts[5], f.structType)) || !text::Number(parts[11], stride) ||
@@ -63,6 +63,8 @@ inline std::optional<ue::Field> ParseFieldLine(std::string_view line) {
     f.valueSize = static_cast<uint32_t>(valueSize);
     f.valueType = parts[14];
     f.valueStructName = parts[16];
+    f.subtype = parts[17];
+    f.valueSubtype = parts[18];
     f.offset = static_cast<uint32_t>(offset);
     f.size = static_cast<uint32_t>(size);
     f.boolMask = static_cast<uint8_t>(mask);

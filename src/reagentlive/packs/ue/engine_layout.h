@@ -28,8 +28,12 @@ struct EngineLayout {
     int32_t arrayDim, elementSize, propertyFlags, propertyOffset;
     // typed: FBoolProperty's FieldSize, ByteOffset, ByteMask, FieldMask bytes
     // start at boolBase; one pointer for struct, array inner, set element and
-    // map key/value; FScriptSetLayout and FScriptMapLayout after them.
+    // map key/value; FScriptSetLayout and FScriptMapLayout after them; the
+    // class an object property points to (FObjectPropertyBase::PropertyClass,
+    // FInterfaceProperty::InterfaceClass at the same place) and the enum of
+    // an enum or byte property.
     int32_t boolBase, structStruct, arrayInner, setElement, mapKey, mapValue, setLayout, mapLayout;
+    int32_t propertyClass, enumPropertyEnum, bytePropertyEnum;
     // function: UFunction.
     int32_t functionFlags, parmsSize, returnValueOffset, execFunction;
     // enum: UEnum::Names. Before UE 5.6 a TArray of {FName, int64} pairs here;
@@ -59,6 +63,7 @@ inline constexpr EngineLayout StockUE5 = {
     .arrayDim = 0x30, .elementSize = 0x34, .propertyFlags = 0x38, .propertyOffset = 0x44,
     .boolBase = 0x70, .structStruct = 0x70, .arrayInner = 0x78, .setElement = 0x70, .mapKey = 0x70, .mapValue = 0x78,
     .setLayout = 0x78, .mapLayout = 0x80,
+    .propertyClass = 0x70, .enumPropertyEnum = 0x78, .bytePropertyEnum = 0x70,
     .functionFlags = 0xB0, .parmsSize = 0xB6, .returnValueOffset = 0xB8, .execFunction = 0xD8,
     .enumNames = 0x48,
     .processEventSlot = 0x4C, .frameNode = 0x10, .frameLocals = 0x28,
@@ -120,6 +125,9 @@ inline constexpr Member Members[] = {
     {"typed", "FMapProperty.ValueProp", &EngineLayout::mapValue},
     {"typed", "FSetProperty.SetLayout", &EngineLayout::setLayout},
     {"typed", "FMapProperty.MapLayout", &EngineLayout::mapLayout},
+    {"typed", "FObjectPropertyBase.PropertyClass", &EngineLayout::propertyClass},
+    {"typed", "FEnumProperty.Enum", &EngineLayout::enumPropertyEnum},
+    {"typed", "FByteProperty.Enum", &EngineLayout::bytePropertyEnum},
     {"function", "FunctionFlags", &EngineLayout::functionFlags},
     {"function", "ParmsSize", &EngineLayout::parmsSize},
     {"function", "ReturnValueOffset", &EngineLayout::returnValueOffset},

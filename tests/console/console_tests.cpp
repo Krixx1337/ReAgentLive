@@ -778,3 +778,93 @@ TEST_CASE("disasm --save follows a switch: its table is data, each target a chun
     }
     CHECK(table);
 }
+
+namespace {
+// Layout types: a class with a parent, a struct, two referenced classes (one
+// a step further) and an enum, every field kind the export describes.
+struct LayoutTypes { std::string file; };
+const LayoutTypes& TheLayoutTypes() {
+    static const LayoutTypes types = [] {
+        auto& world = TheWorld();
+        const auto own = [](Field field, const char* owner, std::string subtype = {}) {
+            field.owner = owner;
+            field.subtype = std::move(subtype);
+            return field;
+        };
+        Type& base = world.AddType("LayoutBase", 0x40, false);
+        base.fields = {own(MakeField("Health", "FloatProperty", 0x28, 4), "LayoutBase")};
+        Type& spot = world.AddType("LayoutSpot", 0x10, true);
+        spot.fields = {own(MakeField("X", "FloatProperty", 0, 4), "LayoutSpot"), own(MakeField("Y", "FloatProperty", 4, 4), "LayoutSpot")};
+        Type& deep = world.AddType("LayoutDeep", 0x30, false);
+        Type& other = world.AddType("LayoutOther", 0x30, false);
+        other.fields = {own(MakeField("Deep", "ObjectProperty", 0x28, 8), "LayoutOther", "LayoutDeep")};
+        Type& thing = world.AddType("LayoutThing", 0x100, false, "LayoutBase");
+        Field flag = own(MakeField("bFlag", "BoolProperty", 0xc0, 1), "LayoutThing");
+        flag.numbers.boolMask = 4;
+        Field others = own(ArrayField("Others", 0x60, "ObjectProperty", 8), "LayoutThing", "LayoutOther");
+        Field value = MakeField("", "ByteProperty", 0, 1);
+        value.subtype = "ELayoutRole";
+        thing.fields = {own(MakeField("Owner", "ObjectProperty", 0x40, 8), "LayoutThing", "LayoutBase"),
+            own(MakeField("Role", "EnumProperty", 0x48, 1), "LayoutThing", "ELayoutRole"),
+            own(StructField("Spot", 0x50, spot), "LayoutThing"), others,
+            own(MapField("Roles", 0x70, MakeField("", "NameProperty", 0, 8), value, 16, 8), "LayoutThing"), flag,
+            // Inherited rows come with the class's table; the export writes them on their own type's lines.
+            own(MakeField("Health", "FloatProperty", 0x28, 4), "LayoutBase")};
+        (void)deep;
+        Object& role = world.Add("ELayoutRole", "Enum", 64);
+        world.enums.push_back({role.ref.index, {{"ELayoutRole::A", 0}, {"ELayoutRole::B", 1}}});
+        return LayoutTypes{SaveFile("layout.jsonl")};
+    }();
+    return types;
+}
+std::vector<Json> FileLines(const std::string& path) {
+    std::vector<Json> lines;
+    std::ifstream in(path);
+    for (std::string line; std::getline(in, line);) lines.push_back(Json::parse(line));
+    return lines;
+}
+}
+
+TEST_CASE("layout-export writes type lines and full field lines; --closure adds what they reference") {
+    const auto& types = TheLayoutTypes();
+    const auto alone = Result("layout-export " + types.file + " LayoutThing");
+    CHECK(alone["classes"] == 1);
+    CHECK(alone["fields"] == 6);
+    auto lines = FileLines(types.file);
+    REQUIRE(lines.size() == 7);
+    CHECK(lines[0] == Json::parse(R"({"kind": "class", "name": "LayoutThing", "super": "LayoutBase", "size": "0x100"})"));
+    CHECK(lines[1] == Json::parse(R"({"kind": "field", "owner": "LayoutThing", "field": "Owner", "offset": "0x40",
+        "size": 8, "type": "ObjectProperty", "class": "LayoutBase"})"));
+    CHECK(lines[2]["enum"] == "ELayoutRole");
+    CHECK(lines[3]["struct"] == "LayoutSpot");
+    CHECK(lines[4]["element"] == Json::parse(R"({"type": "ObjectProperty", "size": 8, "class": "LayoutOther"})"));
+    CHECK(lines[5]["key"] == Json::parse(R"({"type": "NameProperty", "size": 8})"));
+    CHECK(lines[5]["value"] == Json::parse(R"({"type": "ByteProperty", "size": 1, "enum": "ELayoutRole"})"));
+    CHECK(lines[5]["stride"] == 16);
+    CHECK(lines[5]["value_offset"] == "0x8");
+    CHECK(lines[6]["bool_mask"] == 4);
+    // layout-check reads the same file: the type lines are skipped, every field holds.
+    const auto check = Result("layout-check " + types.file);
+    CHECK(check["checked"] == 6);
+    CHECK(check["ok"] == true);
+
+    // Depth 1: the super chain and the types one step away, and the enum with its size.
+    const auto closure = Result("layout-export " + types.file + " LayoutThing --closure");
+    CHECK(closure["classes"] == 3);
+    CHECK(closure["structs"] == 1);
+    CHECK(closure["enums"] == 1);
+    lines = FileLines(types.file);
+    std::vector<std::string> named;
+    for (const auto& line : lines)
+        if (line["kind"] != "field") named.push_back(line["name"].get<std::string>());
+    CHECK(named == std::vector<std::string>{"LayoutThing", "LayoutBase", "LayoutSpot", "LayoutOther", "ELayoutRole"});
+    CHECK(lines.back() == Json::parse(R"({"kind": "enum", "name": "ELayoutRole", "size": 1,
+        "values": [["ELayoutRole::A", 0], ["ELayoutRole::B", 1]]})"));
+    CHECK(std::ranges::count_if(lines, [](const Json& l) { return l.value("field", "") == "Health"; }) == 1);
+    // Depth 2 reaches the class LayoutOther points to; an enum and an unknown name by themselves.
+    CHECK(Result("layout-export " + types.file + " LayoutThing --closure 2")["classes"] == 4);
+    const auto enumOnly = Result("layout-export " + types.file + " ELayoutRole NoSuchType");
+    CHECK(enumOnly["enums"] == 1);
+    CHECK(enumOnly["missing"] == Json::array({"NoSuchType"}));
+    CHECK_FALSE(FileLines(types.file)[0].contains("size"));
+}

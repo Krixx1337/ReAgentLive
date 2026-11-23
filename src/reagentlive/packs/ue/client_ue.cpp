@@ -80,6 +80,10 @@ static Result<Signature> ReadFields(Client& client, const Ref& object, uint32_t 
                     std::string(s.owner), r.elementSize, std::string(s.elementType), structType, std::string(s.structName),
                     op == op::Parameters ? r.flags : uint8_t{0}, r.stride, r.valueOffset, r.valueSize,
                     std::string(s.valueType), valueStructType, std::string(s.valueStructName)});
+                // A map's subtype is "Key|Value".
+                const auto bar = s.subtype.find('|');
+                fields.back().subtype = s.subtype.substr(0, bar);
+                if (bar != std::string_view::npos) fields.back().valueSubtype = s.subtype.substr(bar + 1);
             });
         const size_t count = fields.size() - before;
         if (!read || fields.size() > total || (!count && fields.size() < total) ||

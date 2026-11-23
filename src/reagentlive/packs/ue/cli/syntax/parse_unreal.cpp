@@ -318,12 +318,18 @@ Parsed LayoutExport(const Args& args, const ParseContext&) {
     command.target = "export";
     command.file = args.At(0);
     for (size_t i = 1; i < args.positionals.size(); ++i) {
-        if (!ClassName(args.positionals[i])) return Fail("'" + args.positionals[i] + "' is not a class or struct name");
+        if (!ClassName(args.positionals[i])) return Fail("'" + args.positionals[i] + "' is not a class, struct or enum name");
         command.fields.push_back(args.positionals[i]);
     }
     if (command.fields.empty()) return Fail();
     if (command.fields.size() > MaxLayoutClasses)
-        return Fail("at most " + std::to_string(MaxLayoutClasses) + " classes per call");
+        return Fail("at most " + std::to_string(MaxLayoutClasses) + " names per call");
+    if (args.Has("--closure")) {
+        uint64_t depth = 1;
+        if (!args.Value("--closure").empty() && (!Number(args.Value("--closure"), depth) || !depth || depth > MaxClosureDepth))
+            return Fail("--closure takes a depth, 1.." + std::to_string(MaxClosureDepth));
+        command.closure = static_cast<uint32_t>(depth);
+    }
     command.request.op = ue::op::Fields;
     return command;
 }

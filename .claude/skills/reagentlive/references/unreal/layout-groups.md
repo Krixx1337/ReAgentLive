@@ -64,7 +64,11 @@ the last member ≤ `Size`.
 - `FStructProperty.Struct`: `TwoVectors`' members point to the `Vector`
   struct object.
 - `FObjectProperty.PropertyClass`: `Controller.Pawn` → class `Pawn`,
-  `Controller.PlayerState` → `PlayerState`.
+  `Controller.PlayerState` → `PlayerState` (`get Controller --types`
+  shows it as `subtype`).
+- `FEnumProperty.Enum` (after its underlying property) and
+  `FByteProperty.Enum`: `Pawn.AutoPossessPlayer` → `EAutoReceiveInput`,
+  `Actor.Role` → `ENetRole`.
 - `FArrayProperty.Inner`, `FSetProperty.ElementProp`, `FMapProperty` key
   and value: an inner `FField` pointer right after `FProperty`
   (`GameViewportClient.DebugProperties` is an array,

@@ -68,6 +68,9 @@ struct FieldInfo {
     std::optional<HexNum> valueOffset;
     std::optional<std::string> valueStruct;
     std::optional<uint32_t> stride;
+    // The class an object-like property points to or an enum or byte
+    // property's enum (a container's element or key); a map value's.
+    std::optional<std::string> subtype, valueSubtype;
     template<class V> static void Describe(V& v) {
         v("name", &FieldInfo::name);
         v("owner", &FieldInfo::owner);
@@ -83,6 +86,8 @@ struct FieldInfo {
         v("value_offset", &FieldInfo::valueOffset);
         v("value_struct", &FieldInfo::valueStruct);
         v("stride", &FieldInfo::stride);
+        v("subtype", &FieldInfo::subtype);
+        v("value_subtype", &FieldInfo::valueSubtype);
     }
 };
 struct NativeRefused {
@@ -144,6 +149,7 @@ struct GetRow {
     std::optional<HexNum> valueOffset;
     std::optional<std::string> valueStruct;
     std::optional<uint32_t> stride;
+    std::optional<std::string> subtype, valueSubtype;   // As FieldInfo's.
     std::optional<bool> native, stale;
     std::optional<Json> value, before;
     std::optional<bool> truncated;
@@ -173,6 +179,8 @@ struct GetRow {
         v("value_size", &GetRow::valueSize);
         v("value_offset", &GetRow::valueOffset);
         v("value_struct", &GetRow::valueStruct);
+        v("subtype", &GetRow::subtype);
+        v("value_subtype", &GetRow::valueSubtype);
         v("stride", &GetRow::stride);
         v("native", &GetRow::native);
         v("stale", &GetRow::stale);
@@ -821,13 +829,17 @@ struct Calls {
 // one JSON line each in the file; names that are no class or struct.
 struct LayoutExport {
     std::string path;
-    uint64_t classes = 0, fields = 0;
+    uint64_t classes = 0, structs = 0, enums = 0, fields = 0;
     std::optional<std::vector<std::string>> missing;
+    std::optional<bool> capped;     // --closure stopped at the type cap.
     template<class V> static void Describe(V& v) {
         v("path", &LayoutExport::path);
         v("classes", &LayoutExport::classes);
+        v("structs", &LayoutExport::structs);
+        v("enums", &LayoutExport::enums);
         v("fields", &LayoutExport::fields);
         v("missing", &LayoutExport::missing);
+        v("capped", &LayoutExport::capped);
     }
 };
 // layout-check: only the lines the live layout does not hold.
@@ -953,6 +965,8 @@ inline shape::FieldInfo MakeFieldInfo(const ue::Field& field) {
         if (!field.valueStructName.empty()) info.valueStruct = field.valueStructName;
     }
     if (field.stride) info.stride = field.stride;
+    if (!field.subtype.empty()) info.subtype = field.subtype;
+    if (!field.valueSubtype.empty()) info.valueSubtype = field.valueSubtype;
     return info;
 }
 
@@ -986,6 +1000,8 @@ inline shape::GetRow MakeTypeRow(const shape::FieldInfo& info, std::string_view 
     row.valueOffset = info.valueOffset;
     row.valueStruct = info.valueStruct;
     row.stride = info.stride;
+    row.subtype = info.subtype;
+    row.valueSubtype = info.valueSubtype;
     return row;
 }
 

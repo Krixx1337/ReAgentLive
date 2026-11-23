@@ -113,6 +113,8 @@ struct Command {
     // `curveAt` (--at) evaluates a curve table's rows at that time.
     std::vector<std::string> rowPaths;
     std::optional<float> curveAt;
+    // layout-export --closure: how many references away from the named types to export.
+    std::optional<uint32_t> closure;
     // trace: its two ends (a world point in cm, or an object's location or a
     // socket on it), the trace type query, simple collision, and an actor the
     // line passes through (also the world it runs in; else an end's object).
@@ -145,7 +147,7 @@ inline bool TestName(std::string_view name) {
 }
 }
 // layout-export: classes per call; layout-check: lines per file and mismatch rows shown.
-constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows = 200;
+constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows = 200, MaxClosureDepth = 8;
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.
 constexpr size_t MaxSearchText = 96; // search text: characters shown each side of a hit.
 // disasm: up to MaxDisasm instructions (DisasmBytes per instruction asked, at

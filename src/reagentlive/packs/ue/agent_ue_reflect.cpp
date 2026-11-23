@@ -80,8 +80,14 @@ namespace {
 struct FieldText {
     FieldRecord numbers{};
     Ref structType{}, valueStructType{};
-    std::string name, type, owner, elementType, structName, valueType, valueStructName;
-    FieldStrings Strings() const { return {name, type, owner, elementType, structName, valueType, valueStructName}; }
+    std::string name, type, owner, elementType, structName, valueType, valueStructName, subtype, valueSubtype;
+    // The record's subtype: a map's is "Key|Value".
+    FieldStrings Strings() const {
+        if (!valueSubtype.empty()) wire = subtype + "|" + valueSubtype;
+        else wire = subtype;
+        return {name, type, owner, elementType, structName, valueType, valueStructName, wire};
+    }
+    mutable std::string wire;
 };
 
 // The struct a StructProperty holds, as a ref the client can pass to Fields.
@@ -95,6 +101,17 @@ void DescribeStruct(FieldPtr field, Ref& structType, std::string& structName, co
     structName = NameOf(ObjectName(type));
 }
 
+// The class an object-like property points to, or the enum an enum or byte
+// property holds, by name (left empty when there is none or it is not one).
+void DescribeSubtype(FieldPtr field, std::string_view type, std::string& out, const Context& pack, const Host& host) {
+    const bool object = type.ends_with("ObjectProperty") || type.ends_with("ClassProperty") || type == "InterfaceProperty";
+    const bool enumerated = type == "EnumProperty" || type == "ByteProperty";
+    if ((!object && !enumerated) || !host.readable(field, TypedBytes())) return;
+    const Object* target = object ? PropertyClassOf(field) : type == "EnumProperty" ? EnumPropertyEnum(field) : BytePropertyEnum(field);
+    if (!target || !Identify(target, pack).address || !IsA(target, object ? cast::Class : cast::Enum)) return;
+    out = NameOf(ObjectName(target));
+}
+
 // A map's key and value or a set's element, and the element layout when it
 // passes ContainerLayoutValid (stride stays 0 otherwise).
 void DescribeContainer(FieldPtr field, bool map, FieldText& entry, const Context& pack, const Host& host) {
@@ -102,18 +119,19 @@ void DescribeContainer(FieldPtr field, bool map, FieldText& entry, const Context
     if (!host.readable(base, static_cast<uint32_t>(map ? Engine().mapLayout : Engine().setLayout) + sizeof(ContainerLayout)) ||
         !host.readable(field, TypedBytes())) return;
     const auto inner = [&](FieldPtr property, std::string& type, uint32_t& size, Ref& structType,
-                           std::string& structName) {
+                           std::string& structName, std::string& subtype) {
         if (!host.readable(property, PropertyBytes()) || ElementSize(property) <= 0) return false;
         type = FieldTypeName(property, host);
         if (type.empty()) return false;
         size = static_cast<uint32_t>(ElementSize(property));
         if (type == "StructProperty") DescribeStruct(property, structType, structName, pack, host);
+        DescribeSubtype(property, type, subtype, pack, host);
         return true;
     };
     const FieldPtr key = map ? MapKey(field) : SetElement(field);
-    if (!inner(key, entry.elementType, entry.numbers.elementSize, entry.structType, entry.structName)) return;
+    if (!inner(key, entry.elementType, entry.numbers.elementSize, entry.structType, entry.structName, entry.subtype)) return;
     if (map && !inner(MapValue(field), entry.valueType, entry.numbers.valueSize,
-                      entry.valueStructType, entry.valueStructName)) return;
+                      entry.valueStructType, entry.valueStructName, entry.valueSubtype)) return;
     ContainerLayout layout{};
     if (map) memcpy(&layout, base + Engine().mapLayout, sizeof(layout));
     else memcpy(&layout.hashNextIdOffset, base + Engine().setLayout, 3 * sizeof(int32_t));
@@ -532,6 +550,7 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
                 }
                 if (entry.type == "StructProperty" && arrayDim == 1)
                     DescribeStruct(field, entry.structType, entry.structName, pack, host);
+                DescribeSubtype(field, entry.type, entry.subtype, pack, host);
                 if ((entry.type == "MapProperty" || entry.type == "SetProperty") && arrayDim == 1 && typed)
                     DescribeContainer(field, entry.type == "MapProperty", entry, pack, host);
                 if (entry.type == "ArrayProperty" && arrayDim == 1 && typed) {
@@ -541,6 +560,7 @@ Progress FieldsBody(const Request& request, Response& response, bool, const Host
                         if (!entry.elementType.empty()) numbers.elementSize = static_cast<uint32_t>(ElementSize(inner));
                         if (entry.elementType == "StructProperty")
                             DescribeStruct(inner, entry.structType, entry.structName, pack, host);
+                        DescribeSubtype(inner, entry.elementType, entry.subtype, pack, host);
                     }
                 }
             } else {

@@ -53,6 +53,9 @@ struct Field {
     std::string valueType;
     Ref valueStructType{};
     std::string valueStructName;
+    // An object-like property's class or an enum or byte property's enum (a
+    // container's element or key; valueSubtype: a map value's); see FieldRecord.
+    std::string subtype, valueSubtype;
     bool operator==(const Field&) const = default;
 };
 

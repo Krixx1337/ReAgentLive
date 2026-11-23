@@ -220,7 +220,10 @@ static_assert(sizeof(FunctionEntry) <= MaxRead);
 // key (a set's element) is elementType, elementSize and structType; a map's
 // value is the value* members; stride is the element's whole slot (key,
 // value and hash links), 0 when the layout is unknown or failed its check
-// (ContainerLayoutValid).
+// (ContainerLayoutValid). subtype: the class an object-like property points
+// to, or the enum an enum or byte property holds; for an array or set its
+// element's; for a map "Key|Value" (either side may be empty; '|' is never
+// in an object name); empty when there is none or it could not be read.
 struct FieldsPageHeader {
     uint16_t count, refs;
     uint32_t strings;                       // Bytes of the string table.
@@ -230,12 +233,12 @@ struct FieldRecord {
     uint8_t boolMask, flags;                // flags: Parameters' ParameterFlag bits.
     uint8_t structType, valueStructType;    // 1-based into the page's refs; 0: none.
     uint16_t name, type, owner, elementType, structName, valueType, valueStructName; // Into the strings.
-    uint16_t reserved;
+    uint16_t subtype;
 };
 static_assert(sizeof(FieldsPageHeader) == 8 && sizeof(FieldRecord) == 44);
 // A record's strings: owner is the class or struct that declares it.
 struct FieldStrings {
-    std::string_view name, type, owner, elementType, structName, valueType, valueStructName;
+    std::string_view name, type, owner, elementType, structName, valueType, valueStructName, subtype;
 };
 constexpr size_t MaxFieldsPerPage = (MaxRead - sizeof(FieldsPageHeader)) / sizeof(FieldRecord);
 constexpr size_t MaxPageRefs = 64;
@@ -253,7 +256,8 @@ public:
         bool fits = RefNumber(structType, record.structType) && RefNumber(valueStructType, record.valueStructType) &&
             String(text.name, record.name) && String(text.type, record.type) && String(text.owner, record.owner) &&
             String(text.elementType, record.elementType) && String(text.structName, record.structName) &&
-            String(text.valueType, record.valueType) && String(text.valueStructName, record.valueStructName);
+            String(text.valueType, record.valueType) && String(text.valueStructName, record.valueStructName) &&
+            String(text.subtype, record.subtype);
         fits = fits && Bytes(count_ + 1, refs_, used_) <= MaxRead;
         if (!fits) {
             used_ = savedStrings;
@@ -349,7 +353,8 @@ bool ReadFieldsPage(const uint8_t* data, size_t length, Visit&& visit) {
         if (!ref(record.structType, structType) || !ref(record.valueStructType, valueStructType) ||
             !text(record.name, strings.name) || !text(record.type, strings.type) || !text(record.owner, strings.owner) ||
             !text(record.elementType, strings.elementType) || !text(record.structName, strings.structName) ||
-            !text(record.valueType, strings.valueType) || !text(record.valueStructName, strings.valueStructName))
+            !text(record.valueType, strings.valueType) || !text(record.valueStructName, strings.valueStructName) ||
+            !text(record.subtype, strings.subtype))
             return false;
         visit(record, structType, valueStructType, strings);
     }

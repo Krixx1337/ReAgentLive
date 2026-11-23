@@ -59,7 +59,8 @@ inline uint32_t PropertyBytes() {
 inline uint32_t TypedBytes() {
     const auto& e = Engine();
     return std::max(PropertyBytes(), Span({e.boolBase + 4, e.structStruct + 8, e.arrayInner + 8, e.setElement + 8,
-                                           e.mapKey + 8, e.mapValue + 8}));
+                                           e.mapKey + 8, e.mapValue + 8, e.propertyClass + 8,
+                                           e.enumPropertyEnum + 8, e.bytePropertyEnum + 8}));
 }
 inline uint32_t FieldClassBytes() {
     const auto& e = Engine();
@@ -105,6 +106,9 @@ inline FieldPtr ArrayInner(FieldPtr field) { return At<FieldPtr>(field, Engine()
 inline FieldPtr SetElement(FieldPtr field) { return At<FieldPtr>(field, Engine().setElement); }
 inline FieldPtr MapKey(FieldPtr field) { return At<FieldPtr>(field, Engine().mapKey); }
 inline FieldPtr MapValue(FieldPtr field) { return At<FieldPtr>(field, Engine().mapValue); }
+inline const Object* PropertyClassOf(FieldPtr field) { return At<const Object*>(field, Engine().propertyClass); }
+inline const Object* EnumPropertyEnum(FieldPtr field) { return At<const Object*>(field, Engine().enumPropertyEnum); }
+inline const Object* BytePropertyEnum(FieldPtr field) { return At<const Object*>(field, Engine().bytePropertyEnum); }
 // FFieldClass: readable to FieldClassBytes.
 inline NameId FieldClassName(FieldClassPtr type) { return NameAt(type, Engine().fieldClassName); }
 inline uint64_t FieldClassCastFlags(FieldClassPtr type) { return At<uint64_t>(type, Engine().fieldClassCastFlags); }

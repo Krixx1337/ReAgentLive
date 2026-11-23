@@ -23,6 +23,8 @@ inline Json FieldMetadata(const ue::Field& field) {
         if (!field.valueStructName.empty()) row["value_struct"] = field.valueStructName;
     }
     if (field.stride) row["stride"] = field.stride;
+    if (!field.subtype.empty()) row["subtype"] = field.subtype;
+    if (!field.valueSubtype.empty()) row["value_subtype"] = field.valueSubtype;
     return row;
 }
 

@@ -1,5 +1,8 @@
 // reagentlive CLI, Unreal pack: the line format layout-export writes and
-// layout-check reads. Pure; shared with tests.
+// layout-check reads (docs/commands/unreal.md, layouts in bulk): `class`,
+// `struct` and `enum` lines describe types, `field` lines (and lines with
+// no kind) their fields; layout-check reads only the field lines. Pure;
+// shared with tests.
 #pragma once
 #include <cstdint>
 #include <expected>
@@ -30,7 +33,13 @@ inline std::optional<uint32_t> LayoutNumber(const Json& value) {
     return std::nullopt;
 }
 
-// One file line, or why not.
+// A line layout-check skips: a class, struct or enum line.
+inline bool LayoutTypeLine(const std::string& text) {
+    const Json json = Json::parse(text, nullptr, false);
+    return json.is_object() && json.contains("kind") && json["kind"] != "field";
+}
+
+// One field line, or why not.
 inline std::expected<LayoutLine, std::string> ParseLayoutLine(const std::string& text) {
     const Json json = Json::parse(text, nullptr, false);
     if (!json.is_object()) return std::unexpected("not a JSON object");
@@ -53,12 +62,29 @@ inline std::expected<LayoutLine, std::string> ParseLayoutLine(const std::string&
     return line;
 }
 
-// The line layout-export writes for a field.
+inline std::string LayoutHex(uint64_t value) {
+    char hex[24];
+    snprintf(hex, sizeof(hex), "0x%llx", static_cast<unsigned long long>(value));
+    return hex;
+}
+
+// The line layout-export writes for a field: what layout-check reads; the
+// export adds the field's struct, class or enum and container parts.
 inline Json LayoutJson(const std::string& owner, const std::string& field, uint32_t offset, uint32_t size,
                        const std::string& type) {
-    char hex[16];
-    snprintf(hex, sizeof(hex), "0x%x", offset);
-    return {{"owner", owner}, {"field", field}, {"offset", hex}, {"size", size}, {"type", type}};
+    return {{"kind", "field"}, {"owner", owner}, {"field", field}, {"offset", LayoutHex(offset)}, {"size", size},
+            {"type", type}};
+}
+
+// Whether a property's subtype is an enum (enum and byte properties) or a class.
+inline bool LayoutEnumType(const std::string& type) { return type == "EnumProperty" || type == "ByteProperty"; }
+
+// A container's element, key or value: {type, size, struct?, class?, enum?}.
+inline Json LayoutPart(const std::string& type, uint32_t size, const std::string& structName, const std::string& subtype) {
+    Json part{{"type", type}, {"size", size}};
+    if (!structName.empty()) part["struct"] = structName;
+    if (!subtype.empty()) part[LayoutEnumType(type) ? "enum" : "class"] = subtype;
+    return part;
 }
 
 // Why the live field differs from the line ("" when it holds): offset first, then size, then type.

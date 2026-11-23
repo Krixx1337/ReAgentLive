@@ -49,8 +49,13 @@ constexpr uint32_t Layout = reagentlive::LayoutCore + ue::LayoutPart;
 struct Field {
     ue::FieldRecord numbers{};
     Ref structType{}, valueStructType{};
-    std::string name, type, owner = "Fake", elementType, structName, valueType, valueStructName;
-    ue::FieldStrings Strings() const { return {name, type, owner, elementType, structName, valueType, valueStructName}; }
+    std::string name, type, owner = "Fake", elementType, structName, valueType, valueStructName, subtype, valueSubtype;
+    // The record's subtype: a map's is "Key|Value".
+    ue::FieldStrings Strings() const {
+        wire = valueSubtype.empty() ? subtype : subtype + "|" + valueSubtype;
+        return {name, type, owner, elementType, structName, valueType, valueStructName, wire};
+    }
+    mutable std::string wire;
 };
 
 // A reflected type (a class or a struct) and an object (an instance, or the
@@ -111,11 +116,17 @@ struct World {
         objects.push_back(std::move(object));
         return objects.back();
     }
-    // A type, and its own object (a ScriptStruct or a Class).
+    // A type, and its own object (a ScriptStruct or a Class) holding its
+    // UStruct::Size and, when the parent is a type here, its SuperStruct.
     Type& AddType(std::string name, uint32_t size, bool isStruct, std::string parent = {}) {
+        const auto& layout = ue::layout::StockUE5;
+        const auto super = std::ranges::find(types, parent, &Type::name);
+        const uint64_t superAddress = super == types.end() ? 0 : objects[static_cast<size_t>(super->slot)].ref.address;
         types.push_back({name, size, {}, std::move(parent), static_cast<int32_t>(objects.size())});
-        Object& own = Add(name, isStruct ? "ScriptStruct" : "Class", 64);
+        Object& own = Add(name, isStruct ? "ScriptStruct" : "Class", 0x100);
         own.ownType = static_cast<int32_t>(types.size() - 1);
+        memcpy(Bytes(own) + layout.superStruct, &superAddress, 8);
+        memcpy(Bytes(own) + layout.structSize, &size, 4);
         return types.back();
     }
     Object& Instance(std::string name, const Type& type, Ref outer = {}) {
@@ -213,12 +224,14 @@ inline Field MapField(std::string_view name, uint32_t offset, const Field& key, 
     field.elementType = key.type;
     field.structType = key.structType;
     field.structName = key.structName;
+    field.subtype = key.subtype;
     field.numbers.stride = stride;
     field.numbers.valueOffset = valueOffset;
     field.numbers.valueSize = value.numbers.size;
     field.valueType = value.type;
     field.valueStructType = value.structType;
     field.valueStructName = value.structName;
+    field.valueSubtype = value.subtype;
     return field;
 }
 
