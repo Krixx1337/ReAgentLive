@@ -221,7 +221,7 @@ export, the fast lane (`disasm`, `xrefs`, `sig-check`;
 [design](design.md#fast-lane)), the AI-facing console and Python client.
 
 Native objects without an engine pack (`vtable`, pointer chains, strings,
-`region`; [design](design.md#native-objects)) have shipped too, and so has
+regions; [design](design.md#native-objects)) have shipped too, and so has
 Unreal with no dump (every op, each layout group checked on known objects)
 with a game-thread tick for hosts that tick elsewhere (`game-thread`).
 Planned,

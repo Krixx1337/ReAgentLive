@@ -109,7 +109,6 @@ shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, con
 // call --dry: the block that would be sent, with the function's native entry and whether it is const or pure.
 shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, const ue::FunctionInfo& function);
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand);
-void PrintParameters(Session& session, const ue::FunctionInfo& function, const ue::Signature& signature, const Ref& object);
 // A typed call (or with --dry its block only); the request's flags go to the agent (CallPure).
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
                   const ue::Signature& signature, StructCache& structs, std::span<const Ref> refs,

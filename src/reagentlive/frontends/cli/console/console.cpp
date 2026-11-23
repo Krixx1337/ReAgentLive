@@ -271,11 +271,6 @@ bool OfflineOnly(std::span<const Verb> verbs, const std::vector<std::string>& li
 void Run(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     const Request& request = command.request;
-    if (command.kind == Kind::Base) {
-        const auto modules = LoadedModules(session);
-        if (modules.empty()) return JsonError(session, jsonCommand, "unavailable", "base unknown: modules unavailable");
-        return Emit(session, jsonCommand, MakeModule(modules.front()));
-    }
     if (!client.Supports(request.op))
         return JsonError(session, jsonCommand, "unsupported", "agent does not support this operation");
     switch (request.op) {
@@ -324,26 +319,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
         } else if (!command.view.empty()) {
             if (auto parsed = layout::Parse(command.view)) result.layout = layout::Decode(*parsed, *bytes);
         }
-        return Emit(session, jsonCommand, std::move(result));
-    }
-    case op::ReadBatch: {
-        auto batch = client.ReadBatch(command.reads);
-        if (!batch) return CommandError(session, jsonCommand, batch.error());
-        const auto modules = LoadedModules(session);
-        shape::ReadBatch result;
-        result.tick = batch->tick;
-        for (size_t i = 0; i < batch->items.size(); ++i) {
-            const auto& item = batch->items[i];
-            const auto& read = command.reads[i];
-            shape::ReadBatchRow row;
-            row.address = read.address;
-            row.where = Locate(read.address, modules);
-            row.size = read.length;
-            row.ok = item.status == Status::Ok;
-            if (row.ok) row.hex = HexBytes(item.bytes);
-            else row.error = shape::ReadError{static_cast<uint32_t>(item.status), StatusText(item.status)};
-            result.rows.push_back(std::move(row));
-        }
+        result.region = RegionOf(session, request.address);
         return Emit(session, jsonCommand, std::move(result));
     }
     case op::Write: {
@@ -428,7 +404,9 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
 // (watch, record, each --seconds) do not: a hold would only add one wait.
 bool Held(const Command& command) {
     if (command.kind == Kind::Peek) return true;
-    return command.kind == Kind::Remote && command.request.op == reagentlive::op::Modules;
+    // read: the bytes, then the region they lie in.
+    return command.kind == Kind::Remote &&
+        (command.request.op == reagentlive::op::Modules || command.request.op == reagentlive::op::Read);
 }
 
 bool Execute(Session& session, const InputLine& input, bool inBatch);
@@ -652,10 +630,8 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::LabelsSign: RunLabelsSign(session, *parsed, jsonCommand); return false;
     case Kind::LabelsPort: RunLabelsPort(session, *parsed, jsonCommand); return false;
     case Kind::Vtable: RunVtable(session, *parsed, jsonCommand); return false;
-    case Kind::Rtti: RunRtti(session, *parsed, jsonCommand); return false;
     case Kind::MemSnap: RunMemSnap(session, *parsed, jsonCommand); return false;
     case Kind::MemDiff: RunMemDiff(session, *parsed, jsonCommand); return false;
-    case Kind::Region: RunRegion(session, *parsed, jsonCommand); return false;
     default: break;
     }
     std::optional<Client::Hold> hold;

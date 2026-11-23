@@ -10,7 +10,7 @@ console (`docs/commands/console.md`).
 | Task | Use |
 |---|---|
 | One lookup, read, describe, or a few calls | MCP tool |
-| Reads that must share a tick | MCP `batch` (or `get`, `read-batch`); check `same_tick` |
+| Reads that must share a tick | MCP `batch` (or `get`); check `same_tick` |
 | A result came back as a `digest` | the call its `next` names, or `budget` for what `next` cannot narrow |
 | One value or getter across every instance of one class (T3) | `each`: one call, one tick, the whole table; Python only when `each` cannot express it (several classes, logic beyond a table) |
 | The next step loops, compares, intersects, sweeps instances or diffs many objects | Python: generated functions on a `Session`; print only the summary |
@@ -44,9 +44,9 @@ for building tools, not for investigating.
 | `read` | `read` `{addr:"0x7ff600001000", len:16, type:"u32"}` | `c.read(0x7ff600001000, 16, type='u32')` | `read 0x7ff600001000 16 --type u32` |
 | `get` | `ue_get` `{object:"<ref>", paths:["Health","Controller.PlayerState"]}` | `c.ue.get(ref, ['Health', 'Controller.PlayerState'])` | `get <ref> Health Controller.PlayerState` |
 | `sig-check` | `sig_check` `{pattern:"48 8b ?? 89", module:"game.exe"}` | `c.sig_check('48 8b ?? 89', module='game.exe')` | `sig-check 48 8b ?? 89 --module game.exe` |
-| `census-diff` | `ue_census_diff` `{cls:"Actor", limit:0}` | `c.ue.census_diff(cls='Actor', limit=0)` | `census-diff --cls Actor --limit 0` |
+| `census --diff` | `ue_census` `{cls:"Actor", diff:true, limit:0}` | `c.ue.census(cls='Actor', diff=True, limit=0)` | `census --diff --cls Actor --limit 0` |
 | `game-thread` | `ue_game_thread` `{action:"on"}` | `c.ue.game_thread('on')` | `game-thread on` |
-| `batch` | `batch` `{calls:[{verb:"read",args:{addr:"0x10"}},{verb:"base"}]}` | `s.batch_results([('read', {'addr': 0x10}), ('base', {})])` | `batch { read 0x10; base }` |
+| `batch` | `batch` `{calls:[{verb:"read",args:{addr:"0x10"}},{verb:"modules"}]}` | `s.batch_results([('read', {'addr': 0x10}), ('modules', {})])` | `batch { read 0x10; modules }` |
 | `watch` | none: `watch_start`, `watch_read`, `watch_stop` | `c.watch(2, ['0x...:4'])` (blocks) | `watch 2 0x...:4` |
 | host verb `world` | `host_world` | `c.host.world()` | `world` |
 

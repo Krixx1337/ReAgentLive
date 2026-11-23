@@ -52,11 +52,11 @@ class McpTests(unittest.TestCase):
             json.dump({'table': table, 'lines': {}, 'calls': [
                 [call('find', {'text': 'A'}), {'ok': True, 'result': {'rows': [OBJECT], 'total': 1, 'from': 0}}],
                 [call('describe', {'object': REF}), {'ok': True, 'result': OBJECT}],
-                [call('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'base'}]}), {'ok': True, 'result': {
+                [call('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'modules'}]}), {'ok': True, 'result': {
                     'all_ok': True, 'same_tick': True, 'first_tick': 4, 'last_tick': 4, 'spans_ticks': [], 'rows': [
                         {'command': 'describe', 'ok': True, 'result': OBJECT, 'tick': 4},
-                        {'command': 'base', 'ok': True, 'result': {'name': 'Game.exe', 'base': '0x140000000',
-                                                                   'size': 4096}, 'tick': 4}]}}],
+                        {'command': 'modules', 'ok': True, 'result': {'rows': [{'name': 'Game.exe', 'base': '0x140000000',
+                                                                               'size': 4096}]}, 'tick': 4}]}}],
                 [call('rows', {'object': REF}), {'ok': True, 'digest': {
                     'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
                     'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['--match', '--fields', '--limit'],
@@ -157,7 +157,7 @@ class McpTests(unittest.TestCase):
     def test_calls_return_the_console_result_and_errors_are_tool_errors(self):
         async def body(client):
             found = await client.call_tool('ue_find', {'text': 'A'})
-            batched = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'base'}]})
+            batched = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'modules'}]})
             refused = await client.call_tool('read', {'addr': '$1'})
             guessed = await client.call_tool('read', {'addr': 16, 'length': 4})
             nulls = await client.call_tool('ue_find', {'text': 'A', 'cls': None})
@@ -217,7 +217,7 @@ class McpTests(unittest.TestCase):
     def rebuilt_run(self, body, notices=None, mode='auto'):
         """`body` on a client whose console is rebuilt (one verb fewer) after its first list."""
         rebuilt = dict(self.table, table_hash='rebuilt')
-        rebuilt['rows'] = [row for row in self.table['rows'] if row['verb'] != 'region']
+        rebuilt['rows'] = [row for row in self.table['rows'] if row['verb'] != 'touches']
 
         async def wrapped(client):
             before = {tool.name for tool in (await client.list_tools()).tools}
@@ -234,14 +234,14 @@ class McpTests(unittest.TestCase):
                 described = await client.call_tool('ue_describe', {'object': REF})
                 with anyio.fail_after(5):
                     event = await events.__anext__()
-            gone = await client.call_tool('region', {'addr': '0x1000'})
+            gone = await client.call_tool('touches', {'addr': '0x1000', 'offsets': [8]})
             after = {tool.name for tool in (await client.list_tools(cache_mode='refresh')).tools}
             return described, gone, after, event
         before, described, gone, after, event = self.rebuilt_run(body)
         self.assertFalse(described.is_error, described.content[0].text)  # Ran through the new tools.
         self.assertEqual(described.structured_content['ref'], REF)
-        self.assertIn('region', before)
-        self.assertNotIn('region', after)
+        self.assertIn('touches', before)
+        self.assertNotIn('touches', after)
         self.assertTrue(gone.is_error)                           # An old tool for a verb the console lost.
         self.assertEqual(type(event).__name__, 'ToolsListChanged')   # On the client's listen stream.
 

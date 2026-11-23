@@ -38,7 +38,7 @@ def main():
         rate = tick_rate(s)
         time.sleep(1)
         out['idle_ticks_per_second'] = rate()
-        base = s.call('base')['base']
+        base = s.call('modules')['rows'][0]['base']
         rate = tick_rate(s)
         started = time.perf_counter()
         for _ in range(200):

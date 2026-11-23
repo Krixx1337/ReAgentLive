@@ -39,14 +39,16 @@ the MCP tools all read it, so none of them can disagree with the console.
   or result change, so a cached script or skill can tell it is stale. It
   describes the console build; agent compatibility is the layout hash's job
   ([protocol](../protocol.md#handshake)).
-- **One verb, one result type.** A mode is a verb of its own (`sig-check`,
-  `sig-bytes`, `watch-start`, `census-diff`, `pin-list`, `trial`). A flag may
-  add optional keys and never changes a key's type.
+- **One verb, one result type.** A flag may add optional keys and never
+  changes a key's type (`census --diff` adds `before`; `sig-check --file`
+  fills `file` and `lines` where one pattern fills `pattern` and `rows`). A
+  mode that would change a key's type stays a verb of its own (`sig-bytes`,
+  `watch-start`).
 - **A usage error names what is wrong and ends with the verb's usage
   line**: an unknown flag (with the flags the verb takes), a flag given
   twice, a missing value, too few or too many arguments, or a value its type
   refuses (an `int` that is not a number, a word not in an enum). A refused
-  limit states its number (`read-batch`'s total, `each`'s 64 bytes per
+  limit states its number (`batch`'s 64 commands, `each`'s 64 bytes per
   instance).
 - **Tokens.** Numbers are `0x` hex or decimal. A token in double quotes is
   taken exactly (spaces, `;` and `--` included; `\"` and `\\` escape) and is
@@ -74,8 +76,7 @@ string.
   checked before anything else, so a misspelt name is never read as a
   left-out argument.
 - **Values:** a string or number for one value; a list for a positional
-  that takes several (`"paths": ["A.B", "C"]`; `read-batch` spans as
-  `[["0x10", 8], ["0x20", 4]]`); bytes, a pattern or text as one string
+  that takes several (`"paths": ["A.B", "C"]`); bytes, a pattern or text as one string
   (`"data": "00 00 80 3f"`). A switch is `true` (or `false`, left out); a
   flag with an optional value is `true` or its value. A number is hex for
   an `addr` and seconds for a `dur` (`1.5` is `1500ms`).
@@ -92,7 +93,7 @@ string.
 ## Addresses and refs
 
 - **`$N`** is result N of the last command that lists refs, in a typed
-  line only. `find`, `census`, `census-diff` and `each` set the list to
+  line only. `find`, `census` and `each` set the list to
   their rows; `describe` sets it to its one object (`describe X; funcs $1`);
   `dump`, `get` and `entries` add the objects their pointer values name.
   The list persists for the agent instance in the
@@ -102,7 +103,7 @@ string.
   (`game.exe+0x1a2b3c`, name ignoring case; the offset must lie inside the
   image). Every address the console prints inside a loaded module also
   carries `module` and `rva`: `read` (and its 8-byte `ptr` view as
-  `ptr_module`, `ptr_rva`), `read-batch`, `write`, `search` hits, `func`
+  `ptr_module`, `ptr_rva`), `write`, `search` hits, `func`
   (exec entry; `implementation_module`, `implementation_rva` for an
   interface), and object pointer values in `dump` and `get` (`value_module`,
   `value_rva`; `get` also its field `address`). RVAs, not rebased
@@ -132,7 +133,7 @@ An agent pays per tool call and per byte of output; inside a command, each
 request costs up to a host tick. The console cuts both:
 
 - **Hold.** Commands that make several requests (`dump`, `snap`,
-  `get`, `batch`, typed calls, `fields`, `funcs`, `params`, `func`, `name`,
+  `get`, `batch`, typed calls, `fields`, `funcs`, `func`, `name`, `read`, `peek`,
   `census`, `each` without `--seconds`, any command that resolves a class
   name) mark their requests held. The agent then waits briefly for the next
   request and runs it in the same host tick, within the host's budgets
@@ -152,8 +153,8 @@ request costs up to a host tick. The console cuts both:
   (`index`, `command`) the commands during which the batch's tick moved,
   so a skewed batch names the command that broke it. Some commands always
   span ticks: `each`, `census`, `search`, `refs`, `xrefs` and `touches` scan
-  over several. For values that must line up, use `get`, `read-batch`, or a
-  batch without those.
+  over several. For values that must line up, use `get`, or a batch
+  without those.
 - **`get <object> <Field.Path>...`** resolves reflected names (or readable
   names; `Owner:Field` where ambiguous) through the field tables, descends
   into structs, follows object, class and weak object pointers, and returns

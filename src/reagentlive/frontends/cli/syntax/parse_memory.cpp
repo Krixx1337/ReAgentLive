@@ -185,30 +185,6 @@ Parsed Peek(const Args& args, const ParseContext& context) {
     return command;
 }
 
-Parsed ReadBatch(const Args& args, const ParseContext& context) {
-    Command command;
-    if (args.positionals.size() % 2) return Fail();
-    uint64_t total = 0;
-    for (size_t i = 0; i < args.positionals.size(); i += 2) {
-        ReadSpan read{};
-        if (!Address(args.At(i), context.refs, context.modules, read.address) || !Number(args.At(i + 1), read.length))
-            return Fail();
-        if (command.reads.size() == MaxBatchReads) return Fail("at most " + std::to_string(MaxBatchReads) + " ranges");
-        if (!read.address || !read.length) return Fail("range " + std::to_string(i / 2 + 1) + ": an address and a length above 0");
-        command.reads.push_back(read);
-        total += read.length;
-        // The response holds every range's bytes and one status per range.
-        const uint64_t budget = MaxRead - command.reads.size() * sizeof(reagentlive::Status);
-        if (total > budget)
-            return Fail("the ranges total " + std::to_string(total) + " bytes; " + std::to_string(command.reads.size()) +
-                " ranges take at most " + std::to_string(budget) + " (" + std::to_string(MaxRead) + " less " +
-                std::to_string(sizeof(reagentlive::Status)) + " per range)");
-        if (!ReadBatchSize(command.reads)) return Fail("range " + std::to_string(i / 2 + 1) + " wraps past the address space");
-    }
-    command.request.op = op::ReadBatch;
-    return command;
-}
-
 Parsed Write(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;
@@ -269,12 +245,6 @@ Parsed TrialClear(const Args& args, const ParseContext&) {
     command.request.op = op::Trial;
     command.request.flags = static_cast<uint32_t>(TrialAction::Clear);
     command.request.args[0] = id;
-    return command;
-}
-
-Parsed Base(const Args&, const ParseContext&) {
-    Command command;
-    command.kind = Kind::Base;
     return command;
 }
 

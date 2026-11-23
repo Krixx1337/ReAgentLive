@@ -9,7 +9,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Question | Verb |
 |---|---|
 | Which packs, which thread, which build, tick rate | `status` |
-| Exe and module ranges | `base`, `modules` |
+| Exe and module ranges | `modules` (exe first) |
 | What this session cost | `stats` (usage log: `docs/commands/console.md#usage-log-and-stats`) |
 | Many reads in one tick | `batch` (fewer round trips: `docs/commands/console.md#fewer-round-trips`) |
 
@@ -18,7 +18,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Question | Verb |
 |---|---|
 | Objects by name or class; one asset's subobjects | `find` (`--cls`, `--live`, `--outer`) |
-| Live instances per class; what spawned during an action | `census`, then `census-diff` |
+| Live instances per class; what spawned during an action | `census`, then `census --diff` |
 | Name, class and ref of an address | `describe` |
 | FName index to text / text to index | `name` / `name-find` |
 | An object's layout / its values | `fields` / `dump` (filter it) |
@@ -27,7 +27,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Elements of an array, set or map | `entries` |
 | A data table's rows | `rows` |
 | What a byte or enum field's number means | `enum` |
-| Functions on a class; one function's entry; its parameter block | `funcs`; `func`; `params` |
+| Functions on a class; one function's entry and parameter block | `funcs`; `func` |
 | Name an unreflected member for good | `label` |
 | Name a native function or global for good | static tool name + `export_names`; `peek --label`; then `labels-sign` |
 | Bring confirmed names to a patched build | `labels-port`; re-find only `missing` and `ambiguous` |
@@ -49,12 +49,12 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Question | Verb |
 |---|---|
 | Bytes, typed values, a pointer chain, a mixed layout | `read` (`--type`) |
-| Several ranges in one tick | `read-batch` |
+| Several ranges in one tick | `batch` of `read`s, or `get` |
 | What qwords hold (object, module, heap, value) | `peek` |
-| What memory an address is | `region` |
+| What memory an address is | `read`/`peek` (`region`) |
 | Where a value or string lives | `search` |
 | Which bytes of a range react to an action | `mem-snap`, then `mem-diff` |
-| A native object's class, bases, virtual table | `rtti`, `vtable` |
+| A native object's class, bases, virtual table | `vtable --rtti` |
 | Change memory once / every tick / once with an undo | `write` / `pin` / `trial` (approval); `pin-list`, `pin-clear`, `trial-list`, `trial-clear` |
 
 ## Over time (`docs/commands/memory.md#watch`, `docs/commands/capture.md`)
@@ -73,7 +73,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | What points here | `xrefs` |
 | Which functions use these member offsets | `touches` |
 | Where a string is | `search text` |
-| Is a signature unique and does it land there | `sig-check`, `sig-file`, `sig-bytes` |
+| Is a signature unique and does it land there | `sig-check` (`--file` for many), `sig-bytes` |
 | Names for a static tool | `export-labels`, `peek --label` |
 
 ## Refs and addresses

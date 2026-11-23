@@ -13,7 +13,7 @@ Decisions behind the "no" answers: [design](design.md).
 
 ### 6 · Bulk read paging
 
-`read-batch` covers same-tick sampling of related ranges. Revisit paging
+`batch` and `get` cover same-tick sampling of related ranges. Revisit paging
 when an investigation needs a larger read budget across ticks.
 
 ### 2 · Class-wide snapshot and compare
@@ -197,7 +197,7 @@ first engine whose groups fail where the skill found the offsets.
 object hold the given values, and which agree across all of them. Core,
 plain guarded reads, game-agnostic: a dumper's offset finder as one verb.
 Pull forward when finding a layout group by hand (the skill's new-game
-work) shows `read-batch` probing as the slow part, or with #33.
+work) shows batched read probing as the slow part, or with #33.
 
 ### 35 · A `tier` key in `status`
 
@@ -254,7 +254,7 @@ Also "what is the camera looking at": it only means something while a
 person points the camera, so it cannot be checked without one; `census`,
 `find --cls` and the host's roots are the way in.
 Also a census that marks which instances are new: it needs per-instance state
-in the agent for a question `census-diff` plus `find --cls` answers.
+in the agent for a question `census --diff` plus `find --cls` answers.
 Also showing a function's first instructions inside `touches`: `disasm` on
 the row is one more command, and the result stays small.
 Also saved, named layouts or a type system: `label` names members one by

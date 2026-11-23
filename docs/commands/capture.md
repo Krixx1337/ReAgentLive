@@ -6,7 +6,7 @@
 the command by the question: one object's fields across an action
 (`snap`, then `dump --changed`), named fields over time (`record`), raw
 bytes every tick (`watch`), or every instance of a class (`each`,
-`census-diff`). These read and change nothing, except `watch --then` and
+`census --diff`). These read and change nothing, except `watch --then` and
 `each` with a function, which call into the game.
 
 Which command for which question about change:
@@ -17,7 +17,7 @@ Which command for which question about change:
 | How do these named fields move over time? | `record` |
 | What do these raw bytes do every tick? | [`watch`](memory.md#watch) |
 | How does one field differ across all instances, or change in any of them? | [`each`](unreal.md#each), `each --seconds` |
-| Which classes gained or lost instances? | [`census-diff`](unreal.md#census-changes) |
+| Which classes gained or lost instances? | [`census --diff`](unreal.md#census-changes) |
 
 Use `snap $N` on a live instance, perform an action, then run `dump $N
 --changed`. It compares reflected fields and prints the changed ones with

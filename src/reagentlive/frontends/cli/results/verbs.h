@@ -56,15 +56,15 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Read>, parse::Read,
             "--type <type> adds values (one per element); --type cstr|wstr adds text, length and terminated (default "
             "256 bytes); --type \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read "
-            "adds views. <addr>->0x10->0x8 follows a pointer chain and adds chain."},
-        {"read-batch", "core", "read up to 8 ranges in one host tick",
-            {{"spans", "addr len", Some, "span", "an address and a length, per range"}}, {}, Of<shape::ReadBatch>, parse::ReadBatch},
+            "adds views. <addr>->0x10->0x8 follows a pointer chain and adds chain. region is the memory the address "
+            "lies in (kind: code, rodata, data, mapped, private, reserved or free)."},
         {"peek", "core", "what 1..64 qwords hold (default 8): object, module, heap or value",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many qwords", "8"}},
             {{"--label", Takes::Maybe, "path", "file", "append this one qword as a confirmed global to a labels file (default: the host's names file, else the console's)"},
              {"--name", Takes::One, "str", "name", "the label's name (default FName_<hint>)"}},
             Of<shape::Peek>, parse::Peek,
-            "object needs a pack; value rows carry floats, a double and name_hint. Accepts a pointer chain."},
+            "object needs a pack; value rows carry floats, a double and name_hint. Accepts a pointer chain. region is "
+            "the memory the address lies in, as read gives it."},
         {"write", "core", "write up to 4096 bytes",
             {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
             {{"--expect", Takes::Some, "bytes", "hex bytes", "write only while memory still holds these bytes"}},
@@ -82,7 +82,6 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"trial-list", "core", "trials with their state", {}, {}, Of<shape::TrialList>, parse::TrialList},
         {"trial-clear", "core", "end one trial or all, restoring active ones",
             {{"id", "id", Optional, "int", "its id (default: all)"}}, {}, Of<shape::TrialClear>, parse::TrialClear, {}, {}, true},
-        {"base", "core", "exe base and size", {}, {}, Of<shape::ModuleRow>, parse::Base},
         {"modules", "core", "loaded modules, exe first (also refreshes the cached list)",
             {}, {}, Of<shape::Modules>, parse::Modules},
         {"search", "core", "addresses holding a value in resident, cacheable memory",
@@ -145,17 +144,17 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"watch-stop", "core", "end the capture and return it: its first sample, each change and its last", {},
             {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchStop,
             "As watch-read."},
-        {"sig-check", "core", "is a byte signature unique in a module, and does it land where expected",
-            {{"pattern", "pattern", Some, "pattern", "the signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89"}},
-            {{"--module", Takes::One, "str", "name", "default: the exe"},
+        {"sig-check", "core", "is a byte signature unique in a module, and does it land where expected; --file checks a file of them",
+            {{"pattern", "pattern", Any, "pattern", "the signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89"}},
+            {{"--file", Takes::One, "path", "patterns file", "a JSON-lines file, one signature per line, in place of pattern"},
+             {"--module", Takes::One, "str", "name", "default: the exe"},
              {"--expect", Takes::One, "addr", "addr", "where it should land"},
              {"--offset", Takes::One, "int", "N", "the match starts this far past --expect"},
              {"--resolve", Takes::One, "str", "next,field[,size]", "a reference signature; --expect is then its target"}},
-            Of<shape::SigCheck>, parse::SigCheck,
+            Of<shape::SigCheckResult>, parse::SigCheck,
             "pattern: \"48 8b ?? 89\" or \"0x48, 0x8B, -1, 0x89\", up to 96 bytes. Reports mismatches, diverges_at "
-            "and warnings for unmasked addresses."},
-        {"sig-file", "core", "check a file of signatures (one JSON line each); names the first that holds",
-            {{"file", "patterns file", One, "path", "a JSON-lines file, one signature per line"}}, {}, Of<shape::SigFile>, parse::SigFile},
+            "and warnings for unmasked addresses. --file takes no other flag and answers file, winner (the first line "
+            "that holds) and a row per line."},
         {"sig-bytes", "core", "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}}, {},
             Of<shape::SigBytes>, parse::SigBytes},
@@ -216,18 +215,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many slots at most"}},
             {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},
              {"--table", Takes::Nothing, "bool", "", "addr is the table itself"},
-             {"--resolve", Takes::Nothing, "bool", "", "where jump stubs lead"}},
-            Of<shape::Vtable>, parse::Vtable, "Accepts a pointer chain."},
-        {"rtti", "core", "an object's class and bases from its run-time type information (MSVC images)",
-            {{"addr", "addr", One, "addr", at}},
-            {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},
-             {"--table", Takes::Nothing, "bool", "", "addr is the table itself"}},
-            Of<shape::Rtti>, parse::Rtti,
-            "Read from the locator in the slot before the virtual table. complete is the whole object when addr is "
-            "one of its parts. Refused when that slot holds no locator: no type information, or not an MSVC image "
-            "(engines often build without it). Accepts a pointer chain."},
-        {"region", "core", "what the memory at an address is: kind, base, size, protection",
-            {{"addr", "addr", One, "addr", at}}, {}, Of<shape::Region>, parse::Region, "Accepts a pointer chain."},
+             {"--resolve", Takes::Nothing, "bool", "", "where jump stubs lead"},
+             {"--rtti", Takes::Nothing, "bool", "", "also the class and bases its run-time type information names (MSVC images)"}},
+            Of<shape::Vtable>, parse::Vtable, "Accepts a pointer chain. --rtti adds rtti, read from the locator in the "
+            "slot before the table; complete is the whole object when addr is one of its parts. Where that slot holds "
+            "no locator (no type information, or not an MSVC image; engines often build without it) it adds "
+            "rtti_error instead."},
     };
     return verbs;
 }
@@ -260,7 +253,7 @@ inline const std::vector<std::string>& GeneralNotes() {
         "help <verb> shows a verb's flags, its result's keys and notes; help --json the whole table.",
         "Numbers: 0x hex or decimal. <addr> accepts $N, $N+offset, base+offset and <module>+offset "
         "(game.exe+0x1a2b3c, inside the image). Addresses inside a module carry module and rva.",
-        "<addr>->0x10->0x8 is a pointer chain in read, peek, vtable, disasm and region: each ->off but the last reads a "
+        "<addr>->0x10->0x8 is a pointer chain in read, peek, vtable and disasm: each ->off but the last reads a "
         "pointer, so one ->off alone is refused (<addr>->0->0x30 reads the pointer at <addr>).",
         "A token in double quotes is taken exactly. A key that does not apply is omitted from a result.",
         "Any line ending in --timing adds trips, wait_ms and total_ms; --meta prints struct values with their layout.",

@@ -71,6 +71,8 @@ using Kind = Type::Kind;
 template<class T> struct Codec;
 template<class T> struct IsOptional : std::false_type {};
 template<class T> struct IsOptional<std::optional<T>> : std::true_type {};
+template<class T> struct Unwrapped { using type = T; };
+template<class T> struct Unwrapped<std::optional<T>> { using type = T; };
 
 inline Type Scalar(Kind kind) { Type type; type.kind = kind; return type; }
 
@@ -89,12 +91,17 @@ struct Describer {
         if (!values.empty()) SetEnum(field.type, values);
         type.fields.push_back(std::move(field));
     }
-    // A nested struct's fields as this struct's own, their keys prefixed.
+    // A nested struct's fields as this struct's own, their keys prefixed. An
+    // optional struct's fields are all optional: present together or not at all.
     template<class T, class M> void flat(std::string_view keyPrefix, M T::*) {
+        using Inner = typename Unwrapped<M>::type;
         Describer inner;
         inner.prefix = prefix + std::string(keyPrefix);
-        M::Describe(inner);
-        for (auto& field : inner.type.fields) type.fields.push_back(std::move(field));
+        Inner::Describe(inner);
+        for (auto& field : inner.type.fields) {
+            if (IsOptional<M>::value) field.optional = true;
+            type.fields.push_back(std::move(field));
+        }
     }
 };
 
@@ -106,8 +113,15 @@ template<class T> struct Writer {
         Codec<M>::Put(out, prefix + std::string(key), object.*member);
     }
     template<class M> void flat(std::string_view keyPrefix, M T::* member) {
-        Writer<M> inner{object.*member, out, prefix + std::string(keyPrefix)};
-        M::Describe(inner);
+        if constexpr (IsOptional<M>::value) {
+            if (!(object.*member)) return;
+            using Inner = typename M::value_type;
+            Writer<Inner> inner{*(object.*member), out, prefix + std::string(keyPrefix)};
+            Inner::Describe(inner);
+        } else {
+            Writer<M> inner{object.*member, out, prefix + std::string(keyPrefix)};
+            M::Describe(inner);
+        }
     }
 };
 

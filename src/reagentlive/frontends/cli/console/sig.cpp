@@ -1,4 +1,4 @@
-// reagentlive CLI console: sig-check, sig-file and sig-bytes, byte signatures against the live image.
+// reagentlive CLI console: sig-check (one signature or a file of them) and sig-bytes, byte signatures against the live image.
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -112,7 +112,7 @@ void RunSigFile(Session& session, const Command& command, std::string_view jsonC
         row.line = number;
         const auto failed = [&](std::string message) {
             row.error = std::move(message);
-            results.rows.push_back(std::move(row));
+            results.lines.push_back(std::move(row));
             outcomes.emplace_back();
         };
         auto entry = ParseSigLine(trimmed);
@@ -128,13 +128,13 @@ void RunSigFile(Session& session, const Command& command, std::string_view jsonC
         if (auto decoded = DecodeWarnings(session, check, *result); !decoded) { failed(decoded.error()); continue; }
         row.ok = true;
         row.result = MakeSigCheck(check, *result, chosen, LoadedModules(session));
-        results.rows.push_back(std::move(row));
+        results.lines.push_back(std::move(row));
         outcomes.push_back(std::move(*result));
     }
-    if (results.rows.empty()) return JsonError(session, jsonCommand, "file", "no patterns in " + command.file);
-    if (const auto winner = sig::Winner(outcomes)) results.winner = results.rows[*winner].line;
+    if (results.lines.empty()) return JsonError(session, jsonCommand, "file", "no patterns in " + command.file);
+    if (const auto winner = sig::Winner(outcomes)) results.winner = results.lines[*winner].line;
     results.searches = checker.Searches();
-    Emit(session, jsonCommand, std::move(results));
+    Emit(session, jsonCommand, shape::SigCheckResult{std::nullopt, std::move(results)});
 }
 
 void RunSigBytes(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -167,6 +167,6 @@ void RunSig(Session& session, const Command& command, std::string_view jsonComma
     if (!result) return JsonError(session, jsonCommand, "validation", result.error());
     if (auto decoded = DecodeWarnings(session, check, *result); !decoded)
         return JsonError(session, jsonCommand, "read", decoded.error());
-    Emit(session, jsonCommand, MakeSigCheck(check, *result, chosen, LoadedModules(session)));
+    Emit(session, jsonCommand, shape::SigCheckResult{MakeSigCheck(check, *result, chosen, LoadedModules(session)), std::nullopt});
 }
 }

@@ -151,6 +151,20 @@ struct ReadViews {
         v("f64", &ReadViews::f64);
     }
 };
+// read and peek: the memory an address lies in.
+struct Region {
+    static constexpr std::string_view TypeName = "Region";
+    std::string kind;
+    Addr base;
+    HexNum size;
+    std::string protect;
+    template<class V> static void Describe(V& v) {
+        v("kind", &Region::kind, "code|rodata|data|mapped|private|reserved|free");
+        v("base", &Region::base);
+        v("size", &Region::size);
+        v("protect", &Region::protect);
+    }
+};
 struct Read {
     Addr address;
     Location where;
@@ -162,6 +176,7 @@ struct Read {
     std::optional<std::string> text;            // --type cstr|wstr.
     std::optional<uint64_t> length;
     std::optional<bool> terminated;
+    std::optional<Region> region;
     std::optional<Chain> chain;
     template<class V> static void Describe(V& v) {
         v("address", &Read::address);
@@ -174,39 +189,8 @@ struct Read {
         v("text", &Read::text);
         v("length", &Read::length);
         v("terminated", &Read::terminated);
+        v("region", &Read::region);
         v("chain", &Read::chain);
-    }
-};
-struct ReadError {
-    uint32_t status = 0;
-    std::string message;
-    template<class V> static void Describe(V& v) {
-        v("status", &ReadError::status);
-        v("message", &ReadError::message);
-    }
-};
-struct ReadBatchRow {
-    Addr address;
-    Location where;
-    uint64_t size = 0;
-    bool ok = false;
-    std::optional<HexBytes> hex;
-    std::optional<ReadError> error;
-    template<class V> static void Describe(V& v) {
-        v("address", &ReadBatchRow::address);
-        v.flat("", &ReadBatchRow::where);
-        v("size", &ReadBatchRow::size);
-        v("ok", &ReadBatchRow::ok);
-        v("hex", &ReadBatchRow::hex);
-        v("error", &ReadBatchRow::error);
-    }
-};
-struct ReadBatch {
-    uint64_t tick = 0;
-    std::vector<ReadBatchRow> rows;
-    template<class V> static void Describe(V& v) {
-        v("tick", &ReadBatch::tick);
-        v("rows", &ReadBatch::rows);
     }
 };
 struct Write {
@@ -554,10 +538,12 @@ struct Peek {
     Location where;
     std::vector<PeekRow> rows;
     std::optional<Label> labelled;
+    std::optional<Region> region;
     std::optional<Chain> chain;
     template<class V> static void Describe(V& v) {
         v("address", &Peek::address);
         v.flat("", &Peek::where);
+        v("region", &Peek::region);
         v("rows", &Peek::rows);
         v("labelled", &Peek::labelled);
         v("chain", &Peek::chain);

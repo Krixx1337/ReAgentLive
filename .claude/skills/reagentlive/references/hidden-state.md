@@ -7,10 +7,10 @@ memory (`docs/commands/memory.md`).
 
 No reflection, no engine pack, or a native member behind a reflected one:
 
-1. **What is it?** `region <addr>`, then `peek <addr>`: a `module` value in
+1. **What is it?** `peek <addr>` (its `region` says what memory it is): a `module` value in
    slot 0 is usually the vtable.
 2. **Its class:** `vtable <addr>` (slot targets carry `module` and `rva`
-   for the static tool); `rtti <addr>` where the image carries MSVC type
+   for the static tool); `vtable <addr> --rtti` where the image carries MSVC type
    information (engine game code often does not). A secondary base or
    interface part: `--offset N` (`func` on an interface reports it).
 3. **Read through it:** `read <addr>->0x30->0x10 8 --type ptr`; the result's
@@ -55,11 +55,11 @@ No reflection, no engine pack, or a native member behind a reflected one:
 
 - For an instanced struct array, resolve the script struct by name and
   match its type pointer. Confirm the header, the matching entry and the
-  pointed-to value together in one `batch` or `read-batch` before relying
+  pointed-to value together in one `batch` before relying
   on a saved data address.
 - Containers reflection does not describe (native-only sets and maps,
   table storage): read the layout and stride from `fields` or a static
-  tool, `read-batch` the allocation, then `name` the FName keys.
+  tool, `read` the allocation (one `batch` for several ranges), then `name` the FName keys.
 
 ## Narrowing by change
 

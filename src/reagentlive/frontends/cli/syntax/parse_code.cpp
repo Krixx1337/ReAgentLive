@@ -1,4 +1,4 @@
-// reagentlive CLI: parsing the native code verbs (disasm, xrefs, touches, region, vtable, sig-*).
+// reagentlive CLI: parsing the native code verbs (disasm, xrefs, touches, vtable, sig-*).
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -71,17 +71,7 @@ Parsed Touches(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// region <addr>: one VirtualQuery in the target, named by the console.
-Parsed Region(const Args& args, const ParseContext& context) {
-    Command command;
-    std::string why;
-    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
-    command.kind = Kind::Region;
-    command.request.op = op::Region;
-    return command;
-}
-
-// vtable <addr> [count] [--offset N] [--table] [--resolve]: slots until the first that is not code.
+// vtable <addr> [count] [--offset N] [--table] [--resolve] [--rtti]: slots until the first that is not code.
 Parsed Vtable(const Args& args, const ParseContext& context) {
     Command command;
     uint64_t count = 0;
@@ -91,6 +81,7 @@ Parsed Vtable(const Args& args, const ParseContext& context) {
         return Fail("count must be 1.." + std::to_string(MaxRead / 8));
     command.table = args.Has("--table");
     command.bodies = args.Has("--resolve");
+    command.rtti = args.Has("--rtti");
     if (args.Has("--offset")) {
         if (!Number(args.Value("--offset"), command.offset) || command.offset > 0x100000) return Fail("--offset is 0..0x100000");
         if (command.table) return Fail("--offset reads a table pointer; --table says there is none");
@@ -101,27 +92,22 @@ Parsed Vtable(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// rtti <addr> [--offset N | --table]: the class an object's type information names.
-Parsed Rtti(const Args& args, const ParseContext& context) {
-    Command command;
-    std::string why;
-    if (!ChainAddress(args.At(0), context.refs, context.modules, command.request.address, command.chain, &why)) return Fail(why);
-    command.table = args.Has("--table");
-    if (args.Has("--offset")) {
-        if (!Number(args.Value("--offset"), command.offset) || command.offset > 0x100000) return Fail("--offset is 0..0x100000");
-        if (command.table) return Fail("--offset reads a table pointer; --table says there is none");
-    }
-    command.kind = Kind::Rtti;
-    command.request.op = op::ReadBatch;
-    return command;
-}
-
 // sig-check <pattern> [--module M] [--expect <addr> [--offset N | --resolve next,field[,size]]]
+// sig-check --file <patterns>: one JSON line per signature.
 Parsed SigCheck(const Args& args, const ParseContext& context) {
     Command command;
     command.kind = Kind::Sig;
     command.sigMode = Command::SigMode::Check;
     command.request.op = op::Search;
+    if (args.Has("--file")) {
+        if (!args.positionals.empty() || args.Has("--module") || args.Has("--expect") || args.Has("--offset") ||
+            args.Has("--resolve"))
+            return Fail("--file takes no pattern or other flag: each line names its own");
+        command.sigMode = Command::SigMode::File;
+        command.file = args.Value("--file");
+        return command;
+    }
+    if (args.positionals.empty()) return Fail("a pattern, or --file");
     auto pattern = sig::ParsePattern(args.From(0));
     if (!pattern) return Fail(pattern.error());
     command.pattern = std::move(*pattern);
@@ -143,16 +129,6 @@ Parsed SigCheck(const Args& args, const ParseContext& context) {
         if (!resolve) return Fail(resolve.error());
         command.resolve = *resolve;
     }
-    return command;
-}
-
-// sig-file <patterns>: one JSON line per signature.
-Parsed SigFile(const Args& args, const ParseContext&) {
-    Command command;
-    command.kind = Kind::Sig;
-    command.sigMode = Command::SigMode::File;
-    command.request.op = op::Search;
-    command.file = args.At(0);
     return command;
 }
 

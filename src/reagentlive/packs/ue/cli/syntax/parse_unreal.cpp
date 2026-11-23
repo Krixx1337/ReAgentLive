@@ -80,11 +80,11 @@ std::string Outer(const Args& args, std::span<const Ref> refs, Command& command)
     return {};
 }
 
-Parsed CensusOptions(const Args& args, std::span<const Ref> refs, bool changed) {
+Parsed CensusOptions(const Args& args, std::span<const Ref> refs) {
     Command command;
     Request& request = command.request;
     command.limit = DefaultCensusLimit;
-    command.changed = changed;
+    command.changed = args.Has("--diff");
     command.match = args.Value("--match");
     if (args.Has("--cls") && (!ClassName(args.Value("--cls")) || !ClassFilter(args, request)))
         return Fail("--cls is one class name");
@@ -242,10 +242,6 @@ Parsed GameThread(const Args& args, const ParseContext&) {
     else if (action == "off") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::Off);
     else return Fail("game-thread takes on, off or status");
     return command;
-}
-
-Parsed Params(const Args& args, const ParseContext& context) {
-    return FunctionTarget(args, context, ue::op::Parameters, Kind::Remote);
 }
 
 Parsed Name(const Args& args, const ParseContext&) {
@@ -530,10 +526,8 @@ Parsed CallsStop(const Args& args, const ParseContext&) {
     return command;
 }
 
-Parsed Census(const Args& args, const ParseContext& context) { return CensusOptions(args, context.refs, false); }
-
-// census-diff: only the classes whose count differs from the last census of that --cls.
-Parsed CensusDiff(const Args& args, const ParseContext& context) { return CensusOptions(args, context.refs, true); }
+// census [--diff]: with --diff only the classes whose count differs from the last census of that --cls.
+Parsed Census(const Args& args, const ParseContext& context) { return CensusOptions(args, context.refs); }
 
 // refs <name|#index>: functions whose bytecode names it. Text must match a
 // pooled name exactly; the console resolves it.

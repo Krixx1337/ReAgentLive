@@ -476,6 +476,7 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
     shape::Peek result;
     result.address = start;
     result.where = Locate(start, modules);
+    result.region = RegionOf(session, start);
     for (const auto& value : values) result.rows.push_back(MakePeekRow(value, modules));
     if (command.label) {
         const std::string path = !command.file.empty() ? command.file

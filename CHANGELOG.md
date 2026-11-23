@@ -27,6 +27,15 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **Fewer verbs, same answers:** `params` is gone, `func` returns the
+  signature too (`params`, `block_size`; `params_error` off the game
+  thread). `rtti` is `vtable --rtti`, `census-diff` is `census --diff` (rows
+  carry `count` and `before`, the result `before: {classes, instances}`),
+  `sig-file <f>` is `sig-check --file <f>` (rows are `lines`). `base` is gone:
+  `modules` lists the exe first. `region` is gone: `read` and `peek` add
+  `region: {kind, base, size, protect}`. `read-batch` is gone: use `batch`
+  or `get`. Regenerate Python modules and restart MCP servers.
+
 - **The MCP adapter needs the MCP Python SDK 2:** run
   `python -m pip install --upgrade "mcp>=2"` in the Python your MCP config
   starts (SDK 1 stops it with that line). Clients on the 2026-07-28

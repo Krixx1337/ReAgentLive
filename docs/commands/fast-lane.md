@@ -311,13 +311,13 @@ the static tool's job, not a command.
 
 ## Signatures
 
-Console only, on `read`, `search` and `read-batch`. The agent or user makes
+Console only, on the `read`, `search` and `read-batch` ops. The agent or user makes
 a byte signature; ReAgentLive checks it against the live image, which is what a
 host's scanner reads, and says what to change when it fails.
 
 ```text
 sig-check <pattern> [--module M] [--expect <addr>] [--offset N | --resolve next,field[,size]]
-sig-file <patterns>
+sig-check --file <patterns>
 sig-bytes <addr> [len]
 ```
 
@@ -374,12 +374,13 @@ Feedback, each pointing at the next correction:
   end to end. The field may lie in the 64 bytes read past the pattern.
   `--offset` does not combine with it.
 
-`sig-file <patterns>` checks a JSON-lines file, one signature per
-line: `pattern` (text, or an array of bytes with `-1`), optional `module`,
+`sig-check --file <patterns>` checks a JSON-lines file, one signature per
+line (it takes no pattern or other flag): `pattern` (text, or an array of bytes with `-1`), optional `module`,
 `rva` (number or `0x` string: the expect inside that module), `offset`,
 `resolve` (`"7,3"` or `[7, 3, 4]`); blank and `#` lines are skipped. Each
-line gets its own result or error; anchor searches are shared between lines
-with the same module and anchor. `winner` is the line number of the first
+line gets its own row in `lines` (`line`, `ok`, then `result` or `error`);
+anchor searches are shared between lines with the same module and anchor
+(`searches` counts them). `winner` is the line number of the first
 that is unique and, when it has an `rva`, resolves. So the agent tries
 several candidates in one call, and a host checks every signature it ships.
 
@@ -394,4 +395,4 @@ end the pattern on a boundary. `func` gives a reflected function's native
 entry to start from.
 
 Python: `s.sig_check(pattern, module=None, expect=None, offset=0,
-resolve=None)`, `s.sig_file(path)`, `s.sig_bytes(address, length=64)`.
+resolve=None)`, `s.sig_check(file=path)`, `s.sig_bytes(address, length=64)`.

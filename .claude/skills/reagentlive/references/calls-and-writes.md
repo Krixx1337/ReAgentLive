@@ -11,7 +11,7 @@ named calls (`docs/commands/unreal.md#named-calls`).
 - Approval: pure getters through `call-pure` need none (say what you
   call), except the first call on a new host or in a new game, the
   known-answer call (SKILL.md rules).
-- Find the function with `funcs`, copy exact input names from `params`,
+- Find the function with `funcs`, copy exact input names from `func`'s `params`,
   then `call --dry` to see the block before anything runs.
 - Getters: `call-pure` first. A refusal means the function is not const or
   pure, or keeps an owned result: it needs approval and `call`.

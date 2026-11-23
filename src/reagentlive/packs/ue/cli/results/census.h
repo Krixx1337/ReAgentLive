@@ -1,5 +1,5 @@
 // reagentlive CLI: census results, their name filter and the comparison with the
-// last census (`census-diff`). Built from client results only (no I/O),
+// last census (`census --diff`). Built from client results only (no I/O),
 // so tests pin the comparison and the result keys.
 #pragma once
 #include <algorithm>
@@ -27,8 +27,8 @@ struct CensusClass {
 };
 // A census's rows (all of them, before --match and --limit), kept for the
 // console run and in the cache file: the last one is the baseline for
-// census-diff and the rows `--start` pages through; the one before it is what
-// a later page of census-diff compares with. Tagged with the --cls filter it
+// census --diff and the rows `--start` pages through; the one before it is what
+// a later page of census --diff compares with. Tagged with the --cls filter it
 // was taken with (empty: the whole table).
 struct CensusBaseline {
     std::string filter;
@@ -107,23 +107,36 @@ inline std::pair<size_t, size_t> CensusSlice(size_t rows, CensusPage page) {
 }
 
 namespace shape {
+// A class's row: its live count; with --diff also the count before (count is after).
 struct CensusRow {
     std::string className;
     RefId ref;
     uint32_t count = 0;
+    std::optional<uint32_t> before;
     std::vector<RefId> samples;
     template<class V> static void Describe(V& v) {
         v("class", &CensusRow::className);
         v("ref", &CensusRow::ref);
         v("count", &CensusRow::count);
+        v("before", &CensusRow::before);
         v("samples", &CensusRow::samples);
     }
 };
+struct CensusBefore {
+    uint64_t classes = 0, instances = 0;
+    template<class V> static void Describe(V& v) {
+        v("classes", &CensusBefore::classes);
+        v("instances", &CensusBefore::instances);
+    }
+};
 // census: `classes` and `instances` cover the whole census; `total` counts
-// the rows left after --match, of which a page shows some.
+// the rows left after --match, of which a page shows some. --diff: the rows
+// are the classes whose count differs from the census before, and `before`
+// gives that census's counts.
 struct Census {
     std::optional<std::string> filter;
     uint64_t classes = 0, instances = 0;
+    std::optional<CensusBefore> before;
     int64_t ms = 0;
     std::vector<CensusRow> rows;
     uint64_t total = 0, from = 0;
@@ -133,54 +146,13 @@ struct Census {
         v("filter", &Census::filter);
         v("classes", &Census::classes);
         v("instances", &Census::instances);
+        v("before", &Census::before);
         v("ms", &Census::ms);
         v("rows", &Census::rows);
         v("total", &Census::total);
         v("from", &Census::from);
         v("next_cursor", &Census::nextCursor);
         v("hint", &Census::hint);
-    }
-};
-struct BeforeAfter {
-    uint64_t before = 0, after = 0;
-    template<class V> static void Describe(V& v) {
-        v("before", &BeforeAfter::before);
-        v("after", &BeforeAfter::after);
-    }
-};
-struct CensusDiffRow {
-    std::string className;
-    RefId ref;
-    uint32_t before = 0, after = 0;
-    std::vector<RefId> samples;
-    template<class V> static void Describe(V& v) {
-        v("class", &CensusDiffRow::className);
-        v("ref", &CensusDiffRow::ref);
-        v("before", &CensusDiffRow::before);
-        v("after", &CensusDiffRow::after);
-        v("samples", &CensusDiffRow::samples);
-    }
-};
-// census-diff: the classes whose count differs from the census before;
-// `classes` and `instances` give both whole censuses.
-struct CensusDiff {
-    std::optional<std::string> filter;
-    BeforeAfter classes, instances;
-    int64_t ms = 0;
-    std::vector<CensusDiffRow> rows;
-    uint64_t total = 0, from = 0;
-    std::optional<uint64_t> nextCursor;
-    std::optional<std::string> hint;
-    template<class V> static void Describe(V& v) {
-        v("filter", &CensusDiff::filter);
-        v("classes", &CensusDiff::classes);
-        v("instances", &CensusDiff::instances);
-        v("ms", &CensusDiff::ms);
-        v("rows", &CensusDiff::rows);
-        v("total", &CensusDiff::total);
-        v("from", &CensusDiff::from);
-        v("next_cursor", &CensusDiff::nextCursor);
-        v("hint", &CensusDiff::hint);
     }
 };
 }
@@ -214,39 +186,40 @@ inline shape::Census MakeCensus(std::string_view filter, const ue::CensusResult&
     out.ms = ms;
     const auto [first, shown] = CensusSlice(matched.size(), page);
     for (const auto& row : matched.subspan(first, shown))
-        out.rows.push_back({row.type.name, FullRef(row.type.ref), row.count, census_detail::Samples(row.samples)});
+        out.rows.push_back({row.type.name, FullRef(row.type.ref), row.count, std::nullopt, census_detail::Samples(row.samples)});
     census_detail::Paging(out, matched.size(), first, shown);
     return out;
 }
 
-// census-diff: `changes` after --match, of which `page` shows some.
-inline shape::CensusDiff MakeCensusDiff(const CensusBaseline& before, const ue::CensusResult& after,
-                                        std::span<const CensusChange> changes, CensusPage page, int64_t ms) {
-    shape::CensusDiff out;
+// census --diff: `changes` after --match, of which `page` shows some.
+inline shape::Census MakeCensusDiff(const CensusBaseline& before, const ue::CensusResult& after,
+                                    std::span<const CensusChange> changes, CensusPage page, int64_t ms) {
+    shape::Census out;
     if (!before.filter.empty()) out.filter = before.filter;
     uint64_t instances = 0;
     for (const auto& row : before.rows) instances += row.count;
-    out.classes = {before.rows.size(), after.rows.size()};
-    out.instances = {instances, after.instances};
+    out.classes = after.rows.size();
+    out.instances = after.instances;
+    out.before = shape::CensusBefore{before.rows.size(), instances};
     out.ms = ms;
     const auto [first, shown] = CensusSlice(changes.size(), page);
     for (const auto& change : changes.subspan(first, shown))
-        out.rows.push_back({change.name, FullRef(change.ref), change.before, change.after,
+        out.rows.push_back({change.name, FullRef(change.ref), change.after, change.before,
             census_detail::Samples(change.samples)});
     census_detail::Paging(out, changes.size(), first, shown);
     return out;
 }
 
 // Why a later page (`--start`) of a census under `filter` has nothing stored
-// to page through; empty when it has. census-diff also needs the census before it.
+// to page through; empty when it has. census --diff also needs the census before it.
 inline std::string CensusPageProblem(const std::optional<CensusBaseline>& last, const std::optional<CensusBaseline>& before,
                                      std::string_view filter, bool changed) {
     if (last && last->filter == filter && (!changed || (before && before->filter == filter))) return {};
-    return std::string("no stored census to page: run ") + (changed ? "census-diff" : "census") +
+    return std::string("no stored census to page: run census") + (changed ? " --diff" : "") +
         (filter.empty() ? std::string() : " --cls " + std::string(filter)) + " without --start first";
 }
 
-// Why `census-diff` under `filter` has nothing to compare with; empty when it has.
+// Why `census --diff` under `filter` has nothing to compare with; empty when it has.
 inline std::string CensusBaselineProblem(const std::optional<CensusBaseline>& baseline, std::string_view filter) {
     const auto command = [](std::string_view f) { return "census" + (f.empty() ? std::string() : " --cls " + std::string(f)); };
     if (!baseline) return "no census baseline for this agent: run " + command(filter) + " first";

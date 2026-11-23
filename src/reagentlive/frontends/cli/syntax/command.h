@@ -16,9 +16,9 @@
 #include "reagentlive/frontends/cli/syntax/pattern.h"
 
 namespace reagentlive::cli {
-enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Base, Help, Status, Quit, Pin, Watch, Batch, Get,
-    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Region, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
-    Rtti, MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread };
+enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
+    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
+    MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -52,7 +52,7 @@ struct Command {
     std::string then;           // watch --then: a call line run right after the start.
     // dump filters: rows whose name contains `match` (case-insensitive), with
     // non-zero bytes, or changed against the snapshot (`file`, else the
-    // session's baseline). census: `match` filters class names; census-diff
+    // session's baseline). census: `match` filters class names; census --diff
     // sets `changed`, comparing with the census baseline. batch: `fields` holds the command
     // lines. get: `fields` holds the paths.
     std::string match;
@@ -67,10 +67,10 @@ struct Command {
     // optional native object base inside it whose vtable is guarded too.
     Ref owner{};
     uint64_t object = 0;
-    // sig-check, sig-file, sig-bytes: the mode; sig-check's pattern, where it
-    // should land (with --resolve: its target) and how far past that the
-    // match lies; `target` names the module (empty: the exe). sig-file:
-    // `file`. sig-bytes: request address and length.
+    // sig-check, sig-bytes: the mode; sig-check's pattern, where it should
+    // land (with --resolve: its target) and how far past that the match lies;
+    // `target` names the module (empty: the exe). sig-check --file: `file`.
+    // sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is --json, `hashOnly` is --hash.
     // stats: `all` is --all. watch, watch-read, watch-stop: `all` is --all (every sample).
     bool hashOnly = false;
@@ -97,8 +97,9 @@ struct Command {
     // address (<addr>->0x10->0x8); the console resolves it before running.
     std::vector<uint64_t> chain;
     // vtable: `offset` is where the table pointer sits in the object;
-    // `table`: the address is the table itself; `bodies`: resolve jump stubs.
-    bool table = false, bodies = false;
+    // `table`: the address is the table itself; `bodies`: resolve jump stubs;
+    // `rtti`: also the run-time type information's class.
+    bool table = false, bodies = false, rtti = false;
     // touches: struct offsets to find and the bytes scanned each side of the
     // address; `readsOnly` (--reads) ranks by offsets read and drops copies.
     std::vector<uint32_t> offsets;

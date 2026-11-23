@@ -1,6 +1,6 @@
 # Native objects
 
-*Home of:* reading a native (non-reflected) object with no engine pack: `vtable`, `rtti`, pointer chains, `region`, C strings.
+*Home of:* reading a native (non-reflected) object with no engine pack: `vtable` (and `--rtti`), pointer chains, the region `read` and `peek` report, C strings.
 
 **TL;DR:** When a game has no engine pack, or an object is plain C++ that
 reflection does not list, these commands still say what it is: its
@@ -12,10 +12,8 @@ What the engine-agnostic side says about a native object, with no engine
 pack ([design](../design.md#native-objects)).
 
 ```text
-vtable <addr> [count] [--offset N] [--table] [--resolve]
-rtti <addr> [--offset N] [--table]  the class an MSVC object's type information names
-<addr>->0x10->0x8                 a pointer chain, in read, peek, vtable, disasm and region
-region <addr>                     what the memory there is
+vtable <addr> [count] [--offset N] [--table] [--resolve] [--rtti]
+<addr>->0x10->0x8                 a pointer chain, in read, peek, vtable and disasm
 read <addr> [max] --type cstr|wstr  a C string (UTF-16 with wstr)
 ```
 
@@ -34,27 +32,26 @@ target is a stub of unconditional direct jumps: the address `disasm
 --follow` would end at, one read per hop. A qword that points into no
 module is a result: no `table`, and `found` holding the qword.
 
-## rtti
+### --rtti
 
-`rtti` reads the table pointer as `vtable` does, then the slot before the
-table: in an MSVC image built with run-time type information it points to
+`vtable --rtti` also reads the slot before the table and adds `rtti`: in an MSVC image built with run-time type information it points to
 the class's complete object locator. The locator must say signature 1 and
 name its own RVA (which gives the module's base); then its type descriptor
 gives `name` (undecorated for plain and nested classes, `Game::Weapon`;
 templates stay decorated) and `decorated` (`.?AVWeapon@Game@@`), and its
 class hierarchy gives `bases`, every base it lists without the class
-itself, up to 32 (`capped`). `offset` is the part's offset inside the
+itself, up to 32 (`capped`). `complete_offset` is the part's offset inside the
 complete object, so `complete` is the whole object when `addr` is a
-secondary base or an interface part. A slot that holds no locator is
-refused (`rtti`): no type information, another compiler, or not a virtual
-table. Engines often build their game code without it; most native
+secondary base or an interface part. Where the slot holds no locator (no
+type information, another compiler, or not a virtual table) the slots stand
+and `rtti_error` says why in place of `rtti`. Engines often build their game code without it; most native
 programs and libraries keep it. Everything is read from live bytes in the
 console; the agent only reads.
 
 ## Pointer chains
 
 An address may be written `<addr>->0x10->0x8` (up to 16
-offsets) in `read`, `peek`, `vtable`, `disasm` and `region`. Each `->off` but the last
+offsets) in `read`, `peek`, `vtable` and `disasm`. Each `->off` but the last
 reads a pointer: `X->a->b` is `*(X + a) + b`. A chain of one (`X->a`)
 follows no pointer, so it is refused rather than answered with the bytes at
 `X + a`: to read through the pointer at `X`, start with `->0`
@@ -69,20 +66,19 @@ of `address`. `write`, `pin` and trials refuse chains: resolve the address
 first and write to what was read, never through a chain that may have
 changed.
 
-## region
+## Regions
 
-`region` asks the agent's `region` op (one `VirtualQuery`) what the
-memory at an address is: `base`, `size`, `allocation_base`, `state`
-(`commit`, `reserve`, `free`), `type` (`image`, `mapped`, `private`,
-`none`), `protect` and `allocation_protect` (`r`, `rw`, `rc` copy-on-write,
-`x`, `rx`, `rwx`, `rcx` or `none`, with `+guard`, `+nocache`,
-`+writecombine`), and a one-word `kind`: inside an image `code`, `rodata` or
-`data` by its section (`section`, with `module` and `rva`; by protection
-where no section holds it), else `mapped`, `private` (heap or stack: they
-are not told apart), `reserved` or `free`. An address outside the address
-space is `not found`. `peek` uses it: a readable pointer is `heap` only
-when its memory is private, and otherwise labelled with its kind
-(`mapped`); with an older agent every readable pointer stays `heap`.
+`read` and `peek` add `region`, what the memory at the address is, from
+the agent's `region` op (one `VirtualQuery`): `base`, `size`, `protect`
+(`r`, `rw`, `rc` copy-on-write, `x`, `rx`, `rwx`, `rcx` or `none`, with
+`+guard`, `+nocache`, `+writecombine`) and a one-word `kind`: inside an
+image `code`, `rodata` or `data` by its section (by protection where no
+section holds it), else `mapped`, `private` (heap or stack: they are not
+told apart), `reserved` or `free`. `region` is absent when the agent has no
+`region` op or the query fails. `peek` also uses it per value: a readable
+pointer is `heap` only when its memory is private, and otherwise labelled
+with its kind (`mapped`); with an agent lacking the op every readable
+pointer stays `heap`.
 
 ## Strings
 

@@ -100,20 +100,24 @@ TEST_CASE("every verb has a row with a parser and a result type, and no name twi
                 CHECK(field.key != old);
     }
     CHECK(names.contains("sig-check"));
-    CHECK(names.contains("census-diff"));
+    for (const auto gone : {"census-diff", "params", "rtti", "sig-file", "base", "region", "read-batch"})
+        CHECK_FALSE(names.contains(gone));
     CHECK(names.contains("?"));
 }
 
 TEST_CASE("help rows come from the table: usage, flags, the result in notation and its type") {
-    const Verb* region = FindVerb(AllVerbs(), "region");
-    REQUIRE(region);
-    const auto brief = Checked(MakeHelpRow(*region, false, false));
-    CHECK(brief == Json{{"verb", "region"}, {"origin", "core"}, {"usage", "region <addr>"},
-        {"summary", "what the memory at an address is: kind, base, size, protection"}});
-    const auto detail = Checked(MakeHelpRow(*region, true, false));
-    CHECK(detail["result"].get<std::string>().starts_with("{address: addr, module?: str, rva?: hex, section?: str, "
-        "kind: code|rodata|data|mapped|private|reserved|free, base: addr, size: hex"));
+    const Verb* modules = FindVerb(AllVerbs(), "modules");
+    REQUIRE(modules);
+    const auto brief = Checked(MakeHelpRow(*modules, false, false));
+    CHECK(brief == Json{{"verb", "modules"}, {"origin", "core"}, {"usage", "modules"},
+        {"summary", "loaded modules, exe first (also refreshes the cached list)"}});
+    const auto detail = Checked(MakeHelpRow(*modules, true, false));
+    CHECK(detail["result"] == "{rows: [{name: str, base: addr, size: u64}]}");
     CHECK_FALSE(detail.contains("type"));
+    // read's region is a named type: help <verb> defines it under types.
+    const auto read = Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), true, false));
+    CHECK(read["result"].get<std::string>().contains("region?: Region"));
+    CHECK(read["types"]["Region"] == "{kind: code|rodata|data|mapped|private|reserved|free, base: addr, size: hex, protect: str}");
     const Verb* search = FindVerb(AllVerbs(), "search");
     REQUIRE(search);
     CHECK(Usage(*search).starts_with("search <hex|u32|i32|u64|ptr|f32|f64|text> <value>... [--wide] [--start <addr>]"));
@@ -122,7 +126,8 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
         {"help", "the value to find"}});
     CHECK(full["flags"].back() == Json{{"flag", "--max"}, {"key", "max"}, {"takes", "one"}, {"type", "int"}, {"value", "N"},
         {"default", "64"}, {"help", "rows per page"}});
-    CHECK(detail["positionals"][0]["name"] == "addr");
+    CHECK(read["positionals"][0]["name"] == "addr");
+    CHECK(detail["positionals"].empty());
     // Only verbs that write the target's memory or call into it carry the mark.
     CHECK_FALSE(full.contains("writes"));
     std::set<std::string> writers;
@@ -240,7 +245,6 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     same("read 0x10", {{"addr", 16}});
     same("write 0x10 00 00 80 3f --expect 01 02", {{"addr", "0x10"}, {"data", {"00", "00", "80", "3f"}}, {"expect", {"01", "02"}}});
     same("write 0x10 \"00 00 80 3f\"", {{"addr", "0x10"}, {"data", "00 00 80 3f"}});
-    same("read-batch 0x10 8 0x20 4", {{"spans", Json::array({Json::array({"0x10", 8}), Json::array({"0x20", 4})})}});
     same("search text \"a b\" --wide --max 2", {{"type", "text"}, {"value", "a b"}, {"wide", true}, {"max", 2}});
     same("search hex 01 02", {{"type", "hex"}, {"value", {"01", "02"}}, {"heap", false}});
     same("watch 1500ms 0x10:4 0x20:1 --then call 0x10#1:1 Fn 01",
@@ -252,7 +256,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     same("name 5 6", {{"indices", {5, 6}}});
     same("census --cls Actor --start 100", {{"cls", "Actor"}, {"start", 100}});
     // A quoted file path with spaces needs no quoting as a value.
-    same("sig-file \"my sigs.jsonl\"", {{"file", "my sigs.jsonl"}});
+    same("sig-check --file \"my sigs.jsonl\"", {{"file", "my sigs.jsonl"}});
 
     const Verb* read = FindVerb(AllVerbs(), "read");
     const std::string usage = "; usage: read <addr> [len] [--type type]";
@@ -274,7 +278,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     // batch: a list of calls, each kept as its JSON text; refused verbs as in a typed batch.
     const Verb* batch = FindVerb(AllVerbs(), "batch");
     Json calls = Json::object();
-    calls["calls"] = Json::array({Json{{"verb", "read"}, {"args", Json{{"addr", "0x10"}}}}, Json{{"verb", "base"}}});
+    calls["calls"] = Json::array({Json{{"verb", "read"}, {"args", Json{{"addr", "0x10"}}}}, Json{{"verb", "modules"}}});
     const auto args = CallArgs(*batch, calls);
     REQUIRE(args.has_value());
     REQUIRE(args->calls.size() == 2);
@@ -655,10 +659,13 @@ TEST_CASE("fields, func and params results") {
 
     ue::Signature signature{8, {Field("ReturnValue", 0, 4, "FloatProperty")}};
     signature.parameters[0].parameterFlags = ue::Return;
-    const auto params = Checked(MakeParams(Pawn, function, signature));
+    auto withSignature = MakeFunc(Pawn, function, modules);
+    AddSignature(withSignature, signature);
+    const auto params = Checked(std::move(withSignature));
     CHECK(params["block_size"] == 8);
-    CHECK(params["rows"][0]["direction"] == "return");
-    CHECK(params["rows"][0]["name"] == "ReturnValue");
+    CHECK(params["params"][0]["direction"] == "return");
+    CHECK(params["params"][0]["name"] == "ReturnValue");
+    CHECK_FALSE(params.contains("params_error"));
 }
 
 TEST_CASE("addresses inside a module carry module and rva, others nothing") {
@@ -824,12 +831,12 @@ TEST_CASE("census pages join to every row of a filter, and the last page has no 
     CHECK_FALSE(past.contains("next_cursor"));
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", false).empty());
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", true) ==
-        "no stored census to page: run census-diff --cls Actor without --start first");
+        "no stored census to page: run census --diff --cls Actor without --start first");
     CHECK_FALSE(CensusPageProblem(MakeCensusBaseline("Pawn", census), std::nullopt, "Actor", false).empty());
     CHECK_FALSE(CensusPageProblem(std::nullopt, std::nullopt, "", false).empty());
 }
 
-TEST_CASE("census-diff keeps grown, shrunk, new and vanished classes, largest change first") {
+TEST_CASE("census --diff keeps grown, shrunk, new and vanished classes, largest change first") {
     const CensusBaseline before{"Actor", {{"Grown", {0x100, 1, 1}, 2}, {"Shrunk", {0x200, 2, 1}, 5},
         {"Same", {0x300, 3, 1}, 4}, {"Vanished", {0x400, 4, 1}, 3}, {"Reused", {0x500, 5, 1}, 1},
         {"Serial", {0x600, 6, 0}, 2}}};
@@ -851,18 +858,18 @@ TEST_CASE("census-diff keeps grown, shrunk, new and vanished classes, largest ch
     const auto paged = Checked(MakeCensusDiff(before, after, changes, {2, 2}, 5));
     CHECK(paged["rows"][0]["class"] == "New");
     CHECK(paged["rows"][0]["before"] == 0);
-    CHECK(paged["rows"][0]["after"] == 2);
+    CHECK(paged["rows"][0]["count"] == 2);
     CHECK(paged["next_cursor"] == 4);
     CHECK(paged["total"] == 6);
-    CHECK(result["classes"]["before"] == 6);
-    CHECK(result["instances"]["before"] == 17);
-    CHECK(result["instances"]["after"] == 23);
+    CHECK(result["before"]["classes"] == 6);
+    CHECK(result["before"]["instances"] == 17);
+    CHECK(result["instances"] == 23);
     CHECK(result["filter"] == "Actor");
     CHECK(CensusChanges(before, {{}, 0}).size() == 6);
     CHECK(CensusChanges(MakeCensusBaseline("Actor", after), after).empty());
 }
 
-TEST_CASE("census-diff needs a baseline under the same filter") {
+TEST_CASE("census --diff needs a baseline under the same filter") {
     CHECK(CensusBaselineProblem(std::nullopt, "Actor").starts_with("no census baseline"));
     const CensusBaseline all{"", {}};
     CHECK(CensusBaselineProblem(all, "Actor") == "the baseline is from census: run census --cls Actor first");

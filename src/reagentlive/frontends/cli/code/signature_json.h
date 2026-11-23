@@ -1,5 +1,5 @@
 // reagentlive CLI: sig results as typed structs and the lines of a patterns
-// file (sig-file). No I/O; the conventions are in results/result_json.h.
+// file (sig-check --file). No I/O; the conventions are in results/result_json.h.
 #pragma once
 #include <algorithm>
 #include <cstdint>
@@ -123,17 +123,26 @@ struct SigFileRow {
         v("error", &SigFileRow::error);
     }
 };
-// sig-file: one row per signature; `winner` is the line of the first that holds.
+// sig-check --file: one row per signature; `winner` is the line of the first that holds.
 struct SigFile {
     std::string file;
     std::optional<uint64_t> winner;
     uint64_t searches = 0;
-    std::vector<SigFileRow> rows;
+    std::vector<SigFileRow> lines;
     template<class V> static void Describe(V& v) {
         v("file", &SigFile::file);
         v("winner", &SigFile::winner);
         v("searches", &SigFile::searches);
-        v("rows", &SigFile::rows);
+        v("lines", &SigFile::lines);
+    }
+};
+// sig-check's result: one signature's check, or with --file a file's.
+struct SigCheckResult {
+    std::optional<SigCheck> check;
+    std::optional<SigFile> file;
+    template<class V> static void Describe(V& v) {
+        v.flat("", &SigCheckResult::check);
+        v.flat("", &SigCheckResult::file);
     }
 };
 struct SigSuggested {

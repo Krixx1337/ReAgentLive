@@ -141,16 +141,16 @@ one file:
 | `results/budget.h` | output budgets: the size profile of a result, the narrower line and the digest |
 | `console/memory.cpp` | `status`, read decoding, `pin`, trials, `watch` (blocking and detached), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
-| `console/sig.cpp` | `sig-check`, `sig-file`, `sig-bytes`: byte signatures against the live image |
+| `console/sig.cpp` | `sig-check` (one pattern or `--file`), `sig-bytes`: byte signatures against the live image |
 | `console/label_sigs.cpp`, `code/label_sign.h` | `labels-sign`, `labels-port`: signatures on a labels file's names, grown and ported |
-| `console/native.cpp` | `vtable` and `region` (native objects) |
+| `console/native.cpp` | `vtable` (and `--rtti`) and the region `read` and `peek` report (native objects) |
 | `console/pack.h`, `packs/ue/cli/console/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `packs/ue/cli/console/members.cpp`, `packs/ue/cli/state/native_names.h` | native members: `label`, the native file and its checks |
 | `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --type "<layout>"`, native member types) |
 | `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `fields`, `dump` |
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
 | `packs/ue/cli/console/capture.cpp` | snapshots, `snap`, `record`, replay |
-| `packs/ue/cli/console/calls.cpp` | `func`, `params`, typed calls |
+| `packs/ue/cli/console/calls.cpp` | `func` (with its signature), typed calls |
 | `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each`/`dump` values) and `--fields`; `rows` |
 | `packs/ue/cli/console/text.cpp` | text values through the engine's converter |
 | `packs/ue/cli/console/query.cpp` | class lookup, `each`, `get`, `entries` |

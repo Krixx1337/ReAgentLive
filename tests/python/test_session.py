@@ -59,19 +59,15 @@ CALLS = [
     [C('rows', {'object': '0x10#1:1'}), {'ok': True, 'digest': DIGEST}],
     [C('status'), ok({'pid': 4, 'build': 'b', 'version': '0.1.0', 'commit': '0123456789ab', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
                       'interval_ms': 100, 'ticking': True, 'host_thread': 'engine', 'packs': ['ue'], 'table_hash': 'abc'})],
-    [C('region', {'addr': 'base+0x10'}), ok({'address': '0x10', 'kind': 'code', 'section': '.text', 'base': '0x0',
-                                            'size': '0x1000', 'allocation_base': '0x0', 'state': 'commit', 'type': 'image',
-                                            'protect': 'r-x', 'allocation_protect': 'rwx'})],
-    [C('read', {'addr': 4096, 'len': 4}), ok({'address': '0x1000', 'size': 4, 'hex': '00 00 80 3f'})],
+    [C('read', {'addr': 4096, 'len': 4}), ok({'address': '0x1000', 'size': 4, 'hex': '00 00 80 3f',
+                                             'region': {'kind': 'private', 'base': '0x1000', 'size': '0x1000',
+                                                        'protect': 'rw'}})],
     [C('read', {'addr': '0x10#1:1->0x30->0x8', 'len': 2}), ok({'address': '0x18', 'size': 2, 'hex': '01 02',
                                                              'chain': {'base': '0x10', 'hops': [], 'address': '0x18'}})],
     [C('read', {'addr': 16, 'type': 'cstr'}), ok({'address': '0x10', 'size': 2, 'hex': '41 00', 'text': 'A', 'length': 1,
                                               'terminated': True})],
     [C('read', {'addr': '0x10#1:1+0x538', 'type': 'u8 phase, pad 1'}), ok({'address': '0x538', 'size': 2, 'hex': '01 00',
                                                                          'layout': {'phase': 1}})],
-    [C('read-batch', {'spans': [[4096, 2], ['base+0x10', 4]]}), ok({'tick': 7, 'rows': [
-        {'address': '0x1000', 'size': 2, 'ok': True, 'hex': '01 02'},
-        {'address': '0x10', 'size': 4, 'ok': False, 'error': {'status': 3, 'message': 'unreadable'}}]})],
     [C('peek', {'addr': 'base+0x10', 'count': 1, 'label': 'labels.jsonl'}), ok({'address': '0x10', 'rows': [
         {'address': '0x10', 'value': '0x5', 'label': 'value'},
         {'address': '0x18', 'value': '0x10', 'label': 'object', 'object': OBJECT}]})],
@@ -87,7 +83,7 @@ CALLS = [
          {'command': 'get', 'ok': False, 'error': {'message': 'no field X'}}]})],
     [C('modules'), ok({'rows': [{'name': 'Game.exe', 'base': '0x140000000', 'size': 4096}]})],
     [C('sig-check', {'pattern': '48 8b ?? 89 05', 'expect': 'Game.exe+0x10', 'offset': 4}), ok(SIG)],
-    [C('sig-file', {'file': 'my sigs.jsonl'}), ok({'file': 'my sigs.jsonl', 'winner': 2, 'searches': 1, 'rows': [
+    [C('sig-check', {'file': 'my sigs.jsonl'}), ok({'file': 'my sigs.jsonl', 'winner': 2, 'searches': 1, 'lines': [
         {'line': 1, 'ok': False, 'error': 'no pattern'}, {'line': 2, 'ok': True, 'result': SIG}]})],
     [C('sig-bytes', {'addr': 'base+0x10', 'len': 32}), ok({'address': '0x10', 'length': 2, 'pattern': '48 8b',
                                                           'list': '0x48, 0x8B', 'suggested': {
@@ -125,9 +121,9 @@ CALLS = [
                                                       'truncated': False, 'capped': False})],
     [C('dump', {'object': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False})],
-    [C('census-diff', {'cls': 'Actor'}), ok({'classes': {'before': 3, 'after': 4}, 'instances': {'before': 9, 'after': 11},
-                                               'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
-        {'class': 'Proj', 'ref': '0x30#3:1', 'before': 0, 'after': 2, 'samples': ['0x90#9:1']}]})],
+    [C('census', {'cls': 'Actor', 'diff': True}), ok({'classes': 4, 'instances': 11, 'before': {'classes': 3, 'instances': 9},
+                                                       'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
+        {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
     [C('get', {'object': REF, 'paths': ['A.B']}), ok({'ref': REF, 'same_tick': True, 'rows': [
         {'value': 1.5, 'address': '0x18', 'object': REF}]})],
@@ -141,8 +137,8 @@ CALLS = [
         CALL, mode='typed', kept=True, kept_reason='ReturnValue is a String', truncated=False, outputs=[
             {'name': 'ReturnValue', 'direction': 'return', 'value': 'x', 'truncated': False}]))],
     [C('call', {'object': 16, 'function': 'Pawn:Get', 'typed': True}), ok(dict(CALL, mode='typed', outputs=[], truncated=False))],
-    [C('help', {'verb': 'region'}), ok({'rows': [{'verb': 'region', 'origin': 'core', 'usage': 'region <addr>', 'summary': 's',
-                                                  'flags': [], 'result': '{address: addr}'}]})],
+    [C('help', {'verb': 'modules'}), ok({'rows': [{'verb': 'modules', 'origin': 'core', 'usage': 'modules', 'summary': 's',
+                                                   'flags': [], 'result': '{rows: [ModuleRow]}'}]})],
 ]
 
 
@@ -292,20 +288,22 @@ class SessionTests(unittest.TestCase):
         self.session.table_hash = hash_was
 
     def test_a_wrong_key_raises_and_names_the_valid_ones(self):
-        region = self.c.region('base+0x10')
-        self.assertEqual(region['kind'], 'code')
-        self.assertIsNone(region['module'])              # Optional and absent: None.
-        self.assertIsNone(region.get('chain'))
-        self.assertEqual(region.get('module', 'none'), 'none')
+        read = self.c.read(4096, 4)
+        self.assertEqual(read['region']['kind'], 'private')
+        self.assertIsNone(read['module'])                # Optional and absent: None.
+        self.assertIsNone(read.get('chain'))
+        self.assertEqual(read.get('module', 'none'), 'none')
         with self.assertRaises(dl.ResultKeyError) as caught:
-            region['protection']
-        self.assertIn("region has no key 'protection'; keys: address, allocation_base, allocation_protect, base, chain?, kind, module?, protect,", str(caught.exception))
+            read['protection']
+        self.assertIn("read has no key 'protection'; keys: address, chain?, hex, layout?, length?, module?, region?,", str(caught.exception))
         with self.assertRaises(dl.ResultKeyError):
-            region.get('protection')                     # .get is no way around it.
+            read.get('protection')                       # .get is no way around it.
         with self.assertRaises(dl.ResultKeyError):
-            'protection' in region
-        self.assertIn('kind', region)
-        self.assertNotIn('module', region)
+            'protection' in read
+        with self.assertRaises(dl.ResultKeyError):
+            read['region']['protection']                 # Region is a named type, read as strictly.
+        self.assertIn('hex', read)
+        self.assertNotIn('module', read)
         self.assertEqual(self.session.table_hash, self.table['table_hash'])
 
     def test_nested_and_named_rows_are_strict_too(self):
@@ -328,14 +326,14 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(hit['rva'], '0x1000')
         with self.assertRaises(dl.ResultKeyError):
             hit['offset']
-        self.assertEqual(self.c.help('region')['rows'][0]['result'], '{address: addr}')
+        self.assertEqual(self.c.help('modules')['rows'][0]['result'], '{rows: [ModuleRow]}')
 
     def test_calls_go_as_json_with_named_arguments(self):
         self.c.read(0x10, type='cstr')
         self.c.read('0x10#1:1+0x538', type='u8 phase, pad 1')
         self.c.write(0x1000, dl.pack('f32', 1.0))
         self.c.search('text', 'Fatal error', max=1)
-        self.c.sig_file('my sigs.jsonl')                 # A space needs no quoting.
+        self.c.sig_check(file='my sigs.jsonl')           # A space needs no quoting.
         self.c.disasm('Game.exe+0x10', 8, function=True, follow=True)
         self.c.xrefs('base+0x10', module='engine.dll', all=True)
         self.c.touches('Game.exe+0x10', [0x538, 0x540], range=0x1000)
@@ -343,7 +341,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.sent(), [
             C('read', {'addr': 16, 'type': 'cstr'}), C('read', {'addr': '0x10#1:1+0x538', 'type': 'u8 phase, pad 1'}),
             C('write', {'addr': 4096, 'data': '0000803f'}), C('search', {'type': 'text', 'value': 'Fatal error', 'max': 1}),
-            C('sig-file', {'file': 'my sigs.jsonl'}),
+            C('sig-check', {'file': 'my sigs.jsonl'}),
             C('disasm', {'addr': 'Game.exe+0x10', 'count': 8, 'function': True, 'follow': True}),
             C('xrefs', {'addr': 'base+0x10', 'module': 'engine.dll', 'all': True}),
             C('touches', {'addr': 'Game.exe+0x10', 'offsets': [0x538, 0x540], 'range': 0x1000}),
@@ -385,7 +383,9 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.c.ue.find('A', cls='Pawn')['total'], 2)
         self.assertEqual(self.c.ue.dump(REF, changed=True)['rows'][0]['before'], 5)
         self.c.ue.dump(REF, match='Ammo', changed='ctrl.snap')
-        self.assertEqual(self.c.ue.census_diff(cls='Actor')['rows'][0]['after'], 2)
+        diff = self.c.ue.census(cls='Actor', diff=True)
+        self.assertEqual(diff['rows'][0]['count'], 2)
+        self.assertEqual(diff['before']['instances'], 9)
         self.assertEqual(self.c.ue.describe(REF)['class_size'], 1264)
         typed = self.c.ue.call(REF, 'Pawn:Get', ['Name=#5', 'Mode=2'])
         self.assertTrue(typed['kept'])

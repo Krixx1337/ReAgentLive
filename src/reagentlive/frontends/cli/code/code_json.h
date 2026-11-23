@@ -217,6 +217,33 @@ struct VtableSlot {
         v.flat("body_", &VtableSlot::bodyWhere);
     }
 };
+// A class in run-time type information: its readable and decorated names.
+struct RttiType {
+    std::string name, decorated;
+    template<class V> static void Describe(V& v) {
+        v("name", &RttiType::name);
+        v("decorated", &RttiType::decorated);
+    }
+};
+// vtable --rtti: the class an MSVC object's run-time type information names.
+struct VtableRtti {
+    Addr locator;
+    std::string name, decorated;
+    Addr complete;               // The complete object: this part minus its offset inside it.
+    HexNum completeOffset;
+    std::vector<RttiType> bases;
+    bool capped = false;
+    template<class V> static void Describe(V& v) {
+        v("locator", &VtableRtti::locator);
+        v("name", &VtableRtti::name);
+        v("decorated", &VtableRtti::decorated);
+        v("complete", &VtableRtti::complete);
+        v("complete_offset", &VtableRtti::completeOffset);
+        v("bases", &VtableRtti::bases);
+        v("capped", &VtableRtti::capped);
+    }
+};
+
 // vtable: the object (or the table itself with --table), the table pointer
 // (absent when the qword there points into no module: `found` holds it), and
 // the slots up to the first entry that is not code.
@@ -229,6 +256,8 @@ struct Vtable {
     std::optional<std::string> stop;
     std::optional<HexNum> stopValue, found;
     std::vector<VtableSlot> rows;
+    std::optional<VtableRtti> rtti;
+    std::optional<std::string> rttiError;
     std::optional<Chain> chain;
     template<class V> static void Describe(V& v) {
         v("address", &Vtable::address);
@@ -240,72 +269,9 @@ struct Vtable {
         v("stop_value", &Vtable::stopValue);
         v("found", &Vtable::found);
         v("rows", &Vtable::rows);
+        v("rtti", &Vtable::rtti);
+        v("rtti_error", &Vtable::rttiError);
         v("chain", &Vtable::chain);
-    }
-};
-
-// rtti: the class an MSVC object's run-time type information names.
-struct RttiType {
-    std::string name, decorated;
-    template<class V> static void Describe(V& v) {
-        v("name", &RttiType::name);
-        v("decorated", &RttiType::decorated);
-    }
-};
-struct Rtti {
-    Addr address;
-    Location where;
-    HexNum offset;
-    Addr table;
-    Location tableWhere;
-    Addr locator;
-    std::string name, decorated;
-    Addr complete;               // The complete object: this part minus its offset inside it.
-    HexNum completeOffset;
-    std::vector<RttiType> bases;
-    bool capped = false;
-    std::optional<Chain> chain;
-    template<class V> static void Describe(V& v) {
-        v("address", &Rtti::address);
-        v.flat("", &Rtti::where);
-        v("offset", &Rtti::offset);
-        v("table", &Rtti::table);
-        v.flat("table_", &Rtti::tableWhere);
-        v("locator", &Rtti::locator);
-        v("name", &Rtti::name);
-        v("decorated", &Rtti::decorated);
-        v("complete", &Rtti::complete);
-        v("complete_offset", &Rtti::completeOffset);
-        v("bases", &Rtti::bases);
-        v("capped", &Rtti::capped);
-        v("chain", &Rtti::chain);
-    }
-};
-
-// region: the VirtualQuery facts and a one-word kind; `section` inside an image.
-struct Region {
-    Addr address;
-    Location where;
-    std::optional<std::string> section;
-    std::string kind;
-    Addr base;
-    HexNum size;
-    Addr allocationBase;
-    std::string state, type, protect, allocationProtect;
-    std::optional<Chain> chain;
-    template<class V> static void Describe(V& v) {
-        v("address", &Region::address);
-        v.flat("", &Region::where);
-        v("section", &Region::section);
-        v("kind", &Region::kind, "code|rodata|data|mapped|private|reserved|free");
-        v("base", &Region::base);
-        v("size", &Region::size);
-        v("allocation_base", &Region::allocationBase);
-        v("state", &Region::state);
-        v("type", &Region::type);
-        v("protect", &Region::protect);
-        v("allocation_protect", &Region::allocationProtect);
-        v("chain", &Region::chain);
     }
 };
 
@@ -489,14 +455,9 @@ inline shape::Xrefs MakeXrefs(uint64_t address, const Module& scanned, std::span
     return out;
 }
 
-inline shape::Rtti MakeRtti(uint64_t address, uint64_t offset, uint64_t table, const pe::Rtti& rtti,
-                            std::span<const Module> modules) {
-    shape::Rtti out;
-    out.address = address;
-    out.where = Locate(address, modules);
-    out.offset = offset;
-    out.table = table;
-    out.tableWhere = Locate(table, modules);
+// `address` and `offset` as vtable reads them: the part and where its table pointer sits.
+inline shape::VtableRtti MakeVtableRtti(uint64_t address, uint64_t offset, const pe::Rtti& rtti) {
+    shape::VtableRtti out;
     out.locator = rtti.locator;
     out.name = rtti.type.name;
     out.decorated = rtti.type.decorated;
@@ -533,21 +494,9 @@ inline shape::Vtable MakeVtable(uint64_t address, uint64_t offset, std::optional
     return out;
 }
 
-inline shape::Region MakeRegion(uint64_t address, const RegionInfo& info, std::string_view kind, std::string_view section,
-                                std::span<const Module> modules) {
-    shape::Region out;
-    out.address = address;
-    out.where = Locate(address, modules);
-    if (!section.empty()) out.section = std::string(section);
-    out.kind = kind;
-    out.base = info.base;
-    out.size = info.size;
-    out.allocationBase = info.allocationBase;
-    out.state = native::region::State(info.state);
-    out.type = native::region::Type(info.type);
-    out.protect = native::region::Protection(info.protect);
-    out.allocationProtect = native::region::Protection(info.allocationProtect);
-    return out;
+// The memory an address lies in, for read and peek; `kind` is native::region::Kind's.
+inline shape::Region MakeRegion(const RegionInfo& info, std::string_view kind) {
+    return {std::string(kind), info.base, info.size, native::region::Protection(info.protect)};
 }
 
 inline shape::Touches MakeTouches(uint64_t address, std::span<const uint32_t> offsets, uint64_t range, uint64_t from,

@@ -21,9 +21,8 @@ result keys: `help <verb>` or [result shapes](results.md).
 | `call <object> <[Class:]Function> [hex]` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns. **Faults:** `ProcessEvent` runs under a fault guard; an access fault inside the engine answers `access faulted` ("call faulted: the target may be in a bad state", `detail` = the object) instead of ending the process, and a fresh kept block is dropped. Nothing else is caught, and a fault can leave engine state half-changed: treat the session as suspect afterwards. **`--dry`** (console only) resolves the function and builds the block, raw or typed, and calls nothing: `mode: dry`, `hex` is the block that would be sent, with `exec` and `pure` (const or blueprint-pure). Show it when asking for approval |
 | `call-pure <object> <[Class:]Function> [hex\|Name=value]` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill's approval rules say which to call freely (not the first call on a new host or in a new game, the known-answer call, since a wrong engine layout can crash the game) |
 | `release <object> <[Class:]Function> [hex]` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
-| `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (`EngineLayout::interfaces` in `packs/ue/engine_layout.h`, `{UClass*, int32 PointerOffset}` entries, read live). An SDK does not describe it, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
+| `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection; then reads its reflected parameters (`params`: name, type, offset, direction, flags) and the call block's size (`block_size`). The parameters need the game thread: off it, `params_error` says so and the rest stands. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (`EngineLayout::interfaces` in `packs/ue/engine_layout.h`, `{UClass*, int32 PointerOffset}` entries, read live). An SDK does not describe it, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
 | `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, then those declared on each native interface the class (or a parent) implements, each interface once, marked `via: "interface"`, with a case-insensitive substring filter and a next-page cursor. Interface rows use the same plausibility check as `func`; an implausible interfaces array lists none. An interface row is never callable on the object (`call` refuses it); use `func Interface:Function` for its implementation |
-| `params <object\|class> <[Owner:]Function>` | resolves the function as for `func`, then reads its reflected parameters, directions and block size |
 | `fields <object>` | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
 | Object range read | used by `snap` and `record`; checks the thread ([off-thread](#off-the-engines-thread)) and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
 | `describe <address\|$N>` | checks the thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
@@ -167,7 +166,7 @@ pages link here. A host that ticks elsewhere (its own thread, as
 
 | Answer off the game thread (with `offThreadReads`) | Need the game thread |
 |---|---|
-| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `dump`, `get`, `snap`, array previews), `fields`, `entries`, `enum`, `func`, `funcs` | `call`, `call-pure`, `release`, `params`, `each` (every form, fields included), `script`, `refs`, `exec entries` (and `export-labels`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `trace` and text values |
+| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `dump`, `get`, `snap`, array previews), `fields`, `entries`, `enum`, `func` (its metadata), `funcs` | `call`, `call-pure`, `release`, `func`'s `params`, `each` (every form, fields included), `script`, `refs`, `exec entries` (and `export-labels`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `trace` and text values |
 
 Commands that need the game thread are refused off it with `not on the
 game thread`. A host gets onto the game thread by ticking there (an SDK
@@ -187,7 +186,7 @@ host off the game thread gets no pack command at all.
 
 ## Named calls
 
-Named calls take the exact reflected parameter names printed by `params`.
+Named calls take the exact reflected parameter names `func` prints under `params`.
 Supported inputs:
 
 - FNames as text (`Name=Head`: the pooled name, compared without case,
@@ -283,7 +282,7 @@ start is a write the host approves.
 
 ## Class names
 
-`fields`, `dump`, `func`, `funcs` and `params` also take a bare class or
+`fields`, `dump`, `func` and `funcs` also take a bare class or
 struct name (`fields Character`). The console finds the object of
 that exact name under `Struct` once per agent instance and reuses its ref
 through the cache file. Names up to 127 characters: the agent compares the
@@ -384,17 +383,18 @@ whole census, and `--limit` applies after the filter.
 <a id="census-changes"></a>**Pages and changes.** A result shows `from`, `total`
 (rows after `--match`) and, while more rows remain, `next_cursor` with a
 `hint` (`--start <cursor> for more, --limit 0 for all`). `--start N` is a
-later page of the last census with the same `--cls` (of the same verb):
+later page of the last census with the same `--cls` (and the same `--diff`):
 the stored rows, sliced, with no new scan and
 `ms` 0, so the pages of one filter join without gaps; refused when there
 is none. A census without `--start` scans again. Every census becomes the
 baseline for its `--cls` filter, in the session and the cache file
-(which keeps the census before it too, for later pages of `census-diff`).
+(which keeps the census before it too, for later pages of `census --diff`).
 
-`census-diff [--cls C]` runs a new census and prints only the classes whose count
-differs from that baseline, largest change first, with `before` and
-`after`; then the new census is the baseline. So: `census --cls C`, the
-action, `census-diff --cls C`. It is refused when there is no
+`census --diff [--cls C]` runs a new census and prints only the classes whose count
+differs from that baseline, largest change first: each row's `count` is the
+count now and `before` the count then, and the result's `before` holds the
+baseline's `classes` and `instances`; then the new census is the baseline.
+So: `census --cls C`, the action, `census --diff --cls C`. It is refused when there is no
 baseline for that filter (none taken, another agent instance, or another
 `--cls`). `--match` and `--limit` apply to the changed rows. Classes
 match by ref. Samples are any live instances, not the new ones: for a
@@ -566,7 +566,7 @@ A row may carry `sig`, a byte signature in `sig-check`'s terms:
 `{pattern, offset}` for a function (it lies `offset` bytes before the
 match, usually 0) or `{pattern, resolve}` for a global (a reference
 signature at code that loads it). With the row's `rva` as the expected
-address it is a `sig-file` line. `export-labels` and `export_names` keep it.
+address it is a `sig-check --file` line. `export-labels` and `export_names` keep it.
 
 `labels-sign [file] [--module M] [--again]` (default the host's names
 file, else the console's) signs this build's `user` and `global` rows that
@@ -591,7 +591,7 @@ A row's signature comes one of two ways:
   `sig_failed`), or a name `labels-port` lists `missing` once found again.
   Make the signature as for any other ([signatures](fast-lane.md#signatures)),
   write it into the row's `sig` (removing `sig_failed`) and check the
-  file's signatures with `sig-file`. A failure is signed by hand or left
+  file's signatures with `sig-check --file`. A failure is signed by hand or left
   unsigned, never a reason to extend the loop.
 
 `labels-port [file] [--module M]`, after a patch: per name the running

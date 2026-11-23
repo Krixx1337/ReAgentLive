@@ -416,8 +416,8 @@ tools, with their decisions and rejected alternatives:
   guard, checking the object's identity before and after each read; values
   may tear between two fields, and the console marks such results
   `tick_accurate: false`. Shipped on in `examples/unreal` and used by
-  library hosts; live-tested on a UE 5.7 game. `params` stays on the game
-  thread with the calls. Rejected: on by default (a host must accept torn
+  library hosts; live-tested on a UE 5.7 game. A function's parameters
+  (`func`'s `params`) stay on the game thread with the calls. Rejected: on by default (a host must accept torn
   values knowingly); answering calls the same way (no guard makes an
   engine call off its thread safe).
 - **The engine-thread check is required.** Every pack handler reads engine
@@ -588,8 +588,8 @@ a time, since its own thread and Draw both tick the agent.
   signatures, and the only ones it makes come from that loop. Rejected:
   anything that makes its signatures better (later starts, caller
   fallbacks, ranking, looser masks, a generator's tiers), and a way to store
-  a hand-made one (`--pattern`; the row is one JSON line and `sig-file`
-  checks it). A name the loop cannot sign is signed by hand or left
+  a hand-made one (`--pattern`; the row is one JSON line and `sig-check
+  --file` checks it). A name the loop cannot sign is signed by hand or left
   unsigned; a failure is never a reason to extend the loop.
 - **Rejected:** call graphs, decompiling, types and naming in ReAgentLive (the
   static tool has the whole image); symbol loading; ReAgentLive talking to the
@@ -676,7 +676,8 @@ answers what a native object is from live bytes, without a type system.
   never hides a byte.
 - **`region` is a core op** because only the target can ask Windows about
   its own memory; the agent passes `VirtualQuery`'s numbers through and the
-  console names them. A stack is not claimed: private read-write memory is
+  console names them, as the `region` that `read` and `peek` add. Not a verb
+  of its own: every question it answered started from a read or a peek. A stack is not claimed: private read-write memory is
   `private`, since telling a thread's stack from a heap needs every
   thread's limits.
 - **Calls are opt-in and deferred.** `call-native` (the one item that can
@@ -687,14 +688,15 @@ answers what a native object is from live bytes, without a type system.
   hooks, native tracing and breakpoints (the call recorder swaps a
   `UFunction` pointer, never code); calling by symbol name (shipping images have
   none); floating-point arguments and callbacks until a case needs them.
-- **`rtti`: class names where the image has them.** Declined while the
+- **`vtable --rtti`: class names where the image has them.** Declined while the
   one host checked (an engine game) had none for its game classes; built
   because a target with no engine pack is the case native objects exist
   for, and most native programs and libraries are built with type
   information. It is a one-address answer from bytes (locator, descriptor,
   hierarchy), console only, and refuses instead of guessing when the slot
-  before the table holds no locator. Not used to label `peek` or `vtable`
-  rows: one more read per row for what one `rtti` answers.
+  before the table holds no locator. A flag on `vtable`, not a verb: the
+  same input and the same question. Not used to label `peek` rows: one more
+  read per row for what one `vtable --rtti` answers.
 - **Rejected:** a struct or type system in ReAgentLive (layouts come from
   the engine pack, the host's SDK or the static tool; `read --type`
   covers ad hoc ones).

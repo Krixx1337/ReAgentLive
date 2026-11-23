@@ -16,10 +16,10 @@ typed result, a host's verbs included.
     from my_console import Console
     with Session(r'path\\to\\console.exe') as s:
         c = Console(s)                       # Refuses a module generated from another table.
-        region = c.region(0x7ff600001000)    # A Record: region['kind'], region['module'] (None outside a module)
-        region['protection']                 # ResultKeyError: region has no key 'protection'; keys: ..., protect, ...
-        speed = f32(unhex(c.read(0x7ff600001000, 4)['hex']))
-        items, same_tick = s.batch_results([('read', {'addr': 0x1000, 'len': 8}), ('base', {})])
+        read = c.read(0x7ff600001000, 4)     # A Record: read['hex'], read['module'] (None outside a module)
+        read['bytes']                        # ResultKeyError: read has no key 'bytes'; keys: address, ..., hex, ...
+        speed = f32(unhex(read['hex']))
+        items, same_tick = s.batch_results([('read', {'addr': 0x1000, 'len': 8}), ('modules', {})])
 
 Results are strict. At start the session reads the console's verb table
 (`help --json`) and wraps every result in a Record typed by its verb's row:

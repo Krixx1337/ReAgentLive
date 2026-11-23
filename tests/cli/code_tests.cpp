@@ -909,7 +909,7 @@ TEST_CASE("pointer chains in read-only commands, refused for writes") {
     CHECK(Parse("disasm 0x1000->0x8->0", refs)->chain.size() == 2);
     CHECK(Parse("vtable 0x1000->0->0x20 --offset 8", refs)->chain.size() == 2);
     // One ->off reads no pointer: refused, never answered with the bytes at the base.
-    for (const char* line : {"read 0x1000->0x0", "peek $1->0x30", "region 0x1000->0x8", "disasm 0x1000->0"})
+    for (const char* line : {"read 0x1000->0x0", "peek $1->0x30", "vtable 0x1000->0x8", "disasm 0x1000->0"})
         CHECK(Parse(line, refs).error().starts_with(text::ChainNoHop));
     // The error spells the fix with the line's own address and offset.
     CHECK(Parse("peek $1->0x30", refs).error().contains("$1->0->0x30 reads the pointer at $1 and adds 0x30; $1+0x30"));
@@ -962,7 +962,7 @@ TEST_CASE("chain results name each hop and the broken one") {
     CHECK(broken["broken"] == 0);
 }
 
-TEST_CASE("region kinds, protection text, syntax and result") {
+TEST_CASE("region kinds, protection text and the region read and peek report") {
     namespace r = native::region;
     RegionInfo info{0x1000, 0x2000, 0x1000, r::Commit, 0x20, 0x80, r::Image};
     CHECK(r::Kind(info, std::nullopt) == "code");
@@ -983,18 +983,10 @@ TEST_CASE("region kinds, protection text, syntax and result") {
     CHECK(r::Protection(0x01) == "none");
     CHECK(r::Protection(0x04 | r::WriteCombine) == "rw+writecombine");
 
-    const std::vector<Ref> refs;
-    auto parsed = Parse("region 0x1000->0->0x8", refs);
-    REQUIRE(parsed);
-    CHECK(parsed->kind == Kind::Region);
-    CHECK(parsed->request.op == op::Region);
-    CHECK_FALSE(Parse("region 0x1000 extra", refs));
-
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     const RegionInfo code{Base + 0x1000, 0x4000, Base, r::Commit, 0x20, 0x80, r::Image};
-    const auto json = Checked(MakeRegion(Base + 0x1234, code, "code", ".text", modules));
-    CHECK(json["protect"] == "rx");
-    CHECK(json["type"] == "image");
+    const auto json = Checked(MakeRegion(code, "code"));
+    CHECK(json == Json{{"kind", "code"}, {"base", HexNumber(Base + 0x1000)}, {"size", "0x4000"}, {"protect", "rx"}});
 
     PeekValue mapped{0x1000, 0x1aac568d980, true};
     mapped.readable = true;
@@ -1222,7 +1214,7 @@ TEST_CASE("type names undecorate plain and nested classes and keep anything else
     CHECK(pe::Undecorate("not a type") == "not a type");
 }
 
-TEST_CASE("rtti names a live object's class and its base from this program's own image") {
+TEST_CASE("vtable --rtti names a live object's class and its base from this program's own image") {
     const rtti_probe::Square square;
     const rtti_probe::Shape& shape = square;
     uint64_t table = 0;
@@ -1238,6 +1230,11 @@ TEST_CASE("rtti names a live object's class and its base from this program's own
     CHECK(rtti->bases[0].name == "rtti_probe::Shape");
     // A table with no locator before it (the image's first bytes) is refused, not guessed.
     CHECK_FALSE(pe::ReadRtti(SelfRead(), modules, self.base + 0x10).has_value());
+    // vtable --rtti: the complete object is this part less its offset inside it.
+    const auto json = Checked(MakeVtableRtti(0x5000, 0x10, *rtti));
+    CHECK(json["name"] == "rtti_probe::Square");
+    CHECK(json["complete"] == "0x5010");
+    CHECK(json["bases"][0]["name"] == "rtti_probe::Shape");
 }
 
 TEST_CASE("unwind info of an unknown version is no chain: the entry stands on its own") {

@@ -40,7 +40,7 @@ console `reagentlive.exe` (`examples/own_thread/console.cpp`). Its
 cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/own-thread
 # Load reagentlive-own-thread.dll into the target with any DLL loader, then:
-reagentlive -c "status; modules; region <module>+0x1000"
+reagentlive -c "status; modules; read <module>+0x1000 16"
 ```
 
 - With no pid, the console attaches to the one process that has the

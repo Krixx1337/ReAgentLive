@@ -9,7 +9,7 @@ files: Unreal pack (`docs/commands/unreal.md#names-that-survive-a-patch`).
   (one fixed loop; it never gets smarter). A name it lists `unsigned`, or
   one `labels-port` lists `missing` once found again, gets a signature made
   as below, written into its row's `sig` (`{pattern, offset}` or
-  `{pattern, resolve}`) and checked with `sig-file`. Never extend the
+  `{pattern, resolve}`) and checked with `sig-check --file`. Never extend the
   signer for a failure. A failed row is marked and later calls skip it:
   rerun `labels-sign` freely; `--again` retries the marked rows; delete
   the mark when you write a hand-made `sig`.
@@ -38,7 +38,7 @@ files: Unreal pack (`docs/commands/unreal.md#names-that-survive-a-patch`).
    extra bytes must be ones you would keep fixed), warnings (a fixed field
    holds an address: wildcard).
 7. Prefer the shortest unique pattern, then the most fixed bytes. Try
-   several candidates in one `sig-file`. Then hand it to the host's checks.
+   several candidates in one `sig-check --file`. Then hand it to the host's checks.
 
 Without a static database: `disasm <entry> --function` for instruction
 boundaries, `sig-bytes <boundary> 96` for `suggested` masks, and

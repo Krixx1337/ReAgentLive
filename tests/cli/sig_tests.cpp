@@ -372,12 +372,15 @@ TEST_CASE("sig parses --resolve, --file and --bytes") {
     CHECK(parsed->resolve == sig::Resolve{7, 3, 4});
     CHECK_FALSE(Parse("sig-check 48 8d 0d 11 --expect 0x10 --offset 2 --resolve 7,3", NoRefs).has_value());
     CHECK_FALSE(Parse("sig-check 48 8d 0d 11 --resolve 7", NoRefs).has_value());
-    parsed = Parse("sig-file sigs.jsonl", NoRefs);
+    parsed = Parse("sig-check --file sigs.jsonl", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->sigMode == Command::SigMode::File);
     CHECK(parsed->file == "sigs.jsonl");
     CHECK_FALSE(Parse("sig-check --file", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-file a b", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check 48 8b --file sigs.jsonl", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check --file sigs.jsonl --module x.dll", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-check", NoRefs).has_value());
+    CHECK_FALSE(Parse("sig-file sigs.jsonl", NoRefs).has_value());
     parsed = Parse("sig-bytes 0x140001000", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->sigMode == Command::SigMode::Bytes);

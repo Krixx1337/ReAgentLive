@@ -55,9 +55,9 @@ the README's paste prompts send an agent there.
 | [agents/setup.md](agents/setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
 | [agents/update.md](agents/update.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
-| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
+| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
-| [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable`, pointer chains, `region`, strings |
+| [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`--rtti`), pointer chains, regions, strings |
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `dump`, labels, readable names, native members |
 | [commands/capture.md](commands/capture.md) | which command for which question about change; `snap`, `record`, replay |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
@@ -82,27 +82,26 @@ offers (`packs`). **T3** commands also need the game thread
 
 | Command | Needs | Page |
 |---|---|---|
-| `read`, `read-batch`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
+| `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
 | `pin`, `pin-list`, `pin-clear` | T0 | [memory](commands/memory.md#pin) |
 | `watch`, `watch-start`, `watch-read`, `watch-stop` | T0 | [memory](commands/memory.md#watch) |
 | `trial`, `trial-list`, `trial-clear` | T0; the owner check needs T1 | [memory](commands/memory.md) |
 | `search` | T0 | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
 | `read --type "<layout>"` | T0 | [memory](commands/memory.md#typed-layouts) |
-| `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `region` | T0 | [native objects](commands/native-objects.md) |
-| `rtti` | T0 | [native objects](commands/native-objects.md#rtti) |
+| `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `vtable --rtti` | T0 | [native objects](commands/native-objects.md) |
 | `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |
 | `disasm`, `xrefs`, `touches` | T0 | [fast lane](commands/fast-lane.md) |
-| `sig-check`, `sig-file`, `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
+| `sig-check`, `sig-check --file`, `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
 | `labels-sign`, `labels-port` | T0 | [labels](commands/unreal.md#names-that-survive-a-patch) |
 | `find`, `describe`, `name`, `name-find` | T1 | [Unreal pack](commands/unreal.md) |
-| `fields`, `entries`, `func`, `funcs`, `enum` | T2 | [Unreal pack](commands/unreal.md) |
+| `fields`, `entries`, `func`, `funcs`, `enum` | T2 (`func`'s `params`: T3) | [Unreal pack](commands/unreal.md) |
 | `rows` | T2 | [Unreal pack](commands/unreal.md#rows) |
-| `call`, `call-pure`, `release`, `params`, `script`, `refs`, `trace` | T3 | [Unreal pack](commands/unreal.md) |
+| `call`, `call-pure`, `release`, `script`, `refs`, `trace` | T3 | [Unreal pack](commands/unreal.md) |
 | `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal pack](commands/unreal.md) |
 | `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal pack](commands/unreal.md#call-recorder) |
 | `layout-export`, `layout-check` | T2 | [Unreal pack](commands/unreal.md#layouts-in-bulk) |
 | `each` | T3 | [Unreal pack](commands/unreal.md#each) |
-| `census`, `census-diff` | T1 | [Unreal pack](commands/unreal.md#census) |
+| `census`, `census --diff` | T1 | [Unreal pack](commands/unreal.md#census) |
 | `dump` | T2 | [Unreal pack](commands/unreal.md#dump), filters: [console](commands/console.md#fewer-round-trips) |
 | `export-labels` | T3 (native exec thunks); other `--kinds` T2 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `peek --label` | T0 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
@@ -110,7 +109,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `snap`, `record`, `--replay` | T2 | [capture](commands/capture.md) |
 | `get`, `--meta` | T2 | [console](commands/console.md#fewer-round-trips) |
 | `batch`, `--timing` | T0 | [console](commands/console.md#fewer-round-trips) |
-| `status`, `base`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
+| `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
 | `stats`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-stats) |
 
 ## Glossary

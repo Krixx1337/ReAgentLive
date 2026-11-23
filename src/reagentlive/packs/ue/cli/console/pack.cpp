@@ -36,7 +36,7 @@ bool HasUnreal(const Client& client) {
     return false;
 }
 
-// census, or census-diff: only the classes whose count differs from the
+// census, or census --diff: only the classes whose count differs from the
 // last census under the same --cls. Either way the new census becomes the
 // baseline; --match and --limit only shape what is printed.
 void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
@@ -140,15 +140,13 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         memset(command.request.data, 0, signature->size);
         callSignature = std::move(*signature);
     }
-    if (request.op == ue::op::Parameters || command.kind == Kind::TypedCall) {
+    if (command.kind == Kind::TypedCall) {
         const auto object = ue::GetRef(request);
         auto function = ue::Function(client, object, request.text);
         if (!function) return CommandError(session, jsonCommand, function.error());
         auto signature = ue::Parameters(client, function->address);
         if (!signature) return CommandError(session, jsonCommand, signature.error());
-        if (command.kind == Kind::TypedCall)
-            return RunTypedCall(session, command, *function, *signature, structs, refs, jsonCommand);
-        return PrintParameters(session, *function, *signature, object);
+        return RunTypedCall(session, command, *function, *signature, structs, refs, jsonCommand);
     }
     if (request.op == ue::op::Call && command.dry) {
         auto function = ue::Function(client, ue::GetRef(command.request), request.text);
@@ -333,7 +331,7 @@ bool PackHeld(const Command& command) {
     const uint32_t op = command.request.op;
     if (op == ue::op::Call && !command.request.length) return true; // Looks up the function's size first.
     return op == ue::op::Fields || op == ue::op::Names || op == ue::op::Census ||
-        op == ue::op::Functions || op == ue::op::Parameters || op == ue::op::Function;
+        op == ue::op::Functions || op == ue::op::Function;
 }
 
 void RunPackCommand(Session& session, const Command& given, std::string_view jsonCommand) {

@@ -223,28 +223,6 @@ struct Interface {
 // func: reflected metadata and the exec entry (absent for none). `interface`
 // for a function an interface declares: calls are refused, since the stub
 // would run another function on this object.
-struct Func {
-    RefId ref;
-    std::string function;
-    Addr address;
-    uint32_t flags = 0;
-    std::optional<Addr> exec;
-    bool executable = false;
-    Location where;
-    std::optional<std::string> moduleError;
-    std::optional<Interface> viaInterface;
-    template<class V> static void Describe(V& v) {
-        v("ref", &Func::ref);
-        v("function", &Func::function);
-        v("address", &Func::address);
-        v("flags", &Func::flags);
-        v("exec", &Func::exec);
-        v("executable", &Func::executable);
-        v.flat("", &Func::where);
-        v("module_error", &Func::moduleError);
-        v("interface", &Func::viaInterface);
-    }
-};
 struct ParamRow {
     FieldInfo field;
     std::string direction;
@@ -255,18 +233,32 @@ struct ParamRow {
         v("flags", &ParamRow::flags);
     }
 };
-struct Params {
+struct Func {
     RefId ref;
     std::string function;
     Addr address;
-    uint32_t blockSize = 0;
-    std::vector<ParamRow> rows;
+    uint32_t flags = 0;
+    std::optional<Addr> exec;
+    bool executable = false;
+    Location where;
+    std::optional<std::string> moduleError;
+    std::optional<Interface> viaInterface;
+    std::optional<uint32_t> blockSize;
+    std::optional<std::vector<ParamRow>> params;
+    std::optional<std::string> paramsError;
     template<class V> static void Describe(V& v) {
-        v("ref", &Params::ref);
-        v("function", &Params::function);
-        v("address", &Params::address);
-        v("block_size", &Params::blockSize);
-        v("rows", &Params::rows);
+        v("ref", &Func::ref);
+        v("function", &Func::function);
+        v("address", &Func::address);
+        v("flags", &Func::flags);
+        v("exec", &Func::exec);
+        v("executable", &Func::executable);
+        v.flat("", &Func::where);
+        v("module_error", &Func::moduleError);
+        v("interface", &Func::viaInterface);
+        v("block_size", &Func::blockSize);
+        v("params", &Func::params);
+        v("params_error", &Func::paramsError);
     }
 };
 
@@ -1019,15 +1011,12 @@ inline const char* ParameterDirection(uint64_t flags) {
         flags & ue::Output ? "out" : "in";
 }
 
-inline shape::Params MakeParams(const Ref& ref, const ue::FunctionInfo& function, const ue::Signature& signature) {
-    shape::Params out;
-    out.ref = ReusableRef(ref);
-    out.function = function.owner + ":" + function.name;
-    out.address = function.address;
+// func's signature: the call block's size and its parameters in block order.
+inline void AddSignature(shape::Func& out, const ue::Signature& signature) {
     out.blockSize = signature.size;
+    out.params.emplace();
     for (const auto& parameter : signature.parameters)
-        out.rows.push_back({MakeFieldInfo(parameter), ParameterDirection(parameter.parameterFlags), parameter.parameterFlags});
-    return out;
+        out.params->push_back({MakeFieldInfo(parameter), ParameterDirection(parameter.parameterFlags), parameter.parameterFlags});
 }
 
 inline shape::Names MakeNames(std::span<const int32_t> indices, std::span<const std::string> names) {

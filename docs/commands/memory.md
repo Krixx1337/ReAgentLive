@@ -1,6 +1,6 @@
 # Memory commands
 
-*Home of:* the core memory commands and their guards: `read`, `read-batch`, `peek`, `write`, trials, `search`, `pin`, `watch`, `mem-snap`/`mem-diff`, typed layouts.
+*Home of:* the core memory commands and their guards: `read`, `peek`, `write`, trials, `search`, `pin`, `watch`, `mem-snap`/`mem-diff`, typed layouts.
 
 **TL;DR:** Read, search and change raw memory in any process the agent
 runs in, with no engine pack (tier T0). Every write is guarded and can
@@ -14,9 +14,8 @@ keys: `help <verb>` or [result shapes](results.md).
 
 | Command | Guard |
 |---|---|
-| `read <addr> [len] [--type T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--type i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--type "<layout>"`: a block of mixed types (below). `--type cstr\|wstr` and pointer chains: [native objects](native-objects.md) |
-| `read-batch <addr> <len> [<addr> <len> ...]` | 1–8 ranges in one host tick. The 4096-byte response budget includes 4 status bytes per range |
-| `peek <addr> [count] [--label [file]] [--name <name>]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword `read-batch` when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one `region` per readable pointer and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file (default: the console's labels file); `--name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
+| `read <addr> [len] [--type T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--type i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--type "<layout>"`: a block of mixed types (below). `--type cstr\|wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
+| `peek <addr> [count] [--label [file]] [--name <name>]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address (`region`) and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file (default: the console's labels file); `--name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
 | `write <addr> <hex> [--expect <hex>]` | 1..256 bytes; committed, writable pages; page protection is never changed. `--expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
 | `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
@@ -33,18 +32,13 @@ keys: `help <verb>` or [result shapes](results.md).
 Read and write copies catch access faults and report `access faulted`; a
 first-chance fault is still visible to any exception observer in the host.
 
-## read-batch
+## Reads that share a tick
 
-`read-batch base 16 base+0x40 8` returns `tick` (the agent heartbeat
-at execution) and ordered `rows`. Each row has `address`, `size`,
-`ok`, and either `hex` or an `error` with status and message. The command
-envelope's `ok` reports whether the batch ran. Check each row's `ok` for
-read success. Malformed or over-budget batches are rejected before copying,
-the refusal stating the limit: at most 8 ranges, totalling 4096 bytes less
-4 per range (each range's status shares the response).
-Addresses must be known when the request is sent. Like `read`, this checks
-memory accessibility. A reference used as an address does not check object
-identity. The copies run sequentially inside one host tick.
+Several ranges that must come from one moment go in one `batch` of
+`read`s (its `same_tick` says whether they did) or one `get`. The wire op
+behind it, `read-batch` ([protocol](../protocol.md)), is internal: the
+console uses it for `disasm`, `touches`, signatures and labels, and gives
+it no verb of its own.
 
 ## Typed layouts
 

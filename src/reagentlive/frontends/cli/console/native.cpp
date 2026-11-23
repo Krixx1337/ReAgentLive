@@ -1,6 +1,7 @@
 // reagentlive CLI console: native objects without an engine pack. vtable (slots
-// read from live bytes, code decided by the module's section table) and
-// region (the agent's VirtualQuery, named here).
+// read from live bytes, code decided by the module's section table; --rtti
+// the MSVC type information) and the region an address lies in (the agent's
+// VirtualQuery, named here) for read and peek.
 #include <algorithm>
 #include <optional>
 #include <string>
@@ -21,39 +22,18 @@ std::optional<std::string> RegionKind(Session& session, uint64_t address) {
     return std::string(native::region::Kind(*info, std::nullopt));
 }
 
-void RunRegion(Session& session, const Command& command, std::string_view jsonCommand) {
+std::optional<shape::Region> RegionOf(Session& session, uint64_t address) {
     Client& client = session.client;
-    if (!client.Supports(op::Region)) return JsonError(session, jsonCommand, "unsupported", "agent does not support region");
-    const uint64_t address = command.request.address;
+    if (!client.Supports(op::Region)) return std::nullopt;
     auto info = client.Region(address);
-    if (!info) return CommandError(session, jsonCommand, info.error());
+    if (!info) return std::nullopt;
     std::optional<std::pair<bool, bool>> flags;
-    std::string section;
     if (info->type == native::region::Image)
         if (const Module* module = ModuleAt(address, LoadedModules(session)))
             if (auto layout = LayoutOf(session, *module))
-                if (const auto* found = (*layout)->At(address - module->base)) {
+                if (const auto* found = (*layout)->At(address - module->base))
                     flags = std::pair(found->Exec(), static_cast<bool>(found->flags & image::Writable));
-                    section = found->name;
-                }
-    Emit(session, jsonCommand, MakeRegion(address, *info, native::region::Kind(*info, flags), section,
-        LoadedModules(session)));
-}
-
-void RunRtti(Session& session, const Command& command, std::string_view jsonCommand) {
-    Client& client = session.client;
-    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, "unsupported", "rtti needs read-batch");
-    const Client::Hold hold(client);
-    const uint64_t address = command.request.address;
-    uint64_t table = address;
-    if (!command.table) {
-        auto bytes = client.Read(address + command.offset, 8);
-        if (!bytes) return CommandError(session, jsonCommand, bytes.error());
-        format_detail::Load(*bytes, table);
-    }
-    auto rtti = pe::ReadRtti(AgentRead(session), LoadedModules(session), table);
-    if (!rtti) return JsonError(session, jsonCommand, "rtti", rtti.error());
-    Emit(session, jsonCommand, MakeRtti(address, command.table ? 0 : command.offset, table, *rtti, LoadedModules(session)));
+    return MakeRegion(*info, native::region::Kind(*info, flags));
 }
 
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -93,6 +73,13 @@ void RunVtable(Session& session, const Command& command, std::string_view jsonCo
             if (auto resolved = native::ResolveBodies(AgentRead(session), slots.slots); !resolved)
                 return JsonError(session, jsonCommand, "read", resolved.error());
     }
-    Emit(session, jsonCommand, MakeVtable(address, command.offset, table, found, slots, LoadedModules(session)));
+    auto out = MakeVtable(address, command.offset, table, found, slots, LoadedModules(session));
+    if (command.rtti) {
+        if (!table) out.rttiError = "no table: the qword there points into no module";
+        else if (auto rtti = pe::ReadRtti(AgentRead(session), LoadedModules(session), *table))
+            out.rtti = MakeVtableRtti(address, command.table ? 0 : command.offset, *rtti);
+        else out.rttiError = rtti.error();
+    }
+    Emit(session, jsonCommand, std::move(out));
 }
 }

@@ -100,7 +100,7 @@ struct LabelsPort {
 // A row's `sig`: a pattern sig-check takes, and where the row lies from its
 // one match: a function at the match minus offset (usually 0), a global at
 // the reference signature's target (resolve, at code that loads it). With
-// the row's rva as --expect it is a sig-file line.
+// the row's rva as --expect it is a sig-check --file line.
 struct LabelSig {
     sig::Pattern pattern;
     uint64_t offset = 0;

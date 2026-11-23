@@ -162,7 +162,7 @@ TEST_CASE("func --script and refs parse to their kinds") {
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Script);
     CHECK(std::string_view(parsed->request.text) == "Owner:GetSpeed");
-    CHECK_FALSE(Parse("params $1 Owner:GetSpeed --script", TwoRefs).has_value());
+    CHECK_FALSE(Parse("func $1 Owner:GetSpeed --script", TwoRefs).has_value());
     parsed = Parse("refs #145935", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Refs);
@@ -258,12 +258,10 @@ TEST_CASE("call keeps the full ref from find and marks raw addresses for identif
     CHECK(ue::Check(parsed->request) == Status::Ok);
 }
 
-TEST_CASE("base is local and modules asks the agent") {
-    auto parsed = Parse("base", NoRefs);
-    REQUIRE(parsed.has_value());
-    CHECK(parsed->kind == Kind::Base);
-    CHECK_FALSE(Parse("base 1", NoRefs).has_value());
-    parsed = Parse("modules", NoRefs);
+TEST_CASE("modules asks the agent; base and region are no verbs") {
+    CHECK_FALSE(Parse("base", NoRefs).has_value());
+    CHECK_FALSE(Parse("region 0x1000", NoRefs).has_value());
+    auto parsed = Parse("modules", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.op == op::Modules);
     CHECK(Check(parsed->request) == Status::Ok);
@@ -519,10 +517,12 @@ TEST_CASE("function discovery, signatures and named calls preserve object refs")
     CHECK_FALSE(Parse("funcs $1 --start", TwoRefs).has_value());
     CHECK_FALSE(Parse("funcs $1 Socket --start 99999", TwoRefs).has_value());
 
-    auto signature = Parse("params $1 SceneComponent:GetSocketTransform", TwoRefs);
+    // func reads the signature too: params is no verb.
+    auto signature = Parse("func $1 SceneComponent:GetSocketTransform", TwoRefs);
     REQUIRE(signature.has_value());
-    CHECK(signature->request.op == ue::op::Parameters);
+    CHECK(signature->request.op == ue::op::Function);
     CHECK(ue::GetRef(signature->request) == TwoRefs[0]);
+    CHECK_FALSE(Parse("params $1 SceneComponent:GetSocketTransform", TwoRefs).has_value());
     auto call = Parse("call $1 SceneComponent:GetSocketTransform SocketName=#42 TransformSpace=0", TwoRefs);
     REQUIRE(call.has_value());
     CHECK(call->kind == Kind::TypedCall);
@@ -701,23 +701,8 @@ TEST_CASE("find takes a class filter and a cursor") {
     CHECK_FALSE(Parse("find --cls A --cls B", NoRefs).has_value());
 }
 
-TEST_CASE("read-batch parses ranges and bounds the total response") {
-    const std::vector<Module> exe{{"game.exe", 0x1000, 0x100}};
-    const auto command = Parse("read-batch base+16 8 0x2000 16", {}, exe);
-    REQUIRE(command.has_value());
-    CHECK(command->request.op == reagentlive::op::ReadBatch);
-    REQUIRE(command->reads.size() == 2);
-    CHECK(command->reads[0].address == 0x1010);
-    CHECK(command->reads[1].length == 16);
-    CHECK(Parse("read-batch 1 4092", {}).has_value());
-    CHECK_FALSE(Parse("read-batch 1 4093", {}).has_value());
-    CHECK_FALSE(Parse("read-batch 1 2 3", {}).has_value());
-    CHECK_FALSE(Parse("read-batch 0xffffffffffffffff 1", {}).has_value());
-    CHECK_FALSE(Parse("read-batch 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1", {}).has_value());
-    // A refusal states the limit it hit.
-    CHECK(Parse("read-batch 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1", {}).error().starts_with("at most 8 ranges"));
-    CHECK(Parse("read-batch 1 600 2 600 3 600 4 600 5 600 6 600 7 600 8 600", {}).error().starts_with(
-        "the ranges total 4200 bytes; 7 ranges take at most 4068 (4096 less 4 per range)"));
+TEST_CASE("read-batch is no verb: batch and the session cover it") {
+    CHECK_FALSE(Parse("read-batch 0x1000 8", NoRefs).has_value());
 }
 
 TEST_CASE("object commands take a bare class name for the console to resolve") {
@@ -728,12 +713,12 @@ TEST_CASE("object commands take a bare class name for the console to resolve") {
         CHECK_FALSE(parsed->className.empty());
         CHECK(parsed->request.address == 0); // Filled once the console resolves the class.
     }
-    const auto params = Parse("params Character Character:CanJump", NoRefs);
-    REQUIRE(params.has_value());
-    CHECK(params->className == "Character");
-    CHECK(params->request.op == ue::op::Parameters);
+    const auto func = Parse("func Character Character:CanJump", NoRefs);
+    REQUIRE(func.has_value());
+    CHECK(func->className == "Character");
+    CHECK(func->request.op == ue::op::Function);
     CHECK(Parse("fields $1", TwoRefs)->className.empty());
-    CHECK_FALSE(Parse("params Character CanJump extra", NoRefs).has_value());
+    CHECK_FALSE(Parse("func Character CanJump extra", NoRefs).has_value());
     CHECK_FALSE(Parse("fields 12abc", NoRefs).has_value());
     CHECK_FALSE(Parse("fields Some-Thing", NoRefs).has_value());
     CHECK_FALSE(Parse("func Character :Bad", NoRefs).has_value());
@@ -753,13 +738,15 @@ TEST_CASE("census takes an optional class and row limit") {
     CHECK_FALSE(Parse("census Actor", NoRefs).has_value());
     CHECK_FALSE(Parse("census --cls", NoRefs).has_value());
     CHECK_FALSE(Parse("census --cls A --cls B", NoRefs).has_value());
-    parsed = Parse("census-diff --cls Actor --match proj --limit 5", NoRefs);
+    CHECK_FALSE(Parse("census", NoRefs)->changed);
+    parsed = Parse("census --diff --cls Actor --match proj --limit 5", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->changed);
     CHECK(parsed->match == "proj");
     CHECK(parsed->limit == 5);
     CHECK_FALSE(Parse("census --match", NoRefs).has_value());
-    CHECK_FALSE(Parse("census-diff --match", NoRefs).has_value());
+    CHECK_FALSE(Parse("census --diff --match", NoRefs).has_value());
+    CHECK_FALSE(Parse("census-diff", NoRefs).has_value());
     CHECK_FALSE(Parse("census --match a --match b", NoRefs).has_value());
     parsed = Parse("census --cls Actor --match zone --start 100 --limit 50", NoRefs);
     REQUIRE(parsed.has_value());
@@ -767,7 +754,7 @@ TEST_CASE("census takes an optional class and row limit") {
     CHECK(parsed->limit == 50);
     CHECK_FALSE(Parse("census --start", NoRefs).has_value());
     CHECK_FALSE(Parse("census --start 1 --start 2", NoRefs).has_value());
-    CHECK_FALSE(Parse("census-diff --changed", NoRefs).has_value());
+    CHECK_FALSE(Parse("census --diff --changed", NoRefs).has_value());
     Request request = parsed->request;
     CopyText(request.text, "x");
     CHECK(ue::Check(request) == Status::BadRequest); // Census takes no name text.
@@ -1052,8 +1039,13 @@ TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an elemen
     CHECK(parsed->limit == 10);
     CHECK_FALSE(Parse("mem-diff bigger f32", NoRefs).has_value());
     CHECK_FALSE(Parse("mem-diff changed cstr", NoRefs).has_value());
-    CHECK(Parse("rtti 0x10000 --offset 0x620", NoRefs)->kind == Kind::Rtti);
-    CHECK_FALSE(Parse("rtti 0x10000 --offset 8 --table", NoRefs).has_value());
+    auto vtable = Parse("vtable 0x10000 --offset 0x620 --rtti", NoRefs);
+    REQUIRE(vtable.has_value());
+    CHECK(vtable->kind == Kind::Vtable);
+    CHECK(vtable->rtti);
+    CHECK(vtable->offset == 0x620);
+    CHECK_FALSE(Parse("vtable 0x10000 --offset 8 --table --rtti", NoRefs).has_value());
+    CHECK_FALSE(Parse("rtti 0x10000", NoRefs).has_value());
 }
 
 TEST_CASE("each --where filters on a field's value and --limit caps the rows") {

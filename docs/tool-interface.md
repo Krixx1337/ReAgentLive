@@ -30,10 +30,10 @@ the console.
   strictness all read it. Each shape used to be written five times
   (builder, key pins in a test, the docs row, a Python docstring, the
   skill) and agreed only because they were edited together.
-- **One verb, one result type.** Modes became verbs (`sig-check`,
-  `sig-bytes`, `watch-start`, `census-diff`, `pin-list`, `trial`). A flag
-  may add optional keys and never changes a key's type (`read --type` with a
-  layout fills `layout`, not `values`). One name for a result's list
+- **One verb, one result type.** A flag may add optional keys and never
+  changes a key's type (`census --diff` adds `before`; `read --type` with a
+  layout fills `layout`, not `values`); a mode that would change one stays a
+  verb of its own (`sig-bytes`, `watch-start`). One name for a result's list
   (`rows`), one paging convention (`from`, `next_cursor`), `capped` for a
   list cut at a hard limit and `truncated` for an incomplete value.
 - **Typed result structs with one field list.** A result is a struct

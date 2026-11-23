@@ -38,23 +38,18 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"--limit", Takes::One, "int", "N", "rows at most (1..1000), over as many pages as it takes"}},
             Of<shape::Find>, parse::Find, "The rows become $1..$N. Only the first page counts total. --limit pages "
             "until N rows or the end; next_cursor continues after the last row."},
-        {"census", "ue", "live instances per class, most first; pages of 100 rows",
+        {"census", "ue", "live instances per class, most first; pages of 100 rows; --diff: only the counts that changed",
             {},
             {cls,
              outer,
              classMatch,
              pageLimit,
-             {"--start", Takes::One, "int", "N", "next_cursor: pages the stored census without a new scan"}},
-            Of<shape::Census>, parse::Census, "Class refs become $1..$N. Every census becomes census-diff's baseline."},
-        {"census-diff", "ue", "the classes whose count differs from the last census of that --cls",
-            {},
-            {cls,
-             outer,
-             classMatch,
-             pageLimit,
-             cursor},
-            Of<shape::CensusDiff>, parse::CensusDiff,
-            "Takes a new census, which becomes the next baseline. Class refs become $1..$N."},
+             {"--start", Takes::One, "int", "N", "next_cursor: pages the stored census without a new scan"},
+             {"--diff", Takes::Nothing, "bool", "", "only the classes whose count differs from the last census of that --cls and --outer"}},
+            Of<shape::Census>, parse::Census,
+            "Class refs become $1..$N. Every census becomes the next --diff's baseline. --diff takes a new census and "
+            "answers classes and instances as {before, after}, rows with before, after and change; refused with no "
+            "earlier census under the same filter."},
         {"name-find", "ue", "FName indices whose text contains text (gameplay tags, row names)",
             {{"text", "text", One, "text", "part of the pooled name"}},
             {cursor}, Of<shape::NameFind>, parse::NameFind},
@@ -87,7 +82,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"--limit", Takes::One, "int", "N", "a returned array's rows per page (0: all)", "100"},
              {"--nonzero", Takes::Nothing, "bool", "", "as get takes it, inside the outputs; implies a typed call"}},
             Of<shape::Call>, parse::Call,
-            "A raw block must match the function's size (params shows it); none sends a zeroed block when every "
+            "A raw block must match the function's size (func shows it as block_size); none sends a zeroed block when every "
             "parameter is an output. hex is the block after the call; a typed call adds outputs, a returned array "
             "as {count, rows, next_cursor} with each element decoded from its struct (nested arrays up to 256 "
             "elements, 3 deep; names resolved). kept: an output "
@@ -201,9 +196,11 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"describe", "ue", "an object's name, class and reusable ref",
             {{"object", "address|$N|#index:serial", One, "ref", "the object: an address, $N, a literal ref, or a table slot and serial"}},
             {}, Of<shape::Object>, parse::Describe},
-        {"func", "ue", "a function's reflected metadata and exec entry address",
+        {"func", "ue", "a function's reflected metadata, exec entry address and parameter signature",
             {{"object", "object|Class", One, "str", objectOrClass}, {"function", "[Owner:]Function", One, "str", function}},
-            {}, Of<shape::Func>, parse::Func},
+            {}, Of<shape::Func>, parse::Func,
+            "params lists the parameters in block order (direction in, out, in ref, in/out ref or return) and block_size "
+            "is the call block's size; reading them needs the game thread, so without it params_error says why instead."},
         {"script", "ue", "a Blueprint function's bytecode: the names, functions and properties it uses",
             {{"object", "object|Class", One, "str", objectOrClass}, {"function", "[Owner:]Function", One, "str", function}},
             {}, Of<shape::Script>, parse::Script, "Each entry is read right after its opcode and confirmed live."},
@@ -214,7 +211,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"game-thread", "ue", "the host's game-thread tick through the game viewport's Draw: status, on, off",
             {{"action", "on|off|status", Optional, "str", "on arms it, off puts the viewport's table back", "status"}},
             {}, Of<shape::GameThread>, parse::GameThread,
-            "call, call-pure, release, params, each, script, refs, exec entries and the recorder need the game thread. on swaps one pointer in "
+            "call, call-pure, release, func's params, each, script, refs, exec entries and the recorder need the game thread. on swaps one pointer in "
             "the viewport object for a copy of its Draw table: confirm Draw first (the skill's references/unreal/game-thread.md). "
             "Agents whose host does not link reagentlive::ue-draw answer unsupported.",
             {}, true},
@@ -224,9 +221,6 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "object|Class", One, "str", objectOrClass}, {"text", "text", Optional, "str", "keep function names containing it"}},
             {cursor}, Of<shape::Funcs>, parse::Funcs,
             "A row with via \"interface\" is declared only on that native interface: call refuses it on the object; func shows the implementation to call instead."},
-        {"params", "ue", "a function's reflected parameter signature",
-            {{"object", "object|Class", One, "str", objectOrClass}, {"function", "[Owner:]Function", One, "str", function}},
-            {}, Of<shape::Params>, parse::Params},
         {"snap", "ue", "save a baseline for dump --changed (file: across runs)",
             {{"object", "ref", One, "ref", "an object ref: $N or 0x<address>#<index>:<serial>"}, {"file", "file", Optional, "path", path}},
             {}, Of<shape::Snap>, parse::Snap},
@@ -243,7 +237,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
 inline const std::vector<std::string>& UnrealNotes() {
     static const std::vector<std::string> notes = {
         "Unreal pack verbs are refused when the host does not offer the pack (status lists the packs).",
-        "Refs: $N from the last command that lists refs (find, census, census-diff, each, describe; dump, get and entries add the objects they name), or the printed literal 0x<address>#<index>:<serial> (works across runs).",
+        "Refs: $N from the last command that lists refs (find, census, each, describe; dump, get and entries add the objects they name), or the printed literal 0x<address>#<index>:<serial> (works across runs).",
         "A bare class or struct name works where object|Class is shown; the first lookup scans the table.",
         "Struct values print as {Name: value}; --meta at the end of a line adds their member layout.",
     };

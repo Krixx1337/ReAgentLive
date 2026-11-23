@@ -144,7 +144,6 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand);
 void RunTouches(Session& session, const Command& command, std::string_view jsonCommand);
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand);
-void RunRtti(Session& session, const Command& command, std::string_view jsonCommand);
 // %TEMP%\reagentlive-<pid>.cache: the cache file of the agent in that process.
 std::filesystem::path CachePath(uint32_t pid);
 // %TEMP%\reagentlive-<pid>-<owner>.results: whole results kept by the output budget.
@@ -152,11 +151,12 @@ std::filesystem::path ResultsFolder(uint32_t pid, uint32_t owner);
 // mem-snap and mem-diff: a raw range kept in a file beside the cache, then compared.
 void RunMemSnap(Session& session, const Command& command, std::string_view jsonCommand);
 void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand);
-void RunRegion(Session& session, const Command& command, std::string_view jsonCommand);
 void RunStats(Session& session, const Command& command, std::string_view jsonCommand);
 // The region kind at an address (code, data, private, mapped...), nullopt
 // when the agent has no region op or the query fails.
 std::optional<std::string> RegionKind(Session& session, uint64_t address);
+// The memory an address lies in (read and peek); nullopt as RegionKind.
+std::optional<shape::Region> RegionOf(Session& session, uint64_t address);
 // Reads through the agent: read-batch items, nullopt where unreadable.
 sig::ReadFn AgentRead(Session& session);
 // Anchor searches for sig's matcher over the whole image (worker thread when the host allows it).

@@ -58,18 +58,22 @@ shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, 
     return out;
 }
 
+// func: the metadata, then the signature (game thread only: else why not).
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand) {
     Client& client = session.client;
     const auto function = ue::Function(client, ref, name);
     if (!function) return CommandError(session, jsonCommand, function.error());
-    if (!function->exec) return Emit(session, jsonCommand, MakeFunc(ref, *function, {}));
-    const auto modules = client.Modules();
-    return Emit(session, jsonCommand, modules ? MakeFunc(ref, *function, *modules) :
-        MakeFunc(ref, *function, {}, modules.error().message));
-}
-
-void PrintParameters(Session& session, const ue::FunctionInfo& function, const ue::Signature& signature, const Ref& object) {
-    Emit(session, "params", MakeParams(object, function, signature));
+    shape::Func out;
+    if (!function->exec) {
+        out = MakeFunc(ref, *function, {});
+    } else {
+        const auto modules = client.Modules();
+        out = modules ? MakeFunc(ref, *function, *modules) : MakeFunc(ref, *function, {}, modules.error().message);
+    }
+    if (!client.Supports(ue::op::Parameters)) out.paramsError = "the agent does not read parameters";
+    else if (auto signature = ue::Parameters(client, function->address)) AddSignature(out, *signature);
+    else out.paramsError = signature.error().message;
+    Emit(session, jsonCommand, std::move(out));
 }
 
 namespace {
