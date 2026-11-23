@@ -552,7 +552,8 @@ result counts what was written: `total` rows of this build, of which
   many rows it named, commented and skipped.
 - `export_names(path)` (path: the host's names file) writes every name
   you gave in that database (not
-  `sub_…`, `fn_…` or other made-up names, and not names a file brought in)
+  `sub_…`, `fn_…` or other made-up names, not names a file brought in,
+  nor library names (FLIRT functions, library items))
   as `user` rows of its build, adding or updating them; names it does not
   hold stay (a save database never wipes what another database named).
   The next save, import or export shows them: a finding named once stays

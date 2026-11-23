@@ -54,7 +54,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   confirmed globals, other builds). The IDA side is one file,
   `frontends/ida/reagentlive_ida.py`: the save loader plus `import_labels`
   (full or save databases), `export_names` (your names back as `user`
-  rows, which outrank every derived name) and `decompile_all`. Breaking:
+  rows, which outrank every derived name; library names stay out) and
+  `decompile_all`. Breaking:
   `load_function.py` and `import_labels.py` are gone; copy
   `reagentlive_ida.py` into IDA's loaders folder and delete the old files
   ([labels](docs/commands/unreal.md#labels-for-a-static-tool)).
@@ -71,7 +72,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   --callees` saves each function it calls directly (one level, up to 16),
   `--labels` names functions, call targets and globals from an
   `export-labels` file, and the IDA loader stubs named addresses so calls
-  read as names. `add_saved(path)` adds a later save to the open database.
+  read as names. A save never holds overlapping code, and the loader joins
+  rows that overlap with identical bytes or touch. `add_saved(path)` grows
+  the open database by a later save and returns what it added, joined and
+  cut; it raises `SaveError` rather than load less than the file holds.
   Breaking: a save file holds one `function` row per saved function; copy
   the new loader into IDA's loaders folder
   ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).

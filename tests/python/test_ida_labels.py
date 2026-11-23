@@ -1,7 +1,12 @@
 """The IDA names round trip's planning (labels in, your names out), without IDA."""
+import contextlib
+import io
 import os
 import sys
+import tempfile
+import types
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'ida'))
 import reagentlive_ida as labels  # noqa: E402
@@ -65,6 +70,33 @@ class ImportLabels(unittest.TestCase):
         self.assertEqual(merged[0]['name'], 'NewName')     # The database's name wins...
         self.assertEqual(merged[0]['sig'], {'pattern': '48 8b c4'})  # ...the signature follows the address.
         self.assertEqual(merged[0]['ported_from'], 6)
+
+    def test_export_skips_library_names(self):
+        base = 0x140000000
+        names = {base + 0x10: 'Ricochet_Resolve', base + 0x20: '__alloca_probe', base + 0x30: '_guard_check',
+                 base + 0x40: 'sub_140000040'}
+        library_functions = {base + 0x20}      # A FLIRT match: its function carries FUNC_LIB.
+        library_items = {base + 0x30}          # A library item outside a library function.
+
+        class Function:
+            def __init__(self, ea):
+                self.flags = 4 if ea in library_functions else 0
+
+        fakes = {
+            'ida_bytes': types.SimpleNamespace(get_flags=lambda ea: ea, has_user_name=lambda flags: True),
+            'ida_funcs': types.SimpleNamespace(FUNC_LIB=4, get_func=Function),
+            'ida_kernwin': types.SimpleNamespace(),
+            'ida_nalt': types.SimpleNamespace(is_libitem=lambda ea: ea in library_items),
+            'idautils': types.SimpleNamespace(Names=lambda: sorted(names.items())),
+        }
+        build = {'module': 'Game.exe', 'module_size': 4096, 'timestamp': 7, 'base': base}
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.dict(sys.modules, fakes), mock.patch.object(labels, '_database_build', lambda: build):
+            path = os.path.join(folder, 'labels.jsonl')
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(labels.export_names(path), 1)
+            with open(path, encoding='utf-8') as handle:
+                self.assertEqual([row['name'] for row in labels.load(handle)], ['Ricochet_Resolve'])
 
     def test_a_users_name_stays_and_the_label_becomes_a_comment(self):
         rows = labels.load([ROW % ('exec', 'A::execB', '0x10'), ROW % ('vtable', 'vtbl_A', '0x20'),

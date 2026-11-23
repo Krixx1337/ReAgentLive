@@ -1,11 +1,11 @@
 // reagentlive CLI: functions saved for a static tool (`disasm --function
 // --save <file> [--callees]`). JSON lines: one `function` row per saved
 // function (module, size, timestamp, bounds), `code` and `data` rows (live
-// bytes at their addresses), and `name` rows (the functions, imports, call
-// targets and labelled globals), and `chunk` rows (a function's chained
-// continuations, listed apart). A loader builds a small database from it,
-// so the tool decompiles those functions without analysing the whole image.
-// Pure: rows and bytes come in, text goes out.
+// bytes at their addresses, never overlapping), `name` rows (the functions,
+// imports, call targets and labelled globals), and `chunk` rows (a
+// function's chained continuations, listed apart). A loader builds a small
+// database from it, so the tool decompiles those functions without
+// analysing the whole image. Pure: rows and bytes come in, text goes out.
 #pragma once
 #include <algorithm>
 #include <map>
@@ -66,6 +66,44 @@ inline std::vector<std::pair<uint64_t, std::vector<uint8_t>>> CodeRuns(std::span
         runs.back().second.insert(runs.back().second.end(), row.bytes.begin(), row.bytes.end());
     }
     return runs;
+}
+
+// The code runs of every saved part made one sorted set: runs that overlap
+// or touch are joined, so no byte is written twice (one build, one set of
+// bytes; where two listings overlap, the first one's bytes are kept).
+inline std::vector<std::pair<uint64_t, std::vector<uint8_t>>> JoinedRuns(
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> runs) {
+    std::ranges::sort(runs, {}, [](const auto& run) { return run.first; });
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> joined;
+    for (auto& [at, bytes] : runs) {
+        if (!joined.empty() && at <= joined.back().first + joined.back().second.size()) {
+            auto& last = joined.back();
+            const uint64_t end = last.first + last.second.size(), skip = end - at;
+            if (skip < bytes.size()) last.second.insert(last.second.end(), bytes.begin() + skip, bytes.end());
+        } else {
+            joined.push_back({at, std::move(bytes)});
+        }
+    }
+    return joined;
+}
+
+// The parts of a data run that no code run covers, in order.
+inline std::vector<std::pair<uint64_t, std::vector<uint8_t>>> Uncovered(
+    uint64_t at, std::span<const uint8_t> bytes, std::span<const std::pair<uint64_t, std::vector<uint8_t>>> code) {
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> out;
+    uint64_t from = at;
+    const uint64_t end = at + bytes.size();
+    const auto keep = [&](uint64_t to) {
+        if (to > from) out.push_back({from, {bytes.begin() + (from - at), bytes.begin() + (to - at)}});
+    };
+    for (const auto& [start, run] : code) { // Sorted and apart.
+        const uint64_t stop = start + run.size();
+        if (stop <= from || start >= end) continue;
+        keep(std::min(start, end));
+        from = std::max(from, stop);
+    }
+    keep(end);
+    return out;
 }
 
 // Direct calls in the rows to other code in the module, in call order, each
@@ -157,11 +195,15 @@ inline std::string Lines(const Module& module, uint32_t timestamp, std::span<con
     for (const auto& chunk : functions)
         if (chunk.owner)
             line({{"row", "chunk"}, {"start", Hex(chunk.start)}, {"end", Hex(endOf(chunk))}, {"function", Hex(chunk.owner)}});
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> runs;
     for (const auto& function : functions)
-        for (const auto& [at, bytes] : CodeRuns(function.rows))
-            line({{"row", "code"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
-    for (const auto& [at, bytes] : data)
-        line({{"row", "data"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
+        for (auto& run : CodeRuns(function.rows)) runs.push_back(std::move(run));
+    const auto code = JoinedRuns(std::move(runs));
+    for (const auto& [at, bytes] : code)
+        line({{"row", "code"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
+    for (const auto& [from, held] : data)
+        for (const auto& [at, bytes] : Uncovered(from, held, code))
+            line({{"row", "data"}, {"address", Hex(at)}, {"rva", Hex(at - module.base)}, {"bytes", HexText(bytes)}});
     std::vector<uint64_t> named;
     const auto name = [&](uint64_t at, const std::string& text, std::string_view what) {
         if (std::ranges::find(named, at) != named.end()) return;

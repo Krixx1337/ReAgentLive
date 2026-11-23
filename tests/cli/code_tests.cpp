@@ -823,6 +823,48 @@ TEST_CASE("a saved function holds its code, the read-only data it reads and its 
     CHECK(lines[5]["rva"] == "0x9000");
 }
 
+TEST_CASE("a save never holds overlapping code, nor data under code") {
+    const Module module{"Game.exe", Base, 0x100000};
+    // A callee listing that runs on through another saved callee.
+    std::vector<dis::Instruction> outer(3), inner(2), apart(1);
+    outer[0].address = Base + 0x3000; outer[0].bytes = {0x90, 0x90};
+    outer[1].address = Base + 0x3002; outer[1].bytes = {0x90, 0x90};
+    outer[2].address = Base + 0x3004; outer[2].bytes = {0xc3};
+    inner[0].address = Base + 0x3002; inner[0].bytes = {0x90, 0x90};   // Inside the outer listing.
+    inner[1].address = Base + 0x3004; inner[1].bytes = {0xc3};
+    apart[0].address = Base + 0x3005; apart[0].bytes = {0xcc, 0xc3};   // Touches the outer end: joined.
+    const std::vector<save::Saved> parts{{Base + 0x3002, inner}, {Base + 0x3000, outer}, {Base + 0x3005, apart}};
+    // Data partly under code: only the bytes past the code are kept.
+    const std::vector<std::pair<uint64_t, std::vector<uint8_t>>> data{{Base + 0x3006, {0xc3, 1, 2}}, {Base + 0x8000, {7}}};
+    std::istringstream text(save::Lines(module, 7, parts, data));
+    std::vector<Json> lines;
+    for (std::string line; std::getline(text, line);) lines.push_back(Json::parse(line));
+    std::vector<Json> code, kept, functions;
+    for (const auto& line : lines) {
+        if (line["row"] == "code") code.push_back(line);
+        if (line["row"] == "data") kept.push_back(line);
+        if (line["row"] == "function") functions.push_back(line);
+    }
+    CHECK(functions.size() == 3);                       // Function rows stay as they are: they may overlap.
+    CHECK(functions[0]["start"] == "0x140003002");
+    REQUIRE(code.size() == 1);
+    CHECK(code[0]["address"] == "0x140003000");
+    CHECK(code[0]["bytes"] == "90909090c3ccc3");
+    REQUIRE(kept.size() == 2);
+    CHECK(kept[0]["address"] == "0x140003007");
+    CHECK(kept[0]["bytes"] == "0102");
+    CHECK(kept[1]["address"] == "0x140008000");
+
+    // Data inside one code run is dropped; data spanning two runs keeps the gap.
+    const std::vector<std::pair<uint64_t, std::vector<uint8_t>>> runs{{Base + 0x10, {1, 2}}, {Base + 0x14, {3, 4}}};
+    const std::vector<uint8_t> under{1}, spanning{2, 9, 9, 3, 4, 5};
+    CHECK(save::Uncovered(Base + 0x10, under, runs).empty());
+    const auto gaps = save::Uncovered(Base + 0x11, spanning, runs);
+    REQUIRE(gaps.size() == 2);
+    CHECK(gaps[0] == std::pair<uint64_t, std::vector<uint8_t>>{Base + 0x12, {9, 9}});
+    CHECK(gaps[1] == std::pair<uint64_t, std::vector<uint8_t>>{Base + 0x16, {5}});
+}
+
 TEST_CASE("the cache keeps module layouts") {
     CacheData data;
     data.owner = 9;

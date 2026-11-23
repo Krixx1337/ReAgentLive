@@ -145,8 +145,8 @@ JSON lines:
 |---|---|
 | `function` | `module`, `module_size`, `timestamp` (the build), `base`, `start`, `end`: one row per saved function, the first first |
 | `chunk` | `start`, `end`, `function`: a chained chunk of the function starting at `function` |
-| `code` | `address`, `rva`, `bytes` (hex): the listed code, one row per contiguous run |
-| `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch |
+| `code` | `address`, `rva`, `bytes` (hex): the listed code of every saved part, one row per contiguous run; runs that overlap or touch are joined, so no two rows overlap |
+| `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch; bytes a `code` row holds are left out |
 | `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
 
 `frontends/ida/reagentlive_ida.py` is the IDA loader: copy it into IDA's
@@ -154,17 +154,28 @@ user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and
 open the file; IDA's headless library reads the same folder, so an
 automated session opens it too. It builds an x64 database (Visual C++, so
 the decompiler uses the Windows calling convention) with one segment per
-`code` and `data` row at its live address, makes each function and
+run of `code` and `data` rows (rows that overlap with identical bytes, or
+touch, are joined; rows that overlap with different bytes refuse the file)
+at its live address, makes each function and
 applies the names. A name outside the saved bytes gets a one-byte `STUB`
 segment, so the decompiler shows `fn_6fa0aa0(...)` or a label instead of
 a bare address. Writable globals are not saved (their values change). The
 `rva`s cross back to a full database of the same build.
 
 `add_saved(<path>)`, called from IDA's Python on an open database, adds
-another save of the same build to it: only the bytes no segment holds yet,
-stubs replaced by the code that arrives. One database can then grow
-through a whole investigation instead of one per save. It returns `None`,
-or why it added nothing (another build, an unreadable file).
+another save of the same build to it, so one workspace database grows
+through a whole investigation: open the first save, `add_saved` every
+later one, close it at the end. Bytes the database already holds are cut
+from the new save and must match byte for byte (one build has one set of
+bytes). A new run that overlaps or touches a segment of its kind joins it
+into one segment, so a function never ends at a segment's edge, and stubs
+are replaced by the code that arrives. Names you gave and comments already
+there stay. It returns a summary: `added` (new segments), `joined`
+(existing segments grown), `cut` (new bytes already held), each as
+`start-end` ranges, and `stubs_replaced`. It raises `SaveError` instead of
+loading less than the file holds: a file it cannot parse, another build, a
+byte that differs from the database, or a saved function or chunk start
+left without bytes.
 
 - **Install name.** Any file name in the loaders folder works; IDA offers
   every loader there. After updating ReAgentLive, copy the repo's file over
@@ -192,7 +203,7 @@ or why it added nothing (another build, an unreadable file).
   spec = importlib.util.spec_from_file_location('reagentlive_ida', path)
   rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
   rl.decompile_all()            # every function's pseudocode, one string
-  rl.add_saved('<next save>')   # grow the database
+  rl.add_saved('<next save>')   # grow the database; returns the summary
   rl.export_names('<console>.labels.jsonl')   # names you gave, for later saves
   ```
 

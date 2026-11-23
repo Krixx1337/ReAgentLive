@@ -63,18 +63,60 @@ class LoadFunction(unittest.TestCase):
         self.assertEqual(plan['functions'], [(0x140001000, 0x140001006)])
         self.assertEqual(plan['chunks'], [(0x140002000, 0x140002002, 0x140001000)])
 
-    def test_an_added_save_keeps_only_bytes_no_segment_holds(self):
-        segments = [(0x1000, bytes(range(16)), 'CODE'), (0x2000, b'ab', 'DATA')]
-        self.assertEqual(loader.additions(segments, [(0x1004, 0x1008), (0x2000, 0x2002)]),
-                         [(0x1000, bytes(range(4)), 'CODE'), (0x1008, bytes(range(8, 16)), 'CODE')])
-        self.assertEqual(loader.additions(segments, []), segments)
+    def test_identical_overlaps_join_into_one_segment(self):
+        # A callee listed inside another callee's run: the same bytes twice.
+        outer = '{"address":"0x140002000","bytes":"' + bytes(range(16)).hex() + '","row":"code","rva":"0x2000"}'
+        inner = '{"address":"0x140002004","bytes":"04050607","row":"code","rva":"0x2004"}'
+        tail = '{"address":"0x14000200c","bytes":"0c0d0e0f1011","row":"code","rva":"0x200c"}'
+        plan = loader.parse([FUNCTION, CODE, outer, inner, tail])
+        self.assertIsInstance(plan, dict)
+        self.assertEqual([(s, len(d)) for s, d, _ in plan['segments']], [(0x140001000, 6), (0x140002000, 18)])
+        self.assertEqual(plan['segments'][1][1], bytes(range(18)))
+
+    def test_touching_runs_join_only_with_the_same_kind(self):
+        chunk = '{"address":"0x140001006","bytes":"90c3","row":"code","rva":"0x1006"}'
+        data = '{"address":"0x140001008","bytes":"0000","row":"data","rva":"0x1008"}'
+        plan = loader.parse([FUNCTION, CODE, chunk, data])
+        self.assertEqual([(s, len(d), k) for s, d, k in plan['segments']],
+                         [(0x140001000, 8, 'CODE'), (0x140001008, 2, 'DATA')])
+        inside = '{"address":"0x140001002","bytes":"1005","row":"data","rva":"0x1002"}'   # Read by code too.
+        self.assertEqual([(s, len(d), k) for s, d, k in loader.parse([FUNCTION, CODE, inside])['segments']],
+                         [(0x140001000, 6, 'CODE')])
+
+    def test_overlaps_with_different_bytes_refuse_the_file(self):
+        other = '{"address":"0x140001004","bytes":"f8aa","row":"code","rva":"0x1004"}'
+        self.assertEqual(loader.parse([FUNCTION, CODE, other]), 'segments overlap at 0x140001005 with different bytes')
+
+    def test_an_added_save_cuts_held_bytes_and_joins_what_it_touches(self):
+        existing = [(0x1004, bytes(range(4, 8)), 'CODE'), (0x2000, b'ab', 'DATA'), (0x3000, b'xy', 'CODE')]
+        segments = [(0x1000, bytes(range(16)), 'CODE'), (0x2000, b'ab', 'DATA'), (0x4000, b'zz', 'CODE')]
+        writes, report = loader.additions(segments, existing)
+        self.assertEqual(writes, [(0x1000, bytes(range(16)), 'CODE', [(0x1004, 0x1008)]),
+                                  (0x4000, b'zz', 'CODE', [])])
+        self.assertEqual(report, {'added': [(0x4000, 0x4002)], 'joined': [(0x1000, 0x1010)],
+                                  'cut': [(0x1004, 0x1008), (0x2000, 0x2002)]})
+        # A run touching an existing one of its kind grows it; a held run adds nothing.
+        writes, report = loader.additions([(0x3002, b'zw', 'CODE'), (0x3000, b'x', 'CODE')], existing)
+        self.assertEqual(writes, [(0x3000, b'xyzw', 'CODE', [(0x3000, 0x3002)])])
+        self.assertEqual(report['cut'], [(0x3000, 0x3001)])
+        self.assertEqual(loader.additions([(0x2000, b'a', 'DATA')], existing), ([], {'added': [], 'joined': [], 'cut': [(0x2000, 0x2001)]}))
+        self.assertEqual(loader.additions(segments, []),
+                         ([(s, d, k, []) for s, d, k in segments], {'added': [(0x1000, 0x1010), (0x2000, 0x2002), (0x4000, 0x4002)], 'joined': [], 'cut': []}))
+
+    def test_an_added_save_that_disagrees_with_the_database_is_refused(self):
+        self.assertIn('0x1005 with different bytes', loader.additions([(0x1000, b'\0' * 8, 'CODE')], [(0x1004, b'\0\1', 'CODE')]))
+
+    def test_code_bytes_a_data_segment_held_turn_it_into_code(self):
+        writes, report = loader.additions([(0x1000, b'abcd', 'CODE')], [(0x1000, b'abcd', 'DATA')])
+        self.assertEqual(writes, [(0x1000, b'abcd', 'CODE', [(0x1000, 0x1004)])])
+        self.assertEqual(report['joined'], [(0x1000, 0x1004)])
 
     def test_what_cannot_be_loaded_says_why(self):
         self.assertIn('no function row', loader.parse([CODE]))
         self.assertIn('no code rows', loader.parse([FUNCTION, DATA]))
         self.assertIn('line 2', loader.parse([FUNCTION, '{"row":"code","address":"zz","bytes":"90"}']))
         overlap = '{"address":"0x140001002","bytes":"90","row":"data","rva":"0x1002"}'
-        self.assertIn('overlap', loader.parse([FUNCTION, CODE, overlap]))
+        self.assertIn('different bytes', loader.parse([FUNCTION, CODE, overlap]))
         newer = '{"address":"0x140001000","row":"type","rva":"0x1000"}'
         self.assertIn('older than the file', loader.parse([FUNCTION, CODE, newer]))
 

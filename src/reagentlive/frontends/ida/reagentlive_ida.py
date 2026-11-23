@@ -10,15 +10,21 @@ same folder. Then:
   addresses, with the file's names. A name outside the saved bytes (a call
   or tail target not saved, a labelled global) gets a one-byte STUB segment
   so the decompiler shows the name, not a bare address. Names the file gives
-  are auto names: export_names never mistakes them for yours.
+  are auto names: export_names never mistakes them for yours. Rows that
+  overlap with identical bytes (a callee inside another's listing) load as
+  one segment; differing bytes refuse the file.
 - `add_saved(path)`: add another save of the same build to the open
-  database (only bytes no segment holds yet; stubs replaced by real code).
+  database, so one database gathers a whole investigation: bytes it holds
+  are cut, runs that overlap or touch a segment join it, stubs are replaced
+  by real code. Returns what it added, joined, cut and which stubs it
+  replaced; raises SaveError instead of loading less than the file holds.
 - `import_labels(path)`: name a database from a labels file (the console's
   `<console>.labels.jsonl`, export-labels, peek --label): a full database of
   the build or a save database. Your own names stay; a label becomes a
   comment there.
 - `export_names(path)`: write the names you gave in this database into a
-  labels file as `user` rows, so later saves and imports show them.
+  labels file as `user` rows, so later saves and imports show them (not
+  library names: FLIRT functions and library items).
 - `decompile_all()`: every function's pseudocode, one string.
 
 Run as a script (File > Script file...) it imports labels, asking for the
@@ -80,13 +86,44 @@ def parse(lines):
         return 'no function row: not a disasm --save file'
     if not any(kind == 'CODE' for _, _, kind in segments):
         return 'no code rows'
-    segments.sort(key=lambda s: s[0])
-    for (a, data, _), (b, _, _) in zip(segments, segments[1:]):
-        if a + len(data) > b:
-            return f'segments overlap at {b:#x}'
+    segments = join(segments)
+    if isinstance(segments, str):
+        return segments
     held = [(start, start + len(data)) for start, data, _ in segments]
     return {'build': build, 'functions': functions, 'chunks': chunks, 'segments': segments, 'names': names,
             'stubs': stubs(names, held)}
+
+
+def _groups(items):
+    """Items (start, bytes, kind, tag) sorted and grouped where they overlap, or touch with the same kind:
+    [(start, bytes, kind, [members])], or a string naming the first address whose bytes differ.
+    A group is CODE when any member is (code bytes a data row also read)."""
+    groups = []
+    for item in sorted(items, key=lambda i: i[0]):
+        start, data, kind, _ = item
+        if groups:
+            low, held, held_kind, members = groups[-1]
+            end = low + len(held)
+            if start < end or (start == end and kind == held_kind):
+                shared = min(end, start + len(data)) - start
+                if held[start - low:start - low + shared] != data[:shared]:
+                    at = next(i for i in range(shared) if held[start - low + i] != data[i])
+                    return f'segments overlap at {start + at:#x} with different bytes'
+                groups[-1] = (low, held + data[shared:], 'CODE' if 'CODE' in (held_kind, kind) else held_kind,
+                              members + [item])
+                continue
+        groups.append((start, data, kind, [item]))
+    return groups
+
+
+def join(segments):
+    """Segments [(start, bytes, kind)] sorted, those that overlap with identical bytes (or touch with the
+    same kind) joined into one; a string when overlapping bytes differ. One segment per run lets IDA
+    keep a function whole: a function cannot cross a segment's end."""
+    groups = _groups([(start, data, kind, None) for start, data, kind in segments])
+    if isinstance(groups, str):
+        return groups
+    return [(start, data, kind) for start, data, kind, _ in groups]
 
 
 def stubs(names, held):
@@ -100,16 +137,29 @@ def stubs(names, held):
     return out
 
 
-def additions(segments, occupied):
-    """Each segment cut to the bytes no range in `occupied` [(start, end)] holds."""
-    out = []
-    for start, data, kind in segments:
-        cuts = [(start, start + len(data))]
-        for low, high in occupied:
-            cuts = [piece for a, b in cuts
-                    for piece in ((a, min(b, low)), (max(a, high), b)) if piece[0] < piece[1]]
-        out.extend((a, data[a - start:b - start], kind) for a, b in cuts)
-    return sorted(out, key=lambda s: s[0])
+def additions(segments, existing):
+    """What adding `segments` [(start, bytes, kind)] to a database holding `existing` (its non-stub
+    segments, same shape, with their bytes) writes, or a string when they disagree on a byte.
+
+    Returns (writes, report). writes: [(start, bytes, kind, replaced)], one segment each, where
+    `replaced` lists the existing segments [(start, end)] the new one joins and so takes the place of.
+    report: {'added': new segments, 'joined': existing segments grown, 'cut': new bytes already held},
+    each a list of (start, end).
+    """
+    groups = _groups([(s, d, k, 'old') for s, d, k in existing] + [(s, d, k, 'new') for s, d, k in segments])
+    if isinstance(groups, str):
+        return groups
+    writes, report = [], {'added': [], 'joined': [], 'cut': []}
+    for start, data, kind, members in groups:
+        old = [(s, s + len(d), k) for s, d, k, tag in members if tag == 'old']
+        new = [(s, s + len(d)) for s, d, _, tag in members if tag == 'new']
+        cut = [(max(a, s), min(b, e)) for a, b in new for s, e, _ in old if max(a, s) < min(b, e)]
+        report['cut'] += cut
+        if sum(b - a for a, b in cut) == sum(b - a for a, b in new) and all(k == kind for _, _, k in old):
+            continue  # Held already, byte for byte (or no new bytes: existing segments that touch stay).
+        writes.append((start, data, kind, [(s, e) for s, e, _ in old]))
+        report['joined' if old else 'added'].append((start, start + len(data)))
+    return writes, report
 
 
 FORMAT = 'ReAgentLive saved function'
@@ -134,15 +184,18 @@ def accept_file(li, filename):
     return 0
 
 
-def _apply(plan, segments):
-    """IDA: add `segments`, replacing stubs they cover; make the functions; name; stub what stays unheld."""
+def _apply(plan, writes):
+    """IDA: add `writes` [(start, bytes, kind, replaced)], each in place of the stubs it covers and the
+    segments it joins; make the functions; name; stub what stays unheld.
+    Returns (stub addresses replaced, None), or (_, why not)."""
     import ida_bytes
     import ida_funcs
     import ida_loader
     import ida_name
     import ida_segment
 
-    for start, data, kind in segments:
+    replaced_stubs = []
+    for start, data, kind, replaced in writes:
         end = start + len(data)
         covered = []
         for index in range(ida_segment.get_segm_qty()):
@@ -151,18 +204,23 @@ def _apply(plan, segments):
                 covered.append(stub.start_ea)
         for at in covered:
             ida_segment.del_segm(at, ida_segment.SEGMOD_KILL)
+        replaced_stubs += covered
+        for at, _ in replaced:
+            # KEEP: the joined segment's functions, names and comments stay; its bytes come back below.
+            ida_segment.del_segm(at, ida_segment.SEGMOD_KEEP | ida_segment.SEGMOD_SILENT)
         segment = ida_segment.segment_t()
         segment.start_ea, segment.end_ea, segment.bitness = start, end, 2
         segment.perm = ida_segment.SEGPERM_READ | (ida_segment.SEGPERM_EXEC if kind == 'CODE' else 0)
         if not ida_segment.add_segm_ex(segment, f'{kind.lower()}_{start:x}', kind, ida_segment.ADDSEG_NOSREG):
-            return f'no segment at {start:#x}'
+            return replaced_stubs, f'no segment at {start:#x}'
         ida_loader.mem2base(data, start, -1)  # -1: no position in the input file.
     build = plan['build']
     for start, _ in plan['functions']:
         if not ida_funcs.get_func(start):
             ida_funcs.add_func(start)
-        ida_bytes.set_cmt(start, f"reagentlive: {build['module']}+{start - build['base']:#x} "
-                          f"(size {build['module_size']}, timestamp {build['timestamp']})", False)
+        if not ida_bytes.get_cmt(start, False):  # A comment there already (yours, or this one) stays.
+            ida_bytes.set_cmt(start, f"reagentlive: {build['module']}+{start - build['base']:#x} "
+                              f"(size {build['module_size']}, timestamp {build['timestamp']})", False)
     for start, end, owner in plan['chunks']:
         function = ida_funcs.get_func(owner)
         if function and not ida_funcs.get_func(start):
@@ -175,8 +233,13 @@ def _apply(plan, segments):
         segment.perm = ida_segment.SEGPERM_READ | (ida_segment.SEGPERM_EXEC if what in ('call', 'tail', 'function') else 0)
         ida_segment.add_segm_ex(segment, f'stub_{address:x}', 'STUB', ida_segment.ADDSEG_NOSREG)
     for address, name, _ in plan['names']:
-        ida_name.set_name(address, name, _auto_name())
-    return None
+        if not ida_bytes.has_user_name(ida_bytes.get_flags(address)):  # A name you gave stays.
+            ida_name.set_name(address, name, _auto_name())
+    unloaded = [start for start, _ in plan['functions']] + [start for start, _, _ in plan['chunks']]
+    unloaded = [f'{start:#x}' for start in unloaded if not ida_bytes.is_loaded(start)]
+    if unloaded:
+        return replaced_stubs, f"no bytes at {', '.join(unloaded)} after loading"
+    return replaced_stubs, None
 
 
 def load_file(li, neflags, format):
@@ -206,7 +269,7 @@ def load_file(li, neflags, format):
     if isinstance(plan, str):
         ida_kernwin.warning(f'ReAgentLive function not loaded: {plan}')
         return 0
-    failed = _apply(plan, plan['segments'])
+    _, failed = _apply(plan, [(start, data, kind, []) for start, data, kind in plan['segments']])
     if failed:
         ida_kernwin.warning(f'ReAgentLive function not loaded: {failed}')
         return 0
@@ -220,25 +283,51 @@ def load_file(li, neflags, format):
     return 1
 
 
+class SaveError(ValueError):
+    """add_saved refused the file or could not load all of it; the message says why."""
+
+
+def _ranges(ranges):
+    return [f'{start:#x}-{end:#x}' for start, end in ranges]
+
+
 def add_saved(path):
-    """IDA: add another save of the same build to the open database; None, or why not."""
+    """IDA: add another save of the same build to the open database, so one database gathers every save.
+
+    Bytes the database holds already are cut from the new save (they must be identical: one build);
+    a new run that overlaps or touches an existing segment joins it into one segment, so a function
+    never ends at a segment's edge. Raises SaveError when the file cannot be loaded, is of another
+    build, disagrees with a byte the database holds, or leaves a saved function or chunk start without
+    bytes. Returns {'added': new segments, 'joined': existing segments grown, 'cut': new bytes already
+    held, as 'start-end' strings; 'stubs_replaced': stub addresses now holding saved bytes}."""
+    import ida_bytes
     import ida_netnode
     import ida_segment
 
     with open(path, encoding='utf-8') as file:
         plan = parse(file.read().splitlines())
     if isinstance(plan, str):
-        return plan
+        raise SaveError(f'{path}: {plan}')
     known = ida_netnode.netnode(_NODE, 0, False)
     if known.index() == ida_netnode.BADNODE or json.loads(known.supstr(0) or 'null') != plan['build']:
-        return 'not a save of this database\'s build'
-    occupied = []
+        raise SaveError(f"{path}: not a save of this database's build")
+    existing = []
     for index in range(ida_segment.get_segm_qty()):
         segment = ida_segment.getnseg(index)
         if ida_segment.get_segm_class(segment) != 'STUB':
-            occupied.append((segment.start_ea, segment.end_ea))
-    plan['stubs'] = stubs(plan['names'], occupied + [(s, s + len(d)) for s, d, _ in plan['segments']])
-    return _apply(plan, additions(plan['segments'], occupied))
+            data = ida_bytes.get_bytes(segment.start_ea, segment.end_ea - segment.start_ea) or b''
+            existing.append((segment.start_ea, data, ida_segment.get_segm_class(segment)))
+    planned = additions(plan['segments'], existing)
+    if isinstance(planned, str):
+        raise SaveError(f'{path}: {planned} (the file against the database)')
+    writes, report = planned
+    held = [(s, s + len(d)) for s, d, _ in existing] + [(s, s + len(d)) for s, d, _ in plan['segments']]
+    plan['stubs'] = stubs(plan['names'], held)
+    replaced, failed = _apply(plan, writes)
+    if failed:
+        raise SaveError(f'{path}: {failed}')
+    return {'added': _ranges(report['added']), 'joined': _ranges(report['joined']),
+            'cut': _ranges(report['cut']), 'stubs_replaced': [f'{at:#x}' for at in replaced]}
 
 
 # --- Names round trip: labels files in, your names out ---------------------
@@ -442,10 +531,18 @@ def import_labels(path=None):
 
 def export_names(path=None):
     """Write the names a person gave in this database into a labels file (asked for when None) as
-    `user` rows of its build, adding or updating them; names it does not hold stay. Returns how many."""
+    `user` rows of its build, adding or updating them; names it does not hold stay. Library names (a
+    FLIRT function, a library item) are IDA's, not the person's: never exported. Returns how many."""
     import ida_bytes
+    import ida_funcs
     import ida_kernwin
+    import ida_nalt
     import idautils
+
+    def library(ea):
+        function = ida_funcs.get_func(ea)
+        return bool(function and function.flags & ida_funcs.FUNC_LIB) or ida_nalt.is_libitem(ea)
+
 
     if path is None:
         path = ida_kernwin.ask_file(1, '*.jsonl', 'ReAgentLive labels file to write your names into')
@@ -456,7 +553,7 @@ def export_names(path=None):
         ida_kernwin.warning('ReAgentLive names not exported: this database has no PE header and is no save')
         return None
     names = [(ea - build['base'], name) for ea, name in idautils.Names()
-             if ida_bytes.has_user_name(ida_bytes.get_flags(ea)) and ea >= build['base']]
+             if ida_bytes.has_user_name(ida_bytes.get_flags(ea)) and ea >= build['base'] and not library(ea)]
     rows = user_rows(names, build)
     try:
         with open(path, encoding='utf-8') as handle:
