@@ -205,6 +205,9 @@ with no engine, for what needs none.
 - Large buffers on the heap, not as globals (mapped images merge `.bss`).
 - Windows x64, C++23.
 - The library never includes host code and never names a host or a game.
+- `near` and `far` are Windows macros: never use them as names.
+- A working copy may hold CRLF files (`.gitattributes` stores LF): edit
+  them byte for byte, so a text tool does not rewrite every line ending.
 
 ## Docs
 

@@ -32,7 +32,7 @@ ctest --test-dir build --output-on-failure
   `--forbid <word>` once per name: a host passes its own names (CMake
   `REAGENTLIVE_FORBIDDEN_NAMES`), so this repo never has to spell them.
 - `reagentlive.python-mcp` skips itself without the MCP Python SDK
-  (`python -m pip install mcp`); a skip is not a pass.
+  (`python -m pip install --upgrade "mcp>=2"`); a skip is not a pass.
 - After changing a row of the verb table, regenerate both generated pages:
   `build/reagentlive-table --write docs/commands/results.md` and
   `build/reagentlive-table --write-reference docs/commands/reference.md`
@@ -53,8 +53,11 @@ ctest --test-dir build --output-on-failure
   [where each fact goes](docs/contributing.md#where-each-fact-goes) before
   writing it; link instead of repeating.
 - **The verb table is the source of truth** for a verb's arguments and result
-  keys; `docs/commands/results.md` is generated, never edited
-  ([adding a command](docs/contributing.md#adding-a-command)).
+  keys; `docs/commands/results.md` and `docs/commands/reference.md` are
+  generated, never edited
+  ([adding a command](docs/contributing.md#adding-a-command)). A host checks
+  its own docs against its table with
+  `tests/python/check_verb_names.py --table <its console>`.
 - **Engine offsets** only in `src/reagentlive/packs/ue/engine_layout.h` and
   their other homes (`reagentlive.engine-layout`).
 - **Protocol change:** a struct that crosses the section joins the layout sum
