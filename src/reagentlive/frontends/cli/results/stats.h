@@ -57,13 +57,13 @@ struct StatsVerb {
 };
 struct StatsCall {
     std::string verb, caller;
-    std::vector<std::string> flags;
+    std::vector<std::string> keys;
     uint64_t out = 0;
     std::optional<bool> batch;
     std::optional<uint64_t> digest;     // The full size a digest stood in for.
     template<class V> static void Describe(V& v) {
         v("verb", &StatsCall::verb);
-        v("flags", &StatsCall::flags);
+        v("keys", &StatsCall::keys);
         v("out", &StatsCall::out);
         v("caller", &StatsCall::caller);
         v("batch", &StatsCall::batch);
@@ -113,10 +113,10 @@ struct Stats {
 }
 
 namespace stats_detail {
-// Flags that narrow what a verb prints: a call to a verb that has one and
+// Args that narrow what a verb prints: a call to a verb that has one and
 // gave none is marked `unfiltered`.
-inline constexpr std::string_view FilterFlags[] = {"--match", "--nonzero", "--own", "--changed", "--cls", "--limit"};
-inline bool IsFilter(std::string_view flag) { return std::ranges::find(FilterFlags, flag) != std::end(FilterFlags); }
+inline constexpr std::string_view FilterKeys[] = {"match", "nonzero", "own", "changed", "cls", "limit"};
+inline bool IsFilter(std::string_view key) { return std::ranges::find(FilterKeys, key) != std::end(FilterKeys); }
 }
 constexpr size_t StatsLargestCalls = 5;
 
@@ -166,8 +166,8 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
         if (const Verb* verb = FindVerb(verbs, line.verb)) ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
         // A digested call cost its digest only: not worth a mark.
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.digest) {
-            const bool filters = std::ranges::any_of(verb->flags, [](const Flag& f) { return IsFilter(f.name); });
-            if (filters && std::ranges::none_of(line.flags, [](const std::string& f) { return IsFilter(f); }))
+            const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) { return IsFilter(a.key); });
+            if (filters && std::ranges::none_of(line.keys, [](const std::string& k) { return IsFilter(k); }))
                 bump(row.unfiltered);
         }
         // Totals count what the agent sent: a batch's items are inside its own call.
@@ -190,7 +190,7 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
     std::ranges::stable_sort(stats.rows, std::greater{}, &shape::StatsVerb::out);
     std::ranges::stable_sort(calls, std::greater{}, [](const UsageLine* line) { return line->out; });
     for (size_t i = 0; i < calls.size() && i < StatsLargestCalls; ++i) {
-        shape::StatsCall call{calls[i]->verb, calls[i]->caller, calls[i]->flags, calls[i]->out};
+        shape::StatsCall call{calls[i]->verb, calls[i]->caller, calls[i]->keys, calls[i]->out};
         if (calls[i]->batch) call.batch = true;
         if (calls[i]->digest) call.digest = calls[i]->digest;
         stats.largest.push_back(std::move(call));

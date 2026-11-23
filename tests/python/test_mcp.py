@@ -50,7 +50,7 @@ class McpTests(unittest.TestCase):
     def write_replies(cls, table):
         """The fake console's replies, for a console whose table is `table` (a later start reads them again)."""
         with open(cls.replies, 'w') as file:
-            json.dump({'table': table, 'lines': {}, 'calls': [
+            json.dump({'table': table, 'calls': [
                 [call('find', {'text': 'A'}), {'ok': True, 'result': {'rows': [OBJECT], 'total': 1, 'from': 0}}],
                 [call('describe', {'object': REF}), {'ok': True, 'result': OBJECT}],
                 [call('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'modules'}]}), {'ok': True, 'result': {
@@ -60,12 +60,14 @@ class McpTests(unittest.TestCase):
                                                                                'size': 4096}]}, 'tick': 4}]}}],
                 [call('rows', {'object': REF}), {'ok': True, 'digest': {
                     'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
-                    'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['--match', '--fields', '--limit'],
+                    'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['match', 'fields', 'limit'],
                     'next': json.dumps(call('rows', {'object': REF, 'fields': 'Cost', 'limit': 40}))}}],
                 [call('call', {'object': REF, 'function': 'Buy'}), {'ok': True, 'digest': {
                     'chars': 40000, 'budget': 25000, 'largest': [], 'file': 'C:/temp/r.json'}}],
-                [call('read', {'addr': '$1'}), {'ok': False, 'error': {
-                    'kind': 'syntax', 'message': "addr: '$1': a JSON call takes the literal ref a result carries, not $N"}}],
+                [call('read', {'addr': '0x10', 'len': 5000}), {'ok': False, 'error': {
+                    'kind': 'schema', 'message': 'len: 5000 is past 4096',
+                    'arg': {'key': 'len', 'type': 'int', 'default': 64, 'help': 'how many bytes'},
+                    'example': call('read', {'addr': '0x10', 'len': 4096})}}],
             ]}, file)
 
     @classmethod
@@ -105,10 +107,11 @@ class McpTests(unittest.TestCase):
         self.assertIn('rows', tools['ue_find'].output_schema['properties'])
         self.assertEqual(tools['batch'].input_schema['properties']['calls']['type'], 'array')
         write = tools['write'].input_schema
-        self.assertEqual(write['required'], ['addr', 'data'])     # Flags are never required.
+        self.assertEqual(write['required'], ['addr', 'data'])     # The row's required args only.
         self.assertIn('undo', write['properties'])
         self.assertEqual(tools['search'].input_schema['properties']['type']['enum'][:2], ['hex', 'u32'])
-        self.assertIn('read <addr> [len] [--type type]', tools['read'].description)
+        self.assertIn('Example: read {"addr": ', tools['read'].description)
+        self.assertEqual(schema['properties']['len']['anyOf'][0]['type'], 'integer')   # Or "0x..." text.
 
     def tool_list(self, **options):
         async def body(client):
@@ -213,8 +216,8 @@ class McpTests(unittest.TestCase):
         async def body(client):
             found = await client.call_tool('ue_find', {'text': 'A'})
             batched = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'modules'}]})
-            refused = await client.call_tool('read', {'addr': '$1'})
-            guessed = await client.call_tool('read', {'addr': 16, 'length': 4})
+            refused = await client.call_tool('read', {'addr': '0x10', 'len': 5000})
+            guessed = await client.call_tool('read', {'addr': '0x10', 'length': 4})
             nulls = await client.call_tool('ue_find', {'text': 'A', 'cls': None})
             sneaky = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'write'}]})
             native = await client.call_tool('batch', {'calls': [call('disasm', {'addr': '0x1000'})]})
@@ -231,9 +234,10 @@ class McpTests(unittest.TestCase):
         self.assertEqual(found.structured_content['rows'][0]['ref'], REF)
         self.assertFalse(batched.is_error, batched.content[0].text)
         self.assertTrue(batched.structured_content['same_tick'])
-        self.assertTrue(refused.is_error)
-        self.assertIn('literal ref', refused.content[0].text)
-        self.assertIn('"kind": "syntax"', refused.content[0].text)   # The error object, not only its message.
+        self.assertTrue(refused.is_error)                              # Refused by the console, with the call to make.
+        self.assertIn('len: 5000 is past 4096; example: read {"addr": "0x10", "len": 4096}', refused.content[0].text)
+        self.assertIn('"kind": "schema"', refused.content[0].text)   # The error object, not only its message.
+        self.assertIn('"key": "len"', refused.content[0].text)
 
     def test_a_result_past_its_budget_is_a_digest_with_the_call_to_make(self):
         open(self.log, 'w').close()

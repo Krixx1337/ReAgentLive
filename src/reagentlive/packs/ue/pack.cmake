@@ -10,7 +10,7 @@
 #   reagentlive::ue-client  client calls (Find, Fields, Call); no SDK needed
 #
 # Its CLI parts are source lists the root adds to reagentlive::cli and
-# reagentlive::console: reagentlive_pack_syntax_sources,
+# reagentlive::console: reagentlive_pack_call_sources,
 # reagentlive_pack_console_sources and reagentlive_pack_console_link.
 set(reagentlive_ue_dir "${CMAKE_CURRENT_LIST_DIR}")
 
@@ -49,7 +49,7 @@ add_library(reagentlive::ue-client ALIAS reagentlive-ue-client)
 target_sources(reagentlive-ue-client INTERFACE "${reagentlive_ue_dir}/client_ue.cpp")
 target_link_libraries(reagentlive-ue-client INTERFACE reagentlive-client)
 
-set(reagentlive_pack_syntax_sources "${reagentlive_ue_dir}/cli/syntax/parse_unreal.cpp")
+set(reagentlive_pack_call_sources "${reagentlive_ue_dir}/cli/call/build_unreal.cpp")
 set(reagentlive_pack_console_sources "${reagentlive_ue_dir}/cli/console/pack.cpp"
     "${reagentlive_ue_dir}/cli/console/dump.cpp" "${reagentlive_ue_dir}/cli/console/capture.cpp"
     "${reagentlive_ue_dir}/cli/console/calls.cpp" "${reagentlive_ue_dir}/cli/console/trace.cpp"

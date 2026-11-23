@@ -13,7 +13,7 @@
 #include <vector>
 #include "reagentlive/core/client.h"
 #include "reagentlive/core/protocol.h"
-#include "reagentlive/frontends/cli/syntax/pattern.h"
+#include "reagentlive/frontends/cli/call/pattern.h"
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
@@ -32,50 +32,50 @@ struct Command {
     // before the start; `range` is the index into `reads` they fill.
     struct WatchField { size_t range; Ref object; std::string path; };
     std::vector<WatchField> watchFields;
-    // A class or struct named instead of an object ref (get --types, func,
+    // A class or struct named instead of an object ref (get types, func,
     // funcs, params; each's class): the console resolves it before the request.
     std::string className;
     std::string target;         // A name the verb acts on (a function, a member, a watch action).
-    uint32_t seconds = 0;       // each, call-pure --each: repeat for this long, printing changes.
-    bool eachCall = false;      // call-pure --each: one function called on every instance (each's call form).
+    uint32_t seconds = 0;       // each, call-pure each: repeat for this long, printing changes.
+    bool eachCall = false;      // call-pure each: one function called on every instance (each's call form).
     uint32_t limit = 0;         // census, call: rows to print, 0 = all. find: rows at most, 0 = one agent page.
     uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
-    std::string view;           // read --type: element type or layout for decoded values.
-    // write --hold and watch-start: per target (watch-start: per range in `reads`), the object an
-    // address was given relative to ($N+0x10), 0 for raw addresses. The
+    std::string view;           // read type: element type or layout for decoded values.
+    // write hold and watch-start: per target (watch-start: per range in `reads`), the object an
+    // address was given relative to ({"base": <ref>, "offset": 16}), 0 for raw addresses. The
     // console guards those on the object's identity.
     std::vector<uint64_t> guardObjects;
-    uint32_t milliseconds = 0;  // write --undo and --hold, watch-start: duration.
+    uint32_t milliseconds = 0;  // write undo and hold, watch-start: duration.
     // watch-start, watch-read, watch-stop: `target` is "start", "read" or
     // "stop"; the sample interval (0: every tick) and a host root to follow;
-    // watch-start --file: `file`.
+    // watch-start file: `file`.
     uint32_t interval = 0;
     std::string root;
     // get filters (no paths): rows whose name contains `match` (case-insensitive), with
     // non-zero bytes, or changed against the snapshot (`file`, else the
-    // session's baseline). census: `match` filters class names; census --diff
+    // session's baseline). census: `match` filters class names; census diff
     // sets `changed`, comparing with the census baseline. batch: `fields` holds the command
     // lines. get: `fields` holds the paths.
     std::string match;
-    // each --where Field~text: the field path whose value must contain `match`.
+    // each where Field~text: the field path whose value must contain `match`.
     std::string whereField;
     bool nonzero = false, changed = false, own = false; // get filters; own: only the fields the class itself declares.
-    uint32_t elements = 0;      // --elements: per container in get, each and dump; 0: the default.
-    // --outer on find, each and census: an object (its full ref) or an outer's name text.
+    uint32_t elements = 0;      // elements: per container in get, each and dump; 0: the default.
+    // outer on find, each and census: an object (its full ref) or an outer's name text.
     std::string outer, outerText;
     Ref outerRef{};
-    // write --undo: the owning object (guarded on its identity) and an
+    // write undo: the owning object (guarded on its identity) and an
     // optional native object base inside it whose vtable is guarded too.
     Ref owner{};
     uint64_t object = 0;
     // sig-check, sig-bytes: the mode; sig-check's pattern, where it should
-    // land (with --resolve: its target) and how far past that the match lies;
-    // `target` names the module (empty: the exe). sig-check --file: `file`.
+    // land (with resolve: its target) and how far past that the match lies;
+    // `target` names the module (empty: the exe). sig-check file: `file`.
     // sig-bytes: request address and length.
-    // help: `target` is the verb asked about (empty: all), `all` is --json, `hashOnly` is --hash.
-    // stats: `all` is --all. watch-read, watch-stop: `all` is --all (every sample).
+    // help: `target` is the verb asked about (empty: all), `all` is json, `hashOnly` is hash.
+    // stats: `all` is all. watch-read, watch-stop: `all` is all (every sample).
     bool hashOnly = false;
-    bool listSessions = false;  // stats --sessions; --session <id> is `target`.
+    bool listSessions = false;  // stats sessions; session <id> is `target`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     bool capped = false;        // sig-bytes: the length asked passed sig::MaxPattern and was cut to it.
     sig::Pattern pattern;
@@ -83,16 +83,16 @@ struct Command {
     uint64_t offset = 0;
     std::optional<sig::Resolve> resolve;
     // disasm: start at the containing function's start and stop at its end
-    // (`resume`: start at the address, a cut listing's next; `file`: --save);
+    // (`resume`: start at the address, a cut listing's next; `file`: save);
     // step through unconditional direct jumps. xrefs: list unknown hits too.
     bool function = false, follow = false, all = false, resume = false;
-    // disasm --save: also save the functions it calls (--callees), and name
-    // addresses from a labels file (--labels, export-labels' format).
+    // disasm save: also save the functions it calls (callees), and name
+    // addresses from a labels file (labels, export-labels' format).
     bool callees = false;
     std::string labels;
-    // peek --label: append the qword's label (to `file`, else the console's labels file).
+    // peek label: append the qword's label (to `file`, else the console's labels file).
     bool label = false;
-    // search text: 1 for ASCII, 2 for UTF-16 (--wide); rows then carry the text around each hit.
+    // search text: 1 for ASCII, 2 for UTF-16 (wide); rows then carry the text around each hit.
     uint8_t textSearch = 0;
     // read, peek, vtable, disasm: offsets of a pointer chain after the
     // address (<addr>->0x10->0x8); the console resolves it before running.
@@ -102,18 +102,18 @@ struct Command {
     // `rtti`: also the run-time type information's class.
     bool table = false, bodies = false, rtti = false;
     // touches: struct offsets to find and the bytes scanned each side of the
-    // address; `readsOnly` (--reads) ranks by offsets read and drops copies.
+    // address; `readsOnly` (reads) ranks by offsets read and drops copies.
     std::vector<uint32_t> offsets;
     uint64_t range = 0;
     bool readsOnly = false;
-    // call --dry: resolve the function and build the block, call nothing.
+    // call dry: resolve the function and build the block, call nothing.
     bool dry = false;
-    // call and rows: the member paths kept in each row (--fields a,b.c);
+    // call and rows: the member paths kept in each row (fields a,b.c);
     // `from` and `limit` page the rows. rows: `match` filters row names;
-    // `curveAt` (--at) evaluates a curve table's rows at that time.
+    // `curveAt` (at) evaluates a curve table's rows at that time.
     std::vector<std::string> rowPaths;
     std::optional<float> curveAt;
-    // layout-export --closure: how many references away from the named types to export.
+    // layout-export closure: how many references away from the named types to export.
     std::optional<uint32_t> closure;
     // trace: its two ends (a world point in cm, or an object's location or a
     // socket on it), the trace type query, simple collision, and an actor the
@@ -128,7 +128,7 @@ struct Command {
     // calls-read's cursor; calls-start's request carries the object, the
     // function, the milliseconds (args[0]) and the object filter (args[1]).
     uint64_t callsSlot = 0, callsAfter = 0;
-    // script --decode: the bytecode as statements; --entry: from this offset
+    // script decode: the bytecode as statements; entry: from this offset
     // to the event's end (an uber-graph entry).
     bool decode = false;
     std::optional<uint32_t> entry;
@@ -136,7 +136,7 @@ struct Command {
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).
 constexpr size_t MaxTypeName = 128;
-// watch --follow: an offset from the root object, inside the object.
+// watch follow: an offset from the root object, inside the object.
 constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;
 constexpr uint32_t DefaultCensusLimit = 100;
@@ -156,15 +156,15 @@ constexpr size_t MaxLayoutClasses = 256, MaxLayoutLines = 50000, MaxLayoutRows =
 constexpr uint64_t MaxPeek = 64; // Qwords: one 512-byte read.
 constexpr size_t MaxSearchText = 96; // search text: characters shown each side of a hit.
 // disasm: up to MaxDisasm instructions (DisasmBytes per instruction asked, at
-// least dis::MaxBytes), MaxFunctionDisasm with --function.
+// least dis::MaxBytes), MaxFunctionDisasm with function.
 constexpr uint64_t MaxDisasm = 1024, DefaultDisasm = 24, MaxFunctionDisasm = 2048, DisasmBytes = 8;
-constexpr uint64_t MaxFindRows = 1000; // find --limit: rows gathered over the agent's pages.
+constexpr uint64_t MaxFindRows = 1000; // find limit: rows gathered over the agent's pages.
 namespace touch {
 constexpr size_t MaxOffsets = 8;
 constexpr uint64_t DefaultRange = 0x80000, MaxRange = 0x400000; // Bytes each side of the address.
 }
-// export-labels --kinds: which rows to derive. Globals in the file are always
-// kept (only peek --label makes them), so "global" is accepted and changes nothing.
+// export-labels kinds: which rows to derive. Globals in the file are always
+// kept (only peek label makes them), so "global" is accepted and changes nothing.
 namespace label_kind {
 constexpr uint32_t Exec = 1, Vtable = 2, Interface = 4, Global = 8, All = 15;
 }
@@ -193,11 +193,11 @@ inline std::string RefText(const Ref& ref) {
     return text;
 }
 
-// read --type cstr|wstr: text, not elements.
+// read type cstr|wstr: text, not elements.
 inline bool StringView(std::string_view type) { return type == "cstr" || type == "wstr"; }
 constexpr uint64_t DefaultStringRead = 256;
 
-// Element size of a read --type type, 0 if unknown.
+// Element size of a read type type, 0 if unknown.
 inline size_t ElementSize(std::string_view type) {
     if (type == "i8" || type == "u8") return 1;
     if (type == "i16" || type == "u16") return 2;

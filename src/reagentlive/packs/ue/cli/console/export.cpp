@@ -93,11 +93,11 @@ void RunExportAssets(Session& session, const Command& command, std::string_view 
     for (const auto& [object, asked] : objects) {
         const std::string ref = RefText(object.ref);
         Json file{{"ref", ref}, {"name", object.name}, {"class", object.className}};
-        file["get"] = Captured(session, "get " + ref + " --nonzero");
+        file["get"] = Captured(session, Json{{"verb", "get"}, {"args", {{"object", ref}, {"nonzero", true}}}}.dump());
         shape::ExportedAsset row{object.name, object.className, {}, FullRef(object.ref), std::nullopt, std::nullopt};
         if (file["get"].contains("error")) row.error = file["get"]["error"].get<std::string>();
         else if (Table(file["get"], object.className, asked)) {
-            file["rows"] = Captured(session, "rows " + ref + " --limit 0");
+            file["rows"] = Captured(session, Json{{"verb", "rows"}, {"args", {{"object", ref}, {"limit", 0}}}}.dump());
             if (file["rows"].contains("error")) row.error = file["rows"]["error"].get<std::string>();
             else {
                 row.tableRows = file["rows"].contains("rows") ? file["rows"]["rows"].size() : 0;

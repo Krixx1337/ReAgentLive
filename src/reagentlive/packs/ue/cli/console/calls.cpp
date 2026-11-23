@@ -26,7 +26,7 @@
 #include "reagentlive/packs/ue/cli/results/call_text.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/packs/ue/cli/state/cache_ue.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/packs/ue/cli/values/format_ue.h"
 #include "reagentlive/packs/ue/cli/values/json_output.h"
 #include "reagentlive/packs/ue/cli/values/pack_input.h"
@@ -106,16 +106,16 @@ bool PackName(Session& session, std::string_view value, int32_t& index, uint32_t
 
 
 namespace {
-// An object or class pointer input: $N or a literal ref, an address, or
-// None. The object is described first, so a gone one is refused. Empty, or
-// why the input is refused.
-std::string PackObject(Session& session, std::string_view text, std::span<const Ref> refs, std::span<uint8_t> out) {
+// An object or class pointer input: a literal ref, an address, or None
+// (null). The object is described first, so a gone one is refused. Empty,
+// or why the input is refused.
+std::string PackObject(Session& session, std::string_view text, std::span<uint8_t> out) {
     std::fill(out.begin(), out.end(), uint8_t{0});
     if (text == "None" || text == "null" || text == "0") return {};
     Ref ref{};
     uint64_t address = 0;
-    if (!text::Reference(text, refs, ref)) {
-        if (!text::Number(text, address) || !address) return "takes an object ($N, a ref or an address) or None";
+    if (!text::LiteralRef(text, ref)) {
+        if (!text::Number(text, address) || !address) return "takes an object (a literal ref or \"0x...\") or null";
         ref = ue::AddressRef(address);
     }
     auto described = ue::Describe(session.client, ref);
@@ -127,7 +127,7 @@ std::string PackObject(Session& session, std::string_view text, std::span<const 
 }
 
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
-                  const ue::Signature& signature, StructCache& structs, std::span<const Ref> refs,
+                  const ue::Signature& signature, StructCache& structs,
                   std::string_view jsonCommand) {
     Client& client = session.client;
     // A const or pure function runs again to narrow a large result; any
@@ -162,7 +162,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         if (std::count_if(argument, arguments.end(), matches) != 1) return fail("duplicate parameter: " + parameter.name);
         const auto value = std::string_view(*argument).substr(key.size());
         if ((parameter.type == "ObjectProperty" || parameter.type == "ClassProperty") && parameter.size == 8) {
-            if (auto why = PackObject(session, value, refs, std::span(bytes).subspan(parameter.offset, 8));
+            if (auto why = PackObject(session, value, std::span(bytes).subspan(parameter.offset, 8));
                 !why.empty())
                 return fail(parameter.name + ": " + why);
             continue;
@@ -194,7 +194,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         return !ue::InputParameter(parameter.parameterFlags) && parameter.type == "ArrayProperty";
     };
     if (!command.rowPaths.empty()) {
-        if (std::ranges::none_of(signature.parameters, arrayOutput)) return fail("--fields picks from an array output; none");
+        if (std::ranges::none_of(signature.parameters, arrayOutput)) return fail("fields picks from an array output; none");
         for (const auto& parameter : signature.parameters)
             if (arrayOutput(parameter))
                 if (auto why = rows.Check(Element(parameter), paths); !why.empty()) return fail(std::move(why));
@@ -227,7 +227,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         outputs.push_back(std::move(row));
     }
     auto record = MakeCall(command.request, *result, "typed", kept);
-    record.function = function.owner + ":" + function.name; // As --dry prints it.
+    record.function = function.owner + ":" + function.name; // As dry prints it.
     if (kept) record.keptReason = calls::KeptReason(signature, structs);
     record.outputs = std::move(outputs);
     record.truncated = truncated;

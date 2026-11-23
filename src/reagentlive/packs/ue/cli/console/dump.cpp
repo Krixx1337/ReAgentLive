@@ -24,7 +24,7 @@
 #include <vector>
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/packs/ue/cli/state/cache_ue.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/packs/ue/cli/values/format_ue.h"
 #include "reagentlive/packs/ue/cli/values/json_output.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
@@ -194,7 +194,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         if (!command.file.empty() && !(loaded = LoadSnapshot(command.file)))
             return JsonError(session, "get", "snapshot", "cannot read snapshot file " + command.file);
         baseline = loaded ? &*loaded : sessionBaseline ? &*sessionBaseline : nullptr;
-        if (!baseline) return JsonError(session, "get", "snapshot", "--changed needs get --snap first (or a snapshot file)");
+        if (!baseline) return JsonError(session, "get", "snapshot", "changed needs get with snap first (or a snapshot file)");
         if (baseline->object != object) return JsonError(session, "get", "snapshot", "the snapshot is of another object ref");
     }
     auto fields = ObjectFields(session, object);

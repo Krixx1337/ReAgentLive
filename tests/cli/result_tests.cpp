@@ -83,52 +83,68 @@ TEST_CASE("a result struct writes exactly the keys it describes, and omits what 
     CHECK(schema::TypeJson(type)["struct"]["values"]["type"] == Json{{"list", "bytes"}, {"nullable", true}});
 }
 
-TEST_CASE("every verb has a row with a parser and a result type, and no name twice") {
+TEST_CASE("every verb has a row with a builder and a result type, and no name twice") {
     std::set<std::string> names;
     for (const auto& verb : AllVerbs()) {
         CAPTURE(verb.name);
         CHECK(names.insert(std::string(verb.name)).second);
-        for (const auto alias : verb.aliases) CHECK(names.insert(std::string(alias)).second);
-        CHECK(verb.parse != nullptr);
+        CHECK(verb.build != nullptr);
         REQUIRE(verb.result != nullptr);
         CHECK(verb.result().kind == schema::Type::Kind::Struct);
         CHECK_FALSE(verb.summary.empty());
         CHECK((verb.origin == "core" || verb.origin == "ue"));
-        for (const auto& positional : verb.positionals) CHECK_FALSE(positional.help.empty());
+        for (const auto& arg : verb.args) CHECK_FALSE(arg.help.empty());
         // The list of a result is `rows`; no result names it otherwise.
         for (const auto& field : verb.result().fields)
             for (const auto old : {"hits", "items", "objects", "entries", "results", "instructions", "slots", "pins", "trials"})
                 CHECK(field.key != old);
     }
     CHECK(names.contains("sig-check"));
-    for (const auto gone : {"census-diff", "params", "rtti", "sig-file", "base", "region", "read-batch"})
+    for (const auto gone : {"census-diff", "params", "rtti", "sig-file", "base", "region", "read-batch", "?", "exit", "q"})
         CHECK_FALSE(names.contains(gone));
-    CHECK(names.contains("?"));
 }
 
-TEST_CASE("help rows come from the table: usage, flags, the result in notation and its type") {
+TEST_CASE("help rows come from the table: args, an example call, the result in notation and its type") {
+    const auto noGrammar = [](const Json& row) {
+        for (const auto key : {"usage", "flags", "positionals", "aliases"}) CHECK_FALSE(row.contains(key));
+    };
     const Verb* modules = FindVerb(AllVerbs(), "modules");
     REQUIRE(modules);
     const auto brief = Checked(MakeHelpRow(*modules, false, false));
-    CHECK(brief == Json{{"verb", "modules"}, {"origin", "core"}, {"pack", "explore"}, {"usage", "modules"},
+    CHECK(brief == Json{{"verb", "modules"}, {"origin", "core"}, {"pack", "explore"},
         {"summary", "loaded modules, exe first (also refreshes the cached list)"}});
     const auto detail = Checked(MakeHelpRow(*modules, true, false));
     CHECK(detail["result"] == "{rows: [{name: str, base: addr, size: u64}]}");
+    CHECK(detail["args"].empty());
+    CHECK(detail["example"] == Json{{"verb", "modules"}, {"args", Json::object()}});
     CHECK_FALSE(detail.contains("type"));
+    noGrammar(brief);
+    noGrammar(detail);
     // read's region is a named type: help <verb> defines it under types.
     const auto read = Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), true, false));
     CHECK(read["result"].get<std::string>().contains("region?: Region"));
     CHECK(read["types"]["Region"] == "{kind: code|rodata|data|mapped|private|reserved|free, base: addr, size: hex, protect: str}");
+    CHECK(read["args"][0] == Json{{"key", "addr"}, {"type", "chain"}, {"required", true},
+        {"help", "the address, or a pointer chain to follow first"}});
+    CHECK(read["args"][1] == Json{{"key", "len"}, {"type", "int"}, {"default", 64}, {"help", "how many bytes"}});
+    CHECK(read["example"] == Json{{"verb", "read"}, {"args", {{"addr", "0x140001000"}}}});
+    noGrammar(read);
     const Verb* search = FindVerb(AllVerbs(), "search");
     REQUIRE(search);
-    CHECK(Usage(*search).starts_with("search <hex|u32|i32|u64|ptr|f32|f64|text> <value>... [--wide] [--start <addr>]"));
     const auto full = Checked(MakeHelpRow(*search, true, true));
-    CHECK(full["positionals"][1] == Json{{"key", "value"}, {"name", "value"}, {"arity", "some"}, {"type", "text"},
-        {"help", "the value to find"}});
-    CHECK(full["flags"].back() == Json{{"flag", "--max"}, {"key", "max"}, {"takes", "one"}, {"type", "int"}, {"value", "N"},
-        {"default", "64"}, {"help", "hits at most; the job stops when full"}});
-    CHECK(read["positionals"][0]["name"] == "addr");
-    CHECK(detail["positionals"].empty());
+    noGrammar(full);
+    // Each arg as ArgJson gives it: an enum as str with its words, a default as JSON.
+    REQUIRE(full["args"].size() == search->args.size());
+    for (size_t i = 0; i < search->args.size(); ++i) CHECK(full["args"][i] == ArgJson(search->args[i]));
+    CHECK(full["args"][0] == Json{{"key", "type"}, {"type", "str"}, {"required", true},
+        {"enum", {"hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text"}}, {"help", "the value's type"}});
+    CHECK(full["args"][1]["type"] == "scalar");
+    CHECK(full["args"].back() == Json{{"key", "max"}, {"type", "int"}, {"default", 64},
+        {"help", "hits at most; the job stops when full"}});
+    CHECK(full["args"][3] == Json{{"key", "start"}, {"type", "addr"}, {"help", "start, or a job's next_cursor"}});
+    // The example holds every required key, and the row accepts it.
+    CHECK(full["example"] == Json{{"verb", "search"}, {"args", {{"type", "hex"}, {"value", "00 00 80 3f"}}}});
+    CHECK(CheckCall(*search, full["example"]["args"]).has_value());
     // Only verbs that write the target's memory or call into it carry the mark.
     CHECK_FALSE(full.contains("writes"));
     std::set<std::string> writers;
@@ -137,13 +153,17 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     CHECK(writers == std::set<std::string>{"write", "writes", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), false, false))["pack"] == "explore");
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
-    CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
-        {"help", "start, or a job's next_cursor"}});
     CHECK(full["type"]["struct"]["next_cursor"] == Json{{"type", "addr"}, {"optional", true}});
-    CHECK(FindVerb(AllVerbs(), "exit") == FindVerb(AllVerbs(), "quit"));
+    CHECK_FALSE(FindVerb(AllVerbs(), "exit"));
     // The whole table, and a hash of it that moves with any row.
     const auto table = Checked(MakeHelpTable(AllVerbs(), AllOrigins()));
     CHECK(table["rows"].size() == AllVerbs().size());
+    for (const auto& row : table["rows"]) {
+        CAPTURE(row["verb"]);
+        noGrammar(row);
+        CHECK(row.contains("args"));
+        CHECK(row.contains("example"));
+    }
     const auto hash = TableHash(AllVerbs(), AllOrigins());
     CHECK(hash.size() == 16);
     auto changed = AllVerbs();
@@ -151,56 +171,23 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     CHECK(TableHash(changed, AllOrigins()) != hash);
 }
 
-TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors end with the usage line") {
-    const Verb verb{"probe", "core", ToolPack::Explore, "", {{"addr", "addr", Arity::One}, {"bytes", "bytes", Arity::Some}},
-        {{"--expect", Takes::Some, "bytes", "bytes"}, {"--changed", Takes::Maybe, "path", "file"}, {"--all", Takes::Nothing},
-         {"--then", Takes::Rest, "line", "line"}}};
-    auto args = Tokenise(verb, "0x10 01 02 --expect 03 04 --all --changed --then call $1 Fn --all");
-    REQUIRE(args.has_value());
-    CHECK(args->positionals == std::vector<std::string>{"0x10", "01", "02"});
-    CHECK(args->From(1) == "01 02");
-    CHECK(Args::Joined(*args->Find("--expect")) == "03 04");
-    CHECK(args->Has("--all"));
-    CHECK(args->Has("--changed"));
-    CHECK(args->Value("--changed").empty());       // The optional value was not given.
-    CHECK(args->Value("--then") == "call $1 Fn --all"); // The rest of the line, verbatim.
-    args = Tokenise(verb, "0x10 \"a b; --all\" --changed f.snap");
-    REQUIRE(args.has_value());
-    CHECK(args->At(1) == "a b; --all");            // Quoted: exact, and never a flag.
-    CHECK_FALSE(args->Has("--all"));
-    CHECK(args->Value("--changed") == "f.snap");
-    const std::string usage = "; usage: probe <addr> <bytes>... [--expect <bytes>...] [--changed [file]] [--all] [--then line]";
-    const Verb strict{"strict", "core", ToolPack::Explore, "", {}, {{"--owner", Takes::One, "ref", "ref", "", {}, true}}};
-    CHECK(Tokenise(strict, "").error() == "missing --owner; usage: strict --owner <ref>");
-    CHECK(Tokenise(verb, "0x10").error() == "too few arguments" + usage);
-    CHECK(Tokenise(verb, "0x10 01 --bogus").error() == "unknown flag --bogus (it takes --expect, --changed, --all, --then)" + usage);
-    CHECK(Tokenise(verb, "0x10 01 --all --all").error() == "--all given twice" + usage);
-    CHECK(Tokenise(verb, "0x10 01 --expect").error() == "--expect needs a value" + usage);
-    CHECK(Tokenise(verb, "0x10 01 --then").error() == "--then needs a value" + usage);
-    CHECK(Tokenise(verb, "0x10 \"open").error() == "the quote is not closed" + usage);
-    const Verb one{"single", "core", ToolPack::Explore, "", {{"addr", "addr", Arity::One}, {"len", "len", Arity::Optional}}, {}};
-    CHECK(Tokenise(one, "1 2 3").error() == "too many arguments; usage: single <addr> [len]");
-    // A parser's own complaint also ends with the usage line; a bare failure is the usage line.
-    CHECK(Parse("read 0x10 0x", {}).error() == "len: '0x' is not a number; usage: read <addr> [len] [--type type]");
-    CHECK(Parse("read zz", {}).error() == "usage: read <addr> [len] [--type type]");
-    CHECK(Parse("frobnicate", {}).error() == "unknown command 'frobnicate' (try help)");
-}
-
 TEST_CASE("every argument has a key, a type from the vocabulary, and keys are unique per verb") {
-    const std::set<std::string_view> vocabulary{"addr", "ref", "int", "num", "dur", "bytes", "pattern", "text", "str", "path",
-        "layout", "range", "span", "line", "calls"};
     for (const auto& verb : AllVerbs()) {
         CAPTURE(verb.name);
         std::set<std::string_view> keys;
-        for (const auto& positional : verb.positionals) {
-            CHECK(keys.insert(positional.key).second);
-            CHECK((vocabulary.contains(positional.type) || arg::Enum(positional.type)));
+        for (const auto& arg : verb.args) {
+            CAPTURE(arg.key);
+            CHECK(keys.insert(arg.key).second);
+            CHECK(arg::Known(arg.type));
+            // A default is JSON text of the arg's type.
+            if (!arg.fallback.empty()) {
+                const Json fallback = Json::parse(arg.fallback, nullptr, false);
+                REQUIRE_FALSE(fallback.is_discarded());
+                CHECK(check::Fits(arg, fallback));
+            }
         }
-        for (const auto& flag : verb.flags) {
-            CHECK(keys.insert(FlagKey(flag)).second);
-            CHECK(((flag.takes == Takes::Nothing) == (flag.type == "bool")));
-            CHECK((flag.type == "bool" || vocabulary.contains(flag.type) || arg::Enum(flag.type)));
-        }
+        // The example a refusal shows is one the row accepts.
+        CHECK(CheckCall(verb, ExampleCall(verb)["args"]).has_value());
         // One name in every form: a Python keyword would need another spelling in the generated functions.
         static const std::set<std::string_view> python{"False", "None", "True", "and", "as", "assert", "async", "await",
             "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if",
@@ -214,87 +201,82 @@ TEST_CASE("every argument has a key, a type from the vocabulary, and keys are un
     }
 }
 
-TEST_CASE("an argument of type int or an enum is checked against the row, typed or as a JSON call") {
-    CHECK(Parse("read 0x10 zz", {}).error() == "len: 'zz' is not a number; usage: read <addr> [len] [--type type]");
-    CHECK(Parse("search u16 5", {}).error().starts_with("hex|u32|i32|u64|ptr|f32|f64|text: 'u16' is not one of"));
-    CHECK(Parse("touches 0x10 0x538 x1", {}).error().starts_with("offset: 'x1' is not a number"));
-    CHECK(Parse("census --limit many", {}).error().starts_with("--limit: 'many' is not a number"));
-    const Verb* read = FindVerb(AllVerbs(), "read");
-    CHECK(CallArgs(*read, Json{{"addr", "0x10"}, {"len", "zz"}}).error().starts_with("len: 'zz' is not a number"));
+TEST_CASE("an argument's type is checked against the row before the builder runs") {
+    CHECK(Call(R"({"verb": "read", "args": {"addr": "0x10", "len": "zz"}})").error().starts_with("len: a whole number"));
+    CHECK(Call(R"({"verb": "read", "args": {"addr": "0x10", "len": "0x"}})").error().starts_with("len: a whole number"));
+    CHECK(Call(R"({"verb": "search", "args": {"type": "u16", "value": 5}})").error().starts_with(
+        "type: one of hex|u32|i32|u64|ptr|f32|f64|text, not \"u16\""));
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x10", "offsets": ["0x538", "x1"]}})").error().starts_with(
+        "offsets: a list, each a whole number"));
+    CHECK(Call(R"({"verb": "census", "args": {"limit": "many"}})").error().starts_with("limit: a whole number"));
+    CHECK(Call(R"({"verb": "xrefs", "args": {"addr": "0x10", "all": "yes"}})").error().starts_with("all: true or false"));
+    // A decimal string is not an address: the builder's error names the key.
+    CHECK(Call(R"({"verb": "read", "args": {"addr": "16"}})").error().starts_with("addr: '16' is not an address"));
+    CHECK(Call(R"({"verb": "frobnicate"})").error() == "unknown verb 'frobnicate' (help lists them)");
+    CHECK_FALSE(Call(R"({"args": {}})").has_value());
 }
 
-TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
-    const auto same = [](std::string_view line, const Json& call) {
-        CAPTURE(line);
-        std::string_view rest = line;
-        const Verb* verb = FindVerb(AllVerbs(), text::Next(rest));
-        REQUIRE(verb);
-        const auto typed = Tokenise(*verb, rest);
-        const auto named = CallArgs(*verb, call);
-        REQUIRE(typed.has_value());
-        REQUIRE(named.has_value());
-        CHECK(typed->positionals == named->positionals);
-        CHECK(typed->rest == named->rest);
-        REQUIRE(typed->flags.size() == named->flags.size());
-        for (const auto& given : typed->flags) {
-            const auto* other = named->Find(given.flag);
-            REQUIRE(other);
-            CHECK(other->values == given.values);
-            CHECK(other->rest == given.rest);
-        }
-    };
-    same("read 0x10 16 --type u8 phase, pad 3", {{"addr", "0x10"}, {"len", 16}, {"type", "u8 phase, pad 3"}});
-    same("read 0x10", {{"addr", 16}});
-    same("write 0x10 00 00 80 3f --expect 01 02", {{"addr", "0x10"}, {"data", {"00", "00", "80", "3f"}}, {"expect", {"01", "02"}}});
-    same("write 0x10 \"00 00 80 3f\"", {{"addr", "0x10"}, {"data", "00 00 80 3f"}});
-    same("search text \"a b\" --wide --max 2", {{"type", "text"}, {"value", "a b"}, {"wide", true}, {"max", 2}});
-    same("search hex 01 02", {{"type", "hex"}, {"value", {"01", "02"}}, {"heap", false}});
-    same("watch-start 1500ms 0x10:4 0x20:1 --file \"my capture.jsonl\"",
-        {{"duration", 1.5}, {"ranges", {"0x10:4", "0x20:1"}}, {"file", "my capture.jsonl"}});
-    same("watch-start 10s 0x10:4", {{"duration", 10}, {"ranges", "0x10:4"}});
-    same("get 0x10#1:1 --changed", {{"object", "0x10#1:1"}, {"changed", true}});
-    same("get 0x10#1:1 --changed f.snap --nonzero", {{"object", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
-    same("get 0x10#1:1 A.B C", {{"object", "0x10#1:1"}, {"paths", {"A.B", "C"}}});
-    same("name 5 6", {{"indices", {5, 6}}});
-    same("census --cls Actor --start 100", {{"cls", "Actor"}, {"start", 100}});
-    // A quoted file path with spaces needs no quoting as a value.
-    same("sig-check --file \"my sigs.jsonl\"", {{"file", "my sigs.jsonl"}});
-
+TEST_CASE("a refused call names its key, that key's schema and a corrected example") {
     const Verb* read = FindVerb(AllVerbs(), "read");
-    const std::string usage = "; usage: read <addr> [len] [--type type]";
-    CHECK(CallArgs(*read, Json{{"addr", "$1"}}).error() ==
-        "addr: '$1': a JSON call takes the literal ref a result carries, not $N" + usage);
-    CHECK(CallArgs(*read, Json{{"addr", "0x10"}, {"length", 4}}).error() == "unknown argument 'length' (it takes addr, len, type)" + usage);
-    CHECK(CallArgs(*read, Json{{"len", 4}}).error() == "len given after a left-out argument" + usage);
-    // A chain that follows no pointer is refused from a JSON call as from a typed line.
-    const auto chain = CallArgs(*read, Json{{"addr", "0x1000->0x0"}});
-    REQUIRE(chain.has_value());
-    CHECK(Build(*read, *chain, {}).error().starts_with(text::ChainNoHop));
-    // A misspelt key is named as unknown, never read as a left-out argument.
-    CHECK(CallArgs(*FindVerb(AllVerbs(), "each"), Json{{"class_", "Pawn"}, {"paths", "Health"}}).error().starts_with(
-        "unknown argument 'class_' (it takes cls, paths, seconds, where, outer, limit, nonzero, elements)"));
-    CHECK(CallArgs(*read, Json::object()).error() == "too few arguments" + usage);
-    CHECK(CallArgs(*read, Json{{"addr", {"0x10", "0x20"}}}).error() == "addr: one value, not a list" + usage);
-    CHECK_FALSE(CallArgs(*FindVerb(AllVerbs(), "xrefs"), Json{{"addr", "0x10"}, {"all", "yes"}}).has_value());
+    REQUIRE(read);
+    // A misspelt key: the nearest one named, the whole row's args, the value moved to the key meant.
+    const Json misspelt = {{"addr", "0x10"}, {"length", 4}};
+    const auto unknown = CheckCall(*read, misspelt);
+    REQUIRE_FALSE(unknown.has_value());
+    CHECK(unknown.error().message == "unknown key 'length' (did you mean len?); read takes addr, len, type");
+    CHECK(unknown.error().key == "length");
+    const Json error = RefusalJson(*read, misspelt, unknown.error());
+    CHECK(error["kind"] == "schema");
+    CHECK(error["key"] == "length");
+    CHECK_FALSE(error.contains("arg"));
+    CHECK(error["args"].size() == read->args.size());
+    CHECK(error["example"] == Json{{"verb", "read"}, {"args", {{"addr", "0x10"}, {"len", 4}}}});
+    // A wrong type: that key's ArgJson; an optional key at fault leaves the example.
+    const Json wrong = {{"addr", "0x10"}, {"len", "zz"}};
+    const auto typed = CheckCall(*read, wrong);
+    REQUIRE_FALSE(typed.has_value());
+    CHECK(typed.error().key == "len");
+    const Json typedError = RefusalJson(*read, wrong, typed.error());
+    CHECK(typedError["arg"] == ArgJson(read->args[1]));
+    CHECK_FALSE(typedError.contains("args"));
+    CHECK(typedError["example"] == Json{{"verb", "read"}, {"args", {{"addr", "0x10"}}}});
+    // A missing required key gets an example value; a list where the row takes one value is refused.
+    const Json noAddr = {{"len", 4}};
+    const auto missing = CheckCall(*read, noAddr);
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().message.starts_with("missing addr: "));
+    CHECK(missing.error().key == "addr");
+    CHECK(RefusalJson(*read, noAddr, missing.error())["example"] ==
+        Json{{"verb", "read"}, {"args", {{"addr", "0x140001000"}, {"len", 4}}}});
+    CHECK(CheckCall(*read, Json{{"addr", {"0x10", "0x20"}}}).error().key == "addr");
+    CHECK(CheckCall(*read, Json::array()).error().message == "args is an object of named arguments");
+    // A misspelt key is named as unknown, never read as another key's value.
+    CHECK(CheckCall(*FindVerb(AllVerbs(), "each"), Json{{"class_", "Pawn"}, {"paths", Json::array({Json::array({"Health"})})}})
+        .error().message.starts_with("unknown key 'class_' (did you mean cls?); each takes cls, paths, "));
+    // A builder's error about one key starts with it.
+    CHECK(KeyOf(*read, "len must be 1..4096") == "len");
+    CHECK(KeyOf(*read, "addr: no loaded module 'x.dll'") == "addr");
+    CHECK(KeyOf(*read, "nothing here").empty());
+    // A chain that follows no pointer is refused; two offsets build.
+    const auto chain = Call(R"({"verb": "read", "args": {"addr": {"base": "0x1000", "chain": [0]}}})");
+    REQUIRE_FALSE(chain.has_value());
+    CHECK(chain.error().find(value::ChainNoHop) != std::string::npos);
+    const auto hops = Call(R"({"verb": "read", "args": {"addr": {"base": "0x1000", "chain": [0, 8]}}})");
+    REQUIRE(hops.has_value());
+    CHECK(hops->chain == std::vector<uint64_t>{0, 8});
+    // A verb name near a real one is suggested.
+    const auto nearest = check::NearestVerbs(AllVerbs(), "raed");
+    CHECK(std::ranges::find(nearest, "read") != nearest.end());
 
-    // batch: a list of calls, each kept as its JSON text; refused verbs as in a typed batch.
-    const Verb* batch = FindVerb(AllVerbs(), "batch");
-    Json calls = Json::object();
-    calls["calls"] = Json::array({Json{{"verb", "read"}, {"args", Json{{"addr", "0x10"}}}}, Json{{"verb", "modules"}}});
-    const auto args = CallArgs(*batch, calls);
-    REQUIRE(args.has_value());
-    REQUIRE(args->calls.size() == 2);
-    CHECK(args->calls[0].verb == "read");
-    const auto parsed = Build(*batch, *args, {});
+    // batch: a list of calls, each kept as its JSON text; some verbs are refused inside one.
+    const auto parsed = Call(R"({"verb": "batch", "args": {"calls": [{"verb": "read", "args": {"addr": "0x10"}}, {"verb": "modules"}]}})");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->fields.size() == 2);
+    REQUIRE(parsed->fields.size() == 2);
     CHECK(Json::parse(parsed->fields[0])["args"]["addr"] == "0x10");
-    Json watchCall = Json::object();
-    watchCall["calls"] = Json::array({Json{{"verb", "status"}}});
-    const auto watch = CallArgs(*batch, watchCall);
-    REQUIRE(watch.has_value());
-    CHECK(Build(*batch, *watch, {}).error().starts_with("not allowed in a batch: status"));
-    CHECK(CallArgs(*batch, Json{{"calls", "read 0x10"}}).error().starts_with("calls: a list of {verb, args}"));
+    CHECK(Json::parse(parsed->fields[1])["verb"] == "modules");
+    CHECK(Call(R"({"verb": "batch", "args": {"calls": [{"verb": "status"}]}})").error().starts_with(
+        "calls: not allowed in a batch: status"));
+    CHECK(Call(R"({"verb": "batch", "args": {"calls": "read 0x10"}})").error().starts_with("calls: a list of"));
 }
 
 TEST_CASE("named types: listed once in the table, by name in the rows that use them") {
@@ -611,7 +593,7 @@ TEST_CASE("get rows: every field is name, offset and value; a path is path, valu
     dump.rows.push_back(row);
     const auto json = Checked(dump);
     CHECK(json["rows"][0] == Json{{"name", "MaxHealth"}, {"raw", "_aaabcd"}, {"offset", "0x134"}, {"value", 100}});
-    CHECK(json["rows"][1]["truncated"] == true);    // Only when true, and the layout only with --meta.
+    CHECK(json["rows"][1]["truncated"] == true);    // Only when true, and the layout only with meta.
     CHECK(json["rows"][1]["meta"]["type"] == "ByteProperty");
 
     shape::Get get;
@@ -630,7 +612,7 @@ TEST_CASE("get rows: every field is name, offset and value; a path is path, valu
     CHECK(got["rows"][1] == Json{{"path", "C"}, {"error", "no field C"}});    // A failed path keeps its place.
 }
 
-TEST_CASE("get --types, func and its signature") {
+TEST_CASE("get types, func and its signature") {
     const std::vector<ue::Field> fields{Field("_aaabcd", 0x100, 4, "FloatProperty")};
     const auto table = Checked(MakeTypes(Pawn, fields, [](const ue::Field&) { return std::string_view("Health"); }));
     CHECK(table["rows"][0] == Json{{"name", "Health"}, {"raw", "_aaabcd"}, {"owner", "Pawn"}, {"type", "FloatProperty"},
@@ -790,13 +772,13 @@ TEST_CASE("census rows filter by class name and keep the whole census's totals")
     const auto result = Checked(MakeCensus("Actor", census, rows, {0, 1}, 5));
     CHECK(result["classes"] == 3);
     CHECK(result["instances"] == 14);
-    CHECK(result["rows"].size() == 1); // --limit after the filter.
+    CHECK(result["rows"].size() == 1); // limit after the filter.
     CHECK(result["rows"][0] == Json{{"class", "BP_Projectile_C"}, {"ref", "0x100#1:1"}, {"count", 9},
         {"samples", {"0x50100#900:1"}}});
     CHECK(result["next_cursor"] == 1);
     CHECK(result["total"] == 2);
     CHECK(result["filter"] == "Actor");
-    CHECK(result["hint"] == "--start 1 for more, --limit 0 for all");
+    CHECK(result["hint"] == "start 1 for more, limit 0 for all");
     const auto plain = Checked(MakeCensus("", census, census.rows, {}, 5));
     CHECK_FALSE(plain.contains("hint"));
     CHECK_FALSE(plain.contains("next_cursor"));
@@ -833,12 +815,12 @@ TEST_CASE("census pages join to every row of a filter, and the last page has no 
     CHECK_FALSE(past.contains("next_cursor"));
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", false).empty());
     CHECK(CensusPageProblem(MakeCensusBaseline("Actor", census), std::nullopt, "Actor", true) ==
-        "no stored census to page: run census --diff --cls Actor without --start first");
+        "no stored census to page: run census with diff for Actor without start first");
     CHECK_FALSE(CensusPageProblem(MakeCensusBaseline("Pawn", census), std::nullopt, "Actor", false).empty());
     CHECK_FALSE(CensusPageProblem(std::nullopt, std::nullopt, "", false).empty());
 }
 
-TEST_CASE("census --diff keeps grown, shrunk, new and vanished classes, largest change first") {
+TEST_CASE("census diff keeps grown, shrunk, new and vanished classes, largest change first") {
     const CensusBaseline before{"Actor", {{"Grown", {0x100, 1, 1}, 2}, {"Shrunk", {0x200, 2, 1}, 5},
         {"Same", {0x300, 3, 1}, 4}, {"Vanished", {0x400, 4, 1}, 3}, {"Reused", {0x500, 5, 1}, 1},
         {"Serial", {0x600, 6, 0}, 2}}};
@@ -871,10 +853,10 @@ TEST_CASE("census --diff keeps grown, shrunk, new and vanished classes, largest 
     CHECK(CensusChanges(MakeCensusBaseline("Actor", after), after).empty());
 }
 
-TEST_CASE("census --diff needs a baseline under the same filter") {
+TEST_CASE("census diff needs a baseline under the same filter") {
     CHECK(CensusBaselineProblem(std::nullopt, "Actor").starts_with("no census baseline"));
     const CensusBaseline all{"", {}};
-    CHECK(CensusBaselineProblem(all, "Actor") == "the baseline is from census: run census --cls Actor first");
+    CHECK(CensusBaselineProblem(all, "Actor") == "the baseline is from census: run census for Actor first");
     CHECK(CensusBaselineProblem(all, "").empty());
     CHECK(CensusBaselineProblem(CensusBaseline{"Actor", {}}, "Actor").empty());
 }
@@ -948,7 +930,7 @@ TEST_CASE("batch results give each command its tick and name the ones that moved
     CHECK(result["rows"][1]["tick"] == 41);
     CHECK(result["rows"][1]["last_tick"] == 355);
     CHECK_FALSE(result["rows"][2].contains("last_tick"));
-    // A command that sent nothing (a syntax error) has no tick.
+    // A command that sent nothing (a schema refusal) has no tick.
     std::vector<BatchItemTicks> none{{40, 0, 0}};
     result = Checked(MakeBatch({envelope("bad")}, none, 40, 40));
     CHECK_FALSE(result["rows"][0].contains("tick"));
@@ -989,16 +971,16 @@ TEST_CASE("each refusals and kept reasons speak of the parameter they name") {
     const ue::Signature tag{8, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StructProperty", "GameplayTag", TagType)}};
     CHECK(calls::EachRefusal(tag, Structs) ==
         "ReturnValue is a GameplayTag, which the engine does not mark plain data (it may need destroying); "
-        "--each reads only plain values: use call");
+        "each reads only plain values: use call");
     const ue::Signature container{24, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StructProperty",
         "GameplayTagContainer", ContainerType)}};
     CHECK(calls::EachRefusal(container, Structs) ==
-        "ReturnValue is a GameplayTagContainer, which owns GameplayTags (an array); --each reads only plain values: use call");
+        "ReturnValue is a GameplayTagContainer, which owns GameplayTags (an array); each reads only plain values: use call");
     CHECK(calls::KeptReason(container, Structs).starts_with("ReturnValue is a GameplayTagContainer, which owns GameplayTags"));
     const ue::Signature text{16, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StrProperty")}};
     CHECK(calls::KeptReason(text, Structs).starts_with("ReturnValue is a String, which owns memory; the agent keeps"));
     const ue::Signature input{8, {Parameter("Index", ue::Param | ue::Plain, "IntProperty")}};
-    CHECK(calls::EachRefusal(input, Structs) == "Index is an input; --each calls only functions with no inputs: use call");
+    CHECK(calls::EachRefusal(input, Structs) == "Index is an input; each calls only functions with no inputs: use call");
     const ue::Signature plain{24, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return | ue::Plain, "StructProperty", "Vector")}};
     CHECK(calls::EachRefusal(plain, Structs).empty());
     CHECK(calls::KeptReason(plain, Structs).empty());
@@ -1006,7 +988,7 @@ TEST_CASE("each refusals and kept reasons speak of the parameter they name") {
 
 TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeated and refused calls") {
     const auto line = [](std::string session, std::string verb, uint64_t out, std::string hash,
-                         std::vector<std::string> flags = {}) {
+                         std::vector<std::string> keys = {}) {
         UsageLine usage;
         usage.time = "2026-01-02T03:04:0" + std::to_string(hash.size()) + "Z";
         usage.session = std::move(session);
@@ -1014,7 +996,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
         usage.origin = "ue";
         usage.caller = "tool";
         usage.hash = std::move(hash);
-        usage.flags = std::move(flags);
+        usage.keys = std::move(keys);
         usage.in = 10;
         usage.out = out;
         usage.ms = 2;
@@ -1022,7 +1004,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     };
     std::vector<UsageLine> lines = {
         line("s1", "get", 5000, "a"),                        // No filter: unfiltered.
-        line("s1", "get", 300, "bb", {"--match"}),
+        line("s1", "get", 300, "bb", {"match"}),
         line("s1", "get", 5000, "a"),                        // The same input again: repeated, unfiltered.
         line("s1", "find", 200, "ccc"),
         line("s1", "batch", 40, "dddd"),
@@ -1030,7 +1012,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
         line("s2", "describe", 9000, "f"),                    // Another session: not in s1's figures.
     };
     lines[3].ok = false;
-    lines[3].refused = "syntax";
+    lines[3].refused = "schema";
     lines[4].origin = lines[5].origin = "core";
     lines[5].batch = true;                                  // Inside the batch: counted under read.
     const auto stats = MakeStats(lines, std::string("s1"), AllVerbs());
@@ -1050,13 +1032,13 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(stats.rows[0].unfiltered == 2u);
     CHECK(stats.rows[0].repeated == 1u);
     CHECK(stats.rows[1].verb == "find");
-    CHECK(stats.rows[1].unfiltered == 1u);                  // find has --cls.
+    CHECK(stats.rows[1].unfiltered == 1u);                  // find has cls.
     CHECK(stats.rows[1].refused == 1u);
-    CHECK(stats.rows[1].refusedBy->at("syntax") == 1);
+    CHECK(stats.rows[1].refusedBy->at("schema") == 1);
     const auto read = std::ranges::find(stats.rows, std::string("read"), &shape::StatsVerb::verb);
     REQUIRE(read != stats.rows.end());
     CHECK(read->batched == 1u);
-    CHECK_FALSE(read->unfiltered.has_value());              // read has no filter flags.
+    CHECK_FALSE(read->unfiltered.has_value());              // read has no filter args.
     REQUIRE(stats.largest.size() == 5);
     CHECK(stats.largest[0].verb == "get");
     CHECK(stats.largest[0].out == 5000);
@@ -1101,7 +1083,7 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     };
     lines[1].digest = 430000;
     lines[3].digest = 22000;
-    lines[2].flags = {"--limit"};
+    lines[2].keys = {"limit"};
     const auto stats = MakeStats(lines, std::string("new"), AllVerbs());
     Checked(stats);
     CHECK(stats.totals.digested == 2);
@@ -1110,14 +1092,14 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     REQUIRE(census != stats.rows.end());
     CHECK(census->digested == 1u);
     CHECK(census->saved == 429500u);
-    CHECK_FALSE(census->unfiltered.has_value());              // The digested one is not marked; the rerun had --limit.
+    CHECK_FALSE(census->unfiltered.has_value());              // The digested one is not marked; the rerun had limit.
     const auto dump = std::ranges::find(stats.rows, std::string("get"), &shape::StatsVerb::verb);
     CHECK_FALSE(dump->unfiltered.has_value());
     const auto big = std::ranges::find(stats.largest, uint64_t{500}, &shape::StatsCall::out);
     REQUIRE(big != stats.largest.end());
     CHECK(big->digest == 430000u);
 
-    // --sessions: newest first, totals over the whole log, no verb rows.
+    // sessions: newest first, totals over the whole log, no verb rows.
     const auto list = StatsFor(lines, AllVerbs(), {false, true, {}}, std::nullopt);
     REQUIRE(list.has_value());
     const auto json = Checked(*list);
@@ -1137,7 +1119,7 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     CHECK(list->rows.empty());
     CHECK_FALSE(json.contains("never_called"));
 
-    // --session <id>: that one, or a refusal naming --sessions.
+    // session: that one, or a refusal naming stats --sessions.
     const auto old = StatsFor(lines, AllVerbs(), {false, false, "old"}, std::string("new"));
     REQUIRE(old.has_value());
     CHECK(old->session == "old");
@@ -1145,7 +1127,7 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     const auto missing = StatsFor(lines, AllVerbs(), {false, false, "gone"}, std::nullopt);
     REQUIRE_FALSE(missing.has_value());
     CHECK(missing.error().find("stats --sessions") != std::string::npos);
-    // No flag: the current session, else the log's latest.
+    // Neither: the current session, else the log's latest.
     CHECK(StatsFor(lines, AllVerbs(), {}, std::string("old"))->session == "old");
     CHECK(StatsFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
 }

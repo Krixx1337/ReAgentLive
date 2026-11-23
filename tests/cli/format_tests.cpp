@@ -65,7 +65,7 @@ TEST_CASE("JSON values preserve types and flag bounded previews") {
     CHECK(Json::parse(value.dump()).get<uint64_t>() == UINT64_MAX);
     field.type = "NameProperty";
     struct Name { int32_t index; uint32_t number; };
-    // Compact: the text with the instance suffix; unresolved: "#index"; --meta: the parts.
+    // Compact: the text with the instance suffix; unresolved: "#index"; meta: the parts.
     value = JsonFieldValue(field, Bytes(Name{42, 1}), noStruct, names, truncated);
     CHECK(Json::parse(value.dump()) == "a\"b\n_0");
     CHECK(JsonFieldValue(field, Bytes(Name{42, 0}), noStruct, names, truncated) == "a\"b\n");
@@ -75,7 +75,7 @@ TEST_CASE("JSON values preserve types and flag bounded previews") {
     CHECK(value["name"] == "a\"b\n");
     CHECK(value["number"] == 1);
     CHECK(JsonFieldValue(field, Bytes(Name{7, 0}), noStruct, names, truncated, meta)["name"].is_null());
-    // A struct of one name (a gameplay tag) is the name; --meta keeps its member.
+    // A struct of one name (a gameplay tag) is the name; meta keeps its member.
     const Ref tagType{0x7000, 20, 1};
     ue::Field tagName{};
     tagName.name = "TagName";
@@ -194,7 +194,7 @@ std::vector<uint8_t> OuterBytes() {
 }
 }
 
-TEST_CASE("struct values are compact by default and full with --meta") {
+TEST_CASE("struct values are compact by default and full with meta") {
     const format_detail::UnresolvedName names;
     bool truncated = false;
     const auto vector = Member(0x120, 24, "StructProperty", "Location", "Actor", VectorType);
@@ -334,11 +334,11 @@ TEST_CASE("a wide row prints compact: its size is held") {
     const auto size = value.dump(-1, ' ', true).size();
     MESSAGE("wide row: " << size << " characters");
     CHECK(size <= 320);
-    // --meta is the layout, many times larger: the compact form is the default for a reason.
+    // meta is the layout, many times larger: the compact form is the default for a reason.
     const auto meta = JsonFieldValue(row, WideBytes(), WideLookup, names, truncated, ValueStyle{true, nullptr});
     CHECK(meta.dump().size() > 3 * size);
 
-    // --nonzero leaves out the zero members: the rotation's X and Y here.
+    // nonzero leaves out the zero members: the rotation's X and Y here.
     Json pruned = value;
     CHECK_FALSE(DropZero(pruned));
     CHECK(pruned["SpawnTransform"]["Rotation"] == Json{{"Z", 0.7071}, {"W", 0.7071}});
@@ -353,7 +353,7 @@ TEST_CASE("a float32 prints at float precision") {
     CHECK(static_cast<float>(JsonNumber<float>(Bytes(1.0f / 3.0f)).get<double>()) == 1.0f / 3.0f);
 }
 
-TEST_CASE("--nonzero: zero members go, elements and non-zero values stay") {
+TEST_CASE("nonzero: zero members go, elements and non-zero values stay") {
     Json value = {{"A", 0}, {"B", false}, {"C", ""}, {"D", "None"}, {"E", nullptr}, {"F", Json::array()},
         {"G", {{"X", 0.0}}}, {"H", 1}, {"I", Json::array({0, 2})}, {"J", {{"count", 0}, {"rows", Json::array()}}},
         {"K", {{"count", 1}, {"rows", Json::array({{{"P", 0}, {"Q", 3}}})}}}, {"L", "x"}};

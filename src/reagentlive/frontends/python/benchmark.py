@@ -3,8 +3,9 @@
     python benchmark.py <console.exe> --object <ref> [--class <Class>] [--path <Field.Path>]
 
 <ref> is a literal ref (0x...#index:serial) of a large object; --class names
-a class for the one-shot lookup; --path is a pointer chain for `get` on the
-object. Prints one JSON object; record it with the host tick rate.
+a class for the one-shot layout lookup; --path is a field path through
+pointers for `get` on the object (dotted here, sent as a list). Prints one
+JSON object; record it with the host tick rate.
 """
 import argparse
 import json
@@ -55,15 +56,16 @@ def main():
         seconds2, diff, _ = timed(s, 'get', {'object': args.object, 'changed': True})
         out['snap_diff'] = {'ms': (seconds + seconds2) * 1000, 'trips': snap.get('trips', 0) + diff.get('trips', 0)}
         if args.path:
-            seconds, timing, envelope = timed(s, 'get', {'object': args.object, 'paths': [args.path]})
+            seconds, timing, envelope = timed(s, 'get', {'object': args.object, 'paths': [args.path.split('.')]})
             out['get'] = {'ms': seconds * 1000, **timing, 'same_tick': envelope.get('result', {}).get('same_tick')}
     if args.class_name:
         runs = []
+        call = json.dumps({'verb': 'get', 'args': {'object': args.class_name, 'types': True}})
         for _ in range(2):
             started = time.perf_counter()
-            subprocess.run([args.console, '-c', f'fields {args.class_name}'], capture_output=True, check=False)
+            subprocess.run([args.console, '-c', call], capture_output=True, check=False)
             runs.append((time.perf_counter() - started) * 1000)
-        out['one_shot_fields_ms'] = runs
+        out['one_shot_types_ms'] = runs
     print(json.dumps(out, indent=1))
 
 

@@ -506,7 +506,7 @@ struct Script {
     std::vector<ScriptProperty> properties;
     std::optional<std::vector<ScriptStatement>> statements;
     std::optional<std::vector<ScriptEvent>> events;
-    std::optional<std::string> stopped; // --decode stopped early: why ("unknown 0xNN at +0xOFF").
+    std::optional<std::string> stopped; // decode stopped early: why ("unknown 0xNN at +0xOFF").
     template<class V> static void Describe(V& v) {
         v("ref", &Script::ref);
         v("function", &Script::function);

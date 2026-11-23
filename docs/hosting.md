@@ -159,7 +159,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | `reagentlive::ue` | links `ue-base` and builds it with the host's SDK as the layout (`REAGENTLIVE_UE_SDK`, every group on without checks); it adds no op. The consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
 | `reagentlive::client` | `core/client.cpp` |
 | `reagentlive::ue-client` | `packs/ue/client_ue.cpp`, links `client`; no SDK needed |
-| `reagentlive::cli` | `frontends/cli/syntax/`: the parser, without nlohmann/json |
+| `reagentlive::cli` | `frontends/cli/call/`: the parser, without nlohmann/json |
 | `reagentlive::console` | `frontends/cli/console/*.cpp` with `packs/ue/cli/console/` (or `console/no_pack.cpp` with `REAGENTLIVE_PACKS` empty), links `ue-client` (or `client`), `cli`, nlohmann/json and the Zydis decoder (console only: a configure check fails if an agent target in `REAGENTLIVE_AGENT_TARGETS` links it; hosts add theirs) |
 
 All targets are INTERFACE libraries that carry their sources, so each consumer
@@ -168,7 +168,7 @@ compiles them with its own flags. Injected images often need special ones
 could disagree with them.
 
 A host's console includes only `frontends/cli/console/console.h` and
-`frontends/cli/syntax/parse.h`; list those files in
+`frontends/cli/call/build.h`; list those files in
 `REAGENTLIVE_HOST_SOURCES` ([options](#using-it-in-your-project)).
 
 ## The tick
@@ -304,18 +304,19 @@ request per tick in practice). Refusals log at warning level.
 
 A host's console (`RunConsole`) can add verbs of its own. Each is a row
 of the console's verb table (`ConsoleConfig::verbs`, the row type in
-`syntax/verb.h`): name, origin `host`, its tool pack
+`call/verb.h`): name, origin `host`, its tool pack
 ([tool packs](tool-interface.md#tool-packs); `modify` for one that writes),
-a summary, positionals (key, usage
-name, arity, type, help) and flags (name, takes, type, placeholder, help),
-and a result type from a struct with `Describe` (`results/schema.h`); mark
-`writes` on a verb that writes the target or calls into it and `blocks` on
-one that holds the console for seconds. `parse` stays null: the console
-sorts and checks a call's arguments against the row, from a typed line or
-a JSON call alike, and passes them to `ConsoleConfig::hostCommand(client,
-verb, args, envelope)`, which answers an envelope with `ok` and `result`
-or `error`. The row gives the verb what the library's have: `help`, usage
-and type errors before the host sees the call, JSON calls, a generated
+a summary, args (key, type, help, default, required, list), and a result
+type from a struct with `Describe` (`results/schema.h`); mark `writes` on
+a verb that writes the target or calls into it and `blocks` on one that
+holds the console for seconds. `build` stays null: the console checks a
+call's args against the row (`call/check.h`) and passes them to
+`ConsoleConfig::hostCommand(client, verb, args, envelope)`, which reads
+them (`args.Int("seconds")`, `args.Str("file")`) and answers an envelope
+with `ok` and `result` or `error`; a range it refuses itself can answer
+`RefusalJson(verb, args.values, {message, key})` as the error. The row
+gives the verb what the library's have: `help` with an example call,
+schema refusals before the host sees the call, a generated
 Python method (`c.host.<verb>`) and an MCP tool (`host_<verb>`), strict
 results, and a check that the result matches its declared type (a
 mismatch is an `internal` error). Why rows:

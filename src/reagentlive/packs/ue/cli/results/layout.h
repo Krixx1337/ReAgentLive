@@ -8,7 +8,7 @@
 #include <expected>
 #include <optional>
 #include <string>
-#include "reagentlive/frontends/cli/syntax/text.h"
+#include "reagentlive/frontends/cli/call/values.h"
 #include "reagentlive/frontends/cli/values/json.h"
 
 namespace reagentlive::cli {

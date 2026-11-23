@@ -1,9 +1,9 @@
 // reagentlive CLI fast lane: function bounds from a prepared exception directory,
-// disasm over fixed bytes, decoder-exact sig fields, xref kinds, syntax and
+// disasm over fixed bytes, decoder-exact sig fields, xref kinds, calls and
 // result shapes. No live process: reads are served from a byte vector.
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/code/code_json.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/code/disasm.h"
 #include "reagentlive/frontends/cli/code/function_save.h"
 #include "reagentlive/frontends/cli/code/image.h"
@@ -244,7 +244,7 @@ TEST_CASE("disasm decodes text, targets, fields and where code ends") {
     CHECK(rows[4].text == "ret");
     CHECK(rows[4].ends);
     CHECK_FALSE(rows[3].ends);
-    CHECK(rows.size() == 24);   // Straight on past the ret: no --function bound.
+    CHECK(rows.size() == 24);   // Straight on past the ret: no function bound.
     CHECK(listing->stop == "count");
 }
 
@@ -296,7 +296,7 @@ TEST_CASE("disasm limits: count, bytes, a truncated instruction and undecodable 
     CHECK(cut->end->reason == "instruction runs into unreadable memory");
 }
 
-TEST_CASE("disasm --follow steps through unconditional jumps only, at most three") {
+TEST_CASE("disasm follow steps through unconditional jumps only, at most three") {
     Image image;
     const uint64_t a = Base + 0x4000, b = Base + 0x4100, c = Base + 0x4200, d = Base + 0x4300, e = Base + 0x4400;
     image.Put(a, Join({{0xe9}, Rel32(static_cast<int32_t>(b - (a + 5)))}));
@@ -533,54 +533,56 @@ TEST_CASE("xref kinds from the bytes in front of the field") {
     CHECK(window({0xe8}, f, 2).kind == "unknown");
 }
 
-TEST_CASE("fast-lane syntax") {
-    const std::vector<Ref> refs;
+TEST_CASE("fast-lane calls") {
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
-    auto disasm = Parse("disasm Game.exe+0x1000 12 --function --follow", refs, modules);
+    auto disasm = Call(R"({"verb": "disasm", "args": {"addr": {"module": "Game.exe", "rva": "0x1000"}, "count": 12,
+        "function": true, "follow": true}})", modules);
     REQUIRE(disasm);
     CHECK(disasm->kind == Kind::Disasm);
     CHECK(disasm->request.address == Base + 0x1000);
     CHECK(disasm->limit == 12);
     CHECK(disasm->function);
     CHECK(disasm->follow);
-    CHECK(Parse("disasm 0x1000", refs)->limit == DefaultDisasm);
-    CHECK(Parse("disasm 0x1000 1024", refs)->limit == 1024);
-    CHECK_FALSE(Parse("disasm 0x1000 1025", refs));
-    // --function: the whole function by default, a count up to its cap; --resume and --save need it.
-    CHECK(Parse("disasm 0x1000 --function", refs)->limit == dis::MaxFunctionInstructions);
-    CHECK(Parse("disasm 0x1000 300 --function", refs)->limit == 300);
-    CHECK_FALSE(Parse("disasm 0x1000 2049 --function", refs));
-    CHECK(Parse("disasm 0x1000 --function --resume", refs)->resume);
-    CHECK(Parse("disasm 0x1000 --function --save fn.jsonl", refs)->file == "fn.jsonl");
-    CHECK_FALSE(Parse("disasm 0x1000 --resume", refs));
-    CHECK_FALSE(Parse("disasm 0x1000 --save fn.jsonl", refs));
-    const auto callees = Parse("disasm 0x1000 --function --save fn.jsonl --callees --labels l.jsonl", refs);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000"}})")->limit == DefaultDisasm);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 1024}})")->limit == 1024);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 1025}})").error().starts_with("count"));
+    // function: the whole function by default, a count up to its cap; resume and save need it.
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true}})")->limit == dis::MaxFunctionInstructions);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 300, "function": true}})")->limit == 300);
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 2049, "function": true}})"));
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "resume": true}})")->resume);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": "fn.jsonl"}})")->file == "fn.jsonl");
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "resume": true}})").error().starts_with("resume"));
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "save": "fn.jsonl"}})").error().starts_with("save"));
+    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": "fn.jsonl",
+        "callees": true, "labels": "l.jsonl"}})");
     REQUIRE(callees);
     CHECK(callees->callees);
     CHECK(callees->labels == "l.jsonl");
-    CHECK_FALSE(Parse("disasm 0x1000 --function --callees", refs));             // Needs --save.
-    CHECK_FALSE(Parse("disasm 0x1000 --function --labels l.jsonl", refs));
-    CHECK_FALSE(Parse("disasm 0x1000 --bogus", refs));
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "callees": true}})")); // Needs save.
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "labels": "l.jsonl"}})"));
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "bogus": true}})"));
 
-    auto xrefs = Parse("xrefs 0x1000 --module engine.dll --all", refs);
+    auto xrefs = Call(R"({"verb": "xrefs", "args": {"addr": "0x1000", "module": "engine.dll", "all": true}})");
     REQUIRE(xrefs);
     CHECK(xrefs->kind == Kind::Xrefs);
     CHECK(xrefs->request.op == op::Xrefs);
     CHECK(xrefs->target == "engine.dll");
     CHECK(xrefs->all);
-    CHECK_FALSE(Parse("xrefs", refs));
+    CHECK_FALSE(Call(R"({"verb": "xrefs"})"));
 
-    auto text = Parse("search text Weapon.cpp --module Game.exe", refs);
+    auto text = Call(R"({"verb": "search", "args": {"type": "text", "value": "Weapon.cpp", "module": "Game.exe"}})");
     REQUIRE(text);
     CHECK(text->request.length == 10);
     CHECK(std::memcmp(text->request.data, "Weapon.cpp", 10) == 0);
-    auto wide = Parse("search text Aim --wide", refs);
+    auto wide = Call(R"({"verb": "search", "args": {"type": "text", "value": "Aim", "wide": true}})");
     REQUIRE(wide);
     CHECK(wide->request.length == 6);
     CHECK(wide->request.data[1] == 0);
     CHECK(wide->request.data[2] == 'i');
-    CHECK_FALSE(Parse("search hex 01 --wide", refs));
-    CHECK_FALSE(Parse("search text " + std::string(65, 'x'), refs));
+    CHECK(Call(R"({"verb": "search", "args": {"type": "hex", "value": "01", "wide": true}})").error().starts_with("wide"));
+    const Json tooLong = {{"verb", "search"}, {"args", {{"type", "text"}, {"value", std::string(65, 'x')}}}};
+    CHECK(Call(tooLong.dump()).error().starts_with("value"));
 }
 
 TEST_CASE("the xrefs request is checked like a search") {
@@ -623,7 +625,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     listing.end = dis::End{Base + 0x1005, 5, "undecodable"};
     listing.stop = "undecodable";
     const auto json = Checked(MakeDisasm(Base + 0x1000, listing, function, modules));
-    // Full rows (--meta): each row's module and its address fields.
+    // Full rows (meta): each row's module and its address fields.
     CHECK(json["rows"][0]["module"] == "Game.exe");
     CHECK(json["rows"][0]["target_module"] == "Game.exe");
     CHECK(json["rows"][0].contains("fields"));
@@ -637,7 +639,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(compact["rows"][0]["target_rva"] == "0x1005");
     CHECK(compact["rows"][0]["string"] == "Weapon.cpp");
     CHECK(compact.dump().size() < json.dump().size());
-    // A --function listing without --meta: no bytes, rva on the first row only, the strings summary, next.
+    // A function listing without meta: no bytes, rva on the first row only, the strings summary, next.
     dis::Listing more = listing;
     dis::Instruction second = row;
     second.address = Base + 0x1005;
@@ -680,7 +682,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK_FALSE(unlisted["rows"][1].contains("function"));
     CHECK_FALSE(unlisted["rows"][1].contains("unlisted"));
 
-    // --save: the file holds the listing, the result its summary.
+    // save: the file holds the listing, the result its summary.
     auto saved = MakeDisasm(Base + 0x1000, more, function, modules, false, true);
     const auto listed = saved.rows.size();
     KeepSaveSummary(saved, "fn.jsonl");
@@ -693,7 +695,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(summary.contains("function"));
 }
 
-TEST_CASE("--callees saves each in-module call target once, and labels name what the file holds") {
+TEST_CASE("callees saves each in-module call target once, and labels name what the file holds") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(5);
     rows[0].address = Base + 0x1000; rows[0].bytes = {0xe8, 0, 0, 0, 0};
@@ -732,7 +734,7 @@ TEST_CASE("--callees saves each in-module call target once, and labels name what
     CHECK(lines[7]["what"] == "global");
 }
 
-TEST_CASE("--callees saves tail jumps out of the function, and names the unsaved ones") {
+TEST_CASE("callees saves tail jumps out of the function, and names the unsaved ones") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(3);
     rows[0].address = Base + 0x1000; rows[0].bytes = {0xeb, 0x02};
@@ -951,17 +953,16 @@ TEST_CASE("the cache keeps module layouts") {
     CHECK_FALSE(LoadCache("reagentlive cache 9\nowner\t5\nimage\t0x10\t0x0\t0\t2\nsection\t.text\t0x1\t0x2\t0x3\nend\n"));
 }
 
-TEST_CASE("vtable syntax and result") {
-    const std::vector<Ref> refs;
-    auto parsed = Parse("vtable 0x1000 12 --offset 0xf0 --resolve", refs);
+TEST_CASE("vtable call and result") {
+    auto parsed = Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "count": 12, "offset": "0xf0", "resolve": true}})");
     REQUIRE(parsed);
     CHECK(parsed->kind == Kind::Vtable);
     CHECK(parsed->limit == 12);
     CHECK(parsed->offset == 0xf0);
     CHECK(parsed->bodies);
-    CHECK(Parse("vtable 0x1000 --table", refs)->table);
-    CHECK_FALSE(Parse("vtable 0x1000 --table --offset 8", refs));
-    CHECK_FALSE(Parse("vtable 0x1000 513", refs));
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "table": true}})")->table);
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "table": true, "offset": 8}})").error().starts_with("offset"));
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "count": 513}})").error().starts_with("count"));
 
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     native::Slots slots{{{0, Base + 0x1100, Base + 0x1800}}, "not code", 5};
@@ -971,40 +972,47 @@ TEST_CASE("vtable syntax and result") {
 }
 
 TEST_CASE("pointer chains in read-only commands, refused for writes") {
-    const std::vector<Ref> refs{{0x5000, 1, 1}};
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
-    auto read = Parse("read $1+0x8->0x30->0x10 16", refs, modules);
+    auto read = Call(R"({"verb": "read", "args": {"addr": {"base": {"base": "0x5000#1:1", "offset": 8}, "chain": [48, 16]},
+        "len": 16}})", modules);
     REQUIRE(read);
     CHECK(read->request.address == 0x5008);
     CHECK(read->chain == std::vector<uint64_t>{0x30, 0x10});
     CHECK(read->request.length == 16);
-    CHECK(Parse("peek Game.exe+0x100->0->0x8", refs, modules)->chain == std::vector<uint64_t>{0, 0x8});
-    CHECK(Parse("disasm 0x1000->0x8->0", refs)->chain.size() == 2);
-    CHECK(Parse("vtable 0x1000->0->0x20 --offset 8", refs)->chain.size() == 2);
-    // One ->off reads no pointer: refused, never answered with the bytes at the base.
-    for (const char* line : {"read 0x1000->0x0", "peek $1->0x30", "vtable 0x1000->0x8", "disasm 0x1000->0"})
-        CHECK(Parse(line, refs).error().starts_with(text::ChainNoHop));
-    // The error spells the fix with the line's own address and offset.
-    CHECK(Parse("peek $1->0x30", refs).error().contains("$1->0->0x30 reads the pointer at $1 and adds 0x30; $1+0x30"));
-    CHECK(Parse("read 0x1000", refs)->chain.empty());
-    CHECK_FALSE(Parse("read 0x1000->", refs));
-    CHECK_FALSE(Parse("read 0x1000->x", refs));
-    std::string tooLong = "read 0x1000";
-    for (size_t i = 0; i <= MaxChainHops; ++i) tooLong += "->0x1";
-    CHECK_FALSE(Parse(tooLong, refs));
-    for (const char* line : {"write 0x1000->0x8 01", "write 0x1000->0x8 01 --hold", "write 0x1000->0x8 01 --undo 5 --owner $1 --expect 00"}) {
-        auto refused = Parse(line, refs);
+    CHECK(Call(R"({"verb": "peek", "args": {"addr": {"base": {"module": "Game.exe", "rva": "0x100"}, "chain": [0, 8]}}})",
+        modules)->chain == std::vector<uint64_t>{0, 0x8});
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": {"base": "0x1000", "chain": [8, 0]}}})")->chain.size() == 2);
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": {"base": "0x1000", "chain": [0, "0x20"]}, "offset": 8}})")->chain.size() == 2);
+    // One offset reads no pointer: refused, never answered with the bytes at the base.
+    for (const char* verb : {"read", "peek", "vtable", "disasm", "mem-snap"}) {
+        CAPTURE(verb);
+        Json call = {{"verb", verb}, {"args", {{"addr", {{"base", "0x5000#1:1"}, {"chain", Json::array({0x30})}}}}}};
+        if (std::string_view(verb) == "mem-snap") call["args"]["len"] = 16;
+        const auto refused = Call(call.dump());
         REQUIRE_FALSE(refused);
-        CHECK(refused.error().starts_with(text::ChainRefused));
+        CHECK(refused.error().starts_with("addr: "));
+        CHECK(refused.error().find(value::ChainNoHop) != std::string::npos);
+    }
+    CHECK(Call(R"({"verb": "read", "args": {"addr": "0x1000"}})")->chain.empty());
+    CHECK_FALSE(Call(R"({"verb": "read", "args": {"addr": {"base": "0x1000", "chain": []}}})"));
+    CHECK_FALSE(Call(R"({"verb": "read", "args": {"addr": {"base": "0x1000", "chain": ["x"]}}})"));
+    Json tooLong = {{"verb", "read"}, {"args", {{"addr", {{"base", "0x1000"}, {"chain", Json::array()}}}}}};
+    for (size_t i = 0; i <= MaxChainHops; ++i) tooLong["args"]["addr"]["chain"].push_back(1);
+    CHECK(Call(tooLong.dump()).error().starts_with("addr: a chain takes at most"));
+    // A write goes to an address read first: a chain is not one of its address forms.
+    for (const char* args : {R"({"addr": {"base": "0x1000", "chain": [8, 0]}, "data": "01"})",
+                             R"({"addr": {"base": "0x1000", "chain": [8, 0]}, "data": "01", "hold": 5})"}) {
+        const auto refused = Call(R"({"verb": "write", "args": )" + std::string(args) + "}");
+        REQUIRE_FALSE(refused);
+        CHECK(refused.error().starts_with("addr: "));
     }
 }
 
-TEST_CASE("read --type cstr and wstr") {
-    const std::vector<Ref> refs;
-    auto cstr = Parse("read 0x1000 --type cstr", refs);
+TEST_CASE("read type cstr and wstr") {
+    auto cstr = Call(R"({"verb": "read", "args": {"addr": "0x1000", "type": "cstr"}})");
     REQUIRE(cstr);
     CHECK(cstr->request.length == DefaultStringRead);
-    CHECK(Parse("read 0x1000 33 --type wstr", refs)->request.length == 33);
+    CHECK(Call(R"({"verb": "read", "args": {"addr": "0x1000", "len": 33, "type": "wstr"}})")->request.length == 33);
 
     const std::vector<uint8_t> text{'W', 'e', '\n', '\\', 0x01, 'x', 0, 'z'};
     const auto c = native::CString(text);
@@ -1115,7 +1123,7 @@ TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes an
     CHECK(rows[2].start == 1);
 }
 
-TEST_CASE("touches cuts unlisted code at returns and int3 padding, and --reads drops copies") {
+TEST_CASE("touches cuts unlisted code at returns and int3 padding, and reads drops copies") {
     const auto code = Join({
         {0x8b, 0x81, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rcx+0x538]
         {0xc3},                                           // ret: the first piece ends here
@@ -1186,7 +1194,7 @@ TEST_CASE("touches cuts unlisted code at returns and int3 padding, and --reads d
     rows[3].start = 4; rows[3].uses = {read, other};          // two reads, no write
     touch::Rank(rows, true);
     REQUIRE(rows.size() == 2);
-    CHECK(rows[0].start == 1);   // Two reads each; the row that writes ranks first, as without --reads.
+    CHECK(rows[0].start == 1);   // Two reads each; the row that writes ranks first, as without reads.
     CHECK(rows[0].distinct == 2);
     CHECK(rows[1].start == 4);
     CHECK(rows[1].distinct == 2);
@@ -1210,23 +1218,26 @@ TEST_CASE("the exception directory lists the entries starting in a range") {
     CHECK(table.Between(Base - 0x100, Base + 0x1001)->size() == 1);
 }
 
-TEST_CASE("touches syntax and result") {
-    const std::vector<Ref> refs;
+TEST_CASE("touches call and result") {
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
-    auto touches = Parse("touches Game.exe+0x2000 0x538 0x540 0x538 --range 0x1000", refs, modules);
+    auto touches = Call(R"({"verb": "touches", "args": {"addr": {"module": "Game.exe", "rva": "0x2000"},
+        "offsets": ["0x538", "0x540", "0x538"], "range": "0x1000"}})", modules);
     REQUIRE(touches);
     CHECK(touches->kind == Kind::Touches);
     CHECK(touches->request.address == Base + 0x2000);
     CHECK(touches->offsets == std::vector<uint32_t>{0x538, 0x540});
     CHECK(touches->range == 0x1000);
-    CHECK(Parse("touches 0x1000 0x10", refs)->range == touch::DefaultRange);
-    CHECK_FALSE(Parse("touches 0x1000 0x10", refs)->readsOnly);
-    CHECK(Parse("touches 0x1000 0x10 --reads", refs)->readsOnly);
-    CHECK_FALSE(Parse("touches 0x1000", refs));
-    CHECK_FALSE(Parse("touches 0x1000 0", refs));
-    CHECK_FALSE(Parse("touches 0x1000 0x10 --range 0", refs));
-    CHECK_FALSE(Parse("touches 0x1000 0x10 --range 0x400001", refs));
-    CHECK_FALSE(Parse("touches 0x1000 1 2 3 4 5 6 7 8 9", refs));
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16]}})")->range == touch::DefaultRange);
+    CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16]}})")->readsOnly);
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "reads": true}})")->readsOnly);
+    CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000"}})"));
+    CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": []}})"));
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [0]}})").error().starts_with("offsets"));
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "range": 0}})").error().starts_with("range"));
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "range": "0x400001"}})").error()
+        .starts_with("range"));
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [1, 2, 3, 4, 5, 6, 7, 8, 9]}})").error()
+        .starts_with("offsets"));
 
     touch::Row row;
     row.start = Base + 0x1000; row.end = Base + 0x1100; row.distinct = 1;
@@ -1287,7 +1298,7 @@ TEST_CASE("type names undecorate plain and nested classes and keep anything else
     CHECK(pe::Undecorate("not a type") == "not a type");
 }
 
-TEST_CASE("vtable --rtti names a live object's class and its base from this program's own image") {
+TEST_CASE("vtable rtti names a live object's class and its base from this program's own image") {
     const rtti_probe::Square square;
     const rtti_probe::Shape& shape = square;
     uint64_t table = 0;
@@ -1303,7 +1314,7 @@ TEST_CASE("vtable --rtti names a live object's class and its base from this prog
     CHECK(rtti->bases[0].name == "rtti_probe::Shape");
     // A table with no locator before it (the image's first bytes) is refused, not guessed.
     CHECK_FALSE(pe::ReadRtti(SelfRead(), modules, self.base + 0x10).has_value());
-    // vtable --rtti: the complete object is this part less its offset inside it.
+    // vtable rtti: the complete object is this part less its offset inside it.
     const auto json = Checked(MakeVtableRtti(0x5000, 0x10, *rtti));
     CHECK(json["name"] == "rtti_probe::Square");
     CHECK(json["complete"] == "0x5010");

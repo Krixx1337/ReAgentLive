@@ -58,8 +58,8 @@ std::string EachRefusal(const ue::Signature& signature, Lookup&& lookup) {
         const auto flags = parameter.parameterFlags;
         if (!FilledByCall(flags))
             return parameter.name + " is an input" + (flags & ue::Reference ? " (passed by reference)" : "") +
-                "; --each calls only functions with no inputs: use call";
-        if (!(flags & ue::Plain)) return NotPlain(parameter, lookup) + "; --each reads only plain values: use call";
+                "; each calls only functions with no inputs: use call";
+        if (!(flags & ue::Plain)) return NotPlain(parameter, lookup) + "; each reads only plain values: use call";
     }
     return {};
 }

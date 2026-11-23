@@ -42,9 +42,9 @@ bool HasUnreal(const Client& client) {
 void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
     const Request& request = command.request;
     const std::string className(request.length ? reinterpret_cast<const char*>(request.data) : "");
-    // The filter a census is stored and compared under: its class and outer, as the flags read.
+    // The filter a census is stored and compared under: its class and outer, as the args read.
     const std::string filter = command.outer.empty() ? className :
-        (className.empty() ? "" : className + " ") + "--outer " + command.outer;
+        (className.empty() ? "" : className + " ") + "outer " + command.outer;
     const CensusPage page{command.from, command.limit};
     ue::CensusResult census;
     int64_t ms = 0;
@@ -147,7 +147,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         if (!function) return CommandError(session, jsonCommand, function.error());
         auto signature = ue::Parameters(client, function->address);
         if (!signature) return CommandError(session, jsonCommand, signature.error());
-        return RunTypedCall(session, command, *function, *signature, structs, refs, jsonCommand);
+        return RunTypedCall(session, command, *function, *signature, structs, jsonCommand);
     }
     if (request.op == ue::op::Call && command.dry) {
         auto function = ue::Function(client, ue::GetRef(command.request), request.text);
@@ -236,7 +236,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     case ue::op::Describe: {
         auto object = ue::Describe(client, ue::GetRef(request));
         if (!object) return CommandError(session, jsonCommand, object.error());
-        // One object: it becomes $1, so `describe X; funcs $1` means X.
+        // One object: the rows name it.
         refs.assign(1, object->ref);
         auto row = MakeObject(*object);
         if (object->outer.address)
@@ -401,18 +401,22 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
     }
     if (command.kind == Kind::Get) {
         if (!client.Supports(ue::op::Fields)) JsonError(session, jsonCommand, "unsupported", "get needs an agent with fields");
-        else RunGet(session, command, Ue(session).structs, session.refs, jsonCommand);
+        else {
+            std::vector<Ref> named; // The objects the rows name.
+            RunGet(session, command, Ue(session).structs, named, jsonCommand);
+        }
         return;
     }
     if (command.kind == Kind::Snap) {
         if (!client.Supports(ue::op::ReadObject) || !client.Supports(ue::op::Fields)) {
-            JsonError(session, jsonCommand, "unsupported", "get --snap needs an agent with fields and object reads");
+            JsonError(session, jsonCommand, "unsupported", "get with snap needs an agent with fields and object reads");
             return;
         }
         Snap(session, ue::GetRef(command.request), command.file, Ue(session).baseline, jsonCommand);
         return;
     }
-    RunUnreal(session, command, session.refs, Ue(session).structs, Ue(session).baseline, jsonCommand);
+    std::vector<Ref> named; // The objects the rows name (each names its rows from them).
+    RunUnreal(session, command, named, Ue(session).structs, Ue(session).baseline, jsonCommand);
 }
 
 // Guards an address given relative to an object on that object's identity,

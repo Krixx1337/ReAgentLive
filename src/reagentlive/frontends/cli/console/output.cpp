@@ -27,7 +27,7 @@
 #include "reagentlive/frontends/cli/results/budget.h"
 #include "reagentlive/frontends/cli/results/verbs.h"
 #include "reagentlive/frontends/cli/state/cache.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/values/format.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/core/client.h"
@@ -86,17 +86,12 @@ std::optional<Json> Digested(const Session& session, Json& record, size_t chars)
     budget::Line line;
     line.verb = session.current;
     line.call = input.call;
-    line.flags = input.flags;
     line.limit = input.budget;
     line.reads = input.reads;
-    if (line.verb) {
-        std::string_view rest = input.text;
-        text::Next(rest);
-        auto args = input.call ? CallArgs(*line.verb, input.call->contains("args") ? (*input.call)["args"] : Json()) :
-            Tokenise(*line.verb, rest);
+    if (line.verb && input.call) {
+        auto args = CheckCall(*line.verb, input.call->contains("args") ? (*input.call)["args"] : Json());
         if (args) line.args = std::move(*args);
     }
-    for (const auto& ref : input.refs) line.refs.push_back(ref.index < 0 ? std::format("0x{:x}", ref.address) : RefText(ref));
     return budget::Replace(record, chars, line, [&](const std::string& text) { return KeepResult(session, text); });
 }
 }
@@ -145,6 +140,11 @@ void JsonResult(Session& session, std::string_view command, Json result) {
 void JsonError(Session& session, std::string_view command, std::string_view kind, std::string_view message) {
     session.failed = true;
     PrintJson(session, ErrorEnvelope(command, kind, message));
+}
+
+void JsonRefusal(Session& session, std::string_view command, Json error) {
+    session.failed = true;
+    PrintJson(session, {{"command", command}, {"ok", false}, {"error", std::move(error)}});
 }
 
 void CommandError(Session& session, std::string_view jsonCommand, const Error& error) {

@@ -16,7 +16,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/values/json.h"
 #include "reagentlive/frontends/cli/state/names.h"
@@ -55,13 +55,10 @@ struct LineUsage {
     std::string refused;
 };
 
-// The line being run, as its output budget needs it (output.cpp): what to
+// The call being run, as its output budget needs it (output.cpp): what to
 // run again, narrowed, when the result is past the budget.
 struct LineInput {
-    std::string text;               // A typed line without its line flags.
-    std::optional<Json> call;       // Or a JSON call.
-    std::string flags;              // The line flags a rerun keeps (--meta, --budget N), typed.
-    std::vector<Ref> refs;          // $1..$N when the line began: a rerun names them literally.
+    std::optional<Json> call;       // The call as given.
     size_t budget = 0;              // Characters; 0: none.
     // Safe to run again: no write and no call that may change state. False
     // keeps a result past the budget in a file instead. A pack sets it true
@@ -76,7 +73,6 @@ struct PackState;
 struct Session {
     Client& client;
     const ConsoleConfig& config;
-    std::vector<Ref> refs;                  // $1..$N.
     Names names;                            // Readable names for obfuscated fields; empty without a names file.
     bool failed = false;                    // Any error in one-shot mode makes the exit code 1.
     std::vector<Json>* capture = nullptr;   // batch: records collected instead of printed.
@@ -132,6 +128,8 @@ template<class T> void Emit(Session& session, std::string_view command, T result
     JsonResult(session, command, ToJson(result));
 }
 void JsonError(Session& session, std::string_view command, std::string_view kind, std::string_view message);
+// A call refused before it ran: `error` as call/check.h RefusalJson builds it.
+void JsonRefusal(Session& session, std::string_view command, Json error);
 void CommandError(Session& session, std::string_view jsonCommand, const Error& error);
 void PrintStatus(Session& session, std::string_view jsonCommand);
 // False when the host does not tick on the engine's thread: same_tick then
@@ -142,9 +140,9 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
-// search (a job: started, then polled up to --wait) and search-job.
-// One command line run as a batch item is (its records go to session.capture when set).
+// One call's JSON text run as a batch item (its records go to session.capture when set).
 void ExecuteLine(Session& session, std::string_view line);
+// search (a job: started, then polled up to wait) and search-job.
 void RunSearch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWatch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunSig(Session& session, const Command& command, std::string_view jsonCommand);

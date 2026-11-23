@@ -7,8 +7,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/command.h"
-#include "reagentlive/frontends/cli/syntax/text.h"
+#include "reagentlive/frontends/cli/call/command.h"
+#include "reagentlive/frontends/cli/call/values.h"
 
 namespace reagentlive::cli::layout {
 // One field in memory order: `count` elements of `type` (one of the `read

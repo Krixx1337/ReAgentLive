@@ -1,16 +1,26 @@
-// reagentlive CLI: one parser per verb, named in the verb table's rows
-// (results/verbs.h, packs/ue/cli/results/verbs_ue.h). Each turns a line's sorted
-// arguments into a Command; an empty error means "show the usage line".
+// reagentlive CLI: one builder per verb, named in the verb table's rows
+// (results/verbs.h, packs/ue/cli/results/verbs_ue.h). Each turns a call's
+// checked args into a Command; an error about one key starts with that key.
 #pragma once
 #include <span>
 #include <string>
 #include <string_view>
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 
-namespace reagentlive::cli::parse {
-inline Parsed Fail(std::string why = {}) { return Parsed(std::unexpect, std::move(why)); }
+namespace reagentlive::cli::build {
+inline Parsed Fail(std::string why) { return Parsed(std::unexpect, std::move(why)); }
 
-// Core (parse.cpp, parse_memory.cpp, parse_code.cpp).
+// An addr argument (with `chains`, also a chain) into the request's address
+// and the command's chain; why not, or empty.
+inline std::string Place(const Args& args, std::string_view key, const ParseContext& context, Command& command, bool chains) {
+    auto place = value::Address(args.At(key), context.modules, chains);
+    if (!place) return std::string(key) + ": " + place.error();
+    command.request.address = place->address;
+    command.chain = std::move(place->chain);
+    return {};
+}
+
+// Core (build.cpp, build_memory.cpp, build_code.cpp).
 Parsed Help(const Args& args, const ParseContext& context);
 Parsed Status(const Args& args, const ParseContext& context);
 Parsed Quit(const Args& args, const ParseContext& context);
@@ -37,7 +47,7 @@ Parsed LabelsSign(const Args& args, const ParseContext& context);
 Parsed LabelsPort(const Args& args, const ParseContext& context);
 Parsed SigBytes(const Args& args, const ParseContext& context);
 
-// Unreal pack (packs/ue/cli/syntax/parse_unreal.cpp).
+// Unreal pack (packs/ue/cli/call/build_unreal.cpp).
 Parsed Find(const Args& args, const ParseContext& context);
 Parsed Call(const Args& args, const ParseContext& context);
 Parsed CallPure(const Args& args, const ParseContext& context);
@@ -61,8 +71,6 @@ Parsed Trace(const Args& args, const ParseContext& context);
 Parsed CallsStart(const Args& args, const ParseContext& context);
 Parsed CallsRead(const Args& args, const ParseContext& context);
 Parsed CallsStop(const Args& args, const ParseContext& context);
-// 10, 10s, 500ms, 10m: milliseconds; 0 when malformed.
-uint64_t DurationMilliseconds(std::string_view text);
 Parsed Census(const Args& args, const ParseContext& context);
 Parsed Refs(const Args& args, const ParseContext& context);
 Parsed NameFind(const Args& args, const ParseContext& context);

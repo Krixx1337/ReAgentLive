@@ -18,7 +18,7 @@
 #include <vector>
 #include "reagentlive/core/client.h"
 #include "reagentlive/frontends/cli/code/signature.h"
-#include "reagentlive/frontends/cli/syntax/command.h"
+#include "reagentlive/frontends/cli/call/command.h"
 
 namespace reagentlive::cli::dis {
 using ReadFn = sig::ReadFn;

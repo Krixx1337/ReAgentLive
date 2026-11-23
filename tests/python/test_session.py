@@ -36,6 +36,7 @@ PIN = {'id': 'hold:1', 'mode': 'hold', 'address': '0x10', 'bytes': '00 00 80 3f'
 TRIAL = {'id': 'undo:1', 'mode': 'undo', 'address': '0x38', 'bytes': '00', 'original': '01', 'owner': '0x10', 'state': 'active',
          'changed_tick': 5, 'remaining_ms': 5000}
 REF = '0x10#1:1'
+GAME = {'module': 'Game.exe', 'rva': '0x10'}           # An address by module and rva.
 
 
 def ok(result):
@@ -52,7 +53,7 @@ def C(verb, args=None):
 
 # A result past its budget: the console's digest, with the call narrowed.
 DIGEST = {'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
-          'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['--match', '--fields', '--limit'],
+          'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['match', 'fields', 'limit'],
           'next': json.dumps({'verb': 'rows', 'args': {'object': '0x10#1:1', 'fields': 'Cost', 'limit': 40}})}
 
 # Replies by call: [call as the client sends it, reply].
@@ -60,20 +61,20 @@ CALLS = [
     [C('rows', {'object': '0x10#1:1'}), {'ok': True, 'digest': DIGEST}],
     [C('status'), ok({'pid': 4, 'build': 'b', 'version': '0.1.0', 'commit': '0123456789ab', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
                       'interval_ms': 100, 'ticking': True, 'host_thread': 'engine', 'packs': ['ue'], 'tool_packs': ['explore'], 'table_hash': 'abc'})],
-    [C('read', {'addr': 4096, 'len': 4}), ok({'address': '0x1000', 'size': 4, 'hex': '00 00 80 3f',
+    [C('read', {'addr': '0x1000', 'len': 4}), ok({'address': '0x1000', 'size': 4, 'hex': '00 00 80 3f',
                                              'region': {'kind': 'private', 'base': '0x1000', 'size': '0x1000',
                                                         'protect': 'rw'}})],
-    [C('read', {'addr': '0x10#1:1->0x30->0x8', 'len': 2}), ok({'address': '0x18', 'size': 2, 'hex': '01 02',
+    [C('read', {'addr': {'base': REF, 'chain': [0x30, 0x8]}, 'len': 2}), ok({'address': '0x18', 'size': 2, 'hex': '01 02',
                                                              'chain': {'base': '0x10', 'hops': [], 'address': '0x18'}})],
-    [C('read', {'addr': 16, 'type': 'cstr'}), ok({'address': '0x10', 'size': 2, 'hex': '41 00', 'text': 'A', 'length': 1,
+    [C('read', {'addr': '0x10', 'type': 'cstr'}), ok({'address': '0x10', 'size': 2, 'hex': '41 00', 'text': 'A', 'length': 1,
                                               'terminated': True})],
-    [C('read', {'addr': '0x10#1:1+0x538', 'type': 'u8 phase, pad 1'}), ok({'address': '0x538', 'size': 2, 'hex': '01 00',
+    [C('read', {'addr': {'base': REF, 'offset': 0x538}, 'type': 'u8 phase, pad 1'}), ok({'address': '0x538', 'size': 2, 'hex': '01 00',
                                                                          'layout': {'phase': 1}})],
-    [C('peek', {'addr': 'base+0x10', 'count': 1, 'label': 'labels.jsonl'}), ok({'address': '0x10', 'rows': [
+    [C('peek', {'addr': GAME, 'count': 1, 'label': 'labels.jsonl'}), ok({'address': '0x10', 'rows': [
         {'address': '0x10', 'value': '0x5', 'label': 'value'},
         {'address': '0x18', 'value': '0x10', 'label': 'object', 'object': OBJECT}]})],
-    [C('write', {'addr': 4096, 'data': '0000803f'}), ok({'address': '0x1000', 'size': 4})],
-    [C('write', {'addr': 4096, 'data': '0102', 'expect': 'ffff'}), error(kind='agent', message='memory differs', found='00 00')],
+    [C('write', {'addr': '0x1000', 'data': '0000803f'}), ok({'address': '0x1000', 'size': 4})],
+    [C('write', {'addr': '0x1000', 'data': '0102', 'expect': 'ffff'}), error(kind='agent', message='memory differs', found='00 00')],
     [C('search', {'type': 'ptr', 'value': '0x7ff600001234', 'heap': True, 'module': 'Game.exe', 'max': 512}),
      ok({'rows': [{'address': '0x10'}, {'address': '0x20', 'module': 'Game.exe', 'rva': '0x20'}], 'job': 2,
          'state': 'done', 'from': '0x0', 'to': '0x100', 'scanned': 0.13, 'next_cursor': '0x21'})],
@@ -81,32 +82,32 @@ CALLS = [
      ok({'rows': [], 'job': 3, 'state': 'running', 'from': '0x0', 'to': '0x100', 'scanned': 0.5})],
     [C('search-job', {'job': 3, 'stop': True}),
      ok({'rows': [], 'job': 3, 'state': 'stopped', 'from': '0x0', 'to': '0x100', 'scanned': 0.6, 'next_cursor': '0x60'})],
-    [C('batch', {'calls': [C('read', {'addr': 16, 'len': 1}), C('get', {'object': REF, 'paths': ['X']})]}),
+    [C('batch', {'calls': [C('read', {'addr': '0x10', 'len': 1}), C('get', {'object': REF, 'paths': [['X']]})]}),
      ok({'all_ok': False, 'same_tick': True, 'first_tick': 4, 'last_tick': 4, 'spans_ticks': [], 'rows': [
          {'command': 'read', 'ok': True, 'result': {'address': '0x10', 'size': 1, 'hex': '01'}, 'tick': 4},
          {'command': 'get', 'ok': False, 'error': {'message': 'no field X'}}]})],
     [C('modules'), ok({'rows': [{'name': 'Game.exe', 'base': '0x140000000', 'size': 4096}]})],
-    [C('sig-check', {'pattern': '48 8b ?? 89 05', 'expect': 'Game.exe+0x10', 'offset': 4}), ok(SIG)],
+    [C('sig-check', {'pattern': '48 8b ?? 89 05', 'expect': GAME, 'offset': 4}), ok(SIG)],
     [C('sig-check', {'file': 'my sigs.jsonl'}), ok({'file': 'my sigs.jsonl', 'winner': 2, 'searches': 1, 'lines': [
         {'line': 1, 'ok': False, 'error': 'no pattern'}, {'line': 2, 'ok': True, 'result': SIG}]})],
-    [C('sig-bytes', {'addr': 'base+0x10', 'len': 32}), ok({'address': '0x10', 'length': 2, 'pattern': '48 8b',
+    [C('sig-bytes', {'addr': GAME, 'len': 32}), ok({'address': '0x10', 'length': 2, 'pattern': '48 8b',
                                                           'list': '0x48, 0x8B', 'suggested': {
         'pattern': '48 8b', 'list': '0x48, 0x8B', 'fixed_bytes': 2, 'fields': []}})],
-    [C('disasm', {'addr': 'Game.exe+0x10', 'count': 8, 'function': True, 'follow': True}), ok({
+    [C('disasm', {'addr': GAME, 'count': 8, 'function': True, 'follow': True}), ok({
         'address': '0x10', 'size': 1, 'stop': 'count', 'rows': [{'address': '0x10', 'bytes': 'c3', 'text': 'ret', 'ends': True}]})],
-    [C('xrefs', {'addr': 'base+0x10', 'module': 'engine.dll', 'all': True}), ok({
+    [C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'all': True}), ok({
         'address': '0x10', 'scanned': 'engine.dll', 'kinds': {'call': 1}, 'rows': [{'kind': 'call', 'field': '0x21',
                                                                                     'instruction': '0x20'}],
         'capped': False, 'scan_ms': 3})],
-    [C('touches', {'addr': 'Game.exe+0x10', 'offsets': [0x538, 0x540], 'range': 0x1000}), ok({
+    [C('touches', {'addr': GAME, 'offsets': [0x538, 0x540], 'range': 0x1000}), ok({
         'address': '0x10', 'offsets': ['0x538', '0x540'], 'range': 4096,
         'scanned': {'from': '0x0', 'to': '0x1010', 'functions': 2, 'unlisted': 0, 'bytes': 64}, 'total': 1, 'capped': False, 'scan_ms': 1,
         'rows': [{'function': {'start': '0x20', 'end': '0x40'}, 'distinct': 1, 'writes': False, 'total': 0, 'uses': []}]})],
-    [C('write', {'addr': '0x10#1:1+0x3e4', 'data': '0000803f', 'expect': '00000000', 'hold': 2.5}),
+    [C('write', {'addr': {'base': REF, 'offset': 0x3e4}, 'data': '0000803f', 'expect': '00000000', 'hold': 2.5}),
      ok({'address': '0x10', 'size': 4, 'timed': PIN})],
     [C('writes'), ok({'rows': [TRIAL, PIN]})],
-    [C('writes', {'action': 'clear', 'id': 'hold:1'}), ok({'cleared': 1, 'rows': [dict(PIN, state='cleared')]})],
-    [C('watch-start', {'duration': 600, 'ranges': ['0x538:16'], 'every': 10, 'follow': 'pawn'}), ok({
+    [C('writes', {'clear': True, 'id': 'hold:1'}), ok({'cleared': 1, 'rows': [dict(PIN, state='cleared')]})],
+    [C('watch-start', {'duration': 600, 'ranges': [{'offset': 0x538, 'len': 16}], 'every': 10, 'follow': 'pawn'}), ok({
         'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
         'ranges': [{'offset': '0x538', 'length': 16, 'guarded': True}]})],
     [C('watch-read'), ok({'running': True, 'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
@@ -114,41 +115,42 @@ CALLS = [
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00'], 'root': '0x10'}, {'tick': 9, 'us': 10, 'lost': True},
                                    {'tick': 12, 'us': 20, 'values': ['02 00'], 'resumed': True, 'root': '0x20'}],
                           'gaps': [{'from_us': 10, 'to_us': 20}]})],
-    [C('watch-start', {'duration': 0.3, 'ranges': ['0x10#1:1.Health', '0x9000:1'], 'file': 'cap.jsonl'}), ok({
+    [C('watch-start', {'duration': 0.3, 'ranges': [{'object': REF, 'field': ['Health']}, {'addr': '0x9000', 'len': 1}],
+                       'file': 'cap.jsonl'}), ok({
         'capacity': 100, 'ms': 300, 'interval_ms': 0, 'ranges': [RANGE, RANGE], 'file': 'cap.jsonl'})],
     [C('watch-stop'), ok({'running': False, 'stopped': 'stopped', 'capacity': 100, 'ms': 300, 'interval_ms': 0,
                           'ranges': [RANGE, RANGE], 'file': 'cap.jsonl',
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
-    [C('write', {'addr': '0x10#1:1+0x28', 'data': '0000000000000040', 'expect': '000000000000f03f', 'undo': 5,
-                 'owner': REF, 'object': 0x2000}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
-    [C('writes', {'action': 'clear', 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
+    [C('write', {'addr': {'base': REF, 'offset': 0x28}, 'data': '0000000000000040', 'expect': '000000000000f03f',
+                 'undo': 5, 'owner': REF, 'object': '0x2000'}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
+    [C('writes', {'clear': True, 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
     [C('get', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
                                                      'truncated': False, 'capped': False})],
-    [C('get', {'object': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
+    [C('get', {'object': REF, 'match': 'Ammo', 'changed': True}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False})],
     [C('get', {'object': REF, 'snap': True}), ok({'ref': REF, 'rows': [], 'snap': {'size': 1264}})],
     [C('census', {'cls': 'Actor', 'diff': True}), ok({'classes': 4, 'instances': 11, 'before': {'classes': 3, 'instances': 9},
                                                        'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
-    [C('get', {'object': REF, 'paths': ['A.B']}), ok({'ref': REF, 'same_tick': True, 'rows': [
+    [C('get', {'object': REF, 'paths': [['A', 'B']]}), ok({'ref': REF, 'same_tick': True, 'rows': [
         {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF}]})],
-    [C('get', {'object': REF, 'paths': ['A.B', 'C']}), ok({'ref': REF, 'same_tick': True, 'rows': [
+    [C('get', {'object': REF, 'paths': [['A', 'B'], ['C']]}), ok({'ref': REF, 'same_tick': True, 'rows': [
         {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF},
         {'path': 'C', 'error': 'no field C'}]})],
     [C('name', {'indices': [5, 6]}), ok({'rows': [{'index': 5, 'name': 'Five'}, {'index': 6}]})],
     [C('refs', {'name': 'Missing'}), error(kind='validation', message='no pooled name is exactly Missing')],
-    [C('disasm', {'addr': 4096}), error(kind='pack', message='disasm is in the native pack, outside this console\'s '
+    [C('disasm', {'addr': '0x1000'}), error(kind='pack', message='disasm is in the native pack, outside this console\'s '
                                         '--packs explore: start it with native in --packs')],
-    [C('call', {'object': REF, 'function': 'Pawn:Fn', 'params': ['01']}), ok(CALL)],
-    [C('call', {'object': REF, 'function': 'Pawn:Get', 'params': ['Name=#5', 'Mode=2']}), ok(dict(
+    [C('call', {'object': REF, 'function': 'Pawn:Get', 'params': {'Name': '#5', 'Mode': 2}}), ok(dict(
         CALL, mode='typed', kept=True, kept_reason='ReturnValue is a String', truncated=False, outputs=[
             {'name': 'ReturnValue', 'direction': 'return', 'value': 'x', 'truncated': False}]))],
-    [C('call', {'object': 16, 'function': 'Pawn:Get', 'typed': True}), ok(dict(CALL, mode='typed', outputs=[], truncated=False))],
-    [C('help', {'verb': 'modules'}), ok({'rows': [{'verb': 'modules', 'origin': 'core', 'pack': 'explore', 'usage': 'modules', 'summary': 's',
-                                                   'flags': [], 'result': '{rows: [ModuleRow]}'}]})],
+    [C('call', {'object': '0x10', 'function': 'Pawn:Get', 'params': {}}), ok(dict(CALL, mode='typed', outputs=[], truncated=False))],
+    [C('help', {'verb': 'modules'}), ok({'rows': [{'verb': 'modules', 'origin': 'core', 'pack': 'explore', 'summary': 's',
+                                                   'args': [], 'result': '{rows: [ModuleRow]}',
+                                                   'example': {'verb': 'modules', 'args': {}}}]})],
 ]
 
 
@@ -205,7 +207,7 @@ class SessionTests(unittest.TestCase):
         self.work = tempfile.TemporaryDirectory()
         replies = os.path.join(self.work.name, 'replies.json')
         with open(replies, 'w') as f:
-            json.dump({'table': self.table, 'calls': CALLS, 'lines': {}}, f)
+            json.dump({'table': self.table, 'calls': CALLS}, f)
         self.log = os.path.join(self.work.name, 'lines.txt')
         os.environ['REAGENTLIVE_FAKE_LOG'] = self.log
         os.environ['REAGENTLIVE_FAKE_REPLIES'] = replies
@@ -217,9 +219,9 @@ class SessionTests(unittest.TestCase):
         self.work.cleanup()
 
     def sent(self):
-        """The calls the client sent, as dicts (typed lines as text)."""
+        """The calls the client sent, as dicts."""
         with open(self.log) as f:
-            return [json.loads(line) if line.startswith('{') else line.strip() for line in f if line.strip() != 'quit']
+            return [json.loads(line) for line in f if line.strip() != 'quit']
 
     def test_canned_replies_match_the_table(self):
         problems = []
@@ -236,7 +238,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(digest['chars'], 90000)
         self.assertEqual(digest.next_call()['args'], {'object': REF, 'fields': 'Cost', 'limit': 40})
         self.assertEqual(self.sent()[-1]['budget'], 25000)        # The line flag, beside args.
-        self.c.read(4096, 4)
+        self.c.read('0x1000', len=4)
         self.assertIsNone(self.session.digest)                    # Each call sets it again.
 
     def test_a_console_that_fails_at_start_says_why(self):
@@ -279,11 +281,11 @@ class SessionTests(unittest.TestCase):
         self.assertIn('class_size', self.gen.Object.__annotations__)              # Named types are classes.
         self.assertIn('Chain', str(self.gen.ReadResult.__annotations__['chain']))
         with self.assertRaises(TypeError):
-            self.c.read(16, type='cstr', length=4)                                  # A guessed argument fails at once.
+            self.c.read('0x10', type='cstr', length=4)                                  # A guessed argument fails at once.
 
     def test_a_type_the_generator_lacks_stops_it(self):
         # The real table generated in setUpClass, so every type it uses is known. A new one fails, never degrades.
-        row = dict(self.rows['read'], positionals=[dict(self.rows['read']['positionals'][0], type='newtype')])
+        row = dict(self.rows['read'], args=[dict(self.rows['read']['args'][0], type='newtype')])
         with self.assertRaisesRegex(ValueError, "unknown argument type 'newtype'"):
             reagentlive_gen.generate(dict(self.table, rows=[row]), 'planted')
         row = dict(self.rows['read'], type={'struct': {'a': {'type': 'newscalar'}}})
@@ -298,7 +300,7 @@ class SessionTests(unittest.TestCase):
         self.session.table_hash = hash_was
 
     def test_a_wrong_key_raises_and_names_the_valid_ones(self):
-        read = self.c.read(4096, 4)
+        read = self.c.read('0x1000', len=4)
         self.assertEqual(read['region']['kind'], 'private')
         self.assertIsNone(read['module'])                # Optional and absent: None.
         self.assertIsNone(read.get('chain'))
@@ -317,52 +319,53 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.session.table_hash, self.table['table_hash'])
 
     def test_nested_and_named_rows_are_strict_too(self):
-        chained = self.c.read('0x10#1:1->0x30->0x8', 2)
+        chained = self.c.read({'base': REF, 'chain': [0x30, 0x8]}, len=2)
         self.assertEqual(chained['chain']['address'], '0x18')
         with self.assertRaises(dl.ResultKeyError) as caught:
             chained['hops']                              # hops is inside chain.
         self.assertIn('chain?', str(caught.exception))
         with self.assertRaises(dl.ResultKeyError):
             chained['chain']['hop']                      # Chain is a named type, read as strictly.
-        peeked = self.c.peek('base+0x10', 1, label='labels.jsonl')
+        peeked = self.c.peek(GAME, count=1, label='labels.jsonl')
         self.assertEqual(peeked['rows'][1]['object']['class'], 'Pawn')
         with self.assertRaises(dl.ResultKeyError):
             peeked['rows'][1]['object']['type']
-        row = self.c.sig_bytes('base+0x10', 32)
+        row = self.c.sig_bytes(GAME, len=32)
         with self.assertRaises(dl.ResultKeyError) as caught:
             row['suggested']['text']
         self.assertIn("sig-bytes.suggested has no key 'text'; keys: decoded?, fields, fixed_bytes, list, pattern", str(caught.exception))
-        hit = self.c.sig_check('48 8b ?? 89 05', expect='Game.exe+0x10', offset=4)['rows'][0]
+        hit = self.c.sig_check(pattern='48 8b ?? 89 05', expect=GAME, offset=4)['rows'][0]
         self.assertEqual(hit['rva'], '0x1000')
         with self.assertRaises(dl.ResultKeyError):
             hit['offset']
-        self.assertEqual(self.c.help('modules')['rows'][0]['result'], '{rows: [ModuleRow]}')
+        self.assertEqual(self.c.help(verb='modules')['rows'][0]['result'], '{rows: [ModuleRow]}')
 
     def test_calls_go_as_json_with_named_arguments(self):
-        self.c.read(0x10, type='cstr')
-        self.c.read('0x10#1:1+0x538', type='u8 phase, pad 1')
-        self.c.write(0x1000, dl.pack('f32', 1.0))
-        self.c.search('text', 'Fatal error', max=1)
+        self.c.read('0x10', type='cstr')
+        self.c.read({'base': REF, 'offset': 0x538}, type='u8 phase, pad 1')
+        self.c.write('0x1000', dl.pack('f32', 1.0))
+        self.c.search(type='text', value='Fatal error', max=1)
         self.c.sig_check(file='my sigs.jsonl')           # A space needs no quoting.
-        self.c.disasm('Game.exe+0x10', 8, function=True, follow=True)
-        self.c.xrefs('base+0x10', module='engine.dll', all=True)
-        self.c.touches('Game.exe+0x10', [0x538, 0x540], range=0x1000)
-        self.c.ue.find('A', cls='Pawn', start=24)
+        self.c.disasm(GAME, count=8, function=True, follow=True)
+        self.c.xrefs(GAME, module='engine.dll', all=True)
+        self.c.touches(GAME, offsets=[0x538, 0x540], range=0x1000)
+        self.c.ue.find(text='A', cls='Pawn', start=24)
         self.assertEqual(self.sent(), [
-            C('read', {'addr': 16, 'type': 'cstr'}), C('read', {'addr': '0x10#1:1+0x538', 'type': 'u8 phase, pad 1'}),
-            C('write', {'addr': 4096, 'data': '0000803f'}), C('search', {'type': 'text', 'value': 'Fatal error', 'max': 1}),
+            C('read', {'addr': '0x10', 'type': 'cstr'}),
+            C('read', {'addr': {'base': REF, 'offset': 0x538}, 'type': 'u8 phase, pad 1'}),
+            C('write', {'addr': '0x1000', 'data': '0000803f'}), C('search', {'type': 'text', 'value': 'Fatal error', 'max': 1}),
             C('sig-check', {'file': 'my sigs.jsonl'}),
-            C('disasm', {'addr': 'Game.exe+0x10', 'count': 8, 'function': True, 'follow': True}),
-            C('xrefs', {'addr': 'base+0x10', 'module': 'engine.dll', 'all': True}),
-            C('touches', {'addr': 'Game.exe+0x10', 'offsets': [0x538, 0x540], 'range': 0x1000}),
+            C('disasm', {'addr': GAME, 'count': 8, 'function': True, 'follow': True}),
+            C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'all': True}),
+            C('touches', {'addr': GAME, 'offsets': [0x538, 0x540], 'range': 0x1000}),
             C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24})])
 
     def test_converters_and_the_batch_helper(self):
         # The helpers read their results as strict Records, so a key they spell that the table lacks fails here.
-        self.assertEqual(dl.f32(dl.unhex(self.c.read(0x1000, 4)['hex'])), 1.0)
-        self.assertEqual(dl.addr(self.c.read(0x1000, 4)['address']), 0x1000)
-        items, same_tick = self.session.batch_results([('read', {'addr': 16, 'len': 1}),
-                                                       {'verb': 'get', 'args': {'object': REF, 'paths': ['X']}}])
+        self.assertEqual(dl.f32(dl.unhex(self.c.read('0x1000', len=4)['hex'])), 1.0)
+        self.assertEqual(dl.addr(self.c.read('0x1000', len=4)['address']), 0x1000)
+        items, same_tick = self.session.batch_results([('read', {'addr': '0x10', 'len': 1}),
+                                                       {'verb': 'get', 'args': {'object': REF, 'paths': [['X']]}}])
         self.assertTrue(same_tick)
         self.assertEqual(items[0]['hex'], '01')
         with self.assertRaises(dl.ResultKeyError):
@@ -371,41 +374,42 @@ class SessionTests(unittest.TestCase):
 
     def test_write_expect_failure_raises_with_found_bytes(self):
         with self.assertRaises(dl.ReAgentLiveError) as caught:
-            self.c.write(0x1000, b'\x01\x02', expect=b'\xff\xff')
+            self.c.write('0x1000', b'\x01\x02', expect=b'\xff\xff')
         self.assertEqual(caught.exception.error['found'], '00 00')
 
     def test_timed_writes_and_captures(self):
-        held = self.c.write('0x10#1:1+0x3e4', dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
+        held = self.c.write({'base': REF, 'offset': 0x3e4}, dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
         self.assertEqual(held['timed']['id'], 'hold:1')
         self.assertEqual([row['mode'] for row in self.c.writes()['rows']], ['undo', 'hold'])
-        self.assertEqual(self.c.writes('clear', 'hold:1')['cleared'], 1)
-        row = self.c.write('0x10#1:1+0x28', dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0), owner=REF, object=0x2000,
-                           undo=5)['timed']
+        self.assertEqual(self.c.writes(clear=True, id='hold:1')['cleared'], 1)
+        row = self.c.write({'base': REF, 'offset': 0x28}, dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0), owner=REF,
+                           object='0x2000', undo=5)['timed']
         self.assertIsNone(row['guard'])
         self.assertIsNone(row['writes'])                     # A --hold key, absent on an --undo write.
-        self.assertEqual(self.c.writes('clear', 'undo:1')['rows'][0]['state'], 'restored')
-        result = self.session.watch(0.3, ['0x10#1:1.Health', '0x9000:1'], file='cap.jsonl')   # start, wait, stop
+        self.assertEqual(self.c.writes(clear=True, id='undo:1')['rows'][0]['state'], 'restored')
+        ranges = [{'object': REF, 'field': ['Health']}, {'addr': '0x9000', 'len': 1}]
+        result = self.session.watch(0.3, ranges, file='cap.jsonl')   # start, wait, stop
         self.assertEqual(result['file'], 'cap.jsonl')
         rows = dl.samples(result)
         self.assertEqual(rows[1]['values'], [bytes([2, 0]), bytes([255])])
-        self.assertEqual(self.c.watch_start(600, ['0x538:16'], every=10, follow='pawn')['capacity'], 9000)
+        self.assertEqual(self.c.watch_start(600, [{'offset': 0x538, 'len': 16}], every=10, follow='pawn')['capacity'], 9000)
         rows = dl.samples(self.c.watch_read())
         self.assertEqual(rows[2], {'tick': 12, 'us': 20, 'values': [b'\x02\x00'], 'resumed': True, 'root': '0x20'})
 
     def test_pack_verbs(self):
-        self.assertEqual(self.c.ue.find('A', cls='Pawn')['total'], 2)
+        self.assertEqual(self.c.ue.find(text='A', cls='Pawn')['total'], 2)
         self.assertEqual(self.c.ue.get(REF, snap=True)['snap']['size'], 1264)
         self.assertEqual(self.c.ue.get(REF, changed=True)['rows'][0]['before'], 5)
-        self.c.ue.get(REF, match='Ammo', changed='ctrl.snap')
+        self.c.ue.get(REF, match='Ammo', changed=True)
         diff = self.c.ue.census(cls='Actor', diff=True)
         self.assertEqual(diff['rows'][0]['count'], 2)
         self.assertEqual(diff['before']['instances'], 9)
-        self.assertEqual(self.c.ue.describe(REF)['class_size'], 1264)
-        typed = self.c.ue.call(REF, 'Pawn:Get', ['Name=#5', 'Mode=2'])
+        self.assertEqual(self.c.ue.describe(object=REF)['class_size'], 1264)
+        typed = self.c.ue.call(REF, 'Pawn:Get', params={'Name': '#5', 'Mode': 2})
         self.assertTrue(typed['kept'])
-        self.assertEqual(self.c.ue.call(16, 'Pawn:Get', typed=True)['mode'], 'typed')
+        self.assertEqual(self.c.ue.call('0x10', 'Pawn:Get', params={})['mode'], 'typed')
         with self.assertRaises(dl.ReAgentLiveError) as caught:
-            self.c.ue.refs('Missing')
+            self.c.ue.refs(name='Missing')
         self.assertEqual(caught.exception.error['kind'], 'validation')
 
     def test_errors_raise(self):
@@ -418,7 +422,7 @@ class SessionTests(unittest.TestCase):
         with dl.Session(sys.executable, ['-I', FAKE], packs=['explore', 'observe']) as session:
             self.assertEqual(session.packs, ['explore', 'observe'])
             with self.assertRaises(dl.ReAgentLiveError) as caught:
-                self.gen.Console(session).disasm(4096)        # The module keeps every verb; the console refuses.
+                self.gen.Console(session).disasm('0x1000')    # The module keeps every verb; the console refuses.
         self.assertEqual(caught.exception.kind, 'pack')
         with open(self.log) as f:
             self.assertIn('packs explore,observe', f.read().splitlines())

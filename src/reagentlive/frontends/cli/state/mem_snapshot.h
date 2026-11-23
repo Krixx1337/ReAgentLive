@@ -15,7 +15,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/command.h"
+#include "reagentlive/frontends/cli/call/command.h"
 
 namespace reagentlive::cli::memsnap {
 constexpr uint32_t Magic = 0x534d4c52;                  // "RLMS".

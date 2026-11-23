@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 
 namespace reagentlive::cli {
 class Names {

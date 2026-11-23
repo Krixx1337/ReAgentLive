@@ -1,5 +1,5 @@
 // The whole verb table for the tests (the core's rows and the Unreal
-// pack's), and Parse over it.
+// pack's), and Call over it.
 #pragma once
 #include <span>
 #include <string_view>
@@ -30,7 +30,8 @@ template<class T> reagentlive::cli::Json Checked(const T& result) {
     return json;
 }
 
-inline reagentlive::cli::Parsed Parse(std::string_view line, std::span<const reagentlive::Ref> refs,
-                                      std::span<const reagentlive::Module> modules = {}) {
-    return reagentlive::cli::Parse(AllVerbs(), line, refs, modules);
+// A call's JSON text ({"verb": ..., "args": {...}}) to a command: the
+// schema checks, then the verb's builder. Errors as the console's message.
+inline reagentlive::cli::Parsed Call(std::string_view call, std::span<const reagentlive::Module> modules = {}) {
+    return reagentlive::cli::BuildCall(AllVerbs(), reagentlive::cli::Json::parse(call), modules);
 }

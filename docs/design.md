@@ -86,7 +86,7 @@ requests inside a command.
   `busy`, so a script beside the MCP tools waits for the other call
   instead of failing at once.
 - **No session daemon or several clients.** The console's cache file gives
-  one-shot runs their state (class refs, field tables, `$N`, exe module),
+  one-shot runs their state (class refs, field tables, exe module),
   tied to one agent instance by `Section::owner`. Field tables are trusted
   only when page 0 of the live table matches, so a cache never shows a stale
   layout.
@@ -160,8 +160,8 @@ where every question was answered and the cost was output and turns:
   was reported as a left-out argument; unknown keys are now checked first
   and named with the verb's own. Refusals state their limit's number.
 - **One name per argument, never a Python keyword** (`cls`, `start`,
-  `type` for `class`, `from`, `as`), so the typed line, a JSON call, a
-  `batch` entry, the generated function and the tool spell it the same.
+  `type` for `class`, `from`, `as`), so a JSON call, a `batch` entry, the
+  generated function and the tool spell it the same.
   Keeping the keywords and letting the generator append `_` was the cause:
   the tool said `class_`, `batch` wanted `class`. A table test refuses a
   keyword.
@@ -196,8 +196,8 @@ estimates. The console now records each call, and `stats` reads it back
 agent in the session (before a long step, and for its final report) and
 whoever improves the tool or a skill across sessions.
 
-- **The console records, because every path ends there:** typed lines,
-  JSON calls, the generated functions and the MCP tools all run a console
+- **The console records, because every path ends there:** JSON calls
+  from a shell, the generated functions and the MCP tools all run a console
   command. Nothing is recorded in the target or the adapter.
 - **One file beside the console, one line per call.** Per-session and
   all-time figures come from the same lines, so neither had to be chosen.
@@ -303,7 +303,7 @@ trials against a host.
 ```text
      Python scripts        MCP tools           (one console per call)
             └──── JSON calls, help --json ───┐
-     a shell, typed lines ───────────────────┤
+     a shell's -c, JSON calls ───────────────┤
                                      console (frontends/cli): the command layer
                                              │ typed C++ calls, std::expected results
      your C++ code ──────────────► reagentlive::client  (+ Unreal client calls)
@@ -327,7 +327,7 @@ packs/<id>/        one engine pack each, with its pack.cmake
     client_ue.h/.cpp Find, Fields (paging hidden), Call
     cli/<layer>/   the pack's part of each CLI layer
 frontends/
-  cli/             syntax, formatting, the console on the client API
+  cli/             calls (args schema, checks), formatting, the console on the client API
   python/, mcp/    on the console's JSON calls
   ida/             reads the console's label file
 ```
@@ -338,7 +338,7 @@ frontends/
 | `agent` | dispatch and handlers, in the target; its end of the section | protocol |
 | `client` | typed C++ API, errors, timeouts; its end of the section | protocol |
 | Unreal client calls | `Find`, `Fields`, `Call` | client |
-| console | input lines → client calls → JSON Lines | client |
+| console | JSON calls → client calls → JSON Lines | client |
 | Python, MCP | a script's or a tool's call → a JSON call | the console |
 
 ## Frontends
@@ -350,7 +350,7 @@ sits on the console.
 
 | Frontend | Shape | Notes |
 |---|---|---|
-| **CLI** | text REPL and JSON calls, `$N` refs (typed lines), `base+off`, hex dump | exists, on the client API; one [verb table](tool-interface.md#self-describing-console) describes every command |
+| **CLI** | JSON calls only (one per line, from stdin, `-c` or `-c @<file>`), typed values, hex dump | exists, on the client API; one [verb table](tool-interface.md#self-describing-console) describes every command and its args ([JSON-only contract](tool-interface.md#json-only-contract)) |
 | **GUI** (later) | ImGui desktop window on the console's JSON calls | tables, watch panels |
 | **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON call per command; `reagentlive_gen.py` generates typed functions per console | exists; no logic of its own, so every command lands in the console first; results are strict against the console's table |
 | **Static-tool side** | `frontends/ida/reagentlive_ida.py`: loads `disasm --save` files, imports the console's labels file and exports the names you gave back into it | exists; reads and writes files, never talks to the agent: the shared labels file is the link, the agent driving both tools is the bridge |
@@ -706,8 +706,8 @@ answers what a native object is from live bytes, without a type system.
   by the same header reader as the fast lane's function bounds, and cached.
   A table is never inferred from neighbouring bytes.
 - **Pointer chains are a client library call**, so an outside program
-  follows `X->a->b` the same way the console does; the console only parses
-  the syntax. Writes, pins and trials refuse chains: a write goes where the
+  follows `X->a->b` the same way the console does; the console only reads
+  the `{"base", "chain"}` value. Writes, pins and trials refuse chains: a write goes where the
   caller read, never through pointers that may have moved since.
 - **Strings** (`--type cstr|wstr`) escape what they cannot print, so a dump
   never hides a byte.
@@ -743,18 +743,18 @@ answers what a native object is from live bytes, without a type system.
 The layout itself and its rules are in
 [contributing](contributing.md#source-layout).
 
-- **`frontends/cli/` is grouped by layer** (syntax, values, state, results,
+- **`frontends/cli/` is grouped by layer** (call, values, state, results,
   code, console), each with one include rule a test checks.
 - **Rejected:** feature folders (`memory/`, `unreal/`, each with parser,
   logic and console). Commands cross areas (`get` uses value formatting,
-  state files and results), and the two CMake targets and the no-JSON rule
-  would be split across every folder.
+  state files and results), and the two CMake targets and the
+  no-decoder rule would be split across every folder.
 - **Each pack is one folder, `packs/<id>/`**: its agent and client files,
   its `pack.cmake` (targets and CLI source lists) and `cli/<layer>/`, its
   part of each layer under that layer's rule. Nothing outside it names
   the pack, and no pack includes another. A reader sees at a glance what works in any
   process, and a core change cannot lean on Unreal types by accident: the
-  layout test fails. Object identity (`Ref`) is core, since `$N`, pins and
+  layout test fails. Object identity (`Ref`) is core, since refs, pins and
   watches carry it whatever the engine.
 - **The core reaches the pack through plain functions** (`console/pack.h`):
   its state, cache block, its rows of the [verb table](tool-interface.md#self-describing-console),
@@ -792,7 +792,7 @@ The layout itself and its rules are in
   earlier layout): a pack spread over six folders has no single home, and
   a second pack would double the spread. The layer rules hold in
   `packs/<id>/cli/<layer>/` because the layout test applies them by layer
-  name, and the pack's syntax still joins `reagentlive::cli` without JSON.
+  name, and the pack's builders still join `reagentlive::cli` without the decoder.
 - **Rejected:** `add_subdirectory` per pack (its variables, the CLI
   source lists the tests build from, would stay in the pack's scope; the
   root `include`s `pack.cmake`), and renaming the pack `unreal` (the

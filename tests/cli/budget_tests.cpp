@@ -1,5 +1,5 @@
 // reagentlive CLI output budgets (results/budget.h): the size profile, the
-// narrower line a digest offers, and the digest that stands for a result
+// narrower call a digest offers, and the digest that stands for a result
 // past its budget. Synthetic results only.
 #include "reagentlive/frontends/cli/results/budget.h"
 #include "doctest.h"
@@ -43,22 +43,29 @@ Json VendorCall(int rows) {
 
 Json Envelope(Json result) { return {{"command", "call"}, {"ok", true}, {"result", std::move(result)}}; }
 
-Args TypedArgs(const Verb& verb, std::string_view line) {
-    std::string_view rest = line;
-    text::Next(rest);
-    auto args = Tokenise(verb, rest);
+// A call's args as check.h accepts them.
+Args ArgsOf(const Verb& verb, const Json& given) {
+    auto args = CheckCall(verb, given);
     REQUIRE(args);
     return *args;
 }
 
-budget::Line CallLine(std::string_view typed, bool reads) {
+const Json VendorArgs = {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}, {"limit", 0}};
+
+budget::Line LineOf(bool reads, const Json& given = VendorArgs) {
     budget::Line line;
     line.verb = &Row("call");
-    line.args = TypedArgs(Row("call"), typed);
-    line.refs = {"0x10#1:2"};
+    line.args = ArgsOf(Row("call"), given);
+    line.call = Json{{"verb", "call"}, {"args", given}};
     line.limit = budget::ToolBudget;
     line.reads = reads;
     return line;
+}
+
+std::string Joined(const Json& path) {
+    std::string out;
+    for (const auto& step : path) out += (out.empty() ? "" : ".") + step.get<std::string>();
+    return out;
 }
 }
 
@@ -115,31 +122,30 @@ TEST_CASE("profile: a table row's members sit under its value") {
     CHECK_FALSE(bytes.contains("Tags.hex"));
 }
 
-TEST_CASE("narrow: --fields keeps the members that fit, whole where they can, --limit when they do not fit") {
+TEST_CASE("narrow: fields keeps the members that fit, whole where they can, limit when they do not fit") {
     const Json result = VendorCall(200);
     const budget::Profile profile(result);
-    const auto& call = Row("call");
-    const auto changes = budget::Narrow(profile, call, TypedArgs(call, "call 0x10#1:2 Vendor:GetItems --limit 0"),
-        budget::ToolBudget);
+    const auto changes = budget::Narrow(profile, Row("call"), ArgsOf(Row("call"), VendorArgs), budget::ToolBudget);
     REQUIRE_FALSE(changes.empty());
-    REQUIRE(changes.front().flag == "--fields");
-    const std::string fields = *changes.front().value;
-    CHECK(fields.find("Icon") == std::string::npos);
-    CHECK(fields.find("Tag") != std::string::npos);
+    REQUIRE(changes.front().key == "fields");
+    const Json& paths = changes.front().value;
+    REQUIRE(paths.is_array());
+    bool tag = false;
     // The fields kept must fit at the rows shown, or a smaller page follows.
     const auto all = profile.Fields();
     size_t kept = 0;
-    std::string_view list = fields;
-    while (!list.empty()) {
-        const size_t comma = list.find(',');
-        const std::string path(list.substr(0, comma));
+    for (const auto& steps : paths) {
+        const std::string path = Joined(steps);
+        CHECK(path.find("Icon") == std::string::npos);
+        tag |= path == "Tag";
         for (const auto& [field, chars] : all)
             if (field == path || field.starts_with(path + ".")) kept += chars;
-        list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
     }
+    CHECK(tag);
     if (kept > budget::ToolBudget / 4 * 3) {
         REQUIRE(changes.size() == 2);
-        CHECK(changes[1].flag == "--limit");
+        CHECK(changes[1].key == "limit");
+        CHECK(changes[1].value.is_number());
     }
 
     // A member that fits is kept whole; one that does not is split.
@@ -151,44 +157,41 @@ TEST_CASE("narrow: --fields keeps the members that fit, whole where they can, --
     CHECK(budget::detail::Pick(small, 1, sum) == std::vector<std::string>{"Box.A"});
 }
 
-TEST_CASE("narrow: --limit for a list without --fields; --nonzero, then --own, for get") {
+TEST_CASE("narrow: limit for a list without fields; nonzero, then own, for get") {
     Json rows = Json::array();
     for (int i = 0; i < 500; ++i) rows.push_back({{"ref", "0x10#1:2"}, {"values", Json::array({std::string(80, 'v')})}});
     const budget::Profile each(Json{{"class", "Pawn"}, {"rows", rows}});
     const auto& eachRow = Row("each");
-    const auto changes = budget::Narrow(each, eachRow, TypedArgs(eachRow, "each Pawn Health --limit 0"), budget::ToolBudget);
+    const auto changes = budget::Narrow(each, eachRow,
+        ArgsOf(eachRow, {{"cls", "Pawn"}, {"paths", Json::array({Json::array({"Health"})})}, {"limit", 0}}), budget::ToolBudget);
     REQUIRE(changes.size() == 1);
-    CHECK(changes[0].flag == "--limit");
-    CHECK(std::stoul(*changes[0].value) * 100 < budget::ToolBudget);
+    CHECK(changes[0].key == "limit");
+    REQUIRE(changes[0].value.is_number_unsigned());
+    CHECK(changes[0].value.get<size_t>() * 100 < budget::ToolBudget);
 
     const budget::Profile all(Json{{"rows", Json::array({{{"name", std::string(30000, 'x')}}})}});
     const auto& getRow = Row("get");
-    CHECK(budget::Narrow(all, getRow, TypedArgs(getRow, "get $1"), budget::ToolBudget) ==
-        std::vector<budget::Change>{{"--nonzero", {}}});
-    CHECK(budget::Narrow(all, getRow, TypedArgs(getRow, "get $1 --nonzero"), budget::ToolBudget) ==
-        std::vector<budget::Change>{{"--own", {}}});
+    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}}), budget::ToolBudget) ==
+        std::vector<budget::Change>{{"nonzero"}});
+    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}, {"nonzero", true}}), budget::ToolBudget) ==
+        std::vector<budget::Change>{{"own"}});
 
-    // A verb with no narrowing flag offers no line.
+    // A verb with no narrowing arg offers no call.
     const budget::Profile status(Json{{"blob", std::string(30000, 'x')}});
     CHECK(budget::Narrow(status, Row("status"), Args{}, budget::ToolBudget).empty());
 }
 
-TEST_CASE("next line: literal refs, flags replaced, JSON calls keep their form") {
-    const auto& call = Row("call");
-    const std::vector<budget::Change> changes{{"--fields", "Tag,Price"}, {"--limit", "40"}};
-    const auto line = budget::TypedLine(call, TypedArgs(call, "call $1 Vendor:GetItems --limit 0"), changes, {"0x10#1:2"});
-    REQUIRE(line);
-    CHECK(*line == "call 0x10#1:2 Vendor:GetItems --fields Tag,Price --limit 40");
-    // $N past the list, or a ref with an offset.
-    CHECK_FALSE(budget::TypedLine(call, TypedArgs(call, "call $3 Vendor:GetItems"), changes, {"0x10#1:2"}));
-    const auto& get = Row("get");
-    CHECK(budget::TypedLine(get, TypedArgs(get, "get $1+0x10 Health"), {}, {"0x10#1:2"}) == "get 0x10#1:2+0x10 Health");
-
-    const Json json = budget::CallLine(Json{{"verb", "call"}, {"args", {{"object", "0x10#1:2"}, {"function", "F"}}}, {"meta", true}},
-        call, changes);
-    CHECK(json["args"]["fields"] == "Tag,Price");
+TEST_CASE("next call: the changes set in the call's args, its other keys kept") {
+    const std::vector<budget::Change> changes{{"fields", Json::array({Json::array({"Tag"}), Json::array({"Price"})})},
+        {"limit", 40}};
+    const Json json = budget::CallLine(Json{{"verb", "call"}, {"args", {{"object", "0x10#1:2"}, {"function", "F"}, {"limit", 0}}},
+        {"meta", true}}, changes);
+    CHECK(json["args"]["fields"] == Json::array({Json::array({"Tag"}), Json::array({"Price"})}));
     CHECK(json["args"]["limit"] == 40);
+    CHECK(json["args"]["object"] == "0x10#1:2");
     CHECK(json["meta"] == true);
+    // A call without args gets them.
+    CHECK(budget::CallLine(Json{{"verb", "get"}}, {{"nonzero"}})["args"] == Json{{"nonzero", true}});
 }
 
 TEST_CASE("digest: a const call gets a narrower line, a call that may change state a file") {
@@ -199,7 +202,7 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
     // Runs again: a digest with next, no file, no result.
     Json record = Envelope(result);
     bool kept = false;
-    auto reads = budget::Replace(record, chars, CallLine("call $1 Vendor:GetItems --limit 0", true),
+    auto reads = budget::Replace(record, chars, LineOf(true),
         [&](const std::string&) { kept = true; return std::string("unused"); });
     REQUIRE(reads);
     CHECK_FALSE(kept);
@@ -213,17 +216,22 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
     CHECK_FALSE(digest["largest"].empty());
     CHECK_FALSE(digest.contains("file"));
     REQUIRE(digest.contains("next"));
+    // next is a JSON call: the same call, narrowed, that checks and builds again.
     const std::string next = digest["next"];
-    CHECK(next.starts_with("call 0x10#1:2 Vendor:GetItems "));
-    CHECK(next.find("--fields ") != std::string::npos);
-    // The line it offers parses again.
-    CHECK(Parse(next, {}));
+    const Json call = Json::parse(next);
+    CHECK(call["verb"] == "call");
+    CHECK(call["args"]["object"] == "0x10#1:2");
+    CHECK(call["args"]["function"] == "Vendor:GetItems");
+    CHECK(call["args"]["fields"].is_array());
+    CHECK(Call(next));
+    // narrow names the verb's narrowing args by their keys.
+    CHECK(digest["narrow"] == Json::array({"fields", "limit", "nonzero"}));
     CHECK(Text(*reads).size() < budget::ToolBudget);
 
     // Must not run again: the whole envelope goes to the file, no next.
     record = Envelope(result);
     std::string written;
-    auto writes = budget::Replace(record, chars, CallLine("call $1 Vendor:GetItems --limit 0", false),
+    auto writes = budget::Replace(record, chars, LineOf(false),
         [&](const std::string& text) { written = text; return std::string("C:/temp/r.json"); });
     REQUIRE(writes);
     CHECK((*writes)["digest"]["file"] == "C:/temp/r.json");
@@ -232,7 +240,7 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
 
     // No file written: the record prints whole.
     record = Envelope(result);
-    CHECK_FALSE(budget::Replace(record, chars, CallLine("call $1 Vendor:GetItems", false),
+    CHECK_FALSE(budget::Replace(record, chars, LineOf(false, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
         [](const std::string&) { return std::string(); }));
 }
 
@@ -243,7 +251,7 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     result["errors"] = Json::array({{{"column", 0}}, {{"column", 1}}});
     result["tick_accurate"] = false;
     Json record = Envelope(result);
-    const auto digest = budget::Replace(record, Text(record).size(), CallLine("call $1 Vendor:GetItems", true),
+    const auto digest = budget::Replace(record, Text(record).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
         [](const std::string&) { return std::string(); });
     REQUIRE(digest);
     const Json& status = (*digest)["digest"]["status"];
@@ -257,32 +265,37 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     listing["saved"] = "fn.jsonl";
     listing["next"] = "0x140001000";
     Json written = Envelope(listing);
-    const auto kept = budget::Replace(written, Text(written).size(), CallLine("call $1 Vendor:GetItems", true),
+    const auto kept = budget::Replace(written, Text(written).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
         [](const std::string&) { return std::string(); });
     REQUIRE(kept);
     CHECK((*kept)["digest"]["status"]["saved"] == "fn.jsonl");
     CHECK((*kept)["digest"]["status"]["next"] == "0x140001000");
     // A result with none carries no status.
     Json plain = Envelope(VendorCall(200));
-    const auto none = budget::Replace(plain, Text(plain).size(), CallLine("call $1 Vendor:GetItems", true),
+    const auto none = budget::Replace(plain, Text(plain).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
         [](const std::string&) { return std::string(); });
     CHECK_FALSE((*none)["digest"].contains("status"));
 }
 
-TEST_CASE("digest: nothing to narrow offers the same line with a budget it fits") {
+TEST_CASE("digest: nothing to narrow offers the same call with a budget it fits") {
     Json properties = Json::array();
     for (int i = 0; i < 300; ++i) properties.push_back({{"property", "DoubleProperty Value_" + std::to_string(i)}, {"count", i}});
     Json record = {{"command", "script"}, {"ok", true}, {"result", {{"function", "F"}, {"properties", std::move(properties)}}}};
     const size_t chars = Text(record).size();
     budget::Line line;
     line.verb = &Row("script");
-    line.args = TypedArgs(Row("script"), "script 0x10#1:2 F");
+    const Json given = {{"object", "0x10#1:2"}, {"function", "F"}};
+    line.args = ArgsOf(Row("script"), given);
+    line.call = Json{{"verb", "script"}, {"args", given}};
     line.limit = 2000;
     const auto digest = budget::Replace(record, chars, line, [](const std::string&) { return std::string(); });
     REQUIRE(digest);
-    const auto next = (*digest)["digest"]["next"].get<std::string>();
-    CHECK(next.starts_with("script 0x10#1:2 F --budget "));
-    CHECK(std::stoull(next.substr(next.rfind(' ') + 1)) >= chars);
+    const Json next = Json::parse((*digest)["digest"]["next"].get<std::string>());
+    CHECK(next["verb"] == "script");
+    CHECK(next["args"] == Json{{"object", "0x10#1:2"}, {"function", "F"}});
+    REQUIRE(next["budget"].is_number_unsigned());
+    CHECK(next["budget"].get<size_t>() >= chars);
+    CHECK_FALSE((*digest)["digest"].contains("narrow"));
 }
 
 TEST_CASE("digest: kept results are per target pid and agent owner") {

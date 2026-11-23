@@ -27,7 +27,7 @@
 #include <string_view>
 #include <type_traits>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/verb.h"
+#include "reagentlive/frontends/cli/call/verb.h"
 #include "reagentlive/frontends/cli/values/json.h"
 
 namespace reagentlive::cli {

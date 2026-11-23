@@ -13,7 +13,7 @@
 #include <span>
 #include <string>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/command.h"
+#include "reagentlive/frontends/cli/call/command.h"
 #include "reagentlive/frontends/cli/code/disasm.h"
 
 namespace reagentlive::cli::touch {

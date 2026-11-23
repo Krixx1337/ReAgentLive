@@ -1,11 +1,11 @@
 // reagentlive CLI, Unreal pack: a reflected field as a watch range's element
-// type, so `watch-start 30s $1.Health` decodes the value as the engine stores
+// type, so a watch-start range {"object": <ref>, "field": ["Health"]} decodes the value as the engine stores
 // it. Pure; shared with tests.
 #pragma once
 #include <cstdint>
 #include <string_view>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/command.h"
+#include "reagentlive/frontends/cli/call/command.h"
 #include "reagentlive/packs/ue/client_ue.h"
 
 namespace reagentlive::cli::watch_field {

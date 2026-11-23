@@ -3,7 +3,8 @@
 // synthetic world in this process's memory: types with reflected fields,
 // objects with bytes, an FName pool. Core reads are the real ones, so the
 // console reads arrays, sets and maps through memory as it does in a game.
-// RunLines runs the real console against it and returns its JSON lines.
+// RunLines runs the real console against it with JSON calls and returns its
+// JSON lines.
 #pragma once
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -21,9 +22,11 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -609,15 +612,33 @@ inline Agent& TheAgent() {
     return agent;
 }
 
-// One console run over `lines` ("get ...; each ..."): its JSON lines.
-// `packs`: the console's --packs (empty: not given, all packs).
-inline std::vector<Json> RunLines(const std::string& lines, const std::string& packs = {}) {
+// One call: {"verb": ..., "args": {...}} with the call's own keys beside
+// them (meta, timing, big, budget). No args (null or {}): none sent.
+inline Json CallOf(std::string_view verb, const Json& args = {}, const Json& keys = {}) {
+    Json call = keys.is_object() ? keys : Json::object();
+    call["verb"] = std::string(verb);
+    if (args.is_object() && !args.empty()) call["args"] = args;
+    return call;
+}
+inline std::string CallText(std::string_view verb, const Json& args = {}, const Json& keys = {}) {
+    return CallOf(verb, args, keys).dump();
+}
+// Several calls for one console run: a JSON list.
+inline std::string CallsText(std::initializer_list<Json> calls) {
+    Json list = Json::array();
+    for (const auto& call : calls) list.push_back(call);
+    return list.dump();
+}
+
+// One console run over `calls` (-c: one JSON call or a JSON list of them):
+// its JSON lines. `packs`: the console's --packs (empty: not given, all packs).
+inline std::vector<Json> RunLines(const std::string& calls, const std::string& packs = {}) {
     TheAgent();
     static const std::wstring prefix = SectionPrefix(); // The config keeps a view of it.
     static const reagentlive::cli::ConsoleConfig config{prefix, L"", Layout};
     const auto out = std::filesystem::temp_directory_path() /
         (L"reagentlive-fake-" + std::to_wstring(GetCurrentProcessId()) + L".out");
-    std::wstring wide(lines.begin(), lines.end());
+    std::wstring wide(calls.begin(), calls.end()); // The console takes ASCII -c text only.
     std::wstring pid = std::to_wstring(GetCurrentProcessId());
     std::wstring program = L"console", noUsage = L"--no-usage", dashC = L"-c", packsFlag = L"--packs";
     std::wstring packsList(packs.begin(), packs.end());
@@ -639,8 +660,9 @@ inline std::vector<Json> RunLines(const std::string& lines, const std::string& p
         if (!line.empty() && line.front() == '{') records.push_back(Json::parse(line));
     return records;
 }
-inline Json Result(const std::string& line) {
-    auto records = RunLines(line);
+// One call's result (`call`: its JSON text), which must be ok.
+inline Json Result(const std::string& call) {
+    auto records = RunLines(call);
     REQUIRE(records.size() == 1);
     INFO(records.front().dump());
     REQUIRE(records.front().value("ok", false));

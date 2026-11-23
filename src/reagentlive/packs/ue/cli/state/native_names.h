@@ -22,8 +22,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/layout.h"
-#include "reagentlive/frontends/cli/syntax/text.h"
+#include "reagentlive/frontends/cli/call/layout.h"
+#include "reagentlive/frontends/cli/call/values.h"
 #include "reagentlive/packs/ue/client_ue.h"
 
 namespace reagentlive::cli {

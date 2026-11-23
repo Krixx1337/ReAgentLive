@@ -109,7 +109,7 @@ shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, 
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand);
 // A typed call (or with --dry its block only); the request's flags go to the agent (CallPure).
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
-                  const ue::Signature& signature, StructCache& structs, std::span<const Ref> refs,
+                  const ue::Signature& signature, StructCache& structs,
                   std::string_view jsonCommand);
 Result<Ref> ResolveClass(Session& session, const std::string& name);
 Result<Ref> ResolveObjectOrClass(Session& session, const std::string& name);

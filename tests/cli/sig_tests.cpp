@@ -1,6 +1,6 @@
 // reagentlive CLI signatures: pattern forms, the anchor, and matching against a
 // stubbed image (search and reads served from a byte vector).
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/code/signature.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
@@ -17,8 +17,6 @@ using namespace reagentlive;
 using namespace reagentlive::cli;
 
 namespace {
-const std::vector<Ref> NoRefs;
-
 // A module image the stubs serve: search pages of anchor hits and reads.
 struct Image {
     Module module;
@@ -139,27 +137,32 @@ TEST_CASE("the anchor is the longest run of fixed bytes, at least 4") {
     CHECK(sig::ChooseAnchor(P(run))->length == MaxSearchPattern); // The search takes 64 bytes.
 }
 
-TEST_CASE("sig-check parses the pattern and its options") {
+TEST_CASE("sig-check builds the pattern and its options") {
     const std::vector<Module> modules{{"Game.exe", 0x140000000, 0x100000}, {"engine.dll", 0x7ffa00000000, 0x2000}};
-    auto parsed = Parse("sig-check 48 8b 05 11 ?? ?? 89 05 --module engine.dll --expect game.exe+0x1230 --offset 4",
-                        NoRefs, modules);
+    auto parsed = Call(R"({"verb": "sig-check", "args": {"pattern": "48 8b 05 11 ?? ?? 89 05", "module": "engine.dll",
+        "expect": {"module": "game.exe", "rva": "0x1230"}, "offset": 4}})", modules);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Sig);
     CHECK(parsed->pattern == P("48 8b 05 11 ?? ?? 89 05"));
     CHECK(parsed->target == "engine.dll");
     CHECK(parsed->expect == 0x140001230);
     CHECK(parsed->offset == 4);
-    parsed = Parse("sig-check 0x48, 0x8B, 0x05, 0x11, -1, 0x89", NoRefs);
+    parsed = Call(R"({"verb": "sig-check", "args": {"pattern": "0x48, 0x8B, 0x05, 0x11, -1, 0x89"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->target.empty()); // The exe.
     CHECK_FALSE(parsed->expect);
-    CHECK_FALSE(Parse("sig 48 8b 89 05", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check --module x", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check 48 ?? 89 05", NoRefs).has_value());                // No anchor.
-    CHECK_FALSE(Parse("sig-check 48 8b 89 05 --offset 4", NoRefs).has_value());     // Offset without expect.
-    CHECK_FALSE(Parse("sig-check 48 8b 89 05 --expect", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check 48 8b 89 05 --bogus 1", NoRefs).has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig", "args": {"pattern": "48 8b 89 05"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check"})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"module": "x"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 ?? 89 05"}})").has_value());               // No anchor.
+    const auto offset = Call(R"({"verb": "sig-check", "args": {"pattern": "48 8b 89 05", "offset": 4}})"); // Offset without expect.
+    REQUIRE_FALSE(offset.has_value());
+    CHECK(offset.error().starts_with("offset"));
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 8b 89 05", "expect": true}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 8b 89 05", "bogus": 1}})").has_value());
+    // An expect in a module the list does not hold.
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 8b 89 05", "expect": {"module": "x.dll", "rva": 16}}})",
+        modules).has_value());
 }
 
 TEST_CASE("matching: one hit, two hits, none") {
@@ -214,7 +217,7 @@ TEST_CASE("many anchor hits page through search and read 8 at a time") {
     CHECK(image.reads == (600 + 7) / 8);
 }
 
-TEST_CASE("resolves: the only match at --expect, with and without an offset") {
+TEST_CASE("resolves: the only match at expect, with and without an offset") {
     Image image(0x140000000, 0x4000);
     image.Put(0x140001010, {0x48, 0x8b, 0x05, 0x10, 0x20, 0x30, 0x40});
     const auto pattern = P("48 8b 05 10 20 30 40");
@@ -238,7 +241,7 @@ TEST_CASE("sig-check results have their documented keys") {
     CHECK(json["fixed_bytes"] == 6);
 }
 
-TEST_CASE("no match at --expect lists the fixed bytes that differ there") {
+TEST_CASE("no match at expect lists the fixed bytes that differ there") {
     Image image(0x140000000, 0x4000);
     image.Put(0x140001000, {0x48, 0x8b, 0x05, 0x77, 0x10, 0x20, 0x30, 0x40});
     const sig::Check check{P("48 8b 0d 77 10 ?? 30 41"), 0x140001000, 0, std::nullopt}; // Two typos.
@@ -331,7 +334,7 @@ TEST_CASE("warnings are reported at the match") {
     CHECK(json["warnings"][0]["target_rva"] == "0x102c");
 }
 
-TEST_CASE("--resolve parses next, field and size") {
+TEST_CASE("resolve parses next, field and size") {
     CHECK(sig::ParseResolve("7,3") == sig::Resolve{7, 3, 4});
     CHECK(sig::ParseResolve("0x7,3,2") == sig::Resolve{7, 3, 2});
     CHECK(sig::ParseResolve("2,1,1") == sig::Resolve{2, 1, 1});
@@ -366,33 +369,34 @@ TEST_CASE("reference signatures resolve their target, each size") {
     CHECK(json["rows"][0]["resolved_rva"] == "0x223b");
 }
 
-TEST_CASE("sig parses --resolve, --file and --bytes") {
-    auto parsed = Parse("sig-check 48 8d 0d 11 ?? ?? ?? ?? e8 --expect 0x14000223b --resolve 7,3", NoRefs);
+TEST_CASE("sig-check builds resolve and file; sig-bytes its length") {
+    auto parsed = Call(R"({"verb": "sig-check", "args": {"pattern": "48 8d 0d 11 ?? ?? ?? ?? e8", "expect": "0x14000223b",
+        "resolve": "7,3"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->resolve == sig::Resolve{7, 3, 4});
-    CHECK_FALSE(Parse("sig-check 48 8d 0d 11 --expect 0x10 --offset 2 --resolve 7,3", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check 48 8d 0d 11 --resolve 7", NoRefs).has_value());
-    parsed = Parse("sig-check --file sigs.jsonl", NoRefs);
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 8d 0d 11", "expect": "0x10", "offset": 2, "resolve": "7,3"}})")
+        .has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 8d 0d 11", "resolve": "7"}})").has_value());
+    parsed = Call(R"({"verb": "sig-check", "args": {"file": "sigs.jsonl"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->sigMode == Command::SigMode::File);
     CHECK(parsed->file == "sigs.jsonl");
-    CHECK_FALSE(Parse("sig-check --file", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check 48 8b --file sigs.jsonl", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check --file sigs.jsonl --module x.dll", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-check", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-file sigs.jsonl", NoRefs).has_value());
-    parsed = Parse("sig-bytes 0x140001000", NoRefs);
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"file": true}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"pattern": "48 8b", "file": "sigs.jsonl"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-check", "args": {"file": "sigs.jsonl", "module": "x.dll"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-file", "args": {"file": "sigs.jsonl"}})").has_value());
+    parsed = Call(R"({"verb": "sig-bytes", "args": {"addr": "0x140001000"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->sigMode == Command::SigMode::Bytes);
     CHECK(parsed->request.length == 64);
-    CHECK(Parse("sig-bytes 0x140001000 96", NoRefs)->request.length == 96);
-    CHECK_FALSE(Parse("sig-bytes 0x140001000 96", NoRefs)->capped);
-    const auto capped = Parse("sig-bytes 0x140001000 200", NoRefs); // Cut to the longest pattern, not refused.
+    CHECK(Call(R"({"verb": "sig-bytes", "args": {"addr": "0x140001000", "len": 96}})")->request.length == 96);
+    CHECK_FALSE(Call(R"({"verb": "sig-bytes", "args": {"addr": "0x140001000", "len": 96}})")->capped);
+    const auto capped = Call(R"({"verb": "sig-bytes", "args": {"addr": "0x140001000", "len": 200}})"); // Cut to the longest pattern, not refused.
     REQUIRE(capped.has_value());
     CHECK(capped->request.length == sig::MaxPattern);
     CHECK(capped->capped);
-    CHECK_FALSE(Parse("sig-bytes 0x140001000 0", NoRefs).has_value());
-    CHECK_FALSE(Parse("sig-bytes", NoRefs).has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-bytes", "args": {"addr": "0x140001000", "len": 0}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "sig-bytes"})").has_value());
 }
 
 TEST_CASE("patterns file lines parse and the winner is the first unique one that resolves") {

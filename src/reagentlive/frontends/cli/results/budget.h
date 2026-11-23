@@ -1,6 +1,6 @@
 // reagentlive CLI: output budgets. A result past its line's budget is not
 // printed: the envelope carries a digest instead, with the result's size,
-// its largest parts and the flags that would narrow the line. Pure: the
+// its largest parts and the args that would narrow the call. Pure: the
 // console decides the budget, prints, and writes files (console/output.cpp).
 #pragma once
 #include <algorithm>
@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/verb.h"
+#include "reagentlive/frontends/cli/call/check.h"
 #include "reagentlive/frontends/cli/values/json.h"
 
 namespace reagentlive::cli::budget {
@@ -25,8 +25,8 @@ constexpr size_t ToolBudget = 25000;
 // address). Results name them alike: results.md, Conventions.
 inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
     "tick_accurate", "same_tick", "total", "next_cursor", "next", "filtered", "saved"};
-// The verb flags that narrow a result, as the digest names them.
-inline constexpr std::string_view Narrowing[] = {"--fields", "--where", "--match", "--limit", "--nonzero", "--own", "--cls"};
+// The verb args that narrow a result, as the digest names them.
+inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls"};
 
 // Characters per path of a result, as the console prints it. Array elements
 // fold into one path (`rows[].Price`), so a path's size is all its elements'.
@@ -202,17 +202,15 @@ private:
     std::map<std::string, size_t> index_;
 };
 
-// A flag the narrower line sets: its value, or none for a switch.
+// One arg to set in the call that runs next: true for a bool.
 struct Change {
-    std::string flag;
-    std::optional<std::string> value;
+    std::string key;
+    Json value = true;
     bool operator==(const Change&) const = default;
 };
 
 namespace detail {
-inline bool HasFlag(const Verb& verb, std::string_view name) {
-    return std::ranges::any_of(verb.flags, [&](const Flag& flag) { return flag.name == name; });
-}
+inline bool HasArg(const Verb& verb, std::string_view key) { return FindArg(verb, key) != nullptr; }
 // Members that fit in `room` characters, top down: a member kept whole when
 // it fits (smallest first), else its own members tried the same way. Field
 // paths, sorted; `sum` gets their characters.
@@ -259,9 +257,9 @@ inline std::vector<std::string> Pick(const std::map<std::string, size_t>& fields
 }
 }
 
-// The flags that narrow a line whose result took `chars` of a `limit`
-// budget, from its profile and the verb's own flags; empty when the verb
-// has none that would help. `given` is the line's flags as given.
+// The args that narrow a call whose result took `chars` of a `limit`
+// budget, from its profile and the verb's own args; empty when the verb
+// has none that would help. `given` is the call's args as given.
 inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, const Args& given, size_t limit) {
     std::vector<Change> changes;
     const size_t target = limit / 4 * 3; // Room for the envelope and a rounding error.
@@ -272,87 +270,54 @@ inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, cons
     if (rows != SIZE_MAX && nodes[rows].count) {
         const size_t shown = nodes[rows].count;
         size_t kept = nodes[rows].chars;
-        if (detail::HasFlag(verb, "--fields")) {
+        if (detail::HasArg(verb, "fields")) {
             const auto fields = profile.Fields();
             size_t sum = 0;
             const auto chosen = detail::Pick(fields, room, sum);
             if (!chosen.empty() && sum < kept) {
-                std::string list;
-                for (const auto& path : chosen) list += (list.empty() ? "" : ",") + path;
-                changes.push_back({"--fields", list});
+                Json paths = Json::array();
+                for (const auto& path : chosen) {
+                    Json steps = Json::array();
+                    for (size_t start = 0; start <= path.size();) {
+                        const size_t dot = std::min(path.find('.', start), path.size());
+                        steps.push_back(path.substr(start, dot - start));
+                        start = dot + 1;
+                    }
+                    paths.push_back(std::move(steps));
+                }
+                changes.push_back({"fields", std::move(paths)});
                 kept = sum + shown * 2;
             }
         }
-        if (kept > room && detail::HasFlag(verb, "--limit")) {
+        if (kept > room && detail::HasArg(verb, "limit")) {
             const size_t perRow = std::max<size_t>(1, kept / shown);
             const size_t fit = std::max<size_t>(1, room / perRow);
-            if (fit < shown) changes.push_back({"--limit", std::to_string(fit)});
+            if (fit < shown) changes.push_back({"limit", fit});
         }
     }
-    if (changes.empty() && detail::HasFlag(verb, "--nonzero") && !given.Has("--nonzero")) changes.push_back({"--nonzero", {}});
-    else if (changes.empty() && detail::HasFlag(verb, "--own") && !given.Has("--own")) changes.push_back({"--own", {}});
+    if (changes.empty() && detail::HasArg(verb, "nonzero") && !given.Has("nonzero")) changes.push_back({"nonzero"});
+    else if (changes.empty() && detail::HasArg(verb, "own") && !given.Has("own")) changes.push_back({"own"});
     return changes;
 }
 
-// The verb's narrowing flags, as `help` names them: the digest's `narrow`.
-inline std::vector<std::string> NarrowingFlags(const Verb& verb) {
+// The verb's narrowing args, as `help` names them: the digest's `narrow`.
+inline std::vector<std::string> NarrowingArgs(const Verb& verb) {
     std::vector<std::string> out;
-    for (const auto& flag : verb.flags)
-        if (std::ranges::find(Narrowing, flag.name) != std::end(Narrowing)) out.emplace_back(flag.name);
+    for (const auto& arg : verb.args)
+        if (std::ranges::find(Narrowing, arg.key) != std::end(Narrowing)) out.emplace_back(arg.key);
     return out;
 }
 
-// A typed line's arguments with the changes applied, as a line again. `refs`
-// turns $N into literal refs (the line runs again later, after $N moved);
-// nullopt when a $N has no ref or the verb takes the rest of the line.
-inline std::optional<std::string> TypedLine(const Verb& verb, Args args, const std::vector<Change>& changes,
-                                            const std::vector<std::string>& refs) {
-    if (std::ranges::any_of(verb.positionals, [](const Positional& p) { return p.arity == Arity::Rest; })) return std::nullopt;
-    for (const auto& change : changes) {
-        std::erase_if(args.flags, [&](const Args::Given& given) { return given.flag == change.flag; });
-        const auto row = std::ranges::find(verb.flags, change.flag, &Flag::name);
-        if (row == verb.flags.end()) return std::nullopt;
-        Args::Given given{row->name, {}, {}};
-        if (change.value) given.values.push_back(*change.value);
-        args.flags.push_back(std::move(given));
-    }
-    bool missing = false;
-    const auto literal = [&](const std::string& token) {
-        if (token.size() < 2 || token[0] != '$' || token[1] < '0' || token[1] > '9') return token;
-        size_t end = 1;
-        while (end < token.size() && token[end] >= '0' && token[end] <= '9') ++end;
-        const size_t n = std::stoul(token.substr(1, end - 1));
-        if (!n || n > refs.size()) { missing = true; return token; }
-        return refs[n - 1] + token.substr(end);
-    };
-    std::string line(verb.name);
-    for (const auto& positional : args.positionals) line += " " + literal(positional);
-    for (const auto& given : args.flags) {
-        line += " " + std::string(given.flag);
-        for (const auto& value : given.values) line += " " + literal(value);
-        if (!given.rest.empty()) line += " " + given.rest;
-    }
-    if (missing) return std::nullopt;
-    return line;
-}
-
 // A JSON call with the changes applied to its args.
-inline Json CallLine(Json call, const Verb& verb, const std::vector<Change>& changes) {
+inline Json CallLine(Json call, const std::vector<Change>& changes) {
     if (!call.contains("args") || !call["args"].is_object()) call["args"] = Json::object();
-    for (const auto& change : changes) {
-        const auto row = std::ranges::find(verb.flags, change.flag, &Flag::name);
-        if (row == verb.flags.end()) continue;
-        const std::string key(FlagKey(*row));
-        if (!change.value) call["args"][key] = true;
-        else if (row->type == "int") call["args"][key] = std::stoull(*change.value);
-        else call["args"][key] = *change.value;
-    }
+    for (const auto& change : changes) call["args"][change.key] = change.value;
     return call;
 }
 
 // The envelope that stands for a result past its budget. `next` is the
-// narrower line (typed or a JSON call's text); `file` holds the whole
-// envelope when the line must not run again.
+// narrower call's text; `file` holds the whole envelope when the call must
+// not run again.
 inline Json Digest(const Profile& profile, size_t chars, size_t limit, const Verb* verb,
                    std::optional<std::string> next, std::optional<std::string> file, const Json& result = {}) {
     Json digest = {{"chars", chars}, {"budget", limit}};
@@ -369,19 +334,17 @@ inline Json Digest(const Profile& profile, size_t chars, size_t limit, const Ver
     for (const auto& [path, size] : profile.Largest(5)) largest.push_back({{"path", path}, {"chars", size}});
     digest["largest"] = std::move(largest);
     if (verb)
-        if (auto flags = NarrowingFlags(*verb); !flags.empty()) digest["narrow"] = std::move(flags);
+        if (auto flags = NarrowingArgs(*verb); !flags.empty()) digest["narrow"] = std::move(flags);
     if (next) digest["next"] = std::move(*next);
     if (file) digest["file"] = std::move(*file);
     return digest;
 }
 
-// The line as the budget sees it (the console fills it: console/output.cpp).
+// The call as the budget sees it (the console fills it: console/output.cpp).
 struct Line {
     const Verb* verb = nullptr;
-    std::optional<Args> args;           // As given; nullopt when they do not parse again.
-    std::optional<Json> call;           // A JSON call; else a typed line.
-    std::vector<std::string> refs;      // $1..$N as literal text when the line began.
-    std::string flags;                  // The line flags a typed rerun keeps.
+    std::optional<Args> args;           // As given; nullopt when they do not check again.
+    std::optional<Json> call;           // The call as given.
     size_t limit = 0;                   // The budget.
     bool reads = true;                  // Safe to run again.
 };
@@ -398,25 +361,16 @@ std::optional<Json> Replace(Json& record, size_t chars, const Line& line, Keep&&
     if (!line.reads) {
         file = keep(record.dump(-1, ' ', true, Json::error_handler_t::replace));
         if (file->empty()) return std::nullopt;
-    } else if (line.verb && line.args) {
+    } else if (line.verb && line.args && line.call) {
         const auto changes = Narrow(profile, *line.verb, *line.args, line.limit);
-        if (!changes.empty() && line.call) {
-            next = CallLine(*line.call, *line.verb, changes).dump(-1, ' ', true, Json::error_handler_t::replace);
-        } else if (!changes.empty()) {
-            next = TypedLine(*line.verb, *line.args, changes, line.refs);
-            if (next && !line.flags.empty()) *next += " " + line.flags;
+        if (!changes.empty()) {
+            next = CallLine(*line.call, changes).dump(-1, ' ', true, Json::error_handler_t::replace);
         } else {
-            // Nothing narrows it: the same line with a budget it fits, so the
+            // Nothing narrows it: the same call with a budget it fits, so the
             // digest is never a dead end.
-            const size_t fits = (chars + chars / 10 + 999) / 1000 * 1000;
-            if (line.call) {
-                Json call = *line.call;
-                call["budget"] = fits;
-                next = call.dump(-1, ' ', true, Json::error_handler_t::replace);
-            } else if ((next = TypedLine(*line.verb, *line.args, {}, line.refs))) {
-                if (!line.flags.empty()) *next += " " + line.flags;
-                *next += " --budget " + std::to_string(fits);
-            }
+            Json call = *line.call;
+            call["budget"] = (chars + chars / 10 + 999) / 1000 * 1000;
+            next = call.dump(-1, ' ', true, Json::error_handler_t::replace);
         }
     }
     Json out = {{"command", record["command"]}, {"ok", true},

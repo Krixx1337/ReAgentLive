@@ -1,4 +1,4 @@
-// reagentlive CLI console. Parses a line, calls the client API, prints the result.
+// reagentlive CLI console. Checks a JSON call, calls the client API, prints the result.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -26,7 +27,7 @@
 #include "reagentlive/frontends/cli/values/layout_json.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/state/cache.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/values/format.h"
 #include "reagentlive/frontends/cli/state/names.h"
 #include "reagentlive/frontends/cli/state/usage.h"
@@ -127,7 +128,7 @@ std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, s
         help.tableHash = hash;
     } else if (!command.target.empty()) {
         const Verb* verb = FindVerb(verbs, command.target);
-        if (!verb) return std::unexpected("unknown command '" + command.target + "' (try help)");
+        if (!verb) return std::unexpected("verb: unknown verb '" + command.target + "' (help lists them)");
         help.rows.push_back(MakeHelpRow(*verb, true, false));
     } else {
         help.rows = HelpByPack(verbs);
@@ -139,7 +140,7 @@ std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, s
 
 void RunHelp(Session& session, const Command& command, std::string_view jsonCommand) {
     auto help = BuildHelp(session.verbs, session.origins, session.tableHash, command);
-    if (!help) return JsonError(session, jsonCommand, "syntax", help.error());
+    if (!help) return JsonError(session, jsonCommand, "schema", help.error());
     Emit(session, jsonCommand, std::move(*help));
 }
 
@@ -147,10 +148,10 @@ void RunHelp(Session& session, const Command& command, std::string_view jsonComm
 std::vector<Verb> AllVerbs(const ConsoleConfig& config) { return TableRows(PackVerbs(), config.verbs); }
 std::vector<Origin> AllOrigins() { return TableOrigins(PackOrigins()); }
 
-// A JSON call's own keys: the verb, its arguments, and the console's line flags.
+// A JSON call's own keys: the verb, its args, and the console's call flags.
 std::string CallProblem(const Json& call) {
     if (!call.is_object() || !call.contains("verb") || !call["verb"].is_string())
-        return "a JSON call is {\"verb\": \"<verb>\", \"args\": {...}}";
+        return "a call is {\"verb\": \"<verb>\", \"args\": {...}}";
     for (const auto& [key, value] : call.items()) {
         if (key == "verb" || key == "args") continue;
         if (key == "budget") {
@@ -165,47 +166,15 @@ std::string CallProblem(const Json& call) {
 }
 bool CallFlag(const Json& call, const char* key) { return call.contains(key) && call[key].is_boolean() && call[key].get<bool>(); }
 
-// A console flag (--timing, --meta, --big) at the end of a line: strips it and says so.
-bool TakeFlag(std::string& line, std::string_view flag) {
-    const auto trimmed = text::Trim(line);
-    if (!trimmed.ends_with(flag) || (trimmed.size() > flag.size() && trimmed[trimmed.size() - flag.size() - 1] != ' '))
-        return false;
-    line = std::string(text::Trim(trimmed.substr(0, trimmed.size() - flag.size())));
-    return true;
-}
-
-// `--budget N` at the end of a line: strips it and gives N.
-std::optional<size_t> TakeBudget(std::string& line) {
-    const auto trimmed = text::Trim(line);
-    const size_t space = trimmed.rfind(' ');
-    uint64_t value = 0;
-    if (space == std::string_view::npos || !text::Number(trimmed.substr(space + 1), value)) return std::nullopt;
-    const auto before = text::Trim(trimmed.substr(0, space));
-    constexpr std::string_view flag = "--budget";
-    if (!before.ends_with(flag) || (before.size() > flag.size() && before[before.size() - flag.size() - 1] != ' '))
-        return std::nullopt;
-    line = std::string(text::Trim(before.substr(0, before.size() - flag.size())));
-    return static_cast<size_t>(value);
-}
-
-// One input line, read once: a JSON call or a typed line, and the console's
-// line flags (a call's meta and timing keys; --meta and --timing at the end
-// of a typed line, in either order).
+// One call, read once: its JSON, its verb and the console's call flags.
 struct InputLine {
     std::string original;       // As given: the usage log's size and hash.
-    std::optional<Json> call;   // A JSON call; the verb's row reads its args.
-    std::string text;           // A typed line without its line flags.
+    std::optional<Json> call;
     std::string name;           // The verb as given; empty for a blank line.
     bool meta = false, timing = false, big = false;
-    std::optional<size_t> budget;   // --budget N, a call's budget key.
-    std::string problem;        // Not a JSON call after all: refused under the verb "call".
+    std::optional<size_t> budget;
+    std::string problem;        // Not a call: refused under the verb "call".
 
-    // What follows the verb on a typed line.
-    std::string_view Rest() const {
-        std::string_view rest = text;
-        text::Next(rest);
-        return rest;
-    }
     const Json& Args() const {
         static const Json none;
         return call && call->contains("args") ? (*call)["args"] : none;
@@ -215,42 +184,62 @@ struct InputLine {
 InputLine ReadLine(std::string_view line) {
     InputLine input;
     input.original = std::string(line);
-    if (text::Trim(line).starts_with('{')) {
-        Json call = Json::parse(line, nullptr, false);
-        input.problem = call.is_discarded() ? std::string("not JSON") : CallProblem(call);
-        if (!input.problem.empty()) return input;
-        input.meta = CallFlag(call, "meta");
-        input.timing = CallFlag(call, "timing");
-        input.big = CallFlag(call, "big");
-        if (call.contains("budget")) input.budget = call["budget"].get<size_t>();
-        input.name = call["verb"].get<std::string>();
-        input.call = std::move(call);
-        return input;
-    }
-    input.text = input.original;
-    for (bool more = true; more;) {
-        more = false;
-        if (TakeFlag(input.text, "--timing")) input.timing = more = true;
-        if (TakeFlag(input.text, "--meta")) input.meta = more = true;
-        if (TakeFlag(input.text, "--big")) input.big = more = true;
-        if (auto budget = TakeBudget(input.text)) { input.budget = budget; more = true; }
-    }
-    std::string_view rest = input.text;
-    input.name = std::string(text::Next(rest));
+    if (text::Trim(line).empty()) return input;
+    Json call = Json::parse(line, nullptr, false);
+    input.problem = call.is_discarded() ? std::string("not JSON: a call is {\"verb\": \"<verb>\", \"args\": {...}}") :
+        CallProblem(call);
+    if (!input.problem.empty()) return input;
+    input.meta = CallFlag(call, "meta");
+    input.timing = CallFlag(call, "timing");
+    input.big = CallFlag(call, "big");
+    if (call.contains("budget")) input.budget = call["budget"].get<size_t>();
+    input.name = call["verb"].get<std::string>();
+    input.call = std::move(call);
     return input;
 }
 
-// A line's arguments sorted by its verb's row and built into a command: a
-// typed line through the parser, a JSON call through CallArgs (literal refs
-// only, so it needs no $N).
-Parsed ParseLine(std::span<const Verb> verbs, const InputLine& input, std::span<const Ref> refs,
-                 std::span<const Module> modules) {
-    if (!input.call) return Parse(verbs, input.text, refs, modules);
+// The calls in a text: a JSON call, a JSON list of calls, or one call per
+// line (a line may hold a list too). A line that is no JSON stays as it is,
+// for ReadLine to refuse.
+std::vector<std::string> SplitCalls(std::string_view text) {
+    std::vector<std::string> calls;
+    const auto add = [&](const Json& value) {
+        if (value.is_array())
+            for (const auto& item : value) calls.push_back(item.dump(-1, ' ', true, Json::error_handler_t::replace));
+        else calls.push_back(value.dump(-1, ' ', true, Json::error_handler_t::replace));
+    };
+    if (Json whole = Json::parse(text, nullptr, false); !whole.is_discarded()) {
+        add(whole);
+        return calls;
+    }
+    for (size_t start = 0; start < text.size();) {
+        const size_t end = std::min(text.find('\n', start), text.size());
+        const auto line = text::Trim(text.substr(start, end - start));
+        start = end + 1;
+        if (line.empty()) continue;
+        if (Json value = Json::parse(line, nullptr, false); !value.is_discarded()) add(value);
+        else calls.emplace_back(line);
+    }
+    return calls;
+}
+
+// A call checked against its verb's row and built into a command; a refusal
+// is the error object (kind schema, the key's schema, a corrected example).
+std::expected<Command, Json> BuildLine(std::span<const Verb> verbs, const InputLine& input,
+                                       std::span<const Module> modules) {
     const Verb* verb = FindVerb(verbs, input.name);
-    if (!verb) return Parsed(std::unexpect, "unknown command '" + input.name + "' (try help)");
-    auto args = CallArgs(*verb, input.Args());
-    if (!args) return Parsed(std::unexpect, args.error());
-    return Build(*verb, *args, {}, modules);
+    if (!verb) {
+        std::string message = "unknown verb '" + input.name + "'";
+        const auto closest = check::NearestVerbs(verbs, input.name);
+        for (size_t i = 0; i < closest.size(); ++i) message += (i ? ", " : " (did you mean ") + closest[i];
+        message += closest.empty() ? " (help lists them)" : "?)";
+        return std::unexpected(Json{{"kind", "schema"}, {"message", message}});
+    }
+    auto args = CheckCall(*verb, input.Args());
+    if (!args) return std::unexpected(RefusalJson(*verb, input.Args(), args.error()));
+    auto built = Build(*verb, *args, modules);
+    if (!built) return std::unexpected(RefusalJson(*verb, input.Args(), {built.error(), KeyOf(*verb, built.error())}));
+    return std::move(*built);
 }
 
 // One-shot lines that are all `help` or `stats`: answered from the table and
@@ -258,13 +247,10 @@ Parsed ParseLine(std::span<const Verb> verbs, const InputLine& input, std::span<
 // How long a console waits for another client to leave the agent.
 constexpr std::chrono::milliseconds BusyWait{2000};
 
-bool OfflineOnly(std::span<const Verb> verbs, const std::vector<std::string>& lines) {
-    const Verb* help = FindVerb(verbs, "help");
-    const Verb* stats = FindVerb(verbs, "stats");
+bool OfflineOnly(const std::vector<std::string>& lines) {
     return !lines.empty() && std::ranges::all_of(lines, [&](const std::string& line) {
-        std::string_view rest = line;
-        const Verb* verb = FindVerb(verbs, text::Next(rest));
-        return verb && (verb == help || verb == stats);
+        const InputLine input = ReadLine(line);
+        return input.name == "help" || input.name == "stats";
     });
 }
 
@@ -384,31 +370,21 @@ struct UsageScope {
         record.hash = UsageHash(input);
         record.batch = inBatch;
     }
-    // The verb as its row names it, and the names of the flags given: a typed
-    // line's tokens that are the row's flags, a JSON call's keys that are.
-    void Describe(std::string_view name, const Json* callArgs, std::string_view rest) {
+    // The verb as its row names it, and the keys given that are the row's.
+    void Describe(std::string_view name, const Json& callArgs) {
         const Verb* verb = FindVerb(session.verbs, name);
         record.verb = verb ? std::string(verb->name) : std::string(name.substr(0, MaxUsageVerb));
         record.origin = verb ? std::string(verb->origin) : std::string();
         if (!verb) return;
-        for (const auto& flag : verb->flags) {
-            bool given = false;
-            if (callArgs) {
-                const std::string key(FlagKey(flag));
-                given = callArgs->is_object() && callArgs->contains(key) && !(*callArgs)[key].is_null() &&
-                    !((*callArgs)[key].is_boolean() && !(*callArgs)[key].get<bool>());
-            } else {
-                for (std::string_view tokens = rest; !given;) {
-                    const auto token = text::Next(tokens);
-                    if (token.empty()) break;
-                    given = token == flag.name;
-                }
-            }
-            if (given) record.flags.emplace_back(flag.name);
+        for (const auto& arg : verb->args) {
+            const std::string key(arg.key);
+            const bool given = callArgs.is_object() && callArgs.contains(key) && !callArgs[key].is_null() &&
+                !(callArgs[key].is_boolean() && !callArgs[key].get<bool>());
+            if (given) record.keys.push_back(key);
         }
         // A program's own reads of the table and its quit are not the agent's calls.
-        const auto has = [&](const char* flag) { return std::ranges::find(record.flags, flag) != record.flags.end(); };
-        skip = record.verb == "quit" || (record.verb == "help" && (has("--json") || has("--hash")));
+        const auto has = [&](const char* key) { return std::ranges::find(record.keys, key) != record.keys.end(); };
+        skip = record.verb == "quit" || (record.verb == "help" && (has("json") || has("hash")));
     }
     ~UsageScope() {
         session.line = outer;
@@ -479,30 +455,24 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     } lineScope{session, session.meta, session.current, session.input};
     session.current = nullptr;
     {
-        // The budget: the line's own, a batch's for its items, else the caller's default.
+        // The budget: the call's own, a batch's for its items, else the caller's default.
         LineInput line;
-        line.text = input.text;
         line.call = input.call;
-        line.refs = session.refs;
         line.budget = input.big ? 0 : input.budget ? *input.budget : inBatch ? session.input.budget :
             session.usage.caller == "tool" ? budget::ToolBudget : 0;
-        if (input.meta) line.flags = "--meta";
-        if (input.budget) line.flags += std::string(line.flags.empty() ? "" : " ") + "--budget " + std::to_string(*input.budget);
         session.input = std::move(line);
     }
     UsageScope usage(session, input.original, inBatch);
     if (!input.problem.empty()) {
-        usage.Describe("call", nullptr, {});
-        JsonError(session, "call", "syntax", input.problem);
+        usage.Describe("call", Json());
+        JsonError(session, "call", "schema", input.problem);
         return false;
     }
     if (input.meta) session.meta = true;
-    const auto& call = input.call;
-    const std::string_view rest = input.Rest();
     const std::string_view jsonCommand = input.name;
     if (jsonCommand.empty()) return false;
     const Json& callArgs = input.Args();
-    usage.Describe(input.name, call ? &callArgs : nullptr, rest);
+    usage.Describe(input.name, callArgs);
     // The ceiling (--packs): a verb of another pack is refused before it is parsed, inside a batch too.
     if (const Verb* row = FindVerb(session.verbs, jsonCommand); row && !(session.toolPacks & ToolPackBit(row->pack))) {
         const auto pack = std::string(ToolPackName(row->pack));
@@ -514,9 +484,9 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     if (const Verb* host = FindVerb(session.config.verbs, jsonCommand); host && session.config.hostCommand) {
         session.current = host;
         session.input.reads = !host->writes;
-        auto args = call ? CallArgs(*host, callArgs) : Tokenise(*host, rest);
+        auto args = CheckCall(*host, callArgs);
         if (!args) {
-            JsonError(session, jsonCommand, "syntax", args.error());
+            JsonRefusal(session, jsonCommand, RefusalJson(*host, callArgs, args.error()));
             return false;
         }
         Json envelope;
@@ -532,17 +502,14 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
         }
         return false;
     }
-    // Module addresses (base+0x10, game.exe+0x10) need the list; a name it
-    // lacks may be a module loaded since it was read.
-    const std::string& line = call ? input.original : input.text;
-    const bool moduleAddress = line.find('+') != std::string::npos || line.find("base") != std::string::npos;
-    const auto parse = [&](std::span<const Module> modules) {
-        return ParseLine(session.verbs, input, session.refs, modules);
-    };
+    // Module addresses ({"module", "rva"}) need the list; a name it lacks
+    // may be a module loaded since it was read.
+    const bool moduleAddress = input.original.find("\"rva\"") != std::string::npos;
+    const auto parse = [&](std::span<const Module> modules) { return BuildLine(session.verbs, input, modules); };
     auto parsed = parse(moduleAddress ? LoadedModules(session) : std::span<const Module>{});
     if (!parsed && moduleAddress && RefreshModules(session)) parsed = parse(LoadedModules(session));
     if (!parsed) {
-        JsonError(session, jsonCommand, "syntax", parsed.error());
+        JsonRefusal(session, jsonCommand, std::move(parsed.error()));
         return false;
     }
     session.current = parsed->verb;
@@ -550,7 +517,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     // The table and the verbs' docs are what a client reads to call at all: never digested.
     if (parsed->kind == Kind::Help) session.input.budget = 0;
     if (inBatch && parsed->kind == Kind::Each && parsed->seconds) {
-        JsonError(session, jsonCommand, "syntax", "each --seconds is not allowed in a batch");
+        JsonError(session, jsonCommand, "schema", "seconds: each with seconds is not allowed in a batch");
         return false;
     }
     // A pointer chain: resolved here, then the command runs at its end.
@@ -620,7 +587,6 @@ void LoadSessionCache(Session& session, const std::filesystem::path& path, bool 
     if (!data || data->owner != session.client.AgentOwner()) return; // Another agent instance: start fresh.
     if (oneShot && !data->session.empty() && data->sessionCaller == session.usage.caller)
         session.usage.session = data->session;
-    session.refs = std::move(data->refs);
     session.modules = std::move(data->modules);
     session.watchFile = std::move(data->watchFile);
     for (auto& [base, layout] : data->layouts) session.layouts[base] = std::move(layout);
@@ -634,10 +600,6 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     data.session = session.usage.session;
     data.sessionCaller = session.usage.caller;
     data.watchFile = session.watchFile;
-    for (const auto& ref : session.refs) {
-        if (!ref.address) break; // Not expressible as a literal ref; $N past it would shift.
-        data.refs.push_back(ref);
-    }
     data.modules.assign(session.modules.begin(), session.modules.end());
     for (const auto& [base, layout] : session.layouts)
         if (std::ranges::any_of(session.modules, [base](const Module& m) { return m.base == base; }))
@@ -658,8 +620,8 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
 // target (kind startup, or busy while another client holds the agent) and
 // ends the console, so a client starts it again. Nothing is recorded.
 int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, const std::string& hash,
-               const std::filesystem::path& usagePath, const std::vector<std::string>* lines, std::string_view kind,
-               std::string_view why) {
+               const std::filesystem::path& usagePath, const std::vector<std::string>* lines,
+               const std::function<bool(std::string&)>& readStdin, std::string_view kind, std::string_view why) {
     const auto print = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
         std::fflush(stdout);
@@ -673,20 +635,20 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
             line = (*lines)[next++];
             return true;
         }
-        return static_cast<bool>(std::getline(std::cin, line));
+        return readStdin(line);
     };
     while (nextLine()) {
         const InputLine input = ReadLine(line);
         if (!input.problem.empty()) {
-            print(ErrorEnvelope("call", "syntax", input.problem));
+            print(ErrorEnvelope("call", "schema", input.problem));
             failed = 1;
             continue;
         }
         const std::string& name = input.name;
         if (name.empty()) continue;
-        const Parsed parsed = ParseLine(verbs, input, {}, {});
+        const auto parsed = BuildLine(verbs, input, {});
         if (!parsed) {
-            print(ErrorEnvelope(name, "syntax", parsed.error()));
+            print(Json{{"command", name}, {"ok", false}, {"error", parsed.error()}});
             failed = 1;
             continue;
         }
@@ -694,7 +656,7 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
         case Kind::Help:
             if (auto help = BuildHelp(verbs, origins, hash, *parsed)) print(ResultEnvelope(name, ToJson(*help)));
             else {
-                print(ErrorEnvelope(name, "syntax", help.error()));
+                print(ErrorEnvelope(name, "schema", help.error()));
                 failed = 1;
             }
             break;
@@ -732,7 +694,7 @@ namespace reagentlive::cli {
 using namespace detail;
 
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
-    constexpr const char* usage = "Usage: <console> [pid] [-c \"command; command ...\"] [--names <file>] "
+    constexpr const char* usage = "Usage: <console> [pid] [-c '<call or list of calls>' | -c @<file>] [--names <file>] "
         "[--caller tool|script|shell] [--session <id>] [--no-usage] [--packs explore,native,observe,modify]";
     // Before a session exists: print the envelope directly.
     const auto printStartup = [](const Json& envelope) {
@@ -760,12 +722,19 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         const std::wstring_view arg(argv[i]);
         if (arg == L"-c" && i + 1 < argc && !oneShot) {
             const std::wstring_view wide(argv[++i]);
-            std::string commands;
-            for (const wchar_t c : wide) {
-                if (c > 0x7f) return startupError("-c commands must be ASCII");
-                commands += static_cast<char>(c);
+            std::string calls;
+            if (wide.starts_with(L'@')) {
+                // A file of calls: no shell quoting, and any text JSON holds.
+                std::ifstream file(std::filesystem::path(wide.substr(1)), std::ios::binary);
+                if (!file) return startupError("-c @<file>: cannot open the file");
+                calls.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            } else {
+                for (const wchar_t c : wide) {
+                    if (c > 0x7f) return startupError("-c calls must be ASCII (escape others as \\u in JSON, or use -c @<file>)");
+                    calls += static_cast<char>(c);
+                }
             }
-            oneShot = SplitCommands(commands);
+            oneShot = SplitCalls(calls);
         } else if (arg == L"--names" && i + 1 < argc) {
             namesFile = argv[++i];
             namesRequired = true;
@@ -798,16 +767,29 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             return startupError(usage);
         }
     }
-    if (oneShot && oneShot->empty()) return startupError("provide commands via -c");
+    if (oneShot && oneShot->empty()) return startupError("-c holds no calls");
     const auto verbs = AllVerbs(config);
     const auto origins = AllOrigins();
     const auto tableHash = TableHash(verbs, origins);
     const std::vector<std::string>* lines = oneShot ? &*oneShot : nullptr;
+    // stdin: each line's calls, in order.
+    std::vector<std::string> pending;
+    size_t pendingAt = 0;
+    const auto readStdin = [&](std::string& line) {
+        while (pendingAt == pending.size()) {
+            std::string text;
+            if (!std::getline(std::cin, text)) return false;
+            pending = SplitCalls(text);
+            pendingAt = 0;
+        }
+        line = pending[pendingAt++];
+        return true;
+    };
     const auto offline = [&](std::string_view why, std::string_view kind = "startup") {
         if (!oneShot) std::fprintf(stderr, "  no target: help and stats only (%.*s)\n", static_cast<int>(why.size()), why.data());
-        return RunOffline(verbs, origins, tableHash, usagePath, lines, kind, why);
+        return RunOffline(verbs, origins, tableHash, usagePath, lines, readStdin, kind, why);
     };
-    if (oneShot && OfflineOnly(verbs, *oneShot)) return offline("");
+    if (oneShot && OfflineOnly(*oneShot)) return offline("");
     if (!pid) pid = FindProcess(config.exeName);
     // A console with no exe name to look for (the own-thread example's) needs the pid.
     if (!pid)
@@ -865,7 +847,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             line = (*oneShot)[next++];
             return true;
         }
-        return static_cast<bool>(std::getline(std::cin, line));
+        return readStdin(line);
     };
     while (nextLine()) {
         const InputLine input = ReadLine(line);

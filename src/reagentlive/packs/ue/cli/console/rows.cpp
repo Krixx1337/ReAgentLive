@@ -119,7 +119,7 @@ void RunCurveRows(Session& session, const Command& command, const Ref& table, st
     constexpr uint32_t MaxCurveKeys = 4096;
     const auto fail = [&](std::string message) { CommandError(session, jsonCommand, Refusal(std::move(message))); };
     if (!command.rowPaths.empty() || command.nonzero)
-        return fail("--fields and --nonzero read data tables; a curve table's rows are keys");
+        return fail("fields and nonzero read data tables; a curve table's rows are keys");
     auto head = ue::ReadObject(client, table, static_cast<uint32_t>(Layout.curveRowMap), sizeof(ue::SparseHeader));
     if (!head) return CommandError(session, jsonCommand, head.error());
     auto modeByte = ue::ReadObject(client, table, static_cast<uint32_t>(Layout.curveTableMode), 1);
@@ -243,7 +243,7 @@ void RunRows(Session& session, const Command& command, StructCache& structs, std
         if (*curve) return RunCurveRows(session, command, table, jsonCommand);
         return fail("neither a data table (no RowStruct field) nor a curve table (no CurveTable class)");
     }
-    if (command.curveAt) return fail("--at evaluates a curve table's rows; this is a data table");
+    if (command.curveAt) return fail("at evaluates a curve table's rows; this is a data table");
     auto head = ue::ReadObject(client, table, rowStruct->offset, 8 + sizeof(ue::SparseHeader));
     if (!head) return CommandError(session, jsonCommand, head.error());
     uint64_t structAddress = 0;

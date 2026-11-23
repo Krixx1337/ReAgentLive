@@ -8,15 +8,14 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/code/image.h"
 
 // One file per target process, tagged with the agent's owner id (new on
 // every injection), so a restarted game that reuses the pid or a re-injected
 // agent never matches. It holds what costs round trips to rebuild: the loaded
-// modules and their headers, the last $N list, and a block per engine pack
-// (packs/ue/cli/state/cache_ue.h) that the core keeps without reading it. Refs carry
-// index and serial, so the agent refuses stale ones. It also names the usage
+// modules and their headers, and a block per engine pack
+// (packs/ue/cli/state/cache_ue.h) that the core keeps without reading it. It also names the usage
 // log's session (state/usage.h) and its caller: one-shot runs of the same
 // caller share it, so a shell's checks never join a tool's session.
 namespace reagentlive::cli {
@@ -30,7 +29,6 @@ struct CacheData {
     uint32_t owner = 0;
     std::string session;                                            // The usage log's; empty: none.
     std::string sessionCaller;                                      // tool, script or shell.
-    std::vector<Ref> refs;                                          // $1..$N.
     std::vector<Module> modules;                                    // Exe first.
     std::vector<std::pair<uint64_t, image::Layout>> layouts;        // Module headers by module base.
     std::vector<CachePack> packs;
@@ -65,9 +63,6 @@ inline std::string SaveCache(const CacheData& data) {
             out << "section\t" << section.name << "\t0x" << std::hex << section.rva << "\t0x" << section.size
                 << "\t0x" << section.flags << std::dec << '\n';
     }
-    // An address-only ref (a pointer get followed) has no literal form: its address.
-    for (const auto& ref : data.refs)
-        out << "ref\t" << (ref.index < 0 ? "0x" + std::format("{:x}", ref.address) : RefText(ref)) << '\n';
     for (const auto& pack : data.packs) {
         out << "pack\t" << pack.name << '\t' << pack.lines.size() << '\n';
         for (const auto& line : pack.lines) out << line << '\n';
@@ -129,12 +124,6 @@ inline std::optional<CacheData> LoadCache(std::string_view text) {
                     static_cast<uint32_t>(flags)});
             }
             data.layouts.emplace_back(base, std::move(layout));
-        } else if (parts[0] == "ref" && parts.size() == 2) {
-            Ref ref{};
-            uint64_t address = 0;
-            if (text::LiteralRef(parts[1], ref)) data.refs.push_back(ref);
-            else if (text::Number(parts[1], address) && address) data.refs.push_back(AddressRef(address));
-            else return std::nullopt;
         } else if (parts[0] == "pack" && parts.size() == 3) {
             uint64_t count = 0;
             if (parts[1].empty() || !text::Number(parts[2], count) || count > MaxCachedPackLines ||

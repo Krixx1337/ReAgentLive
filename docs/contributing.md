@@ -41,18 +41,20 @@ never the section directly. ReAgentLive never includes host code.
 3. **Its row** in the verb table (`results/verbs.h`): name, origin, its
    [tool pack](tool-interface.md#tool-packs) (`modify` when it writes or
    calls; a new verb outside `modify` also gets its forms in the
-   `parse_tests.cpp` forms test), summary,
-   positionals (key, usage name, arity, type, help, default) and flags
-   (name, takes, type, placeholder, help, default), the result type, the
-   parser, `writes` when it writes the target or calls into it, `blocks`
-   when it holds the console for seconds. Types come from the vocabulary
-   in `syntax/verb.h`; a struct several results share names itself with
+   `call_tests.cpp` forms test), summary,
+   args (key, type, help, default, required, list, and an example where
+   the type's own would be refused), the result type, the builder,
+   `writes` when it writes the target or calls into it, `blocks` when it
+   holds the console for seconds. Types come from the vocabulary in
+   `call/verb.h`; a struct several results share names itself with
    `TypeName` (a pack's with its prefix).
-4. **Its parser:** `frontends/cli/syntax/parse_<area>.cpp`, declared in
-   `parse_internal.h`. It gets the arguments already sorted by the row
-   (`Args`), from a typed line or a JSON call alike; unknown flags or keys,
-   missing values, arity and `int` and enum values are refused before it
-   runs. Parse tests.
+4. **Its builder:** `frontends/cli/call/build_<area>.cpp`, declared in
+   `build_internal.h`. It gets the args already checked against the row
+   (`Args`, `call/check.h`): unknown and missing keys and wrong types are
+   refused before it runs. It reads the typed values (`call/values.h`),
+   checks ranges and combinations, and starts an error about one key
+   with that key, so the refusal names it and its example drops or
+   replaces it. Call tests.
 5. **Running it:** `frontends/cli/console/<area>.cpp`, ending in `Emit`
    with the result struct.
    A pack command puts steps 2 to 5 in its pack's `packs/<id>/cli/<layer>/` folders (its row
@@ -77,7 +79,7 @@ rule.
 
 | Folder | Holds | Rule |
 |---|---|---|
-| `syntax/` | `reagentlive::cli`: the parsed `Command`, `Parse` (`parse.h`), tokens, layouts, byte patterns (`pattern.h`) | includes only `syntax/` and `core/`; no nlohmann/json, no decoder, no I/O (the loopback tests build it without JSON) |
+| `call/` | `reagentlive::cli`: the verb table's row (`verb.h`), a call's checks (`check.h`), its typed values (`values.h`), `Build` (`build.h`) and the built `Command`, layouts, byte patterns (`pattern.h`) | includes only `call/` and `core/` (and nlohmann/json: a call is JSON); no decoder, no I/O |
 | `values/` | how a value prints: `format.h`, `json.h`, `layout_json.h` | pure; never `console/` |
 | `state/` | files that outlive a run: `cache.h`, `names.h`, `usage.h` (the usage log's line and trim) | pure; never `console/` |
 | `results/` | result builders: `result_json.h`, `labels.h`, `stats.h`, `budget.h` | pure; never `console/` |
@@ -86,7 +88,7 @@ rule.
 
 **The pack boundary.** Each engine pack lives in `packs/<id>/`: its agent
 and client files at the top, its `pack.cmake`, and its part of each layer
-in `cli/<layer>/` (`packs/ue/cli/syntax/` to `packs/ue/cli/console/`),
+in `cli/<layer>/` (`packs/ue/cli/call/` to `packs/ue/cli/console/`),
 under that layer's rule. Layers in `frontends/cli/` hold files only.
 Outside `packs/` no file includes `reagentlive/packs/`, names `ue::` or
 spells the id `"ue"`, and no pack includes another. The core
@@ -117,15 +119,15 @@ commands borrow (object guards, the `write --undo` owner check, `watch-start`'s 
    ([design](design.md#source-layout)).
 
 - The middle folders (`values/` to `code/`) may include each other and
-  `syntax/`. Their headers are unit-tested in `tests/cli/`.
-- Hosts include only `console/console.h`, `syntax/parse.h`,
-  `syntax/verb.h` (a row for each verb of their own) and
+  `call/`. Their headers are unit-tested in `tests/cli/`.
+- Hosts include only `console/console.h`, `call/build.h`,
+  `call/verb.h` (a row for each verb of their own) and
   `results/schema.h` (typed results); a host lists its sources in
   `REAGENTLIVE_HOST_SOURCES` so the layout test checks them.
 - `code/` is the one feature-shaped folder: the decoders form a closed group
   with their own dependency (Zydis). Why layers and not feature folders:
   [design](design.md#source-layout).
-- A new area gets `syntax/parse_<area>.cpp` and `console/<area>.cpp` (in
+- A new area gets `call/build_<area>.cpp` and `console/<area>.cpp` (in
   `packs/<id>/cli/` when it belongs to a pack). It gets a new middle
   folder only once it has three headers of its own; until then they go in
   the closest one.
@@ -137,11 +139,11 @@ one file:
 
 | Files | Holds |
 |---|---|
-| `syntax/verb.h`, `results/verbs.h`, `packs/ue/cli/results/verbs_ue.h` | the verb table: the row type with the tokeniser and usage, the core's rows, the pack's rows |
+| `call/verb.h`, `call/check.h`, `results/verbs.h`, `packs/ue/cli/results/verbs_ue.h` | the verb table: the row type and the arg vocabulary, a call's checks and refusals (schema, corrected example), the core's rows, the pack's rows |
 | `results/schema.h`, `results/docs.h` | typed result structs (one field list writes and describes the JSON), and the results page generated from the table |
-| `console/console.cpp` | the input line reader, `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole`, its busy wait and its no-target mode |
-| `console/output.cpp` | JSON records, the check of a result against its row, errors, `--timing`, output budgets (the digest, the kept-results file), batch capture, each line's output size for the usage log |
-| `results/budget.h` | output budgets: the size profile of a result, the narrower line and the digest |
+| `console/console.cpp` | the call reader (JSON calls from `-c`, a file and stdin), `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole`, its busy wait and its no-target mode |
+| `console/output.cpp` | JSON records, the check of a result against its row, errors and refusals, `timing`, output budgets (the digest, the kept-results file), batch capture, each line's output size for the usage log |
+| `results/budget.h` | output budgets: the size profile of a result, the narrower call and the digest |
 | `console/memory.cpp` | `status`, read decoding, timed writes (`write --undo`, `--hold`, `writes`), captures (`watch-start`, `--file`), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
 | `console/sig.cpp` | `sig-check` (one pattern or `--file`), `sig-bytes`: byte signatures against the live image |
@@ -149,7 +151,7 @@ one file:
 | `console/native.cpp` | `vtable` (and `--rtti`) and the region `read` and `peek` report (native objects) |
 | `console/pack.h`, `packs/ue/cli/console/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `packs/ue/cli/console/members.cpp`, `packs/ue/cli/state/native_names.h` | native members: `label`, the native file and its checks |
-| `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --type "<layout>"`, native member types) |
+| `call/layout.h`, `values/layout_json.h` | typed layouts (`read`'s `type` as a layout, native member types) |
 | `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `get` with no paths and `--types` |
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
 | `packs/ue/cli/console/export.cpp` | `export-assets`: each object's `get` and table rows run as batch items, one file each |
@@ -160,9 +162,9 @@ one file:
 | `packs/ue/cli/console/query.cpp` | class lookup, `each`, `get`, `entries` |
 | `packs/ue/cli/console/script.cpp`, `packs/ue/cli/values/kismet.h` | `script --decode`: the bytecode read and its operands named; the Kismet decoder and printer (pure, tested) |
 | `packs/ue/cli/state/cache_ue.h`, `packs/ue/cli/values/format_ue.h`, `packs/ue/cli/values/json_output.h`, `packs/ue/cli/results/` | the pack's cache block, property values as text and JSON, its result builders |
-| `syntax/command.h`, `syntax/text.h` | the parsed `Command` and its limits; token, number, ref and address parsing |
-| `syntax/parse.cpp` | `Parse` (declared in `parse.h`): help, status, quit, `batch`, then the areas below |
-| `syntax/parse_memory.cpp`, `parse_code.cpp`, `packs/ue/cli/syntax/parse_unreal.cpp` | the verbs of each area; each answers nothing for a verb not its own |
+| `call/command.h`, `call/values.h` | the built `Command` and its limits; numbers, refs, bytes and the typed JSON values (addresses, chains, paths) |
+| `call/build.cpp` | `Build` and `BuildCall` (declared in `build.h`): help, status, quit, stats, `batch`, then the areas below |
+| `call/build_memory.cpp`, `build_code.cpp`, `packs/ue/cli/call/build_unreal.cpp` | the builders of each area's verbs |
 | `packs/ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, `name`) and the shared helpers with their caches |
 | `agent_ue_globals.cpp` | locating the globals and the object layout (stock shapes and probes, or the SDK's under `REAGENTLIVE_UE_SDK`); the off-thread gate (`PackReady`) |
 | `agent_ue_check.cpp` | the layout groups: each checked once on known objects before its ops run |
@@ -216,7 +218,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 |---|---|
 | `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters, the background worker and search jobs, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
 | `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get` (paths, and every field with values and previews), `each` and `entries` must print the same JSON, with and without `--nonzero` and `--meta`; status keys (`unnamed`, digested or not) and stale object arguments (positional and `--outer`) must agree. Add a case here when a verb gains a value or an object argument |
-| `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, the tokeniser, usage errors, help), the parsers, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
+| `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, its args schema, schema refusals and their examples, help), the builders and typed values, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
 | `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the class index, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |
 | `reagentlive.python-session`, `reagentlive.python-mcp`, `reagentlive.ida-labels` (`tests/python/`) | the session client and a module generated from the real table, against a scripted fake console (`fake_console.py`) that serves it (strict results, a method per verb, JSON calls, canned replies checked against their types); the MCP tools made from that table, through an in-memory client (skipped without the MCP SDK); and the IDA label importer |

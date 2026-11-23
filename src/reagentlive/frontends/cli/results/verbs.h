@@ -1,8 +1,8 @@
-// reagentlive CLI: the verb table's core rows (syntax/verb.h): what each core
-// verb takes and returns. Parsing, `help`, `help --json`, the generated
-// docs/commands/results.md and the Python client's strict results all read
-// these rows, and a JSON call's arguments are read by them (CallArgs). The
-// Unreal pack's rows are in packs/ue/cli/results/verbs_ue.h.
+// reagentlive CLI: the verb table's core rows (call/verb.h): what each core
+// verb takes and returns. The checks of a JSON call (call/check.h), `help`,
+// `help --json`, the generated docs/commands/results.md and the Python
+// client's strict results all read these rows. The Unreal pack's rows are in
+// packs/ue/cli/results/verbs_ue.h.
 #pragma once
 #include <algorithm>
 #include <expected>
@@ -14,214 +14,216 @@
 #include "reagentlive/frontends/cli/results/mem_json.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/stats.h"
-#include "reagentlive/frontends/cli/syntax/parse_internal.h"
+#include "reagentlive/frontends/cli/call/build_internal.h"
 
 namespace reagentlive::cli {
 inline const std::vector<Verb>& CoreVerbs() {
     using schema::Of;
-    using enum Arity;
-    constexpr std::string_view at = "an address: 0x hex, $N[+off], base+off or <module>+off";
-    constexpr std::string_view hex = "bytes as hex pairs, spaced or packed: 00 00 80 3f";
+    constexpr std::string_view at = "the address";
+    constexpr std::string_view atChain = "the address, or a pointer chain to follow first";
+    constexpr std::string_view hex = "bytes as hex pairs, spaced or packed: \"00 00 80 3f\"";
+    constexpr std::string_view module = "the module (default: the exe)";
+    constexpr std::string_view labels = "the labels file (default: the host's names file, else the console's)";
     static const std::vector<Verb> verbs = {
-        {"help", "core", ToolPack::Explore, "the verbs, one line each; help <verb>: its flags, result and notes",
-            {{"verb", "verb", Optional, "str", "a verb to show in full"}},
-            {{"--json", Takes::Nothing, "bool", "", "the whole table for programs"},
-             {"--hash", Takes::Nothing, "bool", "", "only the table's hash: has it changed since a program read it?"}},
-            Of<shape::Help>, parse::Help, {}, {"?"}},
+        {"help", "core", ToolPack::Explore, "the verbs, one line each; with verb: its args, result, notes and an example",
+            {{"verb", "str", "a verb to show in full"},
+             {"json", "bool", "the whole table for programs"},
+             {"hash", "bool", "only the table's hash: has it changed since a program read it?"}},
+            Of<shape::Help>, build::Help},
         {"status", "core", ToolPack::Explore, "agent pid, tick rate, the packs the host offers and the verb table's hash",
-            {}, {}, Of<shape::Status>, parse::Status,
-            "table_hash changes when any verb's arguments or result change: a cached script or skill is then stale."},
-        {"quit", "core", ToolPack::Explore, "end the console", {}, {}, Of<shape::Quit>, parse::Quit, {}, {"exit", "q"}},
+            {}, Of<shape::Status>, build::Status,
+            "table_hash changes when any verb's args or result change: a cached script or skill is then stale."},
+        {"quit", "core", ToolPack::Explore, "end the console", {}, Of<shape::Quit>, build::Quit},
         {"stats", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
-            {}, {{"--all", Takes::Nothing, "bool", "", "every session in the log, and the verbs none called"},
-                 {"--sessions", Takes::Nothing, "bool", "", "the log's sessions, newest first: one row each"},
-                 {"--session", Takes::One, "str", "id", "one session from the log, by its id"}},
-            Of<shape::Stats>, parse::Stats,
+            {{"all", "bool", "every session in the log, and the verbs none called"},
+             {"sessions", "bool", "the log's sessions, newest first: one row each"},
+             {"session", "str", "one session from the log, by its id"}},
+            Of<shape::Stats>, build::Stats,
             "From the usage log beside the console; works with no target (then: the log's latest session). out is "
             "characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
             "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
-            "verb: unfiltered (it has --match, --nonzero, --own, --changed, --cls or --limit, the call gave none and "
+            "verb: unfiltered (it takes match, nonzero, own, changed, cls or limit, the call gave none and "
             "printed whole), repeated (the same input again in its session), refused (by error kind). A batch's "
-            "items count under their own verbs (batched); the batch row holds its wrapper. --sessions lists up to 30 "
+            "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log."},
-        {"batch", "core", ToolPack::Explore, "up to 64 commands in as few host ticks as possible; one envelope each",
-            {{"calls", "{ <command>; <command>; ... }", Rest, "calls",
-              "command lines between braces, split by ;  (a JSON call: a list of {verb, args})"}},
-            {}, Of<shape::Batch>, parse::Batch,
-            "A $N set by an earlier line in the batch works in a typed line. rows holds each command's envelope, with "
-            "tick (and last_tick when its responses spanned ticks)."},
-        {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); --type decodes values",
-            {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}},
-            {{"--type", Takes::Rest, "layout", "type", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": layout"}},
-            Of<shape::Read>, parse::Read,
-            "--type <type> adds values (one per element); --type cstr|wstr adds text, length and terminated (default "
-            "256 bytes); --type \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read "
-            "adds views. <addr>->0x10->0x8 follows a pointer chain and adds chain. region is the memory the address "
-            "lies in (kind: code, rodata, data, mapped, private, reserved or free)."},
+        {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
+            {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}}", {}, true}},
+            Of<shape::Batch>, build::Batch,
+            "rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, "
+            "status, stats, quit and batch are not allowed inside."},
+        {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); type decodes values",
+            {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes", "64"},
+             {"type", "layout", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": a layout"}},
+            Of<shape::Read>, build::Read,
+            "type adds values (one per element); cstr|wstr adds text, length and terminated (default 256 bytes); "
+            "a layout \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read adds views. "
+            "A chain adds chain. region is the memory the address lies in (kind: code, rodata, data, mapped, "
+            "private, reserved or free)."},
         {"peek", "core", ToolPack::Explore, "what 1..64 qwords hold (default 8): object, module, heap or value",
-            {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many qwords", "8"}},
-            {{"--label", Takes::Maybe, "path", "file", "append this one qword as a confirmed global to a labels file (default: the host's names file, else the console's)"},
-             {"--name", Takes::One, "str", "name", "the label's name (default FName_<hint>)"}},
-            Of<shape::Peek>, parse::Peek,
-            "object needs a pack; value rows carry floats, a double and name_hint. Accepts a pointer chain. region is "
-            "the memory the address lies in, as read gives it."},
-        {"write", "core", ToolPack::Modify, "write up to 256 bytes; --undo restores it after a while, --hold rewrites it every tick for a while",
-            {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
-            {{"--expect", Takes::Some, "bytes", "hex bytes", "write only while memory still holds these bytes (with --undo: required, restored afterwards)"},
-             {"--undo", Takes::One, "dur", "duration", "restore the bytes after this long (up to 60 s; needs --owner and --expect)"},
-             {"--hold", Takes::Maybe, "dur", "duration", "rewrite the bytes every tick for this long (default 10 s, up to 60 s)"},
-             {"--owner", Takes::One, "ref", "ref", "with --undo: the live actor or component holding the address (a pack names it)"},
-             {"--object", Takes::One, "addr", "addr", "with --undo: a native object inside the owner whose vtable is guarded too"}},
-            Of<shape::Write>, parse::Write,
-            "e.g. write $1+0x120 00 00 80 3f. A refused --expect answers an error whose `found` holds the bytes there. "
-            "--undo and --hold answer `timed`, the timed write as writes lists it; up to 64 bytes. --undo stops as "
-            "conflict if the game changes the value, abandoned if the owner or --object's vtable changes; the owner's "
-            "check is the pack's, so without one it is refused. --hold on $N+off stops when that object is freed or "
-            "replaced.", {}, true},
-        {"writes", "core", ToolPack::Modify, "the timed writes (write --undo, --hold) with their state; clear ends one or all, restoring --undo ones",
-            {{"action", "clear", Optional, "str", "clear: end them"},
-             {"id", "id", Optional, "str", "with clear: one write's id as writes lists it (undo:N or hold:N); default all"}},
-            {}, Of<shape::Writes>, parse::Writes,
-            "Rows are --undo writes (restored, conflict or abandoned ones stay listed until cleared) then --hold ones. "
-            "clear answers cleared and the rows it ended.", {}, true},
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many qwords", "8"},
+             {"label", "bool", "append this one qword as a confirmed global to a labels file"},
+             {"file", "file", "with label: the labels file (default: the host's names file, else the console's)"},
+             {"name", "str", "with label: the label's name (default FName_<hint>)"}},
+            Of<shape::Peek>, build::Peek,
+            "object needs a pack; value rows carry floats, a double and name_hint. region is the memory the address "
+            "lies in, as read gives it."},
+        {"write", "core", ToolPack::Modify, "write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while",
+            {{"addr", "addr", at, {}, true}, {"data", "bytes", hex, {}, true},
+             {"expect", "bytes", "write only while memory still holds these bytes (with undo: required, restored afterwards)"},
+             {"undo", "dur", "restore the bytes after this long (up to 60 s; needs owner and expect)"},
+             {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"},
+             {"owner", "ref", "with undo: the live actor or component holding the address (a pack names it)"},
+             {"object", "addr", "with undo: a native object inside the owner whose vtable is guarded too"}},
+            Of<shape::Write>, build::Write,
+            "A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, "
+            "the timed write as writes lists it; up to 64 bytes. undo stops as conflict if the game changes the "
+            "value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without "
+            "one it is refused. hold on an addr based on a literal ref ({\"base\": <ref>, \"offset\": N}) stops "
+            "when that object is freed or replaced.", true},
+        {"writes", "core", ToolPack::Modify, "the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones",
+            {{"clear", "bool", "end them"},
+             {"id", "str", "with clear: one write's id as writes lists it (undo:N or hold:N); default all"}},
+            Of<shape::Writes>, build::Writes,
+            "Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. "
+            "clear answers cleared and the rows it ended.", true},
         {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
-            {}, {}, Of<shape::Modules>, parse::Modules},
+            {}, Of<shape::Modules>, build::Modules},
         {"search", "core", ToolPack::Native, "addresses holding a value in resident, cacheable memory, as a job the agent runs",
-            {{"type", "hex|u32|i32|u64|ptr|f32|f64|text", One, "hex|u32|i32|u64|ptr|f32|f64|text", "the value's type"},
-             {"value", "value", Some, "text", "the value to find"}},
-            {{"--wide", Takes::Nothing, "bool", "", "text as UTF-16"},
-             {"--start", Takes::One, "addr", "addr", "start, or a job's next_cursor"},
-             {"--to", Takes::One, "addr", "addr", "end"}, {"--module", Takes::One, "str", "name", "in place of --start and --to"},
-             {"--align", Takes::One, "int", "N", "1, 2, 4, 8 or 16 (typed values default to their size)"},
-             {"--writable", Takes::Nothing, "bool", "", "writable memory only, every module and heap"},
-             {"--heap", Takes::Nothing, "bool", "", "private memory only (heaps, stacks)"},
-             {"--paged", Takes::Nothing, "bool", "", "also non-resident pages (slow)"},
-             {"--wait", Takes::One, "int", "N", "seconds to wait for the job before answering with it running (0..60)", "10"},
-             {"--max", Takes::One, "int", "N", "hits at most; the job stops when full", "64"}},
-            Of<shape::Search>, parse::Search,
-            "Quote text to keep spaces, ';' and '--'. The range is the main module unless --module, --start, --to, "
-            "--heap or --writable says otherwise; --start alone ends with the module it lies in. A job still running "
-            "after --wait comes back with state running and its hits so far: search-job <id> for more, search-job "
-            "<id> --stop to end it. A new search stops the last job. next_cursor (a stopped or full job) resumes with --start."},
+            {{"type", "hex|u32|i32|u64|ptr|f32|f64|text", "the value's type", {}, true},
+             {"value", "scalar", "the value: text or hex pairs as a string, a number otherwise (u64 and ptr also \"0x...\")", {}, true, false,
+              "\"00 00 80 3f\""},
+             {"wide", "bool", "text as UTF-16"},
+             {"start", "addr", "start, or a job's next_cursor"},
+             {"to", "addr", "end"}, {"module", "str", "in place of start and to"},
+             {"align", "int", "1, 2, 4, 8 or 16 (typed values default to their size)"},
+             {"writable", "bool", "writable memory only, every module and heap"},
+             {"heap", "bool", "private memory only (heaps, stacks)"},
+             {"paged", "bool", "also non-resident pages (slow)"},
+             {"wait", "int", "seconds to wait for the job before answering with it running (0..60)", "10"},
+             {"max", "int", "hits at most; the job stops when full", "64"}},
+            Of<shape::Search>, build::Search,
+            "The range is the main module unless module, start, to, heap or writable says otherwise; start alone "
+            "ends with the module it lies in. A job still running after wait comes back with state running and its "
+            "hits so far: search-job with its id for more, with stop to end it. A new search stops the last job. "
+            "next_cursor (a stopped or full job) resumes as start."},
         {"search-job", "core", ToolPack::Native, "a search job's state and hits so far; stop ends it first",
-            {{"job", "id", One, "int", "the job a search returned"}},
-            {{"--stop", Takes::Nothing, "bool", "", "end the job first; its next_cursor resumes it"}},
-            Of<shape::Search>, parse::SearchJob,
+            {{"job", "int", "the job a search returned", {}, true},
+             {"stop", "bool", "end the job first; its next_cursor resumes it"}},
+            Of<shape::Search>, build::SearchJob,
             "Only the last job answers. scanned is the share of the range's addresses behind the cursor."},
         {"mem-snap", "core", ToolPack::Observe, "keep up to 1 MiB of memory for mem-diff (a file beside the cache, across runs)",
-            {{"addr", "addr", One, "addr", at}, {"len", "len", One, "int", "how many bytes, up to 1048576"}},
-            {}, Of<shape::MemSnap>, parse::MemSnap,
-            "A new snap replaces the last one and its candidates. Refused when part of the range is unreadable. "
-            "Accepts a pointer chain."},
-        {"mem-diff", "core", ToolPack::Observe, "elements of the last mem-snap that changed, stayed, rose or fell since; --keep narrows",
-            {{"test", "changed|unchanged|increased|decreased", One, "changed|unchanged|increased|decreased", "what an element must have done"},
-             {"type", "type", One, "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start"}},
-            {{"--keep", Takes::Nothing, "bool", "", "keep only the matches as candidates and today's bytes as the new baseline"},
-             {"--limit", Takes::One, "int", "N", "rows shown (1..256)", "64"}},
-            Of<shape::MemDiff>, parse::MemDiff,
+            {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes, up to 1048576", {}, true}},
+            Of<shape::MemSnap>, build::MemSnap,
+            "A new snap replaces the last one and its candidates. Refused when part of the range is unreadable."},
+        {"mem-diff", "core", ToolPack::Observe, "elements of the last mem-snap that changed, stayed, rose or fell since; keep narrows",
+            {{"test", "changed|unchanged|increased|decreased", "what an element must have done", {}, true},
+             {"type", "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start", {}, true, false,
+              "\"f32\""},
+             {"keep", "bool", "keep only the matches as candidates and today's bytes as the new baseline"},
+             {"limit", "int", "rows shown (1..256)", "64"}},
+            Of<shape::MemDiff>, build::MemDiff,
             "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
-            "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 --keep, act, mem-diff ... --keep "
-            "until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
-        {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min with --every); returns at once",
-            {{"duration", "duration", One, "dur", "how long: seconds, or Nms, Ns, Nm"},
-             {"ranges", "addr|offset:len|type[n]|ref.Field", Some, "range",
-              "a range to sample: a length, or a read --type element (f64, i32[2]) to decode; following a root, its offset "
-              "from the root; or an object's reflected field (<ref>.<Field[.Field]>, a pack resolves it)"}},
-            {{"--every", Takes::One, "dur", "duration", "sample interval (default: every tick, then at most 30 s)"},
-             {"--follow", Takes::One, "str", "root", "continue on a host root's replacement; ranges are offsets from it"},
-             {"--file", Takes::One, "path", "file", "keep every sample in this file (JSON lines), rewritten by each watch-read and watch-stop"}},
-            Of<shape::WatchStart>, parse::WatchStart,
+            "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 with keep, act, mem-diff ... with "
+            "keep until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
+        {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min with every); returns at once",
+            {{"duration", "dur", "how long, in seconds", {}, true},
+             {"ranges", "range", "a range to sample: {\"addr\": <addr>, \"len\": N}, {\"addr\": <addr>, \"type\": \"f64\", "
+              "\"count\"?: N} to decode values, {\"object\": <ref>, \"field\": <path>} for a reflected field (a pack "
+              "resolves it); following a root, {\"offset\": N, ...} in place of addr", {}, true, true},
+             {"every", "dur", "sample interval (default: every tick, then at most 30 s)"},
+             {"follow", "str", "continue on a host root's replacement; ranges are offsets from it"},
+             {"file", "file", "keep every sample in this file (JSON lines), rewritten by each watch-read and watch-stop"}},
+            Of<shape::WatchStart>, build::WatchStart,
             "status lists the roots. The capture outlives the console, its types too. A typed range's samples are "
-            "numbers (a list for [n]), and watch-read and watch-stop add its summary: first, last, least, greatest "
+            "numbers (a list for count), and watch-read and watch-stop add its summary: first, last, least, greatest "
             "and the change per second, per value. A field range takes the field's place and type at the start and "
-            "is guarded on its object. --file writes the ranges as the first line now; the file persists for the "
-            "agent instance in the cache, and a later watch-start without --file drops it. For a blocking capture, "
-            "start, wait and stop (the Python session's watch helper)."},
-        {"watch-read", "core", ToolPack::Observe, "the capture so far: its first sample, each change and its last", {},
-            {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchRead,
+            "is guarded on its object; an addr based on a literal ref is guarded on that object. file writes the "
+            "ranges as the first line now; the file persists for the agent instance in the cache, and a later "
+            "watch-start without file drops it. For a blocking capture, start, wait and stop (the Python session's "
+            "watch helper)."},
+        {"watch-read", "core", ToolPack::Observe, "the capture so far: its first sample, each change and its last",
+            {{"all", "bool", "every sample, not only the changes"}}, Of<shape::WatchCapture>, build::WatchRead,
             "Rows are the first sample, every sample that differs from the one before (each with its time) and the last; "
             "samples counts them all. Past 200 rows the middle is dropped (dropped). The summary covers every sample, "
-            "with changes per value. --all returns every sample. With watch-start --file, every sample also goes to "
+            "with changes per value. all returns every sample. With watch-start's file, every sample also goes to "
             "the file (file names it)."},
-        {"watch-stop", "core", ToolPack::Observe, "end the capture and return it: its first sample, each change and its last", {},
-            {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchStop,
+        {"watch-stop", "core", ToolPack::Observe, "end the capture and return it: its first sample, each change and its last",
+            {{"all", "bool", "every sample, not only the changes"}}, Of<shape::WatchCapture>, build::WatchStop,
             "As watch-read."},
-        {"sig-check", "core", ToolPack::Native, "is a byte signature unique in a module, and does it land where expected; --file checks a file of them",
-            {{"pattern", "pattern", Any, "pattern", "the signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89"}},
-            {{"--file", Takes::One, "path", "patterns file", "a JSON-lines file, one signature per line, in place of pattern"},
-             {"--module", Takes::One, "str", "name", "default: the exe"},
-             {"--expect", Takes::One, "addr", "addr", "where it should land"},
-             {"--offset", Takes::One, "int", "N", "the match starts this far past --expect"},
-             {"--resolve", Takes::One, "str", "next,field[,size]", "a reference signature; --expect is then its target"}},
-            Of<shape::SigCheckResult>, parse::SigCheck,
-            "pattern: \"48 8b ?? 89\" or \"0x48, 0x8B, -1, 0x89\", up to 96 bytes. Reports mismatches, diverges_at "
-            "and warnings for unmasked addresses. --file takes no other flag and answers file, winner (the first line "
-            "that holds) and a row per line."},
+        {"sig-check", "core", ToolPack::Native, "is a byte signature unique in a module, and does it land where expected; file checks a file of them",
+            {{"pattern", "pattern", "the signature: \"48 8b ?? 89\" or \"0x48, 0x8B, -1, 0x89\", up to 96 bytes", {}, false, false,
+              "\"48 8b 05 ?? ?? ?? ?? 48 85 c0\""},
+             {"file", "file", "a JSON-lines file, one signature per line, in place of pattern"},
+             {"module", "str", module},
+             {"expect", "addr", "where it should land"},
+             {"offset", "int", "the match starts this far past expect"},
+             {"resolve", "str", "a reference signature, \"next,field[,size]\" as labels files keep it; expect is then its target"}},
+            Of<shape::SigCheckResult>, build::SigCheck,
+            "Reports mismatches, diverges_at and warnings for unmasked addresses. file takes no other key and "
+            "answers file, winner (the first line that holds) and a row per line."},
         {"sig-bytes", "core", ToolPack::Native, "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
-            {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}}, {},
-            Of<shape::SigBytes>, parse::SigBytes},
+            {{"addr", "addr", at, {}, true}, {"len", "int", "how many bytes", "64"}},
+            Of<shape::SigBytes>, build::SigBytes},
         {"labels-sign", "core", ToolPack::Native, "a byte signature on each of this build's user and global names, so they survive a patch",
-            {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
-            {{"--module", Takes::One, "str", "name", "default: the exe"},
-             {"--again", Takes::Nothing, "bool", "", "sign rows that have a signature or failed before too"}},
-            Of<shape::LabelsSign>, parse::LabelsSign,
+            {{"file", "file", labels}, {"module", "str", module},
+             {"again", "bool", "sign rows that have a signature or failed before too"}},
+            Of<shape::LabelsSign>, build::LabelsSign,
             "A function's signature starts at it, a global's at the first code that loads it (a reference signature); "
             "each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's "
             "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and "
-            "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless --again. "
+            "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless again. "
             "The file is rewritten in place; other builds' lines stay as they are."},
         {"labels-port", "core", ToolPack::Native, "find other builds' signed names in the running build and add them to the file",
-            {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
-            {{"--module", Takes::One, "str", "name", "default: the exe"}},
-            Of<shape::LabelsPort>, parse::LabelsPort,
+            {{"file", "file", labels}, {"module", "str", module}},
+            Of<shape::LabelsPort>, build::LabelsPort,
             "Per name this build lacks, the newest signed row of another build is matched in the image (one shared "
             "search per anchor). One match appends a row for this build with the same sig and ported_from (the old "
             "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
             "rows stay."},
         {"disasm", "core", ToolPack::Native, "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
-            {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions (--function: up to 2048)", "24"}},
-            {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},
-             {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},
-             {"--save", Takes::One, "path", "file", "with --function: write the function and its read-only data for a static tool, not the rows"},
-             {"--callees", Takes::Nothing, "bool", "", "with --save: also save each function it calls directly (one level, up to 16)"},
-             {"--labels", Takes::One, "path", "file", "with --save: name from this labels file (default: the console's and the host's names file)"},
-             {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
-            Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
-            "value a read-only [rip + disp] load reads; the listing names the module once. --meta adds each row's module "
-            "and address fields. Accepts a pointer chain. --function lists to the function's end, up to 2048 "
-            "instructions or 16 KB (a cut gives next: continue with --resume), with compact rows (no bytes, rva on the "
-            "first row; --meta for full rows) and strings: each string referenced, with the rows using it. Where no "
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (with function: up to 2048)", "24"},
+             {"function", "bool", "list the whole containing function (exception table; else walk from addr)"},
+             {"resume", "bool", "with function: start at addr (a cut listing's next), not the function's start"},
+             {"save", "file", "with function: write the function and its read-only data for a static tool, not the rows"},
+             {"callees", "bool", "with save: also save each function it calls directly (one level, up to 16)"},
+             {"labels", "file", "with save: name from this labels file (default: the console's and the host's names file)"},
+             {"follow", "bool", "step through up to 3 unconditional direct jumps"}},
+            Of<shape::Disasm>, build::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
+            "value a read-only [rip + disp] load reads; the listing names the module once. meta adds each row's module "
+            "and address fields. function lists to the function's end, up to 2048 "
+            "instructions or 16 KB (a cut gives next: continue with resume), with compact rows (no bytes, rva on the "
+            "first row; meta for full rows) and strings: each string referenced, with the rows using it. Where no "
             "exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch "
             "passes: stop \"walk end\", no function key. Strings built at run time, reached through a pointer, or held as "
-            "names are not seen. --save leaves rows and strings out of the result (the file holds them) and adds saved "
+            "names are not seen. save leaves rows and strings out of the result (the file holds them) and adds saved "
             "and saved_rows, and saves each chunk the function jumps into: chained entries and switch targets "
             "(chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets "
-            "still unsaved in jumpouts_left; --callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
+            "still unsaved in jumpouts_left; callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
             "256 KB). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
-            "piece (the piece holding addr, as xrefs gives it), and --save then refuses unless --resume."},
+            "piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",
-            {{"addr", "addr", One, "addr", at}},
-            {{"--module", Takes::One, "str", "name", "scan another loaded module"},
-             {"--all", Takes::Nothing, "bool", "", "also list unknown hits (likely chance bytes)"}},
-            Of<shape::Xrefs>, parse::Xrefs, "A code row outside every exception-table entry carries unlisted, its "
+            {{"addr", "addr", at, {}, true},
+             {"module", "str", "scan another loaded module"},
+             {"all", "bool", "also list unknown hits (likely chance bytes)"}},
+            Of<shape::Xrefs>, build::Xrefs, "A code row outside every exception-table entry carries unlisted, its "
             "function the piece holding it, cut as touches cuts unlisted code (between returns and int3 padding, within "
             "16 KB each side): a function with several returns spans several pieces, and junk bytes may lead one. "
             "Entries under 4 bytes (a packed image's decoys) bound nothing."},
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
-            {{"addr", "addr", One, "addr", at}, {"offsets", "offset", Some, "int", "a struct offset to look for, per offset"}},
-            {{"--range", Takes::One, "int", "N", "bytes each side of addr", "0x80000"},
-             {"--reads", Takes::Nothing, "bool", "", "rank by offsets read; drop rows writing every offset they read"}},
-            Of<shape::Touches>, parse::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
+            {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for", {}, true, true},
+             {"range", "int", "bytes each side of addr", "\"0x80000\""},
+             {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"}},
+            Of<shape::Touches>, build::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
             "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
             "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
-            "unlisted code. --reads leaves out struct copies and constructors."},
+            "unlisted code. reads leaves out struct copies and constructors."},
         {"vtable", "core", ToolPack::Native, "an object's virtual table: slots until the first entry that is not code",
-            {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many slots at most"}},
-            {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},
-             {"--table", Takes::Nothing, "bool", "", "addr is the table itself"},
-             {"--resolve", Takes::Nothing, "bool", "", "where jump stubs lead"},
-             {"--rtti", Takes::Nothing, "bool", "", "also the class and bases its run-time type information names (MSVC images)"}},
-            Of<shape::Vtable>, parse::Vtable, "Accepts a pointer chain. --rtti adds rtti, read from the locator in the "
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many slots at most"},
+             {"offset", "int", "the table pointer at addr+offset (an interface part)"},
+             {"table", "bool", "addr is the table itself"},
+             {"resolve", "bool", "where jump stubs lead"},
+             {"rtti", "bool", "also the class and bases its run-time type information names (MSVC images)"}},
+            Of<shape::Vtable>, build::Vtable, "rtti adds rtti, read from the locator in the "
             "slot before the table; complete is the whole object when addr is one of its parts. Where that slot holds "
             "no locator (no type information, or not an MSVC image; engines often build without it) it adds "
             "rtti_error instead."},
@@ -250,83 +252,46 @@ inline std::vector<Origin> TableOrigins(std::span<const Origin> packOrigins) {
 // What applies to every verb; `help` prints these under the rows.
 inline const std::vector<std::string>& GeneralNotes() {
     static const std::vector<std::string> notes = {
-        "help <verb> shows a verb's flags, its result's keys and notes; help --json the whole table.",
-        "Numbers: 0x hex or decimal. <addr> accepts $N, $N+offset, base+offset and <module>+offset "
-        "(game.exe+0x1a2b3c, inside the image). Addresses inside a module carry module and rva.",
-        "<addr>->0x10->0x8 is a pointer chain in read, peek, vtable and disasm: each ->off but the last reads a "
-        "pointer, so one ->off alone is refused (<addr>->0->0x30 reads the pointer at <addr>).",
-        "A token in double quotes is taken exactly. A key that does not apply is omitted from a result.",
-        "Any line ending in --timing adds trips, wait_ms and total_ms; --meta prints struct values with their layout.",
+        "A call is one JSON object per line: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}, "
+        "args named as help shows them; \"meta\", \"timing\" and \"big\" as true, \"budget\" as a number. A line may "
+        "also hold a JSON list of calls.",
+        "help with verb shows its args (type, default, help), its result's keys, notes and an example call; help "
+        "with json the whole table.",
+        "Unknown keys, missing required ones and values of the wrong type are refused (kind schema) with the key's "
+        "part of the schema and a corrected example.",
+        "An int is a number or \"0x...\" text. An addr is \"0x...\", a literal ref, {\"module\": \"x.dll\", \"rva\": N} "
+        "or {\"base\": <addr>, \"offset\": N}; addresses inside a module carry module and rva.",
+        "A chain is {\"base\": <addr>, \"chain\": [N, N]} in read, peek, mem-snap, vtable and disasm: each offset "
+        "but the last reads a pointer, so one alone is refused ([0, N] reads the pointer at base and adds N).",
+        "A path is a list of field names: [\"Info\", \"Owner\"]. A key that does not apply is omitted from a result.",
+        "meta prints struct values with their layout; timing adds trips, wait_ms and total_ms.",
         "A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with "
-        "its largest parts and next, the line narrowed (or file, for a line that must not run again). A line ending "
-        "in --budget N sets the limit, --big lifts it.",
-        "A line starting with { is a JSON call: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}, "
-        "keys as help --json names them; \"meta\", \"timing\" and \"big\" as true, \"budget\" as a number. "
-        "It takes literal refs, never $N.",
+        "its largest parts and next, the call narrowed (or file, for a call that must not run again). budget sets "
+        "the limit, big lifts it.",
         "One console per agent: a second one is refused as busy.",
-        "The module list, $N and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
-        "One-shot: <console> [pid] -c \"status; modules\" emits JSON Lines.",
-        "Each call is logged beside the console as facts (verb, flags, sizes, refusal), never values; stats reads it, "
+        "The module list and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
+        "One-shot: <console> [pid] -c '<call or list of calls>' (or -c @<file>, one call per line) emits JSON Lines.",
+        "Each call is logged beside the console as facts (verb, keys, sizes, refusal), never values; stats reads it, "
         "also with no target. --caller tool|script|shell says who reads the output; --no-usage turns it off.",
     };
     return notes;
 }
 
-inline std::string_view TakesName(Takes takes) {
-    switch (takes) {
-    case Takes::Nothing: return "nothing";
-    case Takes::One: return "one";
-    case Takes::Maybe: return "maybe";
-    case Takes::Some: return "some";
-    case Takes::Rest: return "rest";
-    }
-    return "nothing";
-}
-inline std::string_view ArityName(Arity arity) {
-    switch (arity) {
-    case Arity::One: return "one";
-    case Arity::Optional: return "optional";
-    case Arity::Some: return "some";
-    case Arity::Any: return "any";
-    case Arity::Rest: return "rest";
-    }
-    return "one";
-}
-
-// A verb's help row. Detail: the positionals, the flags, the result in
-// notation (named types by name, defined under `types`) and the notes.
-// Machine: also the result's type for programs; its named types go to `named`.
+// A verb's help row. Detail: the args, the result in notation (named types
+// by name, defined under `types`), the notes and an example call. Machine:
+// also the result's type for programs; its named types go to `named`.
 inline shape::HelpRow MakeHelpRow(const Verb& verb, bool detail, bool machine, schema::NamedTypes* named = nullptr) {
-    shape::HelpRow row{std::string(verb.name), std::string(verb.origin), std::string(ToolPackName(verb.pack)), Usage(verb),
+    shape::HelpRow row{std::string(verb.name), std::string(verb.origin), std::string(ToolPackName(verb.pack)),
         std::string(verb.summary)};
     if (verb.writes) row.writes = true;
     if (verb.blocks) row.blocks = true;
     if (!detail && !machine) return row;
     const schema::Type type = verb.result ? verb.result() : schema::Of<schema::Nothing>();
-    if (!verb.aliases.empty()) {
-        row.aliases.emplace();
-        for (const auto alias : verb.aliases) row.aliases->emplace_back(alias);
-    }
-    row.flags.emplace();
-    for (const auto& flag : verb.flags) {
-        shape::HelpFlag item{std::string(flag.name), std::string(FlagKey(flag)), std::string(TakesName(flag.takes)),
-            std::string(flag.type)};
-        if (flag.required) item.required = true;
-        if (!flag.value.empty()) item.value = std::string(flag.value);
-        if (!flag.help.empty()) item.help = std::string(flag.help);
-        if (!flag.fallback.empty()) item.fallback = std::string(flag.fallback);
-        row.flags->push_back(std::move(item));
-    }
+    row.args.emplace();
+    for (const auto& arg : verb.args) row.args->push_back(ArgJson(arg));
     row.result = schema::Notation(type, true);
     if (!verb.notes.empty()) row.notes = std::string(verb.notes);
-    row.positionals.emplace();
-    for (const auto& positional : verb.positionals) {
-        shape::HelpPositional item{std::string(positional.key), std::string(positional.name),
-            std::string(ArityName(positional.arity)), std::string(positional.type)};
-        if (!positional.help.empty()) item.help = std::string(positional.help);
-        if (!positional.fallback.empty()) item.fallback = std::string(positional.fallback);
-        row.positionals->push_back(std::move(item));
-    }
+    row.example = ExampleCall(verb);
     schema::NamedTypes used;
     schema::CollectNamed(type, used, true);
     if (detail && !machine && !used.empty()) {
@@ -366,7 +331,7 @@ inline std::vector<shape::HelpRow> HelpByPack(std::span<const Verb> verbs) {
 }
 
 // FNV-1a of the whole table as help --json prints it: changes when any
-// verb's arguments or result change.
+// verb's args or result change.
 inline std::string TableHash(std::span<const Verb> verbs, std::span<const Origin> origins) {
     const std::string text = ToJson(MakeHelpTable(verbs, origins)).dump();
     uint64_t hash = 0xcbf29ce484222325ull;
@@ -374,147 +339,5 @@ inline std::string TableHash(std::span<const Verb> verbs, std::span<const Origin
     char out[20];
     snprintf(out, sizeof(out), "%016llx", static_cast<unsigned long long>(hash));
     return out;
-}
-
-// A JSON call: {"verb": "read", "args": {"addr": "0x1000", "len": 16}}. Its
-// arguments are named by the row's keys and land in the same Args a typed
-// line gives, so one check and one parser per verb cover both, and nothing is
-// quoted or escaped. A list (or one value) for a positional that takes
-// several; true for a switch; a number for an int, an addr (as hex) or a dur
-// (seconds); batch's calls as a list of calls. A string starting with $ is
-// refused: a call carries the literal ref a result printed, never "the last find".
-inline std::expected<Args, std::string> CallArgs(const Verb& verb, const Json& given) {
-    using Out = std::expected<Args, std::string>;
-    const auto fail = [&](std::string why) { return Out(std::unexpect, why + "; usage: " + Usage(verb)); };
-    if (!given.is_null() && !given.is_object()) return fail("args is an object of named arguments");
-    const auto text = [](const Json& value, std::string_view type, std::string& out) -> std::string {
-        if (value.is_string()) {
-            out = value.get<std::string>();
-            if (type != "line" && out.starts_with('$'))
-                return "'" + out + "': a JSON call takes the literal ref a result carries, not $N";
-            return {};
-        }
-        if (value.is_number_unsigned() || (value.is_number_integer() && value.get<int64_t>() >= 0)) {
-            const uint64_t number = value.get<uint64_t>();
-            out = type == "addr" ? HexNumber(number) : type == "dur" ? std::to_string(number) + "s" : std::to_string(number);
-            return {};
-        }
-        if (value.is_number() && type == "dur") {
-            const double seconds = value.get<double>();
-            if (seconds <= 0) return "a duration above 0";
-            out = std::to_string(static_cast<uint64_t>(seconds * 1000 + 0.5)) + "ms";
-            return {};
-        }
-        if (value.is_number()) {
-            out = value.dump();
-            return {};
-        }
-        return "a string or a number";
-    };
-    // A value, or a list of them (a span's elements are pairs), into tokens.
-    const auto tokens = [&](const Json& value, std::string_view type, std::vector<std::string>& out) -> std::string {
-        const auto one = [&](const Json& item) -> std::string {
-            if (item.is_array()) {
-                if (type != "span" || item.size() != 2) return "a list of values";
-                for (const auto& part : item) {
-                    std::string token;
-                    if (auto problem = text(part, out.size() % 2 ? "int" : "addr", token); !problem.empty()) return problem;
-                    out.push_back(std::move(token));
-                }
-                return {};
-            }
-            std::string token;
-            if (auto problem = text(item, type, token); !problem.empty()) return problem;
-            out.push_back(std::move(token));
-            return {};
-        };
-        if (!value.is_array()) return one(value);
-        for (const auto& item : value)
-            if (auto problem = one(item); !problem.empty()) return problem;
-        return {};
-    };
-    // An unknown key first: a misspelt name would otherwise read as a left-out argument.
-    if (given.is_object()) {
-        for (const auto& [key, value] : given.items()) {
-            const bool known = std::ranges::any_of(verb.positionals, [&](const Positional& p) { return p.key == key; }) ||
-                std::ranges::any_of(verb.flags, [&](const Flag& f) { return FlagKey(f) == key; });
-            if (known) continue;
-            std::string keys;
-            for (const auto& p : verb.positionals) keys += (keys.empty() ? "" : ", ") + std::string(p.key);
-            for (const auto& f : verb.flags) keys += (keys.empty() ? "" : ", ") + std::string(FlagKey(f));
-            return fail("unknown argument '" + key + "'" + (keys.empty() ? " (it takes none)" : " (it takes " + keys + ")"));
-        }
-    }
-    Args args;
-    // Positionals fill in order: one left out ends the run (only optional ones may be).
-    std::vector<bool> taken(verb.positionals.size()), flagTaken(verb.flags.size());
-    bool gap = false;
-    for (size_t i = 0; i < verb.positionals.size(); ++i) {
-        const auto& positional = verb.positionals[i];
-        const std::string key(positional.key);
-        if (!given.is_object() || !given.contains(key)) {
-            gap = true;
-            continue;
-        }
-        taken[i] = true;
-        if (gap) return fail(key + " given after a left-out argument");
-        const Json& value = given[key];
-        if (positional.arity == Arity::Rest) {
-            if (positional.type == "calls") {
-                if (!value.is_array()) return fail(key + ": a list of {verb, args}");
-                for (const auto& call : value) {
-                    if (!call.is_object() || !call.contains("verb") || !call["verb"].is_string())
-                        return fail(key + ": each call is {verb, args}");
-                    args.calls.push_back({call["verb"].get<std::string>(), call.dump()});
-                }
-                continue;
-            }
-            if (auto problem = text(value, positional.type, args.rest); !problem.empty()) return fail(key + ": " + problem);
-            continue;
-        }
-        if (value.is_array() && (positional.arity == Arity::One || positional.arity == Arity::Optional))
-            return fail(key + ": one value, not a list");
-        std::vector<std::string> values;
-        if (auto problem = tokens(value, positional.type, values); !problem.empty()) return fail(key + ": " + problem);
-        for (auto& part : values) args.positionals.push_back(std::move(part));
-    }
-    for (size_t i = 0; i < verb.flags.size(); ++i) {
-        const auto& flag = verb.flags[i];
-        const std::string key(FlagKey(flag));
-        if (!given.is_object() || !given.contains(key)) continue;
-        flagTaken[i] = true;
-        const Json& value = given[key];
-        Args::Given item{flag.name, {}, {}};
-        switch (flag.takes) {
-        case Takes::Nothing:
-            if (!value.is_boolean()) return fail(key + ": true or false");
-            if (!value.get<bool>()) continue;
-            break;
-        case Takes::Maybe:
-            if (value.is_boolean()) {
-                if (!value.get<bool>()) continue;
-                break;
-            }
-            [[fallthrough]];
-        case Takes::One: {
-            std::string token;
-            if (value.is_array()) return fail(key + ": one value, not a list");
-            if (auto problem = text(value, flag.type, token); !problem.empty()) return fail(key + ": " + problem);
-            item.values.push_back(std::move(token));
-            break;
-        }
-        case Takes::Some:
-            if (auto problem = tokens(value, flag.type, item.values); !problem.empty()) return fail(key + ": " + problem);
-            break;
-        case Takes::Rest:
-            if (auto problem = text(value, flag.type, item.rest); !problem.empty()) return fail(key + ": " + problem);
-            break;
-        }
-        args.flags.push_back(std::move(item));
-    }
-    // batch's calls stand in for its body.
-    if (!args.calls.empty()) args.rest = "{}";
-    if (auto problem = CheckArgs(verb, args); !problem.empty()) return fail(problem);
-    return args;
 }
 }

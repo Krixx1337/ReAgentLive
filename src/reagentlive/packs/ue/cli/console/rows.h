@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 #include "reagentlive/frontends/cli/code/native.h"
-#include "reagentlive/frontends/cli/syntax/text.h"
+#include "reagentlive/frontends/cli/call/values.h"
 #include "reagentlive/packs/ue/cli/values/pack_input.h"
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
 
@@ -182,7 +182,7 @@ public:
                 return "no member " + paths.names[i] + " in " + element.structName + " (members: " + known + ")";
             }
             if (paths.below[i].Empty()) continue;
-            if (depth >= MaxDepth) return "--fields goes " + std::to_string(MaxDepth) + " levels deep";
+            if (depth >= MaxDepth) return "fields goes " + std::to_string(MaxDepth) + " levels deep";
             if (found->type == "MapProperty") { // Below a map: its key and its value.
                 for (size_t j = 0; j < paths.below[i].names.size(); ++j) {
                     const auto& part = paths.below[i].names[j];

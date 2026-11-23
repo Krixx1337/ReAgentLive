@@ -5,17 +5,17 @@
 
 One tool per row of the console's `help --json`: a core verb by its name
 (`read`), a pack's or the host's prefixed by its origin (`ue_find`,
-`host_world`). Each tool's input schema is made here from its row (the
-argument types of syntax/verb.h), and a call goes to the console as a JSON
-call with the row's keys, so nothing here names a pack or a verb. The marks
+`host_world`). Each tool's input schema is made here from its row's `args`
+(the argument types of call/verb.h), and a call goes to the console as a
+JSON call with the row's keys, so nothing here names a pack or a verb. The marks
 come from the table: a verb that writes the target's memory or calls into
 it is destructive, every other one read-only, so a client can allow the
 read-only tools and ask first for the rest. A verb that holds the console
 for seconds (`blocks`) is left out: a call would outlast the client's
 timeout; use `watch-start` and read it later.
 
-Arguments carry the literal refs results print; `$N` is refused (the
-console's JSON calls take no session state). `batch` takes a list of calls
+Arguments carry the literal refs results print (a call takes no session
+state from an earlier one). `batch` takes a list of calls
 ({verb, args}, verb by its console name) and runs them in as few host
 ticks as possible.
 
@@ -74,9 +74,9 @@ except ImportError as error:  # Missing, or SDK 1 (no subscriptions, decorator h
 
 INSTRUCTIONS = (
     'Tools for a live process through a ReAgentLive console. Each tool is one console verb; its description '
-    'shows the usage, what every argument takes and the notes. Pass the literal `ref` a result carries '
-    '(0x<address>#<index>:<serial>) to the next call; $N is refused. Use `batch` for reads that must come from '
-    'one moment. Read-only tools may be allowed freely; tools marked destructive write the target\'s memory '
+    'shows one example call and the notes, its input schema what every argument takes. To use a result in the '
+    'next call, pass the literal `ref` it carries (0x<address>#<index>:<serial>). Use `batch` for reads that '
+    'must come from one moment. Read-only tools may be allowed freely; tools marked destructive write the target\'s memory '
     'or call into it, so confirm each one first. Results keep the console\'s keys: a list is `rows`, a page '
     'carries `next_cursor` (pass it as `start`), a key that does not apply is absent. A result past 25,000 '
     'characters is not shown: a digest stands for it, with its largest parts and the call narrowed to run '
@@ -90,19 +90,33 @@ BUDGET = {'type': 'integer', 'minimum': 0,
 
 OUTPUT_SCHEMAS = ('compact', 'off')
 
-# Argument types (syntax/verb.h) as JSON Schema. An enum ('a|b') is made from its words.
+# Argument types (call/verb.h) as JSON Schema. An enum or a list is made from the arg's own keys.
 CALL = {'type': 'object', 'properties': {'verb': {'type': 'string'}, 'args': {'type': 'object'}},
         'required': ['verb'], 'additionalProperties': False}
-ARGUMENTS = {'addr': {'type': ['integer', 'string']}, 'ref': {'type': 'string'}, 'int': {'type': 'integer'},
-             'num': {'type': 'number'}, 'dur': {'type': ['number', 'string']}, 'bytes': {'type': 'string'},
-             'pattern': {'type': 'string'},
-             'text': {'type': 'string'}, 'str': {'type': 'string'}, 'path': {'type': 'string'},
-             'layout': {'type': 'string'}, 'range': {'type': 'string'}, 'line': {'type': 'string'},
-             'span': {'type': 'array', 'prefixItems': [{'type': ['integer', 'string']}, {'type': 'integer'}],
-                      'minItems': 2, 'maxItems': 2},
-             'calls': {'type': 'array', 'items': CALL}, 'bool': {'type': 'boolean'}}
-# One value however many tokens it spans: a positional that takes several takes one of these, not a list.
-JOINED = ('bytes', 'pattern', 'text')
+INT = {'anyOf': [{'type': 'integer', 'minimum': 0}, {'type': 'string', 'pattern': '^0[xX][0-9a-fA-F]+$'}]}
+STRING = {'type': 'string'}
+PATH = {'type': 'array', 'items': STRING, 'minItems': 1}
+# An address: hex text or a literal ref, a module and rva, or a base (an address, checked whole by the console)
+# and an offset.
+ADDR = [STRING,
+        {'type': 'object', 'properties': {'module': STRING, 'rva': INT}, 'required': ['module', 'rva'],
+         'additionalProperties': False},
+        {'type': 'object', 'properties': {'base': {'type': ['string', 'object']}, 'offset': INT},
+         'required': ['base', 'offset'], 'additionalProperties': False}]
+CHAIN = {'type': 'object', 'properties': {'base': {'type': ['string', 'object']},
+                                          'chain': {'type': 'array', 'items': INT, 'minItems': 2, 'maxItems': 16}},
+         'required': ['base', 'chain'], 'additionalProperties': False}
+ARGUMENTS = {'bool': {'type': 'boolean'}, 'int': INT, 'num': {'type': 'number'},
+             'dur': {'type': 'number', 'exclusiveMinimum': 0}, 'str': STRING, 'text': STRING, 'file': STRING,
+             'bytes': STRING, 'pattern': STRING, 'layout': STRING, 'addr': {'anyOf': ADDR},
+             'chain': {'anyOf': [*ADDR, CHAIN]}, 'ref': STRING, 'path': PATH,
+             'filter': {'type': 'object', 'properties': {'field': PATH, 'contains': STRING},
+                        'required': ['field', 'contains'], 'additionalProperties': False},
+             'params': {'type': 'object'}, 'range': {'type': 'object'},
+             'point': {'anyOf': [{'type': 'array', 'items': {'type': 'number'}, 'minItems': 3, 'maxItems': 3}, STRING,
+                                 {'type': 'object', 'properties': {'object': STRING, 'socket': STRING},
+                                  'required': ['object', 'socket'], 'additionalProperties': False}]},
+             'scalar': {'type': ['string', 'number']}, 'calls': {'type': 'array', 'items': CALL}}
 # Result scalars (results/schema.h) as JSON types; `value` is game data and stays untyped.
 RESULTS = {'bool': 'boolean', 'u32': 'integer', 'u64': 'integer', 'i32': 'integer', 'i64': 'integer',
            'f64': 'number', 'str': 'string', 'addr': 'string', 'hex': 'string', 'bytes': 'string', 'ref': 'string',
@@ -111,40 +125,26 @@ RESULTS = {'bool': 'boolean', 'u32': 'integer', 'u64': 'integer', 'i32': 'intege
 
 def argument(kind):
     """An argument type's schema; a type the console added and this file lacks stops the server."""
-    if '|' in kind:
-        return {'type': 'string', 'enum': kind.split('|')}
     if kind not in ARGUMENTS:
         raise ValueError(f'unknown argument type {kind!r}: add it to reagentlive_mcp.py')
     return dict(ARGUMENTS[kind])
 
 
-def described(schema, item):
-    """The schema with the row's help line and default."""
-    text = item.get('help', '') + (f' (default {item["default"]})' if 'default' in item else '')
-    return dict(schema, description=text) if text else schema
+def arg_schema(arg):
+    """One `args` item as JSON Schema: its type (an enum's words, a list of it), help line and default."""
+    schema = argument(arg['type'])
+    if 'enum' in arg:
+        schema = {'type': 'string', 'enum': list(arg['enum'])}
+    if arg.get('list'):
+        schema = {'type': 'array', 'items': schema}
+    text = arg.get('help', '') + (f' (default {json.dumps(arg["default"])})' if 'default' in arg else '')
+    return dict(schema, description=text.strip()) if text.strip() else schema
 
 
 def input_schema(row):
     """A verb's arguments as JSON Schema, keyed as the console's JSON calls take them."""
-    properties, required = {}, []
-    for positional in row['positionals']:
-        schema, arity = argument(positional['type']), positional['arity']
-        if arity in ('some', 'any') and positional['type'] not in JOINED:
-            schema = {'type': 'array', 'items': schema}
-        properties[positional['key']] = described(schema, positional)
-        if arity in ('one', 'some', 'rest'):
-            required.append(positional['key'])
-    for flag in row['flags']:
-        schema, takes = argument(flag['type']), flag['takes']
-        if takes == 'nothing':
-            schema = {'type': 'boolean'}
-        elif takes == 'maybe':
-            schema = {'anyOf': [{'type': 'boolean'}, schema]}
-        elif takes == 'some' and flag['type'] not in JOINED:
-            schema = {'anyOf': [schema, {'type': 'array', 'items': schema}]}
-        properties[flag['key']] = described(schema, flag)
-        if flag.get('required'):
-            required.append(flag['key'])
+    properties = {arg['key']: arg_schema(arg) for arg in row['args']}
+    required = [arg['key'] for arg in row['args'] if arg.get('required')]
     properties.setdefault('budget', BUDGET)
     out = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
@@ -197,13 +197,19 @@ def digest_text(digest, tool):
         call = Digest(digest).next_call()
         text += f' Call next: {tool} {json.dumps(call.get("args", {}))}.'
     if 'narrow' in digest:
-        text += f' This tool narrows with: {", ".join(flag.lstrip("-") for flag in digest["narrow"])}; budget 0 shows all.'
+        text += f' This tool narrows with: {", ".join(digest["narrow"])}; budget 0 shows all.'
     return text
 
 
+def example_text(call, tool):
+    """A console call ({verb, args}) as the tool call to make: the tool and its arguments."""
+    return f'{tool} {json.dumps(call.get("args", {}))}'
+
+
 def description(row):
-    """What a tool's caller reads: the summary, the usage line, the notes and the marks."""
-    lines = [row['summary'] + '.', '', row['usage']]
+    """What a tool's caller reads: the summary, an example call, the notes and the marks. Each argument's help
+    is in the input schema, so it is not written twice."""
+    lines = [row['summary'] + '.', '', 'Example: ' + example_text(row['example'], tool_name(row))]
     if row.get('notes'):
         lines += ['', row['notes']]
     if row.get('writes'):
@@ -220,7 +226,7 @@ def batch_refusal(table, enabled, arguments):
     """Why a batch call is refused, or None. A batch tool is marked read-only, so a client that allows
     read-only tools unasked must never get a write or call through it (those go as their own tool), and it
     runs only verbs of the packs enabled here."""
-    rows = {name: row for row in table['rows'] for name in (row['verb'], *row.get('aliases', ()))}
+    rows = {row['verb']: row for row in table['rows']}
     for inner in (arguments or {}).get('calls') or []:
         row = rows.get(inner.get('verb') if isinstance(inner, dict) else None)
         if row is None:
@@ -340,21 +346,31 @@ class Live:
                     raise RuntimeError(f'the console has no verb for {name} any more; reconnect for its tool list')
                 # Absent and null are the same to a call; the row's schema checks the rest.
                 arguments = {key: value for key, value in arguments.items() if value is not None}
-                budget = None if any(flag['key'] == 'budget' for flag in row['flags']) else arguments.pop('budget', None)
+                budget = None if any(arg['key'] == 'budget' for arg in row['args']) else arguments.pop('budget', None)
                 try:
                     jsonschema.validate(arguments if budget is None else dict(arguments, budget=budget),
                                         input_schema(row))
                 except jsonschema.ValidationError as error:
                     stale = ' (the console was rebuilt: reconnect for its tool list)' if changed else ''
-                    raise RuntimeError(f'{name}: {error.message}{stale}; usage: {row["usage"]}') from None
+                    raise RuntimeError(f'{name}: {error.message}{stale}; example: '
+                                       f'{example_text(row["example"], name)}') from None
                 try:
                     result = session.call(row['verb'], arguments, budget=budget)
                 except ReAgentLiveError as error:
-                    # The whole error object, not only its message: a refused --expect carries `found`, every error its kind.
-                    raise RuntimeError(f'{error}; error: {json.dumps(error.error)}') from None
+                    raise RuntimeError(refusal(name, error)) from None
             finally:
                 session.close()
         return (result.raw if isinstance(result, Record) else result), changed
+
+
+def refusal(tool, error):
+    """A console error as the tool's caller reads it: the message, the corrected call to make (a schema
+    refusal's example), then the rest of the error object (its kind, a refused expect's `found`, the arg)."""
+    text = str(error)
+    if isinstance(error.error.get('example'), dict):
+        text += f'; example: {example_text(error.error["example"], tool)}'
+    rest = {key: value for key, value in error.error.items() if key not in ('message', 'example')}
+    return text + (f'; error: {json.dumps(rest)}' if rest else '')
 
 
 class ReAgentLiveServer(Server):

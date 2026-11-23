@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 #include "reagentlive/frontends/cli/console/console.h"
-#include "reagentlive/frontends/cli/syntax/text.h"
+#include "reagentlive/frontends/cli/call/values.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/packs/ue/client_ue.h"
 
@@ -256,7 +256,7 @@ void RunTrace(Session& session, const Command& command, std::string_view jsonCom
     for (const auto& end : command.traceEnds)
         if (!world.address && !end.literal) world = end.object;
     if (!world.address)
-        return JsonError(session, jsonCommand, "validation", "two points need --ignore <actor>: the trace runs in its world");
+        return JsonError(session, jsonCommand, "validation", "two points need ignore (an actor): the trace runs in its world");
     out.start = ends[0];
     out.end = ends[1];
     out.channel = ChannelText(command.traceChannel);

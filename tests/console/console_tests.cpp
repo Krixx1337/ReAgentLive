@@ -8,6 +8,7 @@
 #include <chrono>
 #include <format>
 #include <map>
+#include <string_view>
 
 using namespace fake;
 
@@ -115,21 +116,48 @@ const Fixture& TheFixture() {
     return fixture;
 }
 
-// A get row's value by path.
-Json Get(const std::string& path, const std::string& flags = {}) {
-    const auto result = Result("get " + TheFixture().thing + " " + path + (flags.empty() ? "" : " " + flags));
+// A field path as calls take it: "Info.Tag" is ["Info", "Tag"].
+Json PathOf(std::string_view dotted) {
+    Json path = Json::array();
+    for (size_t start = 0;;) {
+        const size_t dot = dotted.find('.', start);
+        path.push_back(std::string(dotted.substr(start, dot == std::string_view::npos ? dot : dot - start)));
+        if (dot == std::string_view::npos) return path;
+        start = dot + 1;
+    }
+}
+// A list of one path, as get's and each's paths take it.
+Json PathsOf(std::string_view dotted) { return Json::array({PathOf(dotted)}); }
+// Args with more args (an object, or null for none) merged in.
+Json With(Json args, const Json& more) {
+    if (more.is_object()) args.update(more);
+    return args;
+}
+// Thing_0's get args: its paths (a list of them), or none for every field.
+Json GetArgs(const Json& paths = {}) {
+    Json args{{"object", TheFixture().thing}};
+    if (paths.is_array()) args["paths"] = paths;
+    return args;
+}
+// each over Thing, Thing_0's row only.
+Json EachArgs(const Json& paths) {
+    return {{"cls", "Thing"}, {"paths", paths}, {"where", {{"field", Json::array({"Name"})}, {"contains", "Thing_0"}}}};
+}
+// A get row's value by path; `more` adds args, `keys` the call's own keys (meta).
+Json Get(const std::string& path, const Json& more = {}, const Json& keys = {}) {
+    const auto result = Result(CallText("get", With(GetArgs(PathsOf(path)), more), keys));
     REQUIRE(result["rows"].size() == 1);
     return result["rows"][0]["value"];
 }
 // Thing_0's cell for one each column.
-Json Each(const std::string& path, const std::string& flags = {}) {
-    const auto result = Result("each Thing " + path + " --where Name~Thing_0" + (flags.empty() ? "" : " " + flags));
+Json Each(const std::string& path, const Json& more = {}, const Json& keys = {}) {
+    const auto result = Result(CallText("each", With(EachArgs(PathsOf(path)), more), keys));
     REQUIRE(result["rows"].size() == 1);
     return result["rows"][0]["values"][0];
 }
 // A row of get with no paths, by field name.
-Json DumpRow(const std::string& name, const std::string& key = "value", const std::string& flags = {}) {
-    const auto result = Result("get " + TheFixture().thing + (flags.empty() ? "" : " " + flags));
+Json DumpRow(const std::string& name, const std::string& key = "value", const Json& more = {}, const Json& keys = {}) {
+    const auto result = Result(CallText("get", With(GetArgs(), more), keys));
     for (const auto& row : result["rows"])
         if (row["name"] == name) return row.value(key, Json());
     FAIL("no get row " << name);
@@ -139,7 +167,7 @@ Json DumpRow(const std::string& name, const std::string& key = "value", const st
 
 TEST_CASE("the fake engine answers the console") {
     const auto& fixture = TheFixture();
-    const auto described = Result("describe " + fixture.thing);
+    const auto described = Result(CallText("describe", {{"object", fixture.thing}}));
     CHECK(described["name"] == "Thing_0");
     CHECK(described["outer"]["name"] == "Package_Things");
     CHECK(Get("Health") == 87.5);
@@ -182,28 +210,30 @@ TEST_CASE("instanced structs and soft pointers decode alike in get, each and dum
     CHECK(Each("Label") == label);
 }
 
-TEST_CASE("--nonzero agrees across verbs") {
-    const Json info = Get("Info", "--nonzero");
+TEST_CASE("nonzero agrees across verbs") {
+    const Json nonzero{{"nonzero", true}};
+    const Json info = Get("Info", nonzero);
     CHECK_FALSE(info.contains("Zero"));
     CHECK(info["Scores"]["rows"][1] == Json{{"key", "Deaths"}});
-    CHECK(DumpRow("Info", "value", "--nonzero") == info);
-    CHECK(Each("Info.Scores", "--nonzero") == info["Scores"]);
+    CHECK(DumpRow("Info", "value", nonzero) == info);
+    CHECK(Each("Info.Scores", nonzero) == info["Scores"]);
 }
 
-TEST_CASE("--meta agrees across verbs: the reflected layout from one reader") {
-    const Json tag = Get("Info.Tag", "--meta");
+TEST_CASE("meta agrees across verbs: the reflected layout from one reader") {
+    const Json meta{{"meta", true}};
+    const Json tag = Get("Info.Tag", {}, meta);
     REQUIRE(tag.contains("members"));
     CHECK(tag["members"][0]["value"]["name"] == "Item.Weapon.Rifle");
-    CHECK(Each("Info.Tag", "--meta") == tag);
-    const Json info = Get("Info", "--meta");
-    CHECK(DumpRow("Info", "value", "--meta") == info);
+    CHECK(Each("Info.Tag", {}, meta) == tag);
+    const Json info = Get("Info", {}, meta);
+    CHECK(DumpRow("Info", "value", {}, meta) == info);
 }
 
 TEST_CASE("top-level containers: get and each in full, entries and dump previews element by element") {
     const Json boxes = Get("Boxes");
     CHECK(Each("Boxes") == boxes);
     CHECK(Get("Scores") == Each("Scores"));
-    const auto entries = Result("entries " + TheFixture().thing + " Boxes");
+    const auto entries = Result(CallText("entries", {{"object", TheFixture().thing}, {"field", "Boxes"}}));
     CHECK(entries["rows"][0]["value"] == boxes["rows"][0]);
     const Json preview = DumpRow("Boxes", "preview");
     CHECK(preview["elements"][0]["value"] == boxes["rows"][0]);
@@ -214,24 +244,26 @@ TEST_CASE("top-level containers: get and each in full, entries and dump previews
 
 TEST_CASE("past the pointer cap, every verb counts unnamed alike, digested or not") {
     const auto& fixture = TheFixture();
-    const auto get = Result("get " + fixture.thing + " Crowd --elements 256");
+    const Json elements{{"elements", 256}};
+    const auto get = Result(CallText("get", With(GetArgs(PathsOf("Crowd")), elements)));
     REQUIRE(get.contains("unnamed"));
     const auto unnamed = get["unnamed"].get<uint32_t>();
     CHECK(unnamed == fixture.crowd - 112);
-    const auto each = Result("each Thing Crowd --where Name~Thing_0 --elements 256");
+    const auto each = Result(CallText("each", With(EachArgs(PathsOf("Crowd")), elements)));
     CHECK(each["unnamed"] == unnamed);
     // A digest keeps it.
-    const auto records = RunLines("get " + fixture.thing + " Crowd --elements 256 --budget 1000");
+    const auto records = RunLines(CallText("get", With(GetArgs(PathsOf("Crowd")), elements), {{"budget", 1000}}));
     REQUIRE(records.size() == 1);
     REQUIRE(records[0].contains("digest"));
     CHECK(records[0]["digest"]["status"]["unnamed"] == unnamed);
 }
 
-TEST_CASE("a stale object fails alike as a positional and as --outer") {
+TEST_CASE("a stale object fails alike as the object and as outer") {
     const auto& fixture = TheFixture();
-    for (const std::string line : {"get " + fixture.stale + " Health", "describe " + fixture.stale,
-                                   "find --cls Thing --outer " + fixture.stale,
-                                   "each Thing Health --outer " + fixture.stale}) {
+    for (const std::string line : {CallText("get", {{"object", fixture.stale}, {"paths", PathsOf("Health")}}),
+                                   CallText("describe", {{"object", fixture.stale}}),
+                                   CallText("find", {{"cls", "Thing"}, {"outer", fixture.stale}}),
+                                   CallText("each", {{"cls", "Thing"}, {"paths", PathsOf("Health")}, {"outer", fixture.stale}})}) {
         const auto records = RunLines(line);
         REQUIRE(records.size() == 1);
         INFO(line << " -> " << records[0].dump());
@@ -239,20 +271,21 @@ TEST_CASE("a stale object fails alike as a positional and as --outer") {
         CHECK(records[0]["error"]["status"] == static_cast<int>(Status::NotFound));
     }
     // An outer named by text that matches nothing is an answer: no rows.
-    CHECK(Result("find --cls Thing --outer NoSuchPackage")["rows"].empty());
-    CHECK(Result("find --cls Thing --outer " + fixture.package)["total"] == 3);
+    CHECK(Result(CallText("find", {{"cls", "Thing"}, {"outer", "NoSuchPackage"}}))["rows"].empty());
+    CHECK(Result(CallText("find", {{"cls", "Thing"}, {"outer", fixture.package}}))["total"] == 3);
 }
 
-TEST_CASE("watch-start --file keeps every sample in a file each later read rewrites") {
+TEST_CASE("watch-start with file keeps every sample in a file each later read rewrites") {
     static volatile uint32_t value = 7;
     const std::string address = std::format("0x{:x}", reinterpret_cast<uintptr_t>(&value));
     const auto path = (std::filesystem::temp_directory_path() /
         ("reagentlive-watch-" + std::to_string(GetCurrentProcessId()) + ".jsonl")).generic_string();
     std::filesystem::remove(path);
-    const auto started = Result("watch-start 100ms " + address + ":u32 --file \"" + path + "\"");
+    const auto started = Result(CallText("watch-start", {{"duration", 0.1},
+        {"ranges", Json::array({{{"addr", address}, {"type", "u32"}}})}, {"file", path}}));
     CHECK(started["file"] == path);
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    const auto stopped = Result("watch-stop");      // Another console run: the path comes from the cache file.
+    const auto stopped = Result(CallText("watch-stop"));      // Another console run: the path comes from the cache file.
     CHECK(stopped["file"] == path);
     std::ifstream in(path);
     std::string line;
@@ -261,21 +294,21 @@ TEST_CASE("watch-start --file keeps every sample in a file each later read rewri
     REQUIRE(std::getline(in, line));
     CHECK(Json::parse(line)["values"][0] == 7);
     in.close();
-    // A start without --file drops it.
-    Result("watch-start 50ms " + address + ":4");
-    CHECK_FALSE(Result("watch-stop").contains("file"));
+    // A start without file drops it.
+    Result(CallText("watch-start", {{"duration", 0.05}, {"ranges", Json::array({{{"addr", address}, {"len", 4}}})}}));
+    CHECK_FALSE(Result(CallText("watch-stop")).contains("file"));
     std::filesystem::remove(path);
 }
 
 TEST_CASE("a get path that names no field suggests the closest fields") {
-    const auto records = RunLines("get " + TheFixture().thing + " Scorez");
+    const auto records = RunLines(CallText("get", GetArgs(PathsOf("Scorez"))));
     REQUIRE(records.size() == 1);
     CHECK(records[0].dump().find("no field Scorez; closest: Scores") != std::string::npos);
 }
 
-TEST_CASE("get --types --match keeps the matching fields, any case") {
-    const auto all = Result("get " + TheFixture().thing + " --types");
-    const auto some = Result("get " + TheFixture().thing + " --types --match sCORE");
+TEST_CASE("get with types and match keeps the matching fields, any case") {
+    const auto all = Result(CallText("get", With(GetArgs(), {{"types", true}})));
+    const auto some = Result(CallText("get", With(GetArgs(), {{"types", true}, {"match", "sCORE"}})));
     REQUIRE(some["rows"].size() == 1);
     CHECK(some["rows"][0]["name"] == "Scores");
     CHECK(all["rows"].size() > some["rows"].size());
@@ -358,60 +391,60 @@ const Extras& TheExtras() {
 
 TEST_CASE("a class named past 63 characters resolves, and names travel whole") {
     const auto& extras = TheExtras();
-    const auto fields = Result("get " + extras.longClass + " --types");
+    const auto fields = Result(CallText("get", {{"object", extras.longClass}, {"types", true}}));
     REQUIRE(fields["rows"].size() == 1);
     CHECK(fields["rows"][0]["name"] == std::string(120, 'L'));
     CHECK(fields["rows"][0]["owner"] == extras.longClass);
 }
 
-TEST_CASE("get --own keeps the fields a 51-character class declares") {
-    const auto dumped = Result("get " + TheExtras().armor + " --own");
+TEST_CASE("get with own keeps the fields a 51-character class declares") {
+    const auto dumped = Result(CallText("get", {{"object", TheExtras().armor}, {"own", true}}));
     REQUIRE(dumped["rows"].size() == 1);
     CHECK(dumped["rows"][0]["name"] == "Durability");
 }
 
 TEST_CASE("enum names an enum's values, past one page") {
     TheExtras();
-    const auto named = Result("enum EBallisticResponse");
+    const auto named = Result(CallText("enum", {{"enum", "EBallisticResponse"}}));
     CHECK(named["name"] == "EBallisticResponse");
     REQUIRE(named["rows"].size() == 300);
     CHECK(named["rows"][0] == Json{{"name", "EBallisticResponse::Value0"}, {"value", 0}});
     CHECK(named["rows"][299] == Json{{"name", "EBallisticResponse::Value299"}, {"value", 598}});
-    const auto records = RunLines("enum Wide");
+    const auto records = RunLines(CallText("enum", {{"enum", "Wide"}}));
     REQUIRE(records.size() == 1);
     CHECK_FALSE(records[0]["ok"].get<bool>()); // A class is no enum.
 }
 
 TEST_CASE("a bare Default__ name is the default object, not a class") {
     TheExtras();
-    const auto fields = Result("get Default__Wide --types");
+    const auto fields = Result(CallText("get", {{"object", "Default__Wide"}, {"types", true}}));
     CHECK(fields["rows"].size() == 120);
-    const auto dumped = Result("get Default__Wide --match Field_7");
+    const auto dumped = Result(CallText("get", {{"object", "Default__Wide"}, {"match", "Field_7"}}));
     CHECK(dumped["rows"].size() > 0);
 }
 
 TEST_CASE("a class's fields come in few pages") {
     const auto& extras = TheExtras();
     const uint32_t before = extras.wide->pages;
-    const auto fields = Result("get Wide --types");
+    const auto fields = Result(CallText("get", {{"object", "Wide"}, {"types", true}}));
     CHECK(fields["rows"].size() == 120);
     const uint32_t pages = extras.wide->pages - before;
     CHECK(pages * 4 <= (120 + 10) / 11); // At least 4x fewer than 11 entries a page.
 }
 
-TEST_CASE("get --elements lifts a top-level array's preview past 8") {
+TEST_CASE("get with elements lifts a top-level array's preview past 8") {
     const auto& fixture = TheFixture();
-    const auto dumped = Result("get " + fixture.thing + " --match Crowd --elements 12");
+    const auto dumped = Result(CallText("get", With(GetArgs(), {{"match", "Crowd"}, {"elements", 12}})));
     REQUIRE(dumped["rows"].size() == 1);
     const auto& preview = dumped["rows"][0]["preview"];
     CHECK(preview["total"] == fixture.crowd);
     REQUIRE(preview["elements"].size() == 12);
     CHECK(preview["elements"][11]["object"]["name"] == "Extra_11");
-    CHECK(Result("get " + fixture.thing + " --match Crowd")["rows"][0]["preview"]["elements"].size() == 8);
+    CHECK(Result(CallText("get", With(GetArgs(), {{"match", "Crowd"}})))["rows"][0]["preview"]["elements"].size() == 8);
 }
 
 namespace {
-// Thing:GetScore, pure, returning an int: what call-pure --each calls.
+// Thing:GetScore, pure, returning an int: what call-pure with each calls.
 void TheScoreFunction() {
     static const bool added = [] {
         TheFixture();
@@ -429,32 +462,34 @@ void TheScoreFunction() {
     }();
     (void)added;
 }
-// The one record a line printed: its envelope, ok or not.
-Json Envelope(const std::string& line) {
-    auto records = RunLines(line);
+// The one record a call printed: its envelope, ok or not.
+Json Envelope(const std::string& call) {
+    auto records = RunLines(call);
     REQUIRE(records.size() == 1);
     return records.front();
 }
 }
 
-TEST_CASE("each never calls: a function goes to call-pure --each, which does") {
+TEST_CASE("each never calls: a function goes to call-pure with each, which does") {
     TheScoreFunction();
-    const auto each = Envelope("each Thing GetScore");
+    const auto each = Envelope(CallText("each", {{"cls", "Thing"}, {"paths", PathsOf("GetScore")}}));
     REQUIRE_FALSE(each.value("ok", true));
-    CHECK(each["error"]["message"].get<std::string>().starts_with(
-        "GetScore is a function of Thing: call-pure Thing GetScore --each calls it on every instance"));
+    CHECK(each["error"]["message"].get<std::string>().starts_with("GetScore is a function of Thing: call-pure"));
     // The fake engine refuses any call: reaching it is the point.
-    const auto called = Envelope("call-pure Thing GetScore --each");
+    const auto eachCall = [](const char* function) {
+        return Envelope(CallText("call-pure", {{"object", "Thing"}, {"function", function}, {"each", true}}));
+    };
+    const auto called = eachCall("GetScore");
     REQUIRE_FALSE(called.value("ok", true));
     CHECK(called["error"]["message"].get<std::string>().find("the fake engine calls nothing") != std::string::npos);
-    const auto missing = Envelope("call-pure Thing Health --each");
+    const auto missing = eachCall("Health");
     REQUIRE_FALSE(missing.value("ok", true));
     CHECK(missing["error"]["message"] == "no function Health on Thing (each reads fields)");
 }
 
 TEST_CASE("calls-read decodes a recorded block through the shared reader, as a copy") {
     TheExtras();
-    const auto calls = Result("calls-read");
+    const auto calls = Result(CallText("calls-read"));
     CHECK(calls["function"] == "TakeDamage");
     REQUIRE(calls["rows"].size() == 1);
     const auto& row = calls["rows"][0];
@@ -538,20 +573,21 @@ std::string SaveFile(const char* name) {
 }
 }
 
-TEST_CASE("disasm --save walks past a one-byte decoy entry and refuses an empty listing") {
+TEST_CASE("disasm with save walks past a one-byte decoy entry and refuses an empty listing") {
     // A decoy at the function's start: walked to its return and saved.
     const auto file = SaveFile("decoy.jsonl");
-    const auto saved = Result("disasm " + At(0x1000) + " --function --save " + file);
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1000)}, {"function", true}, {"save", file}}));
     CHECK(saved["saved_rows"] == 4);
     CHECK(saved["stop"] == "walk end");
     CHECK(std::filesystem::file_size(file) > 0);
-    // --resume in a one-byte chunk: walked too.
-    const auto chunk = Result("disasm " + At(0x1200) + " --function --resume --save " + file);
+    // resume in a one-byte chunk: walked too.
+    const Json resume{{"function", true}, {"resume", true}, {"save", file}};
+    const auto chunk = Result(CallText("disasm", With({{"addr", At(0x1200)}}, resume)));
     CHECK(chunk["saved_rows"] == 3);
-    // Without --save the listing is the same walk.
-    CHECK(Result("disasm " + At(0x1000) + " --function")["rows"].size() == 4);
+    // Without save the listing is the same walk.
+    CHECK(Result(CallText("disasm", {{"addr", At(0x1000)}, {"function", true}}))["rows"].size() == 4);
     // Nothing decodes: a refusal, and the console keeps running.
-    const auto records = RunLines("disasm " + At(0x1300) + " --function --resume --save " + file + "; status");
+    const auto records = RunLines(CallsText({CallOf("disasm", With({{"addr", At(0x1300)}}, resume)), CallOf("status")}));
     REQUIRE(records.size() == 2);
     CHECK_FALSE(records[0]["ok"].get<bool>());
     CHECK(records[0]["error"]["kind"] == "start");
@@ -559,27 +595,27 @@ TEST_CASE("disasm --save walks past a one-byte decoy entry and refuses an empty 
     std::filesystem::remove(file);
 }
 
-TEST_CASE("find --limit pages until N rows and continues after the last") {
+TEST_CASE("find with limit pages until N rows and continues after the last") {
     TheFixture();
-    const auto first = Result("find Extra_ --limit 30");
+    const auto first = Result(CallText("find", {{"text", "Extra_"}, {"limit", 30}}));
     REQUIRE(first["rows"].size() == 30);
     CHECK(first["total"] == 150);
     CHECK(first["rows"][29]["name"] == "Extra_29");
-    const auto rest = Result("find Extra_ --limit 200 --start " + std::to_string(first["next_cursor"].get<uint32_t>()));
+    const auto rest = Result(CallText("find", {{"text", "Extra_"}, {"limit", 200}, {"start", first["next_cursor"]}}));
     REQUIRE(rest["rows"].size() == 120);
     CHECK(rest["rows"][0]["name"] == "Extra_30");
     CHECK_FALSE(rest.contains("next_cursor"));
-    CHECK(Result("find Extra_")["rows"].size() == 24);   // One agent page without it.
+    CHECK(Result(CallText("find", {{"text", "Extra_"}}))["rows"].size() == 24);   // One agent page without it.
 }
 
 TEST_CASE("disasm counts past 64 instructions and sig-bytes caps a long length") {
-    const auto listed = Result("disasm " + At(0x2000) + " 200");
+    const auto listed = Result(CallText("disasm", {{"addr", At(0x2000)}, {"count", 200}}));
     CHECK(listed["rows"].size() == 200);
     CHECK(listed["stop"] == "count");
-    const auto bytes = Result("sig-bytes " + At(0x2000) + " 200");
+    const auto bytes = Result(CallText("sig-bytes", {{"addr", At(0x2000)}, {"len", 200}}));
     CHECK(bytes["length"] == 96);
     CHECK(bytes["capped"] == true);
-    CHECK_FALSE(Result("sig-bytes " + At(0x2000) + " 16").contains("capped"));
+    CHECK_FALSE(Result(CallText("sig-bytes", {{"addr", At(0x2000)}, {"len", 16}})).contains("capped"));
 }
 
 namespace {
@@ -595,11 +631,11 @@ std::vector<Json> FileRows(const std::string& path) {
 }
 }
 
-TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unless --again") {
+TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unless again") {
     TheCode();
     const auto file = SaveFile("labels.jsonl");
     std::ofstream(file, std::ios::binary) << LabelLine(0x1100, "Signable") << '\n' << LabelLine(0x3010, "Twin") << '\n';
-    const auto first = Result("labels-sign " + file);
+    const auto first = Result(CallText("labels-sign", {{"file", file}}));
     CHECK(first["signed"] == 1);
     CHECK(first["unsigned"] == 1);
     CHECK(first["failed_before"] == 0);
@@ -611,24 +647,24 @@ TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unl
     CHECK(rows[1]["sig_failed"]["timestamp"] == 100000000);
     CHECK(rows[1]["sig_failed"]["reason"].get<std::string>().starts_with("not unique"));
     // The same build again: nothing tried, nothing searched.
-    const auto second = Result("labels-sign " + file);
+    const auto second = Result(CallText("labels-sign", {{"file", file}}));
     CHECK(second["failed_before"] == 1);
     CHECK(second["skipped"] == 1);
     CHECK(second["searches"] == 0);
     CHECK(second["rows"].empty());
-    // --again tries every row.
-    const auto again = Result("labels-sign " + file + " --again");
+    // again tries every row.
+    const auto again = Result(CallText("labels-sign", {{"file", file}, {"again", true}}));
     CHECK(again["rows"].size() == 2);
     CHECK(again["unsigned"] == 1);
     // A mark from another build is tried again and marked for this one.
     std::ofstream(file, std::ios::binary) << LabelLine(0x3010, "Twin", R"(,"sig_failed":{"timestamp":1,"reason":"old"})") << '\n';
-    const auto other = Result("labels-sign " + file);
+    const auto other = Result(CallText("labels-sign", {{"file", file}}));
     CHECK(other["rows"].size() == 1);
     CHECK(other["failed_before"] == 0);
     CHECK(FileRows(file)[0]["sig_failed"]["timestamp"] == 100000000);
     // A row signed later loses its mark.
     std::ofstream(file, std::ios::binary) << LabelLine(0x1100, "Signable", R"(,"sig_failed":{"timestamp":1,"reason":"old"})") << '\n';
-    CHECK(Result("labels-sign " + file)["signed"] == 1);
+    CHECK(Result(CallText("labels-sign", {{"file", file}}))["signed"] == 1);
     rows = FileRows(file);
     CHECK(rows[0].contains("sig"));
     CHECK_FALSE(rows[0].contains("sig_failed"));
@@ -636,9 +672,10 @@ TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unl
 }
 
 TEST_CASE("--packs is a ceiling: a verb of another pack is refused, inside a batch too") {
-    const auto& fixture = TheFixture();
+    const Json health = CallOf("get", GetArgs(PathsOf("Health")));
     // explore and native: a write and a capture are refused by name, reads run.
-    const auto records = RunLines("write 0x1000 00; watch-read; get " + fixture.thing + " Health; status", "native");
+    const auto records = RunLines(CallsText({CallOf("write", {{"addr", "0x1000"}, {"data", "00"}}), CallOf("watch-read"),
+        health, CallOf("status")}), "native");
     REQUIRE(records.size() == 4);
     CHECK(records[0]["error"]["kind"] == "pack");
     CHECK(records[0]["error"]["message"] ==
@@ -647,19 +684,20 @@ TEST_CASE("--packs is a ceiling: a verb of another pack is refused, inside a bat
     CHECK(records[2].value("ok", false));
     CHECK(records[3]["result"]["tool_packs"] == Json{"explore", "native"});
     // A batch is explore; its items obey the ceiling one by one.
-    const auto batch = RunLines("batch { get " + fixture.thing + " Health; call-pure Thing GetScore --each }", "explore");
+    const auto batch = RunLines(CallText("batch", {{"calls", Json::array({health,
+        CallOf("call-pure", {{"object", "Thing"}, {"function", "GetScore"}, {"each", true}})})}}), "explore");
     REQUIRE(batch.size() == 1);
     const auto& rows = batch[0]["result"]["rows"];
     REQUIRE(rows.size() == 2);
     CHECK(rows[0].value("ok", false));
     CHECK(rows[1]["error"]["kind"] == "pack");
-    // Default: every pack; a JSON call is checked the same way.
-    CHECK(Result("status")["tool_packs"] == Json{"explore", "native", "observe", "modify"});
-    const auto json = RunLines(R"({"verb": "watch-read"})", "explore");
+    // Default: every pack; one call alone is checked the same way.
+    CHECK(Result(CallText("status"))["tool_packs"] == Json{"explore", "native", "observe", "modify"});
+    const auto json = RunLines(CallText("watch-read"), "explore");
     REQUIRE(json.size() == 1);
     CHECK(json[0]["error"]["kind"] == "pack");
     // An unknown pack stops the console at startup.
-    const auto bad = RunLines("status", "explore,writes");
+    const auto bad = RunLines(CallText("status"), "explore,writes");
     REQUIRE(bad.size() == 1);
     CHECK(bad[0]["error"]["kind"] == "startup");
 }
@@ -710,9 +748,10 @@ const CurveTables& TheCurveTables() {
 }
 }
 
-TEST_CASE("rows reads a curve table's keys and evaluates them with --at") {
+TEST_CASE("rows reads a curve table's keys and evaluates them with at") {
     const auto& tables = TheCurveTables();
-    const auto simple = Result("rows " + tables.simple);
+    const auto rows = [](const std::string& table, const Json& more = {}) { return CallOf("rows", With({{"object", table}}, more)); };
+    const auto simple = Result(rows(tables.simple).dump());
     CHECK(simple["curve"] == "simple");
     CHECK_FALSE(simple.contains("row_struct"));
     REQUIRE(simple["rows"].size() == 2);
@@ -721,36 +760,37 @@ TEST_CASE("rows reads a curve table's keys and evaluates them with --at") {
     CHECK(simple["rows"][0]["keys"] == Json::parse("[[1, 1], [3, 1], [4, 1.3]]"));
     CHECK_FALSE(simple["rows"][0].contains("value"));
     // An address alone names the table too.
-    CHECK(Result("rows " + tables.simple.substr(0, tables.simple.find('#')))["rows"] == simple["rows"]);
+    CHECK(Result(rows(tables.simple.substr(0, tables.simple.find('#'))).dump())["rows"] == simple["rows"]);
     // Linear between keys, the end key's value outside them, constant keeps its value.
-    const auto at = Result("rows " + tables.simple + " --at 3.5");
+    const auto at = Result(rows(tables.simple, {{"at", 3.5}}).dump());
     CHECK(at["at"] == 3.5);
     CHECK(at["rows"][0]["value"] == 1.15);
-    CHECK(Result("rows " + tables.simple + " --at 9")["rows"][0]["value"] == 1.3);
-    const auto flat = Result("rows " + tables.simple + " --at -1 --match flat");
+    CHECK(Result(rows(tables.simple, {{"at", 9}}).dump())["rows"][0]["value"] == 1.3);
+    const auto flat = Result(rows(tables.simple, {{"at", -1}, {"match", "flat"}}).dump());
     REQUIRE(flat["rows"].size() == 1);
     CHECK(flat["total"] == 1);
     CHECK(flat["rows"][0]["interp"] == "constant");
     CHECK(flat["rows"][0]["keys"] == Json::parse("[[0, 5]]"));
     CHECK(flat["rows"][0]["value"] == 5);
 
-    const auto rich = Result("rows " + tables.rich);
+    const auto rich = Result(rows(tables.rich).dump());
     CHECK(rich["curve"] == "rich");
     CHECK(rich["rows"][0]["keys"][2] == Json::parse(R"([2, 40, "cubic", 0, 4])"));
-    const auto value = [&](const char* t) { return Result("rows " + tables.rich + " --at " + t)["rows"][0]["value"].get<double>(); };
-    CHECK(value("0.5") == 10);              // constant
-    CHECK(value("1.5") == 30);              // linear
+    const auto value = [&](double t) { return Result(rows(tables.rich, {{"at", t}}).dump())["rows"][0]["value"].get<double>(); };
+    CHECK(value(0.5) == 10);                // constant
+    CHECK(value(1.5) == 30);                // linear
     // Cubic from (2, 40) leaving at 4 to (4, 0) arriving at -8: P1 = 40 + 4*2/3, P2 = 0 + 8*2/3, at alpha 0.5.
-    CHECK(value("3") == doctest::Approx((40 + 3 * (40 + 8.0 / 3) + 3 * (16.0 / 3) + 0) / 8).epsilon(1e-5));
+    CHECK(value(3) == doctest::Approx((40 + 3 * (40 + 8.0 / 3) + 3 * (16.0 / 3) + 0) / 8).epsilon(1e-5));
 
-    // A subclass of CurveTable is read too; refusals name both table kinds and the wrong flags.
-    CHECK(Result("rows " + tables.derived)["rows"][0]["name"] == "Pitch");
-    const auto refused = RunLines("rows " + tables.thing + "; rows " + tables.simple + " --fields A; rows " + tables.simple +
-                                  " --at x");
+    // A subclass of CurveTable is read too; refusals name both table kinds and the wrong args.
+    CHECK(Result(rows(tables.derived).dump())["rows"][0]["name"] == "Pitch");
+    const auto refused = RunLines(CallsText({rows(tables.thing), rows(tables.simple, {{"fields", PathsOf("A")}}),
+        rows(tables.simple, {{"at", "x"}})}));
     REQUIRE(refused.size() == 3);
     CHECK(refused[0]["error"]["message"] == "neither a data table (no RowStruct field) nor a curve table (no CurveTable class)");
-    CHECK(refused[1]["error"]["message"] == "--fields and --nonzero read data tables; a curve table's rows are keys");
-    CHECK(refused[2]["error"]["kind"] == "syntax");
+    CHECK(refused[1]["error"]["message"].get<std::string>().find("read data tables; a curve table's rows are keys") !=
+          std::string::npos);
+    CHECK(refused[2]["error"]["kind"] == "schema");
 }
 
 TEST_CASE("export-assets writes each object's fields and a table's rows, one file each, and an index") {
@@ -758,7 +798,7 @@ TEST_CASE("export-assets writes each object's fields and a table's rows, one fil
     TheCurveTables();
     const auto dir = std::filesystem::path(SaveFile("export"));
     std::filesystem::remove_all(dir);
-    const auto result = Result("export-assets \"" + dir.string() + "\" --cls Thing CurveTable");
+    const auto result = Result(CallText("export-assets", {{"dir", dir.string()}, {"cls", Json::array({"Thing", "CurveTable"})}}));
     CHECK(result["failed"] == 0);
     CHECK(result["capped"] == false);
     CHECK(result["exported"] == result["rows"].size());
@@ -784,16 +824,16 @@ TEST_CASE("export-assets writes each object's fields and a table's rows, one fil
     CHECK(thing);
     CHECK(tables == result["tables"]);
     CHECK(tables == 3); // CT_Derived too: a subclass of the class asked for.
-    const auto sway = Result("export-assets \"" + dir.string() + "\" --cls CurveTable --match sway");
+    const auto sway = Result(CallText("export-assets", {{"dir", dir.string()}, {"cls", Json::array({"CurveTable"})}, {"match", "sway"}}));
     CHECK(sway["exported"] == 1);
     CHECK(sway["rows"][0]["table_rows"] == 2);
-    // A missing --cls is a syntax error.
-    CHECK(RunLines("export-assets x")[0]["error"]["kind"] == "syntax");
+    // A missing cls is refused before running.
+    CHECK(RunLines(CallText("export-assets", {{"dir", "x"}}))[0]["error"]["kind"] == "schema");
 }
 
-TEST_CASE("disasm --save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {
+TEST_CASE("disasm with save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {
     const auto file = SaveFile("switch.jsonl");
-    const auto saved = Result("disasm " + At(0x1400) + " --function --save " + file);
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1400)}, {"function", true}, {"save", file}}));
     REQUIRE(saved.contains("tables"));
     CHECK(saved["tables"] == Json::parse(R"([{"jump": ")" + At(0x141d) + R"(", "table": ")" + At(0x1508) +
                                          R"(", "targets": 5}])"));
@@ -863,9 +903,12 @@ std::vector<Json> FileLines(const std::string& path) {
 }
 }
 
-TEST_CASE("layout-export writes type lines and full field lines; --closure adds what they reference") {
+TEST_CASE("layout-export writes type lines and full field lines; closure adds what they reference") {
     const auto& types = TheLayoutTypes();
-    const auto alone = Result("layout-export " + types.file + " LayoutThing");
+    const auto layout = [&](const Json& classes, const Json& more = {}) {
+        return Result(CallText("layout-export", With({{"file", types.file}, {"classes", classes}}, more)));
+    };
+    const auto alone = layout(Json::array({"LayoutThing"}));
     CHECK(alone["classes"] == 1);
     CHECK(alone["fields"] == 6);
     auto lines = FileLines(types.file);
@@ -882,12 +925,12 @@ TEST_CASE("layout-export writes type lines and full field lines; --closure adds 
     CHECK(lines[5]["value_offset"] == "0x8");
     CHECK(lines[6]["bool_mask"] == 4);
     // layout-check reads the same file: the type lines are skipped, every field holds.
-    const auto check = Result("layout-check " + types.file);
+    const auto check = Result(CallText("layout-check", {{"file", types.file}}));
     CHECK(check["checked"] == 6);
     CHECK(check["ok"] == true);
 
     // Depth 1: the super chain and the types one step away, and the enum with its size.
-    const auto closure = Result("layout-export " + types.file + " LayoutThing --closure");
+    const auto closure = layout(Json::array({"LayoutThing"}), {{"closure", 1}});
     CHECK(closure["classes"] == 3);
     CHECK(closure["structs"] == 1);
     CHECK(closure["enums"] == 1);
@@ -900,8 +943,8 @@ TEST_CASE("layout-export writes type lines and full field lines; --closure adds 
         "values": [["ELayoutRole::A", 0], ["ELayoutRole::B", 1]]})"));
     CHECK(std::ranges::count_if(lines, [](const Json& l) { return l.value("field", "") == "Health"; }) == 1);
     // Depth 2 reaches the class LayoutOther points to; an enum and an unknown name by themselves.
-    CHECK(Result("layout-export " + types.file + " LayoutThing --closure 2")["classes"] == 4);
-    const auto enumOnly = Result("layout-export " + types.file + " ELayoutRole NoSuchType");
+    CHECK(layout(Json::array({"LayoutThing"}), {{"closure", 2}})["classes"] == 4);
+    const auto enumOnly = layout(Json::array({"ELayoutRole", "NoSuchType"}));
     CHECK(enumOnly["enums"] == 1);
     CHECK(enumOnly["missing"] == Json::array({"NoSuchType"}));
     CHECK_FALSE(FileLines(types.file)[0].contains("size"));

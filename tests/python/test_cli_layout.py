@@ -1,6 +1,6 @@
 """The frontends/cli layering rules and the pack boundary (docs/contributing.md#source-layout), read from #include lines.
 
-Two kinds of rule: layers (syntax, the middle folders, console) and the pack
+Two kinds of rule: layers (call, the middle folders, console) and the pack
 boundary. Each engine pack lives in src/reagentlive/packs/<id>/: its agent and
 client files at the top, its part of each CLI layer in cli/<layer>/, under
 that layer's rule. Outside packs/ nothing includes a pack, names <id>:: or
@@ -10,7 +10,7 @@ Python generator and the MCP adapter, which read only `help --json`, never
 spell a pack's id.
 
 Usage: test_cli_layout.py [--host FILE ...]. Host files may include only the
-console's public header, the parser, the verb table's row and the result schema.
+console's public header, the call builder, the verb table's row and the result schema.
 """
 import os
 import re
@@ -28,12 +28,12 @@ TABLE_READERS = (os.path.join(SRC, 'frontends', 'python', 'reagentlive_gen.py'),
                  os.path.join(SRC, 'frontends', 'mcp', 'reagentlive_mcp.py'))
 PREFIX = 'reagentlive/frontends/cli/'
 PACKS_PREFIX = 'reagentlive/packs/'
-SYNTAX = 'syntax'
+CALL = 'call'
 MIDDLE = ('values', 'state', 'results', 'code')
 CONSOLE = 'console'
-FOLDERS = (SYNTAX, *MIDDLE, CONSOLE)
+FOLDERS = (CALL, *MIDDLE, CONSOLE)
 PACK_FILES = ('pack.cmake',)  # A pack's top holds its sources, pack.cmake and cli/.
-HOST_HEADERS = (PREFIX + 'console/console.h', PREFIX + 'syntax/parse.h', PREFIX + 'syntax/verb.h',
+HOST_HEADERS = (PREFIX + 'console/console.h', PREFIX + 'call/build.h', PREFIX + 'call/verb.h',
                 PREFIX + 'results/schema.h')
 IO_HEADERS = ('fstream', 'iostream', 'filesystem')
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.M)
@@ -149,8 +149,8 @@ def check(cli, hosts=(), core=None, readers=(), packs=None):
             if not quoted:
                 if folder and folder != CONSOLE and target.split('/')[0] in IO_HEADERS:
                     problems.append(f'{where}: <{target}>: only console/ does I/O')
-                if folder == SYNTAX and target.split('/')[0] in ('nlohmann', 'Zydis'):
-                    problems.append(f'{where}: <{target}>: syntax/ builds without JSON and the decoder')
+                if folder == CALL and target.split('/')[0] == 'Zydis':
+                    problems.append(f'{where}: <{target}>: call/ builds without the decoder')
                 continue
             owner = target_pack(target)
             if owner and owner != pack:
@@ -170,8 +170,8 @@ def check(cli, hosts=(), core=None, readers=(), packs=None):
             elif owner and target == f'{PACKS_PREFIX}{owner}/cli/console/internal_{owner}.h' and \
                     not (folder == CONSOLE and pack == owner):
                 problems.append(f'{where}: "{target}": internal_{owner}.h is for packs/{owner}/cli/console/ only')
-            elif folder == SYNTAX and layer != SYNTAX:
-                problems.append(f'{where}: "{target}": syntax/ includes only syntax/, core/ and its pack')
+            elif folder == CALL and layer != CALL:
+                problems.append(f'{where}: "{target}": call/ includes only call/, core/ and its pack')
             elif folder in MIDDLE and layer == CONSOLE:
                 problems.append(f'{where}: "{target}": {folder}/ never includes console/')
     for path in core_files(core):
@@ -235,28 +235,28 @@ class CliLayout(unittest.TestCase):
             self.assertEqual(len(problems), 3, problems)  # docs.h, core/agent.h, gen.py.
 
     def test_a_clean_planted_tree_passes(self):
-        with Tree({'cli/syntax/parse.h': inc('reagentlive/core/protocol.h'),
-                   'cli/values/format.h': inc(PREFIX + 'syntax/parse.h') + '#include <cstdio>\n// ue:: in a comment is fine\n',
+        with Tree({'cli/call/build.h': inc('reagentlive/core/protocol.h'),
+                   'cli/values/format.h': inc(PREFIX + 'call/build.h') + '#include <cstdio>\n// ue:: in a comment is fine\n',
                    'cli/code/disasm.h': inc(PREFIX + 'values/format.h') + '#include <Zydis/Zydis.h>\n',
                    'cli/console/sig.cpp': inc(PREFIX + 'console/internal.h') + inc(PREFIX + 'console/pack.h') +
                    '#include <fstream>\n',
                    'packs/ue/pack.cmake': '',
                    'packs/ue/agent_ue.cpp': inc('reagentlive/core/agent.h') + inc(UE + 'protocol_ue.h'),
-                   'packs/ue/cli/syntax/parse_unreal.cpp': inc(PREFIX + 'syntax/parse.h') + inc(UE + 'protocol_ue.h') +
+                   'packs/ue/cli/call/build_unreal.cpp': inc(PREFIX + 'call/build.h') + inc(UE + 'protocol_ue.h') +
                    'int x = ue::Find;\n',
                    'packs/ue/cli/values/json_output.h': inc(PREFIX + 'values/format.h') + inc(UE + 'client_ue.h'),
                    'packs/ue/cli/console/pack.cpp': inc(UE + 'cli/console/internal_ue.h') +
                    inc(UE + 'cli/values/json_output.h') + inc(PREFIX + 'console/pack.h')}) as root:
             self.assertEqual(planted(root), [])
 
-    def test_json_in_syntax_fails(self):
-        with Tree({'cli/syntax/parse.h': '#include <nlohmann/json.hpp>\n',
-                   'packs/ue/cli/syntax/parse_unreal.cpp': '#include <nlohmann/json.hpp>\n'}) as root:
+    def test_the_decoder_in_call_fails(self):
+        with Tree({'cli/call/build.h': '#include <Zydis/Zydis.h>\n#include <nlohmann/json.hpp>\n',
+                   'packs/ue/cli/call/build_unreal.cpp': '#include <Zydis/Zydis.h>\n'}) as root:
             self.assertEqual(len(planted(root)), 2)
 
-    def test_syntax_reaching_up_fails(self):
-        with Tree({'cli/syntax/command.h': inc(PREFIX + 'values/format.h'),
-                   'packs/ue/cli/syntax/parse_unreal.cpp': inc(UE + 'cli/values/format_ue.h')}) as root:
+    def test_call_reaching_up_fails(self):
+        with Tree({'cli/call/command.h': inc(PREFIX + 'values/format.h'),
+                   'packs/ue/cli/call/build_unreal.cpp': inc(UE + 'cli/values/format_ue.h')}) as root:
             self.assertEqual(len(planted(root)), 2)
 
     def test_middle_including_console_fails(self):
@@ -276,7 +276,7 @@ class CliLayout(unittest.TestCase):
             self.assertEqual(len(planted(root)), 7)
 
     def test_core_reaching_into_the_pack_fails(self):
-        with Tree({'cli/syntax/command.h': inc(UE + 'protocol_ue.h'),
+        with Tree({'cli/call/command.h': inc(UE + 'protocol_ue.h'),
                    'cli/results/result_json.h': inc(UE + 'cli/results/census.h'),
                    'cli/console/memory.cpp': 'auto x = ue::op::Find;\n',
                    'cli/console/code.cpp': inc(UE + 'cli/console/internal_ue.h'),
@@ -299,8 +299,8 @@ class CliLayout(unittest.TestCase):
             self.assertEqual(len(planted(root)), 1)  # The agent file itself may.
 
     def test_a_host_reaching_past_the_public_headers_fails(self):
-        with Tree({'host.cpp': inc(PREFIX + 'console/console.h') + inc(PREFIX + 'syntax/parse.h') +
-                   inc(PREFIX + 'values/format.h'), 'cli/syntax/parse.h': ''}) as root:
+        with Tree({'host.cpp': inc(PREFIX + 'console/console.h') + inc(PREFIX + 'call/build.h') +
+                   inc(PREFIX + 'values/format.h'), 'cli/call/build.h': ''}) as root:
             self.assertEqual(len(check(os.path.join(root, 'cli'), [os.path.join(root, 'host.cpp')])), 1)
 
 

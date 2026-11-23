@@ -26,7 +26,7 @@
 #include "reagentlive/packs/ue/cli/results/call_text.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/packs/ue/cli/state/cache_ue.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/packs/ue/cli/values/format_ue.h"
 #include "reagentlive/packs/ue/cli/values/json_output.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
@@ -478,11 +478,11 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             auto parameters = ue::Parameters(client, function->address);
             if (!parameters) return CommandError(session, jsonCommand, parameters.error());
             const ue::Signature signature = std::move(*parameters);
-            if (!ue::EachFunctionAllowed(function->flags)) return fail("--each calls only const or pure functions");
+            if (!ue::EachFunctionAllowed(function->flags)) return fail("each calls only const or pure functions");
             if (auto refusal = calls::EachRefusal(signature, structs); !refusal.empty()) return fail(std::move(refusal));
             if (!signature.size || signature.size > ue::MaxEachValue)
                 return fail(function->owner + ":" + function->name + "'s parameter block is " +
-                    std::to_string(signature.size) + " bytes; --each takes 1.." + std::to_string(ue::MaxEachValue) +
+                    std::to_string(signature.size) + " bytes; each takes 1.." + std::to_string(ue::MaxEachValue) +
                     " per instance (call it on one object instead)");
             const std::string target = function->owner + ":" + function->name;
             ue::EachQuery query{command.className};
@@ -529,7 +529,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             // A function's name: say where it goes instead.
             if (paths.size() == 1 && !whereColumn && ue::Function(client, *type, path))
                 return fail(path + " is a function of " + command.className + ": call-pure " + command.className + " " +
-                    path + " --each calls it on every instance (each reads fields)");
+                    path + " with each calls it on every instance (each reads fields)");
             return fail("not a field of " + command.className + ": " + path + " (" + column.error + ")");
         }
         // A set or map column reads its header in the pass; the decoder reads its elements per instance.
@@ -541,7 +541,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         columns.push_back(std::move(column));
     }
     if (command.seconds && (columns.size() != 1 || columns.front().pointer || !columns.front().pseudo.empty()))
-        return fail("--seconds watches one field or function, not a path through a pointer");
+        return fail("seconds watches one field or function, not a path through a pointer");
 
     // The spans inside the instance, in passes of at most MaxEachValue bytes.
     struct Pass {
@@ -875,7 +875,6 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     const auto part = [&](const ue::Field& of, std::span<const uint8_t> data, std::optional<shape::Object>& named) {
         if (const auto* found = objectOf(PointerRef(of.type, data))) {
             named = MakeObject(*found);
-            RememberRef(session.refs, found->ref);
         }
         return reader.Value(of, data, partial);
     };

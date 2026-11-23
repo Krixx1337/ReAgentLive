@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 #include "reagentlive/frontends/cli/values/json.h"
-#include "reagentlive/frontends/cli/syntax/layout.h"
+#include "reagentlive/frontends/cli/call/layout.h"
 
 namespace reagentlive::cli::layout {
 // One element of a `read --type` type; NaN and null pointers as null.

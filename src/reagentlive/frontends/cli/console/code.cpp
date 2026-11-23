@@ -137,7 +137,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     if (piece && !command.file.empty() && !command.resume)
         return JsonError(session, jsonCommand, "start", "the address lies " + save::Hex(address - piece->start) +
             " bytes into unlisted code that starts at " + save::Hex(piece->start) + ": save from the function's start "
-            "(junk bytes may lead the piece), or pass --resume to save from the address");
+            "(junk bytes may lead the piece), or set resume to save from the address");
     // Read-only: inside a loaded module, in a section that is not writable.
     const dis::ConstantFn constant = [&session, &modules](uint64_t at) {
         const Module* module = ModuleAt(at, modules);
@@ -202,11 +202,11 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             bound = " (entry " + save::Hex(entry.start) + ".." + save::Hex(entry.end) + ")";
         }
         return JsonError(session, jsonCommand, "start", "nothing to save at " + save::Hex(address) + ": " +
-            listing->stop + bound + "; save from an address the listing reaches (disasm without --save shows it)");
+            listing->stop + bound + "; save from an address the listing reaches (disasm without save shows it)");
     }
 
     const Module* module = ModuleAt(address, modules);
-    if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
+    if (!module) return JsonError(session, jsonCommand, "module", "save needs code inside a loaded module");
     const auto timestamp = ImageTimestamp(session, *module);
     if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
     // Switch tables in a part: each site, its entries' bytes and the targets
@@ -465,7 +465,7 @@ void RunXrefs(Session& session, const Command& command, std::string_view jsonCom
     if (!found && !command.target.empty() && RefreshModules(session))
         found = text::ModuleNamed(command.target, LoadedModules(session));
     if (!found) return JsonError(session, jsonCommand, "module", command.target.empty() ?
-        "the address lies in no loaded module; name one with --module" : "no loaded module with that name");
+        "the address lies in no loaded module; name one with module" : "no loaded module with that name");
     const Module module = *found; // The list may be re-read below.
 
     const auto started = Clock::now();

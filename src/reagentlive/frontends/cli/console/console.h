@@ -4,7 +4,7 @@
 #include <span>
 #include <string_view>
 #include <nlohmann/json_fwd.hpp>
-#include "reagentlive/frontends/cli/syntax/verb.h"
+#include "reagentlive/frontends/cli/call/verb.h"
 
 namespace reagentlive { class Client; }
 namespace reagentlive::cli {
@@ -13,13 +13,13 @@ struct ConsoleConfig {
     std::wstring_view sectionPrefix;   // Section name = prefix + target pid.
     std::wstring_view exeName;         // Target found by exe name when no pid is given.
     uint32_t layout;                   // Same sum as the agent's Host::layout.
-    // The host's own verbs: rows of the verb table (syntax/verb.h; a result
+    // The host's own verbs: rows of the verb table (call/verb.h; a result
     // type comes from results/schema.h) with origin "host", so they get
-    // help, usage errors, JSON calls and checked results like the core's.
-    // `parse` stays null: the console sorts and checks a call's arguments
-    // against the row (a typed line or a JSON call alike) and hands them to
-    // hostCommand, which sets an envelope with ok and result or error. A
-    // result that does not match its row's type is refused as an internal error.
+    // help, schema refusals and checked results like the core's. `build`
+    // stays null: the console checks a call's args against the row
+    // (call/check.h) and hands them to hostCommand, which sets an envelope
+    // with ok and result or error. A result that does not match its row's
+    // type is refused as an internal error.
     std::span<const Verb> verbs = {};
     bool (*hostCommand)(Client&, const Verb& verb, const Args& args, nlohmann::json& envelope) = nullptr;
     // Readable names file (names.h format) next to the console exe; loaded
@@ -31,11 +31,11 @@ struct ConsoleConfig {
     // in the console's own <console>.labels.jsonl. Empty: that file holds both.
     std::wstring_view labelsFile = {};
 };
-// Arguments: [pid] [-c "command; command ..."] [--names <file>] [--packs <list>]
-// (the tool packs whose verbs run; default all, explore always).
-// Commands from -c and stdin emit JSON Lines and exit 1 if any command failed.
-// A stdin line is a typed command or a JSON call ({"verb": ..., "args": {...}}).
-// -c lines that are all `help` are answered from the verb table, with no
-// target running.
+// Arguments: [pid] [-c '<call or list of calls>' | -c @<file>] [--names <file>]
+// [--packs <list>] (the tool packs whose verbs run; default all, explore always).
+// Calls from -c and stdin emit JSON Lines and exit 1 if any call failed. A
+// call is {"verb": ..., "args": {...}}; a stdin line holds one call or a
+// list of them, a -c file one call per line or a list. -c calls that are all
+// `help` or `stats` are answered with no target running.
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv);
 }

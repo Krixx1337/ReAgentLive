@@ -21,7 +21,7 @@
 #include <string_view>
 #include <vector>
 #include "reagentlive/frontends/cli/results/schema.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/values/json.h"
 
 namespace reagentlive::cli {
@@ -172,7 +172,7 @@ struct Read {
     HexBytes hex;
     std::optional<ReadViews> views;
     std::optional<std::vector<Json>> values;    // --type <type>: one per element.
-    std::optional<Json> layout;                 // --type "<layout>": {name: value}.
+    std::optional<Json> layout;                 // type "<layout>": {name: value}.
     std::optional<std::string> text;            // --type cstr|wstr.
     std::optional<uint64_t> length;
     std::optional<bool> terminated;
@@ -217,7 +217,7 @@ struct TimedWrite {
         v("address", &TimedWrite::address);
         v("bytes", &TimedWrite::bytes);
         v("state", &TimedWrite::state,
-          "active|restored|conflict|abandoned|expired|object changed|not writable|memory differed from --expect|"
+          "active|restored|conflict|abandoned|expired|object changed|not writable|memory differed from expect|"
           "cleared|access faulted|unknown");
         v("remaining_ms", &TimedWrite::remainingMs);
         v("original", &TimedWrite::original);
@@ -584,55 +584,27 @@ struct Status {
 // default), the result in notation, the named types it uses and the notes;
 // `help --json` adds the result's type for programs, every named type once
 // and each origin's title.
-struct HelpFlag {
-    std::string flag, key, takes, type;
-    std::optional<std::string> value, help, fallback;
-    std::optional<bool> required;
-    template<class V> static void Describe(V& v) {
-        v("flag", &HelpFlag::flag);
-        v("key", &HelpFlag::key);
-        v("takes", &HelpFlag::takes, "nothing|one|maybe|some|rest");
-        v("type", &HelpFlag::type);
-        v("required", &HelpFlag::required);
-        v("value", &HelpFlag::value);
-        v("default", &HelpFlag::fallback);
-        v("help", &HelpFlag::help);
-    }
-};
-struct HelpPositional {
-    std::string key, name, arity, type;
-    std::optional<std::string> help, fallback;
-    template<class V> static void Describe(V& v) {
-        v("key", &HelpPositional::key);
-        v("name", &HelpPositional::name);
-        v("arity", &HelpPositional::arity, "one|optional|some|any|rest");
-        v("type", &HelpPositional::type);
-        v("default", &HelpPositional::fallback);
-        v("help", &HelpPositional::help);
-    }
-};
+// A verb's row as help prints it: args as call/check.h ArgJson gives them,
+// and one call the row accepts.
 struct HelpRow {
-    std::string verb, origin, pack, usage, summary;
+    std::string verb, origin, pack, summary;
     std::optional<bool> writes, blocks;
-    std::optional<std::vector<std::string>> aliases;
-    std::optional<std::vector<HelpFlag>> flags;
+    std::optional<std::vector<Json>> args;
     std::optional<std::string> result, notes;
-    std::optional<std::vector<HelpPositional>> positionals;
+    std::optional<Json> example;
     std::optional<std::map<std::string, std::string>> types;
     std::optional<Json> type;
     template<class V> static void Describe(V& v) {
         v("verb", &HelpRow::verb);
         v("origin", &HelpRow::origin);
         v("pack", &HelpRow::pack, "explore|native|observe|modify");
-        v("usage", &HelpRow::usage);
         v("summary", &HelpRow::summary);
         v("writes", &HelpRow::writes);
         v("blocks", &HelpRow::blocks);
-        v("aliases", &HelpRow::aliases);
-        v("flags", &HelpRow::flags);
+        v("args", &HelpRow::args);
         v("result", &HelpRow::result);
         v("notes", &HelpRow::notes);
-        v("positionals", &HelpRow::positionals);
+        v("example", &HelpRow::example);
         v("types", &HelpRow::types);
         v("type", &HelpRow::type);
     }

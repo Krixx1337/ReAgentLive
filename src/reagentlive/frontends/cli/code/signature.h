@@ -17,7 +17,7 @@
 #include <vector>
 #include "reagentlive/core/client.h"
 #include "reagentlive/core/protocol.h"
-#include "reagentlive/frontends/cli/syntax/pattern.h"
+#include "reagentlive/frontends/cli/call/pattern.h"
 
 namespace reagentlive::cli::sig {
 namespace detail {

@@ -1,10 +1,10 @@
 """ReAgentLive console session for scripts and agents.
 
 Drives a ReAgentLive console executable through its stateful stdin mode: one
-call in, one JSON line out. Calls go as JSON ({"verb": ..., "args": {...}}),
-so nothing is quoted or escaped, and they carry literal refs (the `ref` a
-result printed), never `$N`. Every call raises ReAgentLiveError when the
-console reports `ok: false`.
+JSON call in ({"verb": ..., "args": {...}}), one JSON line out, so nothing is
+quoted or escaped. Calls carry literal refs (the `ref` a result printed).
+Every call raises ReAgentLiveError when the console reports `ok: false`; a
+refused argument is kind 'schema', with `error['example']`, a corrected call.
 
 The functions to call are generated per console, from its own verb table,
 by reagentlive_gen.py: one function per verb with typed arguments and a
@@ -16,10 +16,10 @@ typed result, a host's verbs included.
     from my_console import Console
     with Session(r'path\\to\\console.exe') as s:
         c = Console(s)                       # Refuses a module generated from another table.
-        read = c.read(0x7ff600001000, 4)     # A Record: read['hex'], read['module'] (None outside a module)
+        read = c.read('0x7ff600001000', len=4)  # A Record: read['hex'], read['module'] (None outside a module)
         read['bytes']                        # ResultKeyError: read has no key 'bytes'; keys: address, ..., hex, ...
         speed = f32(unhex(read['hex']))
-        items, same_tick = s.batch_results([('read', {'addr': 0x1000, 'len': 8}), ('modules', {})])
+        items, same_tick = s.batch_results([('read', {'addr': '0x1000', 'len': 8}), ('modules', {})])
 
 Results are strict. At start the session reads the console's verb table
 (`help --json`) and wraps every result in a Record typed by its verb's row:
@@ -46,7 +46,7 @@ cannot: `s.batch_results` (a strict result per batch item), `s.watch` (a
 capture that blocks: watch-start, wait, watch-stop) and `samples` (a
 capture's rows as bytes). Nothing else here names a verb; the converters
 (`unhex`, `addr`, `pack`, `f32`...) name none. Paging, filtering and
-retrying are the console's (flags and cursors), not Python's.
+retrying are the console's (arguments and cursors), not Python's.
 
 Standard library only.
 """
@@ -127,7 +127,7 @@ def samples(result):
 
 
 def _value(value):
-    """A call argument as JSON: bytes as hex pairs, tuples as lists, None keys left out; ints stay ints (an addr reads them as hex)."""
+    """A call argument as JSON: bytes as hex pairs, tuples as lists, None keys left out."""
     if isinstance(value, (bytes, bytearray)):
         return bytes(value).hex()
     if isinstance(value, (list, tuple)):
@@ -203,6 +203,11 @@ def console_name(process):
     return str(args[0]).replace('\\', '/').rsplit('/', 1)[-1] if args else 'the console'
 
 
+def _line(verb, args=None):
+    """One JSON call as a console line."""
+    return json.dumps({'verb': verb, 'args': args or {}}, separators=(',', ':'))
+
+
 class Session:
     """One console process; not thread-safe. Use as a context manager.
 
@@ -235,15 +240,15 @@ class Session:
         self.digest = None  # The last call's Digest (its result was past the budget), or None.
         try:
             if table is not None:
-                current = self.send('help --hash')
+                current = self.send(_line('help', {'hash': True}))
                 if not (current.get('ok') and current.get('result', {}).get('table_hash') == table.get('table_hash')):
                     table = None
             if table is None:
-                reply = self.send('help --json')
+                reply = self.send(_line('help', {'json': True}))
                 if not reply.get('ok'):
-                    raise ReAgentLiveError(reply.get('command', 'help --json'), reply.get('error'))
+                    raise ReAgentLiveError(reply.get('command', 'help'), reply.get('error'))
                 if 'result' not in reply:
-                    raise ReAgentLiveError('help --json', {'message': f'no table in the reply (keys: {", ".join(reply)})'})
+                    raise ReAgentLiveError('help', {'message': f'no table in the reply (keys: {", ".join(reply)})'})
                 table = reply['result']
         except ReAgentLiveError as error:
             self.close()
@@ -255,8 +260,7 @@ class Session:
         self.table_hash = self.table.get('table_hash')
         self._named = self.table.get('types', {})
         for row in self.table['rows']:
-            for name in (row['verb'], *row.get('aliases', ())):
-                self._types[name] = row['type']
+            self._types[row['verb']] = row['type']
 
     def _started_badly(self, error):
         """Why the console did not start: the error, its exit code and the end of its stderr."""
@@ -281,7 +285,7 @@ class Session:
         if self._process.poll() is not None:
             return
         try:
-            self._process.stdin.write('quit\n')
+            self._process.stdin.write(_line('quit') + '\n')
             self._process.stdin.flush()
             self._process.wait(2)
         except (OSError, subprocess.TimeoutExpired):
@@ -296,7 +300,7 @@ class Session:
 
     # Raw exchange.
     def send(self, line):
-        """The full JSON envelope for one line (a typed command or a JSON call), as plain dicts."""
+        """The full JSON envelope for one line (a JSON call, or a JSON list of calls), as plain dicts."""
         try:
             self._process.stdin.write(line + '\n')
             self._process.stdin.flush()
@@ -318,11 +322,10 @@ class Session:
         """One verb by name with named arguments (keys as `help <verb>` shows them); its strict result, or a
         Digest when it was past the output budget.
 
-        None and False arguments are left out; bytes go as hex pairs. budget: characters (0: none; None: the
-        caller's default).
+        None arguments are left out (the console applies the default); bytes go as hex pairs. budget:
+        characters (0: none; None: the caller's default).
         """
-        call = {'verb': verb, 'args': {key: _value(value) for key, value in (args or {}).items()
-                                       if value is not None and value is not False}}
+        call = {'verb': verb, 'args': {key: _value(value) for key, value in (args or {}).items() if value is not None}}
         if meta:
             call['meta'] = True
         if timing:
@@ -352,11 +355,13 @@ class Session:
                  else ReAgentLiveError(row.get('command', '?'), row.get('error')) for row in result['rows']]
         return items, result['same_tick']
 
-    def watch(self, seconds, ranges, every=None, follow=None, file=None, all=False):
+    def watch(self, seconds, ranges, every=None, follow=None, file=None, all=None):
         """A capture that blocks: watch-start for `seconds`, wait it out, then watch-stop's strict result.
 
-        ranges: watch-start's (addr:len, addr:type[n], <ref>.<Field>, or offsets with follow). The wait ends
-        early once the agent says the capture stopped (an object replaced, the buffer full).
+        ranges: watch-start's range objects: {'addr': <addr>, 'len': n} for bytes, {'addr': <addr>, 'type':
+        'f32', 'count': n} for decoded values (count optional), {'offset': n, 'len' or 'type': ...} with
+        follow (offsets from the root), or {'object': <ref>, 'field': ['Field', ...]} for a reflected field.
+        The wait ends early once the agent says the capture stopped (an object replaced, the buffer full).
         """
         self.call('watch-start', {'duration': seconds, 'ranges': list(ranges), 'every': every, 'follow': follow,
                                   'file': file})

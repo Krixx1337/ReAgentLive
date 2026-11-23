@@ -65,8 +65,6 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     data.session = "20260101T000000-42";
     data.sessionCaller = "tool";
     data.modules = {{"Game.exe", 0x7ff600000000, 0x1000}, {"engine dll.dll", 0x7ffa00000000, 0x2000}};
-    // The last one is address-only: a pointer get followed, kept as its address.
-    data.refs = {{0x7000, 1, 2}, {0x8000, 3, 4}, {0x9000, -1, 0}};
     data.packs = {{"ue", {"class\tA\t0x10#1:1", "table\t1\t0", "field\tends\tin\ta\ttab\t"}}, {"other", {}}};
     data.watchFile = "C:\\caps\\aim run.jsonl";
     const auto text = SaveCache(data);
@@ -79,12 +77,12 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     CHECK(loaded->modules[1].name == "engine dll.dll");
     CHECK(loaded->modules[1].base == 0x7ffa00000000);
     CHECK(loaded->modules[1].size == 0x2000);
-    CHECK(loaded->refs == data.refs);
     CHECK(loaded->packs == data.packs); // Kept verbatim, trailing tabs included.
-    CHECK(loaded->watchFile == data.watchFile);             // watch-start --file, spaces kept.
+    CHECK(loaded->watchFile == data.watchFile);             // watch-start file, spaces kept.
     CHECK_FALSE(LoadCache(text.substr(0, text.size() - 4)).has_value()); // No end line.
     CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t0\nend\n").has_value());
     CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\nbogus\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\nref\t0x10#1:2\nend\n").has_value()); // Refs are not kept.
     CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\npack\tue\t3\nclass\tA\t0x10#1:1\nend\n").has_value());
     CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\npack\t\t0\nend\n").has_value()); // A pack has a name.
     CHECK(LoadCache("reagentlive cache 11\nowner\t5\nend\n").has_value());
@@ -229,7 +227,7 @@ TEST_CASE("label files a member under its class and appends a line the names fil
     REQUIRE(native.For(Zone).size() == 1);
     CHECK(native.For(Zone)[0]->line == 2);
     CHECK(names.Size() == 1);
-    // As get --types shows it: a row marked native, decoded by its type.
+    // As get types shows it: a row marked native, decoded by its type.
     const auto& member = *native.For(Zone)[0];
     auto row = ToJson(MakeNativeTypeRow(member, true));
     CHECK(row["type"] == "f64[3]");
@@ -260,10 +258,10 @@ UsageLine Usage(std::string session, std::string verb, uint64_t out, std::string
 
 TEST_CASE("a usage line round-trips, and a torn or foreign line is skipped") {
     auto line = Usage("s1", "read", 120);
-    line.flags = {"--type"};
+    line.keys = {"addr", "type"};
     line.in = 30;
     line.ok = false;
-    line.refused = "syntax";
+    line.refused = "schema";
     line.ms = 1.26;
     line.batch = true;
     line.digest = 430000;
@@ -272,11 +270,11 @@ TEST_CASE("a usage line round-trips, and a torn or foreign line is skipped") {
     const auto parsed = ParseUsageLine(text);
     REQUIRE(parsed.has_value());
     CHECK(parsed->session == "s1");
-    CHECK(parsed->flags == std::vector<std::string>{"--type"});
+    CHECK(parsed->keys == std::vector<std::string>{"addr", "type"});
     CHECK(parsed->in == 30);
     CHECK(parsed->out == 120);
     CHECK_FALSE(parsed->ok);
-    CHECK(parsed->refused == "syntax");
+    CHECK(parsed->refused == "schema");
     CHECK(parsed->ms == doctest::Approx(1.3));
     CHECK(parsed->batch);
     CHECK(parsed->digest == 430000);
@@ -330,7 +328,7 @@ TEST_CASE("a memory snapshot round-trips and narrows to the elements that pass e
     CHECK(offsets(memsnap::Test::Increased) == std::vector<uint32_t>{4});
     CHECK(offsets(memsnap::Test::Decreased) == std::vector<uint32_t>{8});
 
-    // --keep: only the candidates are compared next time.
+    // keep: only the candidates are compared next time.
     memsnap::Snapshot kept = before;
     kept.bytes = now;
     kept.narrowed = true;

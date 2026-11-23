@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 #include "reagentlive/frontends/cli/results/schema.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
+#include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/packs/ue/cli/values/json_output.h"
 #include "reagentlive/packs/ue/client_ue.h"
 
@@ -171,12 +171,12 @@ template<class Result> void Paging(Result& result, size_t total, size_t first, s
     result.from = first;
     if (next < total) {
         result.nextCursor = next;
-        result.hint = "--start " + std::to_string(next) + " for more, --limit 0 for all";
+        result.hint = "start " + std::to_string(next) + " for more, limit 0 for all";
     }
 }
 }
 
-// census: `matched` are the rows left after --match, of which `page` shows some.
+// census: `matched` are the rows left after match, of which `page` shows some.
 inline shape::Census MakeCensus(std::string_view filter, const ue::CensusResult& census,
                                 std::span<const ue::CensusRow> matched, CensusPage page, int64_t ms) {
     shape::Census out;
@@ -191,7 +191,7 @@ inline shape::Census MakeCensus(std::string_view filter, const ue::CensusResult&
     return out;
 }
 
-// census --diff: `changes` after --match, of which `page` shows some.
+// census with diff: `changes` after match, of which `page` shows some.
 inline shape::Census MakeCensusDiff(const CensusBaseline& before, const ue::CensusResult& after,
                                     std::span<const CensusChange> changes, CensusPage page, int64_t ms) {
     shape::Census out;
@@ -210,18 +210,18 @@ inline shape::Census MakeCensusDiff(const CensusBaseline& before, const ue::Cens
     return out;
 }
 
-// Why a later page (`--start`) of a census under `filter` has nothing stored
-// to page through; empty when it has. census --diff also needs the census before it.
+// Why a later page (`start`) of a census under `filter` has nothing stored
+// to page through; empty when it has. census with diff also needs the census before it.
 inline std::string CensusPageProblem(const std::optional<CensusBaseline>& last, const std::optional<CensusBaseline>& before,
                                      std::string_view filter, bool changed) {
     if (last && last->filter == filter && (!changed || (before && before->filter == filter))) return {};
-    return std::string("no stored census to page: run census") + (changed ? " --diff" : "") +
-        (filter.empty() ? std::string() : " --cls " + std::string(filter)) + " without --start first";
+    return std::string("no stored census to page: run census") + (changed ? " with diff" : "") +
+        (filter.empty() ? std::string() : " for " + std::string(filter)) + " without start first";
 }
 
-// Why `census --diff` under `filter` has nothing to compare with; empty when it has.
+// Why census with diff under `filter` has nothing to compare with; empty when it has.
 inline std::string CensusBaselineProblem(const std::optional<CensusBaseline>& baseline, std::string_view filter) {
-    const auto command = [](std::string_view f) { return "census" + (f.empty() ? std::string() : " --cls " + std::string(f)); };
+    const auto command = [](std::string_view f) { return "census" + (f.empty() ? std::string() : " for " + std::string(f)); };
     if (!baseline) return "no census baseline for this agent: run " + command(filter) + " first";
     if (baseline->filter != filter)
         return "the baseline is from " + command(baseline->filter) + ": run " + command(filter) + " first";

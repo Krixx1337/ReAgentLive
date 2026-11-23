@@ -19,7 +19,7 @@ struct UsageLine {
     std::string session;                // One console run; one-shot runs share theirs through the cache file.
     std::string verb, origin;           // The row's name and origin; an unknown verb as typed, origin empty.
     std::string caller;                 // tool, script or shell: only a tool's output lands in an agent's context.
-    std::vector<std::string> flags;     // The names of the flags given.
+    std::vector<std::string> keys;      // The args given, by key.
     std::string hash;                   // Of the whole input line: the same call made again.
     uint64_t in = 0, out = 0;           // Characters. A batch's own line counts its wrapper alone.
     uint64_t digest = 0;                // The result's size when a digest stood in for it (out is the digest's).
@@ -42,7 +42,7 @@ inline std::string UsageHash(std::string_view text) {
 
 inline std::string UsageText(const UsageLine& line) {
     Json json = {{"time", line.time}, {"session", line.session}, {"verb", line.verb}, {"origin", line.origin},
-        {"caller", line.caller}, {"flags", line.flags}, {"hash", line.hash}, {"in", line.in}, {"out", line.out},
+        {"caller", line.caller}, {"keys", line.keys}, {"hash", line.hash}, {"in", line.in}, {"out", line.out},
         {"ok", line.ok}, {"ms", static_cast<double>(static_cast<int64_t>(line.ms * 10 + 0.5)) / 10}};
     if (!line.refused.empty()) json["refused"] = line.refused;
     if (line.batch) json["batch"] = true;
@@ -68,12 +68,12 @@ inline std::optional<UsageLine> ParseUsageLine(std::string_view text) {
     if (!str("time", line.time) || !str("session", line.session) || !str("verb", line.verb) ||
         !str("origin", line.origin) || !str("caller", line.caller) || !str("hash", line.hash) ||
         !number("in", line.in) || !number("out", line.out) || !json.contains("ok") || !json["ok"].is_boolean() ||
-        !json.contains("ms") || !json["ms"].is_number() || !json.contains("flags") || !json["flags"].is_array())
+        !json.contains("ms") || !json["ms"].is_number() || !json.contains("keys") || !json["keys"].is_array())
         return std::nullopt;
     line.ok = json["ok"].get<bool>();
     line.ms = json["ms"].get<double>();
-    for (const auto& flag : json["flags"])
-        if (flag.is_string()) line.flags.push_back(flag.get<std::string>());
+    for (const auto& key : json["keys"])
+        if (key.is_string()) line.keys.push_back(key.get<std::string>());
     str("refused", line.refused);
     number("digest", line.digest);
     line.batch = json.contains("batch") && json["batch"].is_boolean() && json["batch"].get<bool>();

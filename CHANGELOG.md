@@ -27,6 +27,29 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **The console takes JSON calls only:** the text grammar is gone. A call
+  is `{"verb": ..., "args": {...}}`, one per line on stdin, through `-c
+  '<call or list of calls>'` or `-c @<file>`; `batch` takes `{"calls":
+  [...]}`; `$N`, typed lines, `?`/`exit`/`q` and `--meta`/`--timing`/
+  `--budget` at a line's end are gone (pass `meta`, `timing`, `budget` as
+  call keys). Every verb's args are named and typed (`help` with `verb`
+  shows them and an example call); unknown keys, missing required keys
+  and wrong types are refused with kind `schema` (no more `syntax`), the
+  key's schema and a corrected example. Values are typed: paths are lists
+  (`["Info", "Owner"]`), chains `{"base": <addr>, "chain": [16, 8]}`,
+  module addresses `{"module": "x.dll", "rva": "0x10"}` (`base+off` is
+  gone), `each`'s `where` `{"field": [...], "contains": "..."}`, call
+  inputs `params: {"Name": value}` (a raw block is `block`; `--typed` is
+  `params: {}`), trace ends `[x, y, z]` or `{"object", "socket"}`, watch
+  ranges objects, durations seconds. Renamed: `writes clear` is `clear:
+  true`; `describe #i:s` is `index` and `serial`; `refs #i` is `index`;
+  `get --snap/--changed [file]` are bools plus `file`; `peek --label
+  [file]` is `label` plus `file`; `write --hold` takes seconds; the usage
+  log's and `stats`' `flags` are `keys`
+  ([JSON-only contract](docs/tool-interface.md#json-only-contract),
+  [result shapes](docs/commands/results.md)). Regenerate Python modules
+  and restart MCP servers.
+
 - **`search` is a job, in the main module by default:** it answers within
   `--wait` seconds (default 10) with `job`, `state`, `to` and `scanned`; a
   scan still running keeps going in the agent while other commands run,

@@ -23,9 +23,9 @@ result), so type safety belongs in the scripting layer and discovery in
 the console.
 
 - **The console executable is the source of truth.** One C++ verb table
-  (`syntax/verb.h`; rows in `results/verbs.h` and `packs/ue/cli/results/verbs_ue.h`)
-  describes each command's positionals, flags and result type. Parsing,
-  usage errors, `help`, `help <verb>`, `help --json`, the generated
+  (`call/verb.h`; rows in `results/verbs.h` and `packs/ue/cli/results/verbs_ue.h`)
+  describes each command's args and result type. The checks of a call,
+  its refusals, `help`, `help` of one verb, `help --json`, the generated
   [result shapes](commands/results.md) page and the Python client's
   strictness all read it. Each shape used to be written five times
   (builder, key pins in a test, the docs row, a Python docstring, the
@@ -66,7 +66,7 @@ the console.
   ([tool interface](#tool-interface)) return these same records.
 - **Host verbs are rows of the same kind.** A host hands the console a
   constant list of rows (`ConsoleConfig::verbs`) in place of help text, so
-  its commands get help, usage errors and checked results the same way.
+  its commands get help, schema refusals and checked results the same way.
 - **The row type is core; the rows are not a registry.** The core's rows
   and the pack's are constant lists; the core reaches the pack's through
   one more plain function in `console/pack.h`, as it reaches the pack's
@@ -78,10 +78,10 @@ the console.
 - **Each row also says where the verb comes from (`origin`), whether it
   writes** (the target's memory, or a call into it) **and whether it
   blocks** (holds the console for seconds), and each argument has a key, a
-  type from a small vocabulary, a default where it has one and a line of
+  type from a small vocabulary, whether it is required, a default where it
+  has one, whether it is a list, the words of an enum and a line of
   description: a caller that picks a command, not types one, needs them
-  all. The types that need no target state (`int`, an enum) are checked
-  with the counts, before a verb's parser runs.
+  all ([JSON-only contract](#json-only-contract)).
 - **Each row names its tool pack** (`pack`): the workflow it serves,
   `explore`, `native`, `observe` or `modify`, set where the row is defined
   (core rows in the console, a pack's in the pack, a host's in the host).
@@ -129,22 +129,20 @@ Every fact flows one way: the console's table, then `help --json`, then
 the generated Python functions and, beside them, the MCP tools. No layer
 defines what the table did not.
 
-- **JSON calls are the console's input; the text line is shorthand.** A
-  line starting with `{` is `{verb, args}` with arguments named by the
-  row's keys. It sorts into the same arguments as a typed line, so one
-  check and one parser per verb cover both, and nothing is quoted or
-  escaped. The text line stays while agents and people type in a shell.
-  The console reads each line once into its verb, its arguments and the
-  line flags (`--meta`, `--timing`, or a call's `meta` and `timing`);
-  the main loop, a `batch`'s items and the no-target mode share that one
-  reader.
-- **Literal refs only in JSON calls.** `$N` is refused: "result N of the
-  last command that listed refs" is session state a picked argument should
-  not depend on. A call takes the `ref` a result carries, and the ids of
-  pins, trials and captures.
+- **JSON calls are the console's only input** ([JSON-only
+  contract](#json-only-contract)): `{verb, args}` with args named by the
+  row's keys, nothing quoted or escaped.
+  The console reads each call once into its verb, its args and the call
+  flags (`meta`, `timing`, `big`, `budget`); the main loop, a `batch`'s
+  items and the no-target mode share that one reader.
+- **Literal refs only.** There is no `$N`: "result N of the last command
+  that listed refs" is session state a picked argument should not depend
+  on. A call takes the `ref` a result carries, and the ids of timed
+  writes and captures.
 - **Typed Python functions, generated per console** (`reagentlive_gen.py`)
   from its `help --json`, so a host's verbs are included. One method per
-  verb, positionals then keyword-only flags, typed from the row; results
+  verb, required args first (by position or name), the others by name
+  only, typed from the row; results
   annotated with `TypedDict`s of the console's keys, so a type checker
   reads a script before it runs. At run time they return the strict
   records: the annotations for the checker, the records for the run. The
@@ -156,8 +154,8 @@ defines what the table did not.
 - **MCP tools from the rows** (`frontends/mcp/reagentlive_mcp.py`, the
   only file that needs the dependency): the adapter reads the console's
   `help --json` and makes each tool from its row: the input schema from
-  its positionals and flags, the output schema from its result's
-  top-level keys, the description from its summary, usage and notes,
+  its args, the output schema from its result's
+  top-level keys, the description from its summary, example call and notes,
   `readOnlyHint` or `destructiveHint` from `writes`. A call goes to the
   console as a JSON call with the row's keys, since those are the tool's
   argument names. No tool and no JSON Schema is written by hand or
@@ -181,7 +179,7 @@ defines what the table did not.
   the argument and result types to Python annotations, the adapter to
   JSON Schema. A type either lacks stops it with the type's name, never a
   silent `Any` or `str`; the session and MCP tests generate from the real
-  table, so a type added to `syntax/verb.h` alone fails them.
+  table, so a type added to `call/verb.h` alone fails them.
 - **Same shape as the console.** A function returns the console's result
   key for key; an `addr` stays its hex text. A helper that converts says
   so in its name. **Behaviour lives in the console:** paging to the end,
@@ -207,7 +205,7 @@ defines what the table did not.
   the new table, and the adapter tells the client the list changed. A
   client that ignores the notice keeps its list: a tool whose verb kept
   its arguments and result works; changed arguments are refused with the
-  usage, a changed result by the client's own check against the old type,
+  schema and an example, a changed result by the client's own check against the old type,
   a removed verb by the adapter. Those need a reconnect. A generated
   module still refuses a session from another table, which keeps scripts
   honest.
@@ -240,9 +238,9 @@ defines what the table did not.
 |---|---|---|
 | Target and console | binary structs over shared memory | both ends compile the same structs and the layout hash refuses a mismatch; JSON would add a writer, a parser and allocation to the agent, on the host's thread |
 | Console results | JSON Lines | |
-| A call from the generated functions or the adapter | a JSON call on one line | no text line is built and parsed back, so nothing is escaped |
-| A call typed in a shell | the text line | JSON is hard to quote in a shell and several times the length |
-| An address or chain, a layout, a byte pattern | text, as one string argument | a compact notation for one value |
+| Every call (generated functions, the adapter, a shell's `-c`) | a JSON call on one line, or `-c @<file>` | one input form; nothing is built as text and parsed back |
+| An address, a chain, a path, a filter, call inputs | JSON values (`{"module", "rva"}`, `{"base", "chain"}`, `["A", "B"]`, `{"field", "contains"}`, `{"Name": value}`) | checked by the schema; no mini-language to guess |
+| A layout, a byte pattern, a reference signature | text, as one string argument | the same notation the labels and sig files keep |
 
 Rejected:
 
@@ -252,7 +250,6 @@ Rejected:
 | Two tools (`help`, `run`) | `run` takes a text line, so the input is still written by hand and unchecked |
 | Tool definitions written by hand, or a JSON Schema export from the console | one more copy of every shape; the functions' types already give the schemas |
 | A remote server (HTTP, authorisation) | one local console and one target; nothing here is remote |
-| Dropping the text line now | an agent in a shell still types it |
 | JSON between the target and the console | see the table above |
 | Python paging helpers (`find_all`, `search_addresses`) | behaviour in one frontend only; the console's cursors and limits serve all of them |
 
@@ -282,6 +279,52 @@ later replaced. So:
 nothing, so an approval request shows exactly what will be sent. A dry run
 the client must repeat with a token waits until the marks and the
 client's own prompt are not enough.
+
+## JSON-only contract
+
+The console's callers are AI agents, through MCP, the Python session and
+scripts; none types commands. The text grammar was where the refusals came
+from (91 in one usage log, 20 of them `get` syntax: agents guessed
+argument order and the path syntax), and every caller already had a JSON
+path. So JSON is the only input.
+
+- **An `args` schema per row** (`call/verb.h` `Arg`): key, type, help,
+  default, required, list, and an example value where the type's own would
+  be refused. `help --json` lists it per row as `args` (an enum as `str`
+  with `enum`) with an `example` call; the MCP input schemas and the
+  Python signatures come from it. There are no positionals: every arg is
+  named.
+- **Strict checks before a builder runs** (`call/check.h`): an unknown key,
+  a missing required key or a value of the wrong type is refused with kind
+  `schema`, naming the key and the type it takes.
+- **Typed values, no mini-languages** (`call/values.h`): a path is a list
+  of field names, a pointer chain `{"base", "chain"}`, an address `"0x..."`,
+  a literal ref, `{"module", "rva"}` or `{"base", "offset"}`, a filter
+  `{"field", "contains"}`, call inputs an object of name to value, a trace
+  end `[x, y, z]`, a ref or `{"object", "socket"}`, a watch range an
+  object. A layout, a byte pattern and `sig-check`'s reference signature
+  stay one string each: the files that keep them (labels, sig files) use
+  the same text.
+- **Agent-first refusals.** A refusal carries the failing key's part of
+  the schema (`arg`), or the whole list (`args`) when no one key is at
+  fault, and one corrected `example` built from the call: the values that
+  fit are kept, a misspelt key moves to the key it was meant for, the
+  key at fault is dropped (an optional one) or replaced by an example of
+  its type, and missing required keys get one. A builder's own refusal
+  (a range, a combination) starts with the key it is about, so it gets
+  the same treatment. Name and path errors from the target keep naming
+  the nearest fields.
+- **Input:** `-c` takes one call, a JSON list of calls, or `@<file>` (one
+  call per line, or a list), which avoids shell quoting; stdin takes one
+  call (or a list) per line. `batch` takes a list of calls.
+
+| Rejected | Why |
+|---|---|
+| Keeping the text grammar as a frontend for people | the console's users are agents; two input forms double the parser, its tests and the docs, and the text form was where the refusals came from |
+| A job file per call (the "timeless CLI" model) for every verb | an interactive `find` or `get` stays one JSON line; replayable plans are a verb of their own |
+| Positionals in the JSON form | order carried meaning a caller had to guess |
+| A shorthand string beside each typed value (`"A.B"` for `["A", "B"]`) | two forms again, and the schema could no longer check the value |
+| `$N` in JSON calls | session state a picked argument should not depend on; literal refs work across runs |
 
 ## Tool packs
 

@@ -5,8 +5,9 @@
 
 The module holds one method per verb (a host's verbs included), named by
 origin: core verbs on Console itself (`c.read`), a pack's or the host's
-under their origin (`c.ue.find`, `c.host.world`). Arguments are the verb's
-positionals then keyword-only flags, typed from the table; each result is
+under their origin (`c.ue.find`, `c.host.world`). Arguments follow the row's
+`args`: the required ones first, by position or name, then the optional
+ones by name only, typed from the table; each result is
 annotated with a TypedDict of the console's own keys, so a type checker
 reads a script before it runs. At run time a call goes as JSON through
 reagentlive_session.Session.call and returns its strict Record, key for
@@ -27,12 +28,13 @@ import sys
 
 SCALARS = {'bool': 'bool', 'u32': 'int', 'u64': 'int', 'i32': 'int', 'i64': 'int', 'f64': 'float', 'str': 'str',
            'addr': 'str', 'hex': 'str', 'bytes': 'str', 'ref': 'str', 'value': 'Any'}
-# Argument types (syntax/verb.h) as Python annotations.
-ARGUMENTS = {'addr': 'int | str', 'ref': 'str', 'int': 'int', 'num': 'float', 'dur': 'float | str', 'bytes': 'bytes | str',
-             'pattern': 'str', 'text': 'str', 'str': 'str', 'path': 'str', 'layout': 'str', 'range': 'str',
-             'span': 'tuple[int | str, int]', 'line': 'str', 'calls': 'list[Call]', 'bool': 'bool'}
-# One value however many tokens it spans: a positional that takes several takes one of these, not a list.
-JOINED = ('bytes', 'pattern', 'text')
+# Argument types (call/verb.h) as Python annotations. An int may be "0x..." text; bytes may be Python bytes
+# (the session sends them as hex pairs).
+ARGUMENTS = {'bool': 'bool', 'int': 'int | str', 'num': 'float', 'dur': 'float', 'str': 'str', 'text': 'str',
+             'file': 'str', 'bytes': 'bytes | str', 'pattern': 'str', 'layout': 'str', 'addr': 'str | dict[str, Any]',
+             'chain': 'str | dict[str, Any]', 'ref': 'str', 'path': 'list[str]', 'filter': 'dict[str, Any]',
+             'params': 'dict[str, Any]', 'range': 'dict[str, Any]', 'point': 'list[float] | str | dict[str, Any]',
+             'scalar': 'str | int | float', 'calls': 'list[Call]'}
 
 
 def known(vocabulary, kind, what):
@@ -42,11 +44,12 @@ def known(vocabulary, kind, what):
     return vocabulary[kind]
 
 
-def argument_hint(kind):
-    """An argument type's annotation: an enum ('a|b') is a Literal."""
-    if '|' in kind:
-        return 'Literal[' + ', '.join(repr(word) for word in kind.split('|')) + ']'
-    return known(ARGUMENTS, kind, 'argument')
+def argument_hint(arg):
+    """An `args` item's annotation: an enum is a Literal, a list a list of its type."""
+    hint = known(ARGUMENTS, arg['type'], 'argument')
+    if 'enum' in arg:
+        hint = 'Literal[' + ', '.join(repr(word) for word in arg['enum']) + ']'
+    return f'list[{hint}]' if arg.get('list') else hint
 
 
 def identifier(name):
@@ -61,7 +64,8 @@ def class_name(name):
 
 def table_of(console):
     """`help --json` from a console, with no target needed."""
-    run = subprocess.run([os.path.abspath(console), '-c', 'help --json'], capture_output=True, text=True, check=False)
+    call = json.dumps({'verb': 'help', 'args': {'json': True}}, separators=(',', ':'))
+    run = subprocess.run([os.path.abspath(console), '-c', call], capture_output=True, text=True, check=False)
     for line in run.stdout.splitlines():
         if line.lstrip().startswith('{'):
             envelope = json.loads(line)
@@ -112,42 +116,25 @@ class Types:
 
 
 def parameters(row):
-    """(signature text, [(python name, key)]) of a verb's arguments."""
-    params, names, keyword_only = ['self'], [], []
-    for positional in row['positionals']:
-        name, kind, arity = identifier(positional['key']), positional['type'], positional['arity']
-        hint = argument_hint(kind)
-        if arity in ('some', 'any') and kind not in JOINED:
-            hint = f'list[{hint}]'
-        params.append(f'{name}: {hint}' + (' | None = None' if arity in ('optional', 'any') else ''))
-        names.append((name, positional['key']))
-    for flag in row['flags']:
-        name, kind = identifier(flag['key']), flag['type']
-        hint = argument_hint(kind)
-        if flag['takes'] == 'nothing':
-            keyword_only.append(f'{name}: bool = False')
-        elif flag['takes'] == 'maybe':
-            keyword_only.append(f'{name}: bool | {hint} = False')
-        elif flag['takes'] == 'some' and kind not in JOINED:
-            keyword_only.append(f'{name}: list[{hint}] | {hint}' + ('' if flag.get('required') else ' | None = None'))
+    """(signature text, [(python name, key)]) of a verb's arguments: required ones in row order, then the
+    optional ones by name only (None leaves one out, so the console applies its default)."""
+    required, optional, names = [], [], []
+    for arg in row['args']:
+        name = identifier(arg['key'])
+        if arg.get('required'):
+            required.append(f'{name}: {argument_hint(arg)}')
         else:
-            keyword_only.append(f'{name}: {hint}' + ('' if flag.get('required') else ' | None = None'))
-        names.append((name, flag['key']))
-    # Required keyword-only arguments first, for readability.
-    keyword_only.sort(key=lambda text: '=' in text)
-    if keyword_only:
-        params += ['*', *keyword_only]
+            optional.append(f'{name}: {argument_hint(arg)} | None = None')
+        names.append((name, arg['key']))
+    params = ['self', *required] + (['*', *optional] if optional else [])
     return ', '.join(params), names
 
 
 def docstring(row):
-    lines = [row['summary'] + '.', '', row['usage']]
-    for item in row['positionals']:
-        lines.append(f'{identifier(item["key"])}: {item.get("help", item["name"])}'
-                     + (f' (default {item["default"]})' if 'default' in item else ''))
-    for item in row['flags']:
-        lines.append(f'{identifier(item["key"])} ({item["flag"]}): {item.get("help", "")}'.rstrip(': ')
-                     + (f' (default {item["default"]})' if 'default' in item else ''))
+    lines = [row['summary'] + '.', '', 'Example: ' + json.dumps(row['example'])]
+    for arg in row['args']:
+        text = f'{identifier(arg["key"])}: {arg.get("help", "")}'.rstrip(': ')
+        lines.append(text + (f' (default {json.dumps(arg["default"])})' if 'default' in arg else ''))
     if row.get('notes'):
         lines += ['', row['notes']]
     marks = [mark for mark in ('writes', 'blocks') if row.get(mark)]

@@ -1,14 +1,14 @@
 """A scripted console for the Python tests: no agent or game.
 
-Run as a console: `-c "help --json"` prints the table and exits (as a real
-console does with no target); on stdin, `help --json` answers the table
-and `help --hash` its hash (read at start: a test may change it between
-runs), a
-JSON call is answered by matching its verb and arguments, a typed line by
-its exact text. Every other line gets a syntax error. Lines but the table
-are logged, after a `session <id>` line for a console given --session and
-a `packs <list>` line for one given --packs. Its replies file: {"table": ..., "calls": [[call, reply]...],
-"lines": {line: reply}}, from REAGENTLIVE_FAKE_REPLIES; the log is
+Run as a console: `-c '{"verb":"help","args":{"json":true}}'` prints the
+table and exits (as a real console does with no target); on stdin, one JSON
+call per line: `help` with `json` answers the table and with `hash` its hash
+(read at start: a test may change it between runs), `quit` ends it, and any
+other call is answered by matching its verb and arguments. Every other call
+gets a schema error. Calls but the table's are logged (`quit` as the word),
+after a `session <id>` line for a console given --session and a
+`packs <list>` line for one given --packs. Its replies file: {"table": ...,
+"calls": [[call, reply]...]}, from REAGENTLIVE_FAKE_REPLIES; the log is
 REAGENTLIVE_FAKE_LOG.
 """
 import json
@@ -23,7 +23,8 @@ def key(call):
 def main():
     replies = json.load(open(os.environ['REAGENTLIVE_FAKE_REPLIES']))
     table = {'ok': True, 'result': replies['table']}
-    if sys.argv[1:] == ['-c', 'help --json']:
+    help_json = key({'verb': 'help', 'args': {'json': True}})
+    if sys.argv[1:2] == ['-c'] and key(json.loads(sys.argv[2])) == help_json:
         print(json.dumps(dict(table, command='help')), flush=True)
         return
     calls = {key(call): reply for call, reply in replies['calls']}
@@ -32,26 +33,21 @@ def main():
         log.write(f'session {sys.argv[sys.argv.index("--session") + 1]}\n')
     if '--packs' in sys.argv:
         log.write(f'packs {sys.argv[sys.argv.index("--packs") + 1]}\n')
-    unknown = {'ok': False, 'error': {'kind': 'syntax', 'message': 'unknown'}}
+    unknown = {'ok': False, 'error': {'kind': 'schema', 'message': 'unknown'}}
     for line in sys.stdin:
-        line = line.strip()
-        if line == 'help --json':
+        call = json.loads(line)
+        if key(call) == help_json:
             print(json.dumps(dict(table, command='help')), flush=True)
             continue
-        if line == 'help --hash':
+        if key(call) == key({'verb': 'help', 'args': {'hash': True}}):
             print(json.dumps({'command': 'help', 'ok': True,
                               'result': {'rows': [], 'table_hash': replies['table'].get('table_hash')}}), flush=True)
             continue
-        log.write(line + '\n')
+        log.write(('quit' if call.get('verb') == 'quit' else line.strip()) + '\n')
         log.flush()
-        if line == 'quit':
+        if call.get('verb') == 'quit':
             break
-        if line.startswith('{'):
-            call = json.loads(line)
-            reply, command = calls.get(key(call), unknown), call.get('verb')
-        else:
-            reply, command = replies['lines'].get(line, unknown), line.split(' ')[0]
-        print(json.dumps(dict(reply, command=command)), flush=True)
+        print(json.dumps(dict(calls.get(key(call), unknown), command=call.get('verb'))), flush=True)
 
 
 if __name__ == '__main__':

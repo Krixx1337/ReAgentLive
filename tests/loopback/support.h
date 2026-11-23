@@ -23,8 +23,8 @@
 #include "reagentlive/core/agent_internal.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/packs/ue/client_ue.h"
-#include "reagentlive/frontends/cli/syntax/parse.h"
-#include "reagentlive/frontends/cli/syntax/parse_internal.h"
+#include "reagentlive/frontends/cli/call/build.h"
+#include "reagentlive/frontends/cli/call/build_internal.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
 #include "doctest.h"
 

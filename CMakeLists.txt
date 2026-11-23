@@ -13,7 +13,7 @@
 #   In clients:
 #   reagentlive::client     C++ client API (attach, read, write, base, raw Send)
 #   reagentlive::ue-client  Unreal pack's client calls
-#   reagentlive::cli        console syntax (frontends/cli/syntax/), no JSON
+#   reagentlive::cli        a call: the verb table, its args and checks (frontends/cli/call/)
 #   reagentlive::console    interactive console over the client API
 #                       (frontends/cli/console/ and the pure headers); links the
 #                       x64 decoder (Zydis) for disasm and sig. No agent
@@ -47,9 +47,9 @@ option(REAGENTLIVE_BUILD_TESTS "Build reagentlive's tests" ${PROJECT_IS_TOP_LEVE
 # The console targets need nlohmann/json and the Zydis decoder, fetched at
 # configure unless the parent project already provides them. A host that
 # links only the agent turns this off and downloads nothing.
-option(REAGENTLIVE_CONSOLE "Define the console targets (reagentlive::console, ::cli needs nothing)" ON)
+option(REAGENTLIVE_CONSOLE "Define the console targets (reagentlive::console, and the JSON ::cli needs)" ON)
 # The engine packs to define, by folder name under src/reagentlive/packs/.
-# The console and the CLI syntax carry the one listed pack; empty, they
+# The console and the CLI call layer carry the one listed pack; empty, they
 # compile no pack file and the verb table (help, the generated functions, the
 # MCP tools) holds core and host rows only. For a target that is not Unreal.
 set(REAGENTLIVE_PACKS "ue" CACHE STRING "Engine packs to define (folders under src/reagentlive/packs/); empty for none")
@@ -88,7 +88,7 @@ target_compile_features(reagentlive-client INTERFACE cxx_std_23)
 target_link_libraries(reagentlive-client INTERFACE winmm) # timeBeginPeriod: 1 ms waits.
 
 # The packs. Each pack.cmake defines its targets and sets its CLI parts:
-# reagentlive_pack_syntax_sources, reagentlive_pack_console_sources and
+# reagentlive_pack_call_sources, reagentlive_pack_console_sources and
 # reagentlive_pack_console_link. One console carries one pack until
 # console/pack.h becomes a table of packs (docs/design.md#source-layout).
 set(reagentlive_packs_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/packs")
@@ -114,16 +114,16 @@ target_include_directories(reagentlive-cli INTERFACE "${reagentlive_include_root
 target_compile_features(reagentlive-cli INTERFACE cxx_std_23)
 # Each part of the CLI as a core list; the pack's lists come from its pack.cmake.
 set(reagentlive_cli_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/cli")
-set(reagentlive_syntax_sources "${reagentlive_cli_dir}/syntax/parse.cpp"
-    "${reagentlive_cli_dir}/syntax/parse_memory.cpp" "${reagentlive_cli_dir}/syntax/parse_code.cpp")
+set(reagentlive_call_sources "${reagentlive_cli_dir}/call/build.cpp"
+    "${reagentlive_cli_dir}/call/build_memory.cpp" "${reagentlive_cli_dir}/call/build_code.cpp")
 set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
     "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp" "${reagentlive_cli_dir}/console/label_sigs.cpp"
     "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp"
     "${reagentlive_cli_dir}/console/snapshot.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")
-target_sources(reagentlive-cli INTERFACE ${reagentlive_syntax_sources})
+target_sources(reagentlive-cli INTERFACE ${reagentlive_call_sources})
 if(reagentlive_pack_count EQUAL 1)
-    target_sources(reagentlive-cli INTERFACE ${reagentlive_pack_syntax_sources})
+    target_sources(reagentlive-cli INTERFACE ${reagentlive_pack_call_sources})
 endif()
 
 if(REAGENTLIVE_CONSOLE)
@@ -139,6 +139,8 @@ if(REAGENTLIVE_CONSOLE)
             FIND_PACKAGE_ARGS 3.12 CONFIG)
         FetchContent_MakeAvailable(nlohmann_json)
     endif()
+    # A call's arguments are JSON: the call layer reads them.
+    target_link_libraries(reagentlive-cli INTERFACE nlohmann_json::nlohmann_json)
     # The decoder: Zydis v4.1.1 with its formatter, static, built once for the
     # whole tree; a parent that already has a Zydis target keeps its own. Its
     # options are plain variables (CMP0077), so a parent's cache is never
@@ -222,7 +224,7 @@ if(REAGENTLIVE_BUILD_TESTS)
 endif()
 
 # Tests: built when reagentlive is the top-level project, or when the host sets
-# REAGENTLIVE_BUILD_TESTS. They need no game: request bounds and CLI syntax, and
+# REAGENTLIVE_BUILD_TESTS. They need no game: request bounds and CLI calls, and
 # the real agent and client end to end in one process.
 if(REAGENTLIVE_BUILD_TESTS)
     enable_testing()
@@ -238,7 +240,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
 
     # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python (tests/table is a tool they use).
-    add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/parse_tests.cpp tests/cli/format_tests.cpp
+    add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/call_tests.cpp tests/cli/format_tests.cpp
         tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp
         tests/cli/budget_tests.cpp tests/cli/kismet_tests.cpp)
     target_link_libraries(reagentlive-cli-tests PRIVATE reagentlive-cli reagentlive-doctest nlohmann_json::nlohmann_json Zydis)
@@ -253,7 +255,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     # The console without the pack, built beside the default one: the proof
     # that the core console does not lean on the pack (the example's main).
     add_executable(reagentlive-core-console examples/own_thread/console.cpp
-        ${reagentlive_syntax_sources} ${reagentlive_console_sources} ${reagentlive_console_no_pack_sources})
+        ${reagentlive_call_sources} ${reagentlive_console_sources} ${reagentlive_console_no_pack_sources})
     target_link_libraries(reagentlive-core-console PRIVATE reagentlive-client nlohmann_json::nlohmann_json Zydis)
     set_target_properties(reagentlive-core-console PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
     target_compile_options(reagentlive-core-console PRIVATE /W4 /WX /EHsc)
