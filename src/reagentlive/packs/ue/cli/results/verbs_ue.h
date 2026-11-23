@@ -137,17 +137,21 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"field", "[Owner:]Field", One, "str", "the field, with its declaring class where the name is ambiguous"}},
             {cursor},
             Of<shape::Entries>, parse::Entries, "Names and object pointers are resolved."},
-        {"rows", "ue", ToolPack::Explore, "a data table's rows: each row's name and its RowStruct members decoded",
+        {"rows", "ue", ToolPack::Explore, "a data table's rows decoded with its RowStruct, or a curve table's curves and their keys",
             {{"object", "object", One, "ref", objectOrDefault}},
             {{"--match", Takes::One, "str", "text", "row names containing text, any case"},
              {"--fields", Takes::One, "str", "a,b.c", "the row members to keep (paths into structs and arrays)"},
+             {"--at", Takes::One, "num", "t", "a curve table: each row's value at time t"},
              cursor,
              pageLimit,
              nonzero},
             Of<shape::Rows>, parse::Rows,
             "RowMap is unreflected: read as the stock UE5 TMap<FName, uint8*> right after RowStruct, its slot "
             "count checked against its allocation bits (refused when they disagree). Nested arrays up to 256 "
-            "elements, 3 deep; names resolved. total counts the rows --match kept."},
+            "elements, 3 deep; names resolved. total counts the rows --match kept. A CurveTable: curve "
+            "simple|rich, per row keys ([t, v]; rich: [t, v, interp, arrive, leave]) and a simple curve's interp; "
+            "--at adds value, evaluated per key interp (constant, linear, cubic), the end keys' values outside "
+            "them."},
         {"get", "ue", ToolPack::Explore, "an object's fields with their values, or named paths through pointers and structs; --types: the layout",
             {{"object", "object|Class", One, "str", "an object ($N, a literal ref, an address, a Default__ name), or with --types a class or struct by name"},
              {"paths", "Field[.Field...]", Any, "str", "a field path per value (up to 16); none: every field"}},

@@ -89,6 +89,7 @@ inline std::string Notation(const Type& type, bool full = false) {
 //   addr     an address: 0x hex or decimal, $N[+off], base+off, <module>+off, ->off chains
 //   ref      an object: a literal ref, an address, or $N in a typed line
 //   int      a number: 0x hex or decimal
+//   num      a real number: 1.5, -2, 1e3
 //   dur      a duration: N seconds, or Nms, Ns, Nm
 //   bytes    hex pairs, spaced or packed: 00 00 80 3f
 //   pattern  a byte signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89

@@ -61,6 +61,9 @@
   shows no `stride` for it, the layout failed its check: decode the header
   by hand (sparse-array allocation bits and occupied count).
 - A data table's rows: `rows <table> --match <row> --fields <a,b.c>`.
+- A curve table (`CT_...` balance curves): `rows <table> --match <row>`
+  for the keys, `--at <level>` for each curve's value there; never
+  decode `RowMap` or curve keys by hand.
 - A byte or enum field prints a number: `enum <EnumName>`. Obfuscated enum
   value names are missing from the name pool (`#index`); read the enum in
   the SDK headers if there is a dump.

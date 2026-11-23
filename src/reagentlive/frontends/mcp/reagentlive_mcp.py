@@ -94,7 +94,8 @@ OUTPUT_SCHEMAS = ('compact', 'off')
 CALL = {'type': 'object', 'properties': {'verb': {'type': 'string'}, 'args': {'type': 'object'}},
         'required': ['verb'], 'additionalProperties': False}
 ARGUMENTS = {'addr': {'type': ['integer', 'string']}, 'ref': {'type': 'string'}, 'int': {'type': 'integer'},
-             'dur': {'type': ['number', 'string']}, 'bytes': {'type': 'string'}, 'pattern': {'type': 'string'},
+             'num': {'type': 'number'}, 'dur': {'type': ['number', 'string']}, 'bytes': {'type': 'string'},
+             'pattern': {'type': 'string'},
              'text': {'type': 'string'}, 'str': {'type': 'string'}, 'path': {'type': 'string'},
              'layout': {'type': 'string'}, 'range': {'type': 'string'}, 'line': {'type': 'string'},
              'span': {'type': 'array', 'prefixItems': [{'type': ['integer', 'string']}, {'type': 'integer'}],

@@ -73,6 +73,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **`rows` reads curve tables:** a `CurveTable`'s rows come back with their
+  keys (`curve: simple|rich`; rich keys with interp mode and tangents), and
+  `--at <t>` gives each curve's value at `t`, evaluated per key mode
+  ([rows](docs/commands/unreal.md#rows)).
 - **Tool packs:** every verb belongs to one workflow pack, `explore`,
   `native`, `observe` or `modify` (every verb that writes or calls is in
   `modify`). `help` groups the verbs by pack; `help --json` rows carry

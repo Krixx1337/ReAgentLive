@@ -104,6 +104,15 @@ stock. Confirm in static: `UFunction::Invoke` or ProcessEvent reads
 `RowMap` follows `RowStruct`, the one object property `DataTable` declares.
 Check on any data table: a sparse array of `{FName, uint8*}` pairs.
 
+## curvetable (live)
+
+`UCurveTable::RowMap` is a `TMap<FName, FRealCurve*>`; `CurveTableMode`
+(1 simple, 2 rich) follows it. Check on two tables, one of each mode:
+every row's curve pointer holds its keys `TArray` at `FSimpleCurve.Keys`
+(8-byte keys: time, value; `InterpMode` byte at `FSimpleCurve.InterpMode`)
+or `FRichCurve.Keys` (0x1C-byte keys: mode bytes, time at +4, value at
++8), counts small and times ascending. `rows <table>` then reads both.
+
 ## interface (static, then live)
 
 `UClass::Interfaces`: a `TArray` of `{UClass*, int32 PointerOffset, bool}`

@@ -40,6 +40,10 @@ struct EngineLayout {
     int32_t processEventSlot, frameNode, frameLocals;
     // datatable: UDataTable::RowMap (the client finds it after RowStruct).
     int32_t rowMap;
+    // curvetable: UCurveTable's unreflected TMap<FName, FRealCurve*> and its
+    // ECurveTableMode byte (1 simple, 2 rich); FSimpleCurve's InterpMode and
+    // Keys, FRichCurve's Keys (TArrays of CurveKeySize bytes each).
+    int32_t curveRowMap, curveTableMode, simpleCurveInterp, simpleCurveKeys, richCurveKeys;
 };
 
 // The layout of stock UE 5.x as this pack has read it live (UE 5.7,
@@ -59,6 +63,8 @@ inline constexpr EngineLayout StockUE5 = {
     .enumNames = 0x48,
     .processEventSlot = 0x4C, .frameNode = 0x10, .frameLocals = 0x28,
     .rowMap = 0x30,
+    .curveRowMap = 0x30, .curveTableMode = 0x98, .simpleCurveInterp = 0x70, .simpleCurveKeys = 0x78,
+    .richCurveKeys = 0x70,
 };
 
 // The game viewport client's FViewportClient part and Draw's entry in its
@@ -69,6 +75,11 @@ inline constexpr uint32_t ViewportInterfaceOffset = 0x28, ViewportDrawIndex = 4;
 
 // The interface array's entry; an object's identity guard (index, then class).
 inline constexpr uint32_t InterfaceEntrySize = 16, ObjectIdentityLength = 12;
+
+// Curve keys: FSimpleCurveKey {Time, Value}; FRichCurveKey {InterpMode,
+// TangentMode, TangentWeightMode, pad, Time, Value, ArriveTangent,
+// ArriveTangentWeight, LeaveTangent, LeaveTangentWeight}.
+inline constexpr uint32_t SimpleCurveKeySize = 8, RichCurveKeySize = 0x1C;
 
 // Profile groups: each turns on the ops that need it (engine_layout.h's
 // members, in dependency order).
@@ -118,6 +129,11 @@ inline constexpr Member Members[] = {
     {"call", "FFrame.Node", &EngineLayout::frameNode},
     {"call", "FFrame.Locals", &EngineLayout::frameLocals},
     {"datatable", "RowMap", &EngineLayout::rowMap},
+    {"curvetable", "RowMap", &EngineLayout::curveRowMap},
+    {"curvetable", "CurveTableMode", &EngineLayout::curveTableMode},
+    {"curvetable", "FSimpleCurve.InterpMode", &EngineLayout::simpleCurveInterp},
+    {"curvetable", "FSimpleCurve.Keys", &EngineLayout::simpleCurveKeys},
+    {"curvetable", "FRichCurve.Keys", &EngineLayout::richCurveKeys},
 };
 
 // The layout as a profile: {"groups": {group: {member: "0x..", ...}, ...}},

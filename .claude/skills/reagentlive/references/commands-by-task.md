@@ -25,7 +25,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Typed values along pointer and struct paths, one moment | `get` |
 | One table over every instance of a class (one tick, one call) | `each` (fields), `call-pure <Class> <Getter> --each` (a getter) |
 | Elements of an array, set or map | `entries` |
-| A data table's rows | `rows` |
+| A data table's rows; a curve table's keys, or its value at a time | `rows`, `rows <table> --at <t>` |
 | What a byte or enum field's number means | `enum` |
 | Functions on a class; one function's entry and parameter block | `funcs`; `func` |
 | Name an unreflected member for good | `label` |

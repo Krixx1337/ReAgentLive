@@ -109,8 +109,10 @@ struct Command {
     // call --dry: resolve the function and build the block, call nothing.
     bool dry = false;
     // call and rows: the member paths kept in each row (--fields a,b.c);
-    // `from` and `limit` page the rows. rows: `match` filters row names.
+    // `from` and `limit` page the rows. rows: `match` filters row names;
+    // `curveAt` (--at) evaluates a curve table's rows at that time.
     std::vector<std::string> rowPaths;
+    std::optional<float> curveAt;
     // trace: its two ends (a world point in cm, or an object's location or a
     // socket on it), the trace type query, simple collision, and an actor the
     // line passes through (also the world it runs in; else an end's object).

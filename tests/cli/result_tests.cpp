@@ -187,7 +187,7 @@ TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors
 }
 
 TEST_CASE("every argument has a key, a type from the vocabulary, and keys are unique per verb") {
-    const std::set<std::string_view> vocabulary{"addr", "ref", "int", "dur", "bytes", "pattern", "text", "str", "path",
+    const std::set<std::string_view> vocabulary{"addr", "ref", "int", "num", "dur", "bytes", "pattern", "text", "str", "path",
         "layout", "range", "span", "line", "calls"};
     for (const auto& verb : AllVerbs()) {
         CAPTURE(verb.name);

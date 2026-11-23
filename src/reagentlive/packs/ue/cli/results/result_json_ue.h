@@ -347,20 +347,30 @@ struct Entries {
 };
 
 // rows: a data table's rows, decoded with its RowStruct.
+// A data table's row (value: its RowStruct decoded), or a curve table's
+// curve (keys; value only with --at, the curve evaluated there).
 struct TableRow {
     std::string name;
     Addr address;
-    Json value;
+    std::optional<Json> value;
+    std::optional<std::string> interp;  // A simple curve's interp mode: linear, constant, cubic, none.
+    std::optional<Json> keys;           // [t, v] (rich: [t, v, interp, arrive, leave]) per key.
+    std::optional<bool> weighted;       // Rich keys with weighted tangents; value evaluates them unweighted.
     template<class V> static void Describe(V& v) {
         v("name", &TableRow::name);
         v("address", &TableRow::address);
         v("value", &TableRow::value);
+        v("interp", &TableRow::interp, "linear|constant|cubic|none");
+        v("keys", &TableRow::keys);
+        v("weighted", &TableRow::weighted);
     }
 };
 struct Rows {
     RefId ref;
-    std::string rowStruct;
-    RefId rowStructRef;
+    std::optional<std::string> rowStruct;   // A data table.
+    std::optional<RefId> rowStructRef;
+    std::optional<std::string> curve;       // A curve table: simple or rich.
+    std::optional<double> at;               // --at: the time each value is for.
     uint64_t total = 0;
     std::vector<TableRow> rows;
     uint32_t from = 0;
@@ -371,6 +381,8 @@ struct Rows {
         v("ref", &Rows::ref);
         v("row_struct", &Rows::rowStruct);
         v("row_struct_ref", &Rows::rowStructRef);
+        v("curve", &Rows::curve, "simple|rich");
+        v("at", &Rows::at);
         v("total", &Rows::total);
         v("rows", &Rows::rows);
         v("from", &Rows::from);

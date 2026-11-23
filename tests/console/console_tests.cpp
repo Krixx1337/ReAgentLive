@@ -645,3 +645,92 @@ TEST_CASE("--packs is a ceiling: a verb of another pack is refused, inside a bat
     REQUIRE(bad.size() == 1);
     CHECK(bad[0]["error"]["kind"] == "startup");
 }
+
+namespace {
+// Curve tables: one simple (linear), one rich (constant, linear and cubic keys).
+struct RichKey { uint8_t interp, tangentMode, weightMode, pad; float time, value, arrive, arriveWeight, leave, leaveWeight; };
+static_assert(sizeof(RichKey) == ue::layout::RichCurveKeySize);
+struct CurveRow { int32_t name, number; uint64_t curve; int32_t hashNext, hashIndex; };
+static_assert(sizeof(CurveRow) == 24);
+struct CurveTables { std::string simple, rich, derived, thing; };
+const CurveTables& TheCurveTables() {
+    static const CurveTables tables = [] {
+        const auto& layout = ue::layout::StockUE5;
+        auto& world = TheWorld();
+        Type& curveTable = world.AddType("CurveTable", 0xA0, false, "Object");
+        Type& derivedType = world.AddType("GameCurves", 0xA0, false, "CurveTable");
+        const auto table = [&](const Type& type, const char* name, uint8_t mode, std::vector<CurveRow> rows) {
+            Object& object = world.Instance(name, type);
+            uint8_t* bytes = world.Bytes(object);
+            SetSparse(bytes + layout.curveRowMap, {reinterpret_cast<const uint8_t*>(rows.data()), rows.size() * sizeof(CurveRow)},
+                      static_cast<uint32_t>(rows.size()), 24);
+            bytes[layout.curveTableMode] = mode;
+            return Text(object.ref);
+        };
+        const auto curve = [&](std::span<const uint8_t> keys, uint32_t count, int32_t keysAt, int interp) {
+            uint8_t* bytes = world.Alloc(0x90);
+            if (interp >= 0) bytes[layout.simpleCurveInterp] = static_cast<uint8_t>(interp);
+            SetArray(bytes + keysAt, keys, count);
+            return reinterpret_cast<uint64_t>(bytes);
+        };
+        const float sway[] = {1, 1, 3, 1, 4, 1.3f};
+        const float flat[] = {0, 5};
+        const uint64_t swayCurve = curve(AsBytes(sway), 3, layout.simpleCurveKeys, 0);
+        const uint64_t flatCurve = curve(AsBytes(flat), 1, layout.simpleCurveKeys, 1);
+        const RichKey rich[] = {{1, 0, 0, 0, 0, 10, 0, 0, 0, 0}, {0, 0, 0, 0, 1, 20, 0, 0, 0, 0},
+                                {2, 0, 0, 0, 2, 40, 0, 0, 4, 0}, {0, 0, 0, 0, 4, 0, -8, 0, 0, 0}};
+        const uint64_t richCurve = curve(AsBytes(rich), 4, layout.richCurveKeys, -1);
+        CurveTables out;
+        out.simple = table(curveTable, "CT_Sway", 1, {{world.Name("Pitch"), 0, swayCurve, -1, 0},
+                                                       {world.Name("Flat"), 0, flatCurve, -1, 0}});
+        out.rich = table(curveTable, "CT_Skills", 2, {{world.Name("Level"), 0, richCurve, -1, 0}});
+        out.derived = table(derivedType, "CT_Derived", 1, {{world.Name("Pitch"), 0, swayCurve, -1, 0}});
+        out.thing = TheFixture().thing;
+        return out;
+    }();
+    return tables;
+}
+}
+
+TEST_CASE("rows reads a curve table's keys and evaluates them with --at") {
+    const auto& tables = TheCurveTables();
+    const auto simple = Result("rows " + tables.simple);
+    CHECK(simple["curve"] == "simple");
+    CHECK_FALSE(simple.contains("row_struct"));
+    REQUIRE(simple["rows"].size() == 2);
+    CHECK(simple["rows"][0]["name"] == "Pitch");
+    CHECK(simple["rows"][0]["interp"] == "linear");
+    CHECK(simple["rows"][0]["keys"] == Json::parse("[[1, 1], [3, 1], [4, 1.3]]"));
+    CHECK_FALSE(simple["rows"][0].contains("value"));
+    // An address alone names the table too.
+    CHECK(Result("rows " + tables.simple.substr(0, tables.simple.find('#')))["rows"] == simple["rows"]);
+    // Linear between keys, the end key's value outside them, constant keeps its value.
+    const auto at = Result("rows " + tables.simple + " --at 3.5");
+    CHECK(at["at"] == 3.5);
+    CHECK(at["rows"][0]["value"] == 1.15);
+    CHECK(Result("rows " + tables.simple + " --at 9")["rows"][0]["value"] == 1.3);
+    const auto flat = Result("rows " + tables.simple + " --at -1 --match flat");
+    REQUIRE(flat["rows"].size() == 1);
+    CHECK(flat["total"] == 1);
+    CHECK(flat["rows"][0]["interp"] == "constant");
+    CHECK(flat["rows"][0]["keys"] == Json::parse("[[0, 5]]"));
+    CHECK(flat["rows"][0]["value"] == 5);
+
+    const auto rich = Result("rows " + tables.rich);
+    CHECK(rich["curve"] == "rich");
+    CHECK(rich["rows"][0]["keys"][2] == Json::parse(R"([2, 40, "cubic", 0, 4])"));
+    const auto value = [&](const char* t) { return Result("rows " + tables.rich + " --at " + t)["rows"][0]["value"].get<double>(); };
+    CHECK(value("0.5") == 10);              // constant
+    CHECK(value("1.5") == 30);              // linear
+    // Cubic from (2, 40) leaving at 4 to (4, 0) arriving at -8: P1 = 40 + 4*2/3, P2 = 0 + 8*2/3, at alpha 0.5.
+    CHECK(value("3") == doctest::Approx((40 + 3 * (40 + 8.0 / 3) + 3 * (16.0 / 3) + 0) / 8).epsilon(1e-5));
+
+    // A subclass of CurveTable is read too; refusals name both table kinds and the wrong flags.
+    CHECK(Result("rows " + tables.derived)["rows"][0]["name"] == "Pitch");
+    const auto refused = RunLines("rows " + tables.thing + "; rows " + tables.simple + " --fields A; rows " + tables.simple +
+                                  " --at x");
+    REQUIRE(refused.size() == 3);
+    CHECK(refused[0]["error"]["message"] == "neither a data table (no RowStruct field) nor a curve table (no CurveTable class)");
+    CHECK(refused[1]["error"]["message"] == "--fields and --nonzero read data tables; a curve table's rows are keys");
+    CHECK(refused[2]["error"]["kind"] == "syntax");
+}

@@ -28,7 +28,7 @@ import sys
 SCALARS = {'bool': 'bool', 'u32': 'int', 'u64': 'int', 'i32': 'int', 'i64': 'int', 'f64': 'float', 'str': 'str',
            'addr': 'str', 'hex': 'str', 'bytes': 'str', 'ref': 'str', 'value': 'Any'}
 # Argument types (syntax/verb.h) as Python annotations.
-ARGUMENTS = {'addr': 'int | str', 'ref': 'str', 'int': 'int', 'dur': 'float | str', 'bytes': 'bytes | str',
+ARGUMENTS = {'addr': 'int | str', 'ref': 'str', 'int': 'int', 'num': 'float', 'dur': 'float | str', 'bytes': 'bytes | str',
              'pattern': 'str', 'text': 'str', 'str': 'str', 'path': 'str', 'layout': 'str', 'range': 'str',
              'span': 'tuple[int | str, int]', 'line': 'str', 'calls': 'list[Call]', 'bool': 'bool'}
 # One value however many tokens it spans: a positional that takes several takes one of these, not a list.

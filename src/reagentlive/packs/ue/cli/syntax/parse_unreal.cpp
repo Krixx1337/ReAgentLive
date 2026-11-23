@@ -358,6 +358,15 @@ Parsed Rows(const Args& args, const ParseContext& context) {
     command.limit = DefaultCallRows;
     if (auto why = RowOptions(args, command); !why.empty()) return Fail(std::move(why));
     command.match = args.Value("--match");
+    if (args.Has("--at")) {
+        const std::string_view text = args.Value("--at");
+        float at = 0;
+        const auto [last, error] = std::from_chars(text.data(), text.data() + text.size(), at);
+        if (text.empty() || error != std::errc{} || last != text.data() + text.size() || !std::isfinite(at))
+            return Fail("--at must be a number (a curve's time)");
+        if (!command.rowPaths.empty() || command.nonzero) return Fail("--at reads curve tables: no --fields or --nonzero");
+        command.curveAt = at;
+    }
     command.kind = Kind::Rows;
     command.request.op = ue::op::ReadObject;
     return command;
