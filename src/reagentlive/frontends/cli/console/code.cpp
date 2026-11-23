@@ -317,15 +317,22 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         for (size_t i = 0; i < n && i < items->size(); ++i)
             if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
     }
-    // --labels, else the console's labels file when there is one: the names
-    // this build's rows give, by address (the highest-ranked row per address).
+    // --labels, else the console's labels file and the host's names file,
+    // those that exist: the names this build's rows give, by address (the
+    // highest-ranked row per address).
     std::map<uint64_t, std::string> labels;
     {
-        std::ifstream in(command.labels.empty() ? session.labels : std::filesystem::path(command.labels));
-        if (!in && !command.labels.empty()) return JsonError(session, jsonCommand, "file", "cannot read " + command.labels);
+        std::vector<std::filesystem::path> files;
+        if (!command.labels.empty()) files.push_back(command.labels);
+        else files = {session.labels, session.hostLabels};
         std::vector<LabelRow> rows;
-        for (std::string text; in && std::getline(in, text);)
-            if (auto row = ParseLabel(text, *module, *timestamp)) rows.push_back(std::move(*row));
+        for (const auto& path : files) {
+            if (path.empty()) continue;
+            std::ifstream in(path);
+            if (!in && !command.labels.empty()) return JsonError(session, jsonCommand, "file", "cannot read " + command.labels);
+            for (std::string text; in && std::getline(in, text);)
+                if (auto row = ParseLabel(text, *module, *timestamp)) rows.push_back(std::move(*row));
+        }
         for (auto& row : MergeLabels(std::move(rows))) labels[module->base + row.rva] = std::move(row.name);
     }
     std::vector<save::Saved> saved;

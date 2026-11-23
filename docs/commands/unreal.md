@@ -506,14 +506,22 @@ names keep their instance suffix (`Row_2`).
 
 ## Labels for a static tool
 
-One names file carries what ReAgentLive and a static tool know about a
-build, both ways: `<console>.labels.jsonl` beside the console, the default
-for `export-labels`, `peek --label` and `disasm --save` (a save reads it
-when it exists). JSON lines `{module, module_size, timestamp, rva, name,
-kind}`; one file holds several builds (image size and PE timestamp tell
-them apart, and each command uses only the running build's rows). Per
-address the highest rank wins: `user` (a name a person gave in the static
-tool), `global` (`peek --label`), `exec`, `interface`, then the rest.
+Labels files carry what ReAgentLive and a static tool know about a build,
+both ways. JSON lines `{module, module_size, timestamp, rva, name, kind}`;
+one file holds several builds (image size and PE timestamp tell them
+apart, and each command uses only the running build's rows). Per address
+the highest rank wins: `user` (a name a person gave in the static tool),
+`global` (`peek --label`), `exec`, `interface`, then the rest.
+
+- **Derived names:** `<console>.labels.jsonl` beside the console, where
+  `export-labels` writes by default: tens of thousands of rows, rebuilt in
+  seconds, so it stays local.
+- **Names people confirm:** the host's names file
+  (`ConsoleConfig::labelsFile`, absolute or relative to the console), where
+  `peek --label` writes by default and the static tool's `export_names`
+  should write: a host keeps it under version control, so names survive a
+  clean build and are shared. Without one, the console's file holds both.
+- `disasm --save` reads both files (or `--labels <file>` alone).
 
 `export-labels [file] [--module M]
 [--kinds exec,vtable,interface,global]` (default the console's file, the
@@ -534,14 +542,16 @@ result counts what was written: `total` rows of this build, of which
 `frontends/ida/reagentlive_ida.py` is the IDA side (also the save loader,
 [saving a function](fast-lane.md#saving-a-function-for-a-static-tool)):
 
-- `import_labels(path)` (File > Script file runs it, asking for the file)
+- `import_labels(path)` (a path, or a list: the console's file and the
+  host's names file; File > Script file runs it, asking for the file)
   names a full database of the build (size and timestamp from the PE header
   IDA keeps, so a default load with no header bytes works) or a save
   database (the build its loader kept); the highest-ranked row per address,
   a name you set stays (the label becomes a comment), exec thunks become
   functions. One undo step, a wait box that can cancel it; it prints how
   many rows it named, commented and skipped.
-- `export_names(path)` writes every name you gave in that database (not
+- `export_names(path)` (path: the host's names file) writes every name
+  you gave in that database (not
   `sub_…`, `fn_…` or other made-up names, and not names a file brought in)
   as `user` rows of its build, adding or updating them; names it does not
   hold stay (a save database never wipes what another database named).

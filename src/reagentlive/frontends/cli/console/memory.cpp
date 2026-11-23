@@ -478,7 +478,8 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
     result.where = Locate(start, modules);
     for (const auto& value : values) result.rows.push_back(MakePeekRow(value, modules));
     if (command.label) {
-        const std::string path = command.file.empty() ? session.labels.string() : command.file;
+        const std::string path = !command.file.empty() ? command.file
+            : !session.hostLabels.empty() ? session.hostLabels.string() : session.labels.string();
         if (path.empty()) return JsonError(session, jsonCommand, "label", "no labels file: give one with --label");
         const auto* module = ModuleAt(start, modules);
         if (!module) return JsonError(session, jsonCommand, "label", "only addresses inside a loaded module can be labelled");

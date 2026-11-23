@@ -903,6 +903,10 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     const auto cachePath = CachePath(pid);
     session.results = ResultsFolder(pid, client->AgentOwner());
     session.labels = labelsPath;
+    if (!config.labelsFile.empty()) {
+        const std::filesystem::path host(config.labelsFile);
+        session.hostLabels = host.is_absolute() || labelsPath.empty() ? host : labelsPath.parent_path() / host;
+    }
     session.usage = {usagePath, record && !usagePath.empty(),
         std::format("{:%Y%m%dT%H%M%S}-{}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()),
             GetCurrentProcessId()), caller};

@@ -33,8 +33,8 @@ Answer one-address questions live, with no database:
   other way, pass `<module>+<rva>` as any address.
 - **Globals the static tool shows as `qword_…`:** `peek <module>+<rva>`;
   an FName index shows as `name_hint`. Accept the hint only when the code
-  uses it where a tag is expected, then `peek <addr> --label <file>`
-  records it for the static tool.
+  uses it where a tag is expected, then `peek <addr> --label --name <N>`
+  records it in the host's names file.
 - **Names for the static tool:** after SDK-generator mappings,
   `export-labels --kinds interface,global`, else a full `export-labels`.
   `import_labels` it; `export_names` what you named before closing, so later
@@ -44,7 +44,7 @@ Answer one-address questions live, with no database:
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
 - **No database of this build, or not worth one:** `disasm <addr> --function
-  --save <file> --callees` (`--labels`: an `export-labels` file) and the IDA
+  --save <file> --callees` (named from the console's and host's labels) and the IDA
   loader (`src/reagentlive/frontends/ida/reagentlive_ida.py`) give the function,
   its chunks and callees in seconds; decompile all in one Python call,
   `add_saved` the next save

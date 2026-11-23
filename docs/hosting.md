@@ -318,6 +318,17 @@ results, and a check that the result matches its declared type (a
 mismatch is an `internal` error). Why rows:
 [design](tool-interface.md#self-describing-console).
 
+## Names files
+
+`ConsoleConfig::namesFile` names readable field names (names.h format)
+beside the console. `ConsoleConfig::labelsFile` is where names people
+confirm go, in labels format: `peek --label` writes there by default and a
+static tool's `export_names` should; `disasm --save` reads it with the
+console's derived `<console>.labels.jsonl`. Give a path under version
+control (absolute, or relative to the console exe) so names survive a clean
+build and travel with the project; leave it empty to keep everything in the
+console's file ([labels](commands/unreal.md#labels-for-a-static-tool)).
+
 ## AI agents
 
 The `reagentlive` skill (`.claude/skills/reagentlive/`: `SKILL.md` and its

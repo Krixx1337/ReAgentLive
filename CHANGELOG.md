@@ -27,6 +27,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **A host's names file:** `ConsoleConfig::labelsFile` holds names people
+  confirm (`user` rows from IDA's `export_names`, `global` rows from
+  `peek --label`, its default) apart from the derived names in
+  `<console>.labels.jsonl`; `disasm --save` reads both, and IDA's
+  `import_labels` takes a list of files. A host can keep it under version
+  control ([hosting](docs/hosting.md#names-files)).
 - **Names round trip with IDA:** one labels file per console,
   `<console>.labels.jsonl`, is the default for `export-labels`,
   `peek --label` and `disasm --save` (read when it exists). `export-labels`

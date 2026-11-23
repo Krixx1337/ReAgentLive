@@ -100,9 +100,11 @@ struct Session {
     LineUsage* line = nullptr;              // The line being run, for the usage log.
     LineInput input;                        // The line being run, for its budget.
     std::filesystem::path results;          // Whole results of lines that must not run again; empty: none.
-    // <console>.labels.jsonl: the names file export-labels, peek --label and
-    // disasm --save use when given none; a static tool reads and writes it too.
-    std::filesystem::path labels;
+    // <console>.labels.jsonl: the derived names export-labels writes when
+    // given no file. `hostLabels`: the host's file for names people confirm
+    // (ConsoleConfig::labelsFile), where peek --label writes; empty: `labels`.
+    // disasm --save reads both.
+    std::filesystem::path labels, hostLabels;
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}
 };

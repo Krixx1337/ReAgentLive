@@ -60,7 +60,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"spans", "addr len", Some, "span", "an address and a length, per range"}}, {}, Of<shape::ReadBatch>, parse::ReadBatch},
         {"peek", "core", "what 1..64 qwords hold (default 8): object, module, heap or value",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many qwords", "8"}},
-            {{"--label", Takes::Maybe, "path", "file", "append this one qword as a confirmed global to a labels file (default: the console's)"},
+            {{"--label", Takes::Maybe, "path", "file", "append this one qword as a confirmed global to a labels file (default: the host's names file, else the console's)"},
              {"--name", Takes::One, "str", "name", "the label's name (default FName_<hint>)"}},
             Of<shape::Peek>, parse::Peek,
             "object needs a pack; value rows carry floats, a double and name_hint. Accepts a pointer chain."},
@@ -164,7 +164,7 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},
              {"--save", Takes::One, "path", "file", "with --function: write the function and its read-only data for a static tool, not the rows"},
              {"--callees", Takes::Nothing, "bool", "", "with --save: also save each function it calls directly (one level, up to 16)"},
-             {"--labels", Takes::One, "path", "file", "with --save: name from this labels file (default: the console's, when it exists)"},
+             {"--labels", Takes::One, "path", "file", "with --save: name from this labels file (default: the console's and the host's names file)"},
              {"--follow", Takes::Nothing, "bool", "", "step through up to 3 unconditional direct jumps"}},
             Of<shape::Disasm>, parse::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
             "value a read-only [rip + disp] load reads; the listing names the module once. --meta adds each row's module "

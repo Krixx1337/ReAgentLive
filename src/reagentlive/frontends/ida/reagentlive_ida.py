@@ -366,7 +366,8 @@ def _database_build():
 
 
 def import_labels(path=None):
-    """Name the open database (a full one or a save) from a labels file (asked for when None).
+    """Name the open database (a full one or a save) from a labels file, or a list of them (the
+    console's derived names and the host's names file); asked for when None.
     Returns (named, commented, skipped), or None when nothing was imported."""
     import ida_bytes
     import ida_funcs
@@ -378,8 +379,13 @@ def import_labels(path=None):
         path = ida_kernwin.ask_file(0, '*.jsonl', 'ReAgentLive labels file')
         if not path:
             return None
-    with open(path, encoding='utf-8') as handle:
-        rows = load(handle)
+    rows = []
+    for one in ([path] if isinstance(path, str) else path):
+        try:
+            with open(one, encoding='utf-8') as handle:
+                rows += load(handle)
+        except FileNotFoundError:
+            continue  # A host file not made yet.
     build = _database_build()
     if not build:
         ida_kernwin.warning('ReAgentLive labels not imported: this database has no PE header and is no save')
