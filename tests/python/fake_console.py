@@ -6,7 +6,8 @@ and `help --hash` its hash (read at start: a test may change it between
 runs), a
 JSON call is answered by matching its verb and arguments, a typed line by
 its exact text. Every other line gets a syntax error. Lines but the table
-are logged, after a `session <id>` line for a console given --session. Its replies file: {"table": ..., "calls": [[call, reply]...],
+are logged, after a `session <id>` line for a console given --session and
+a `packs <list>` line for one given --packs. Its replies file: {"table": ..., "calls": [[call, reply]...],
 "lines": {line: reply}}, from REAGENTLIVE_FAKE_REPLIES; the log is
 REAGENTLIVE_FAKE_LOG.
 """
@@ -29,6 +30,8 @@ def main():
     log = open(os.environ['REAGENTLIVE_FAKE_LOG'], 'a')
     if '--session' in sys.argv:
         log.write(f'session {sys.argv[sys.argv.index("--session") + 1]}\n')
+    if '--packs' in sys.argv:
+        log.write(f'packs {sys.argv[sys.argv.index("--packs") + 1]}\n')
     unknown = {'ok': False, 'error': {'kind': 'syntax', 'message': 'unknown'}}
     for line in sys.stdin:
         line = line.strip()

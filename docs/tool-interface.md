@@ -170,10 +170,11 @@ defines what the table did not.
   by default); a result past it comes back as `{digest}` with a text block
   naming the call to make next, and the output schema allows either.
 - **`batch` carries reads only.** Its row is not marked `writes`, so its
-  tool is read-only and a client may allow it unasked; a write, call, pin
-  or `game-thread` inside it would then run with no prompt. The adapter
-  refuses a batch holding any verb marked `writes` and names it, so that
-  verb goes as its own tool and is approved. Rejected: marking `batch`
+  tool is read-only and a client may allow it unasked; a write, call or
+  `game-thread` inside it would then run with no prompt. The adapter
+  refuses a batch holding any verb marked `writes` or a verb of a pack
+  that is off, and names it, so that verb goes as its own tool and is
+  approved. Rejected: marking `batch`
   destructive (every same-tick read would ask), and leaving it to the
   approval rules (the client never shows the inner call).
 - **Two readers of the type vocabulary, both strict.** The generator maps
@@ -261,17 +262,15 @@ was smaller than the list. Measured once after the change, as the
 serialized tool list: about 58 KB for the own-thread example's console
 (core and pack verbs) with compact schemas; on one host's console with two
 host verbs, before the adapter made schemas from the rows, about 45 KB with
-`off` and 30 KB with `--families core --read-only`. So:
+`off` and 30 KB with the origin and read-only filters that tool packs
+later replaced. So:
 
 - **Compact result schemas by default:** each result's top-level keys and
   JSON types, widened, never narrowed, so a console result always
   validates. The strictness that matters stays where it was: the console
   checks every result against its full type, and `help <verb>` and the
   Python records keep the full shape. `off` is an adapter flag.
-- **Families and read-only** are adapter flags over origins and `writes`,
-  the marks the table already has. Nothing in the console changes, so
-  `help`, the hash and the generated module stay the same for every
-  client.
+- **Tool packs** pick the rest ([below](#tool-packs)).
 
 | Rejected | Why |
 |---|---|

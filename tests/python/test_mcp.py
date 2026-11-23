@@ -27,6 +27,7 @@ TABLE_TOOL = os.environ.get('REAGENTLIVE_TABLE') and os.path.abspath(os.environ[
 FAKE = os.path.join(HERE, 'fake_console.py')
 REF = '0x10#1:1'
 OBJECT = {'ref': REF, 'name': 'A', 'class': 'Pawn'}
+ALL = ['explore', 'native', 'observe', 'modify']
 
 
 def call(verb, args=None):
@@ -86,11 +87,11 @@ class McpTests(unittest.TestCase):
     def test_the_tool_list_is_the_table(self):
         async def body(client):
             return {tool.name: tool for tool in (await client.list_tools()).tools}
-        tools = self.run_client(body)
+        tools = self.run_client(body, packs=ALL)
         rows = [row for row in self.table['rows'] if row['verb'] != 'quit' and not row.get('blocks')]
         expected = {(row['verb'] if row['origin'] == 'core' else f'{row["origin"]}_{row["verb"]}').replace('-', '_')
                     for row in rows}
-        self.assertEqual(set(tools), expected)
+        self.assertEqual(set(tools), expected | {'packs'})
         self.assertIn('watch_start', tools)                   # A capture returns at once: a tool.
         self.assertTrue(tools['read'].annotations.read_only_hint)
         self.assertFalse(tools['read'].annotations.destructive_hint)
@@ -116,6 +117,7 @@ class McpTests(unittest.TestCase):
 
     def test_compact_output_schemas_keep_the_top_level_keys_only(self):
         compact, off = (self.tool_list(output_schemas=p) for p in ('compact', 'off'))
+        del compact['packs'], off['packs']   # The adapter's own tool has no output schema.
         self.assertEqual(set(off), set(compact))
         find = next(row for row in self.table['rows'] if row['verb'] == 'find')
         self.assertEqual(set(compact['ue_find'].output_schema['properties']), set(find['type']['struct']) | {'digest'})
@@ -144,16 +146,68 @@ class McpTests(unittest.TestCase):
             self.assertFalse(found.is_error, f'{profile}: {found.content[0].text}')
             self.assertEqual(found.structured_content['rows'][0]['ref'], REF)
 
-    def test_families_and_read_only_narrow_the_list(self):
-        core = self.tool_list(families=['core'])
-        self.assertIn('read', core)
-        self.assertFalse(any(name.startswith(('ue_', 'host_')) for name in core))
-        reads = self.tool_list(read_only=True)
-        self.assertIn('ue_find', reads)
-        self.assertFalse(any(tool.annotations.destructive_hint for tool in reads.values()))
-        self.assertNotIn('write', reads)
-        with self.assertRaisesRegex(ValueError, 'unknown family'):
-            reagentlive_mcp.build(sys.executable, ['-I', FAKE], families=['nope'])
+    def test_packs_pick_the_list_and_only_modify_writes(self):
+        packs = {row['verb']: row['pack'] for row in self.table['rows']}
+        servable = lambda names: {row['verb'] for row in self.table['rows'] if row['pack'] in names
+                                  and row['verb'] != 'quit' and not row.get('blocks')}
+        explore = self.tool_list()                                # Default: explore.
+        self.assertEqual(len(explore) - 1, len(servable({'explore'})))
+        self.assertIn('ue_get', explore)
+        self.assertNotIn('disasm', explore)
+        for names in (['explore'], ['explore', 'native'], ['explore', 'native', 'observe']):
+            tools = self.tool_list(packs=names)
+            self.assertEqual(len(tools) - 1, len(servable(set(names))), names)
+            self.assertFalse(any(tool.annotations.destructive_hint for tool in tools.values()), names)
+        everything = self.tool_list(packs=ALL)
+        self.assertEqual({name for name, tool in everything.items() if tool.annotations.destructive_hint},
+                         {'write', 'writes', 'ue_call', 'ue_release', 'ue_calls_start', 'ue_game_thread'})
+        self.assertEqual(packs['each'], 'explore')
+        with self.assertRaisesRegex(ValueError, '--packs: unknown pack nope'):
+            reagentlive_mcp.build(sys.executable, ['-I', FAKE], packs=['nope'])
+        with self.assertRaisesRegex(ValueError, '--allow: unknown pack'):
+            reagentlive_mcp.build(sys.executable, ['-I', FAKE], allow=['writes'])
+
+    def test_the_packs_tool_enables_within_the_ceiling_and_says_the_list_changed(self):
+        open(self.log, 'w').close()
+
+        async def body(client):
+            listed = await client.call_tool('packs', {})
+            outside = await client.call_tool('packs', {'action': 'enable', 'pack': 'modify'})
+            off = await client.call_tool('disasm', {'addr': '0x1000'})
+            async with client.listen(tools_list_changed=True) as events:
+                enabled = await client.call_tool('packs', {'action': 'enable', 'pack': 'native'})
+                with anyio.fail_after(5):
+                    event = await events.__anext__()
+            after = {tool.name for tool in (await client.list_tools(cache_mode='refresh')).tools}
+            again = await client.call_tool('packs', {'action': 'enable', 'pack': 'native'})
+            explore = await client.call_tool('packs', {'action': 'disable', 'pack': 'explore'})
+            await client.call_tool('ue_describe', {'object': REF})
+            disabled = await client.call_tool('packs', {'action': 'disable', 'pack': 'native'})
+            final = {tool.name for tool in (await client.list_tools(cache_mode='refresh')).tools}
+            return listed, outside, off, enabled, event, after, again, explore, disabled, final
+        listed, outside, off, enabled, event, after, again, explore, disabled, final = self.run_client(
+            body, allow=['native', 'observe'])
+        self.assertFalse(listed.is_error, listed.content[0].text)
+        states = {pack['pack']: pack['state'] for pack in listed.structured_content['packs']}
+        self.assertEqual(states, {'explore': 'on', 'native': 'off', 'observe': 'off', 'modify': 'outside'})
+        native = next(pack for pack in listed.structured_content['packs'] if pack['pack'] == 'native')
+        self.assertIn('disasm', native['tools'])
+        self.assertTrue(outside.is_error)                         # The ceiling is the launcher's, not the agent's.
+        self.assertIn('--allow modify', outside.content[0].text)
+        self.assertTrue(off.is_error)
+        self.assertIn('enable it with packs', off.content[0].text)
+        self.assertFalse(enabled.is_error, enabled.content[0].text)
+        self.assertTrue(enabled.structured_content['changed'])
+        self.assertEqual(type(event).__name__, 'ToolsListChanged')
+        self.assertIn('disasm', after)
+        self.assertFalse(again.structured_content['changed'])
+        self.assertTrue(explore.is_error)                         # Always on.
+        self.assertTrue(disabled.structured_content['changed'])
+        self.assertNotIn('disasm', final)
+        self.assertIn('packs', final)
+        with open(self.log) as file:
+            lines = file.read().splitlines()
+        self.assertIn('packs explore,native,observe', lines)     # Every console gets the ceiling.
 
     def test_calls_return_the_console_result_and_errors_are_tool_errors(self):
         async def body(client):
@@ -163,10 +217,13 @@ class McpTests(unittest.TestCase):
             guessed = await client.call_tool('read', {'addr': 16, 'length': 4})
             nulls = await client.call_tool('ue_find', {'text': 'A', 'cls': None})
             sneaky = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'write'}]})
-            return found, batched, refused, guessed, nulls, sneaky
-        found, batched, refused, guessed, nulls, sneaky = self.run_client(body)
+            native = await client.call_tool('batch', {'calls': [call('disasm', {'addr': '0x1000'})]})
+            return found, batched, refused, guessed, nulls, sneaky, native
+        found, batched, refused, guessed, nulls, sneaky, native = self.run_client(body, packs=['explore', 'modify'])
         self.assertTrue(sneaky.is_error)                               # A read-only tool never carries a write.
         self.assertIn('send write as its own tool', sneaky.content[0].text)
+        self.assertTrue(native.is_error)                               # Nor a verb of a pack that is off.
+        self.assertIn('disasm is in native', native.content[0].text)
         self.assertTrue(guessed.is_error)                              # Checked against the row before a console runs.
         self.assertIn("'length' was unexpected", guessed.content[0].text)
         self.assertFalse(nulls.is_error, nulls.content[0].text)       # A null argument is a left-out one.
@@ -185,7 +242,7 @@ class McpTests(unittest.TestCase):
             narrowed = await client.call_tool('ue_rows', {'object': REF, 'budget': 0})
             kept = await client.call_tool('ue_call', {'object': REF, 'function': 'Buy'})
             return narrowed, kept
-        narrowed, kept = self.run_client(body)
+        narrowed, kept = self.run_client(body, packs=['modify'])
         self.assertFalse(narrowed.is_error, narrowed.content[0].text)
         self.assertEqual(narrowed.structured_content['digest']['chars'], 90000)
         text = narrowed.content[0].text
@@ -213,6 +270,7 @@ class McpTests(unittest.TestCase):
         sessions = [line for line in lines if line.startswith('session ')]
         self.assertEqual(len(sessions), 2)                       # One console per call...
         self.assertEqual(sessions[0], sessions[1])               # ...in one usage-log session.
+        self.assertEqual(lines.count('packs explore'), 2)        # Each with the server's ceiling.
         self.assertEqual(lines.count('quit'), 3)                 # Each ended: the table read at start, then each call.
 
     def rebuilt_run(self, body, notices=None, mode='auto'):
@@ -225,7 +283,7 @@ class McpTests(unittest.TestCase):
             self.write_replies(rebuilt)                           # The console is rebuilt between two calls.
             return before, *(await body(client))
         try:
-            return self.run_client(wrapped, notices, mode)
+            return self.run_client(wrapped, notices, mode, packs=['explore', 'native'])
         finally:
             self.write_replies(self.table)
 

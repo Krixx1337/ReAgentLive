@@ -170,7 +170,7 @@ in checked, named arguments instead of writing a command line:
 
 ```
 python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--output-schemas compact|off]
-                          [--families core,ue,host] [--read-only] [-- <console args: pid, --names <file>>]
+                          [--packs explore,native] [--allow observe,modify] [-- <console args: pid, --names <file>>]
 ```
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
@@ -188,12 +188,25 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   the console's current table: a guessed argument name is refused with the
   verb's usage. A null argument counts as left out. Every tool also takes
   `budget` (the console's [output budget](commands/console.md#fewer-round-trips)).
+- **Tool packs:** a tool is served while its verb's
+  [pack](tool-interface.md#tool-packs) is on. `--packs` names the packs
+  on from the start (default `explore`, always on), `--allow` those the
+  agent may turn on later; `modify`, which holds every verb that writes or
+  calls, is reachable only when one of them names it. The `packs` tool is
+  always served and read-only: with no arguments it lists each pack, its
+  state (`on`, `off`, `outside` the ceiling) and its tools; `{"action":
+  "enable", "pack": "native"}` adds a pack's tools and tells the client
+  the list changed, `disable` removes them. A pack outside `--packs` and
+  `--allow` is refused: the person who starts the server sets the
+  ceiling. Every console the adapter starts gets that ceiling as its own
+  [`--packs`](commands/console.md#one-shot-use), so the console refuses a
+  verb past it too.
 - **Marks:** a verb that writes the target's memory or calls into it is
   `destructiveHint`, every other one `readOnlyHint`, so a client can
   allow the read-only tools and ask first for the rest. `call-pure` is
   marked read-only: the agent checks the function is pure before calling
-  ([design](design.md)). `game-thread` is marked as writing as a whole,
-  so a client asks even to read its mode. The skill's approval rules
+  ([design](design.md)). `status` reads the game-thread mode;
+  `game-thread` only arms and removes the tick. The skill's approval rules
   still apply (the first call on a new host or in a new game needs the
   user's approval, `call-pure` included: a wrong engine layout can crash
   the game).
@@ -205,9 +218,9 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   timeout. Captures go as `watch-start`, then `watch-read` or `watch-stop`.
 - **`batch`** takes a list of `{verb, args}` (console verb names:
   `sig-check`, not `sig_check`) and runs them in as few host ticks as
-  possible, one envelope each. It takes only verbs not marked as writing:
-  a write, call, pin or `game-thread` inside it is refused, so it goes as
-  its own tool and is approved.
+  possible, one envelope each. It takes only verbs of the packs that are
+  on, and none marked as writing: a write, call or `game-thread` inside it
+  is refused, so it goes as its own tool and is approved.
 - **State in arguments:** tools take the literal refs results carry and
   the ids of pins, trials and captures; `$N` is refused.
 - **A console per call:** each tool call starts the console and ends it,
@@ -235,10 +248,10 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   for the whole list before any work, so result schemas are `compact`
   (each result's top-level keys and their JSON types; the console still
   checks every result in full). `--output-schemas off` advertises none,
-  `--families` serves only the origins named (`help --json` lists them;
-  an unknown one stops the server with the list) and `--read-only` leaves
-  out every verb marked `writes`; the server's instructions then say what
-  it leaves out. Why and what it saved: [tool interface](tool-interface.md#tool-interface).
+  and the packs left off are not listed; an unknown pack name stops the
+  server with the list, and the server's instructions say which packs it
+  serves and which `packs` can add. Why and what it saved:
+  [tool interface](tool-interface.md#tool-packs).
 - The server's instructions mark text read from the target (names,
   strings, chat) as untrusted data: in a multiplayer game other people
   write much of it, so an agent must never act on it as an instruction.

@@ -99,7 +99,9 @@ Use absolute paths. The server is the same for every client:
 reaches only its own example's agent (they open different shared-memory
 names), so `reagentlive.exe` cannot reach the Unreal example's agent, and
 the reverse.
-Optional server flags (`--read-only`, `--families`):
+Optional server flags: `--packs` (the tool packs served from the start,
+default `explore`) and `--allow` (those the agent may enable later; name
+`modify` only for a session that may write):
 [MCP tools](../client.md#mcp-tools).
 
 Register it under the name `reagentlive` in the user's scope, using the

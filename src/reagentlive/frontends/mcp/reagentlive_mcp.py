@@ -1,7 +1,7 @@
 """MCP tools for one ReAgentLive console, made from its own verb table.
 
     python reagentlive_mcp.py --console <console.exe> [--output-schemas compact|off]
-                              [--families core,<pack>,host] [--read-only] [-- <console args>]
+                              [--packs explore,native] [--allow observe,modify] [-- <console args>]
 
 One tool per row of the console's `help --json`: a core verb by its name
 (`read`), a pack's or the host's prefixed by its origin (`ue_find`,
@@ -32,9 +32,18 @@ marked `--caller tool`: its results reach the agent's context.
 What a client loads up front is the tool list, so it is kept small: output
 schemas are `compact` by default (each result's top-level keys and their
 JSON types, from the row; the console checks every result against its
-whole type either way), `off` advertises none. `--families` serves only the
-verbs of the origins named (`help --json` lists them under `origins`) and
-`--read-only` leaves out every verb that writes the target or calls into it.
+whole type either way), `off` advertises none.
+
+Tools come in packs, the verb table's `pack` column (`help --json` lists
+them under `packs`): `--packs` names those served from the start (default:
+explore, always on), `--allow` those the agent may enable later through the
+`packs` tool (always served, read-only), which adds or removes a pack's
+tools and tells the client the list changed. A pack in neither cannot be
+enabled: the person who starts the server sets the ceiling, not the agent,
+and `modify` (every verb that writes or calls) is enabled only when named.
+Every console the server starts gets the ceiling as its own `--packs`, so
+a verb past it is refused by the console too; `batch` takes only verbs of
+enabled packs.
 
 Needs the MCP Python SDK 2 (its low-level server, mcp.server.lowlevel,
 handlers passed to the constructor); the session client needs only the
@@ -206,23 +215,102 @@ def tool_name(row):
     return name.replace('-', '_')
 
 
-def batch_writer(table, arguments):
-    """The first writing verb inside a batch call, or None. A batch tool is
-    marked read-only, so a client that allows read-only tools unasked must
-    never get a write, call or pin through it: those go as their own tool."""
-    writers = {row['verb'] for row in table['rows'] if row.get('writes')}
+def batch_refusal(table, enabled, arguments):
+    """Why a batch call is refused, or None. A batch tool is marked read-only, so a client that allows
+    read-only tools unasked must never get a write or call through it (those go as their own tool), and it
+    runs only verbs of the packs enabled here."""
+    rows = {name: row for row in table['rows'] for name in (row['verb'], *row.get('aliases', ()))}
     for inner in (arguments or {}).get('calls') or []:
-        verb = inner.get('verb') if isinstance(inner, dict) else None
-        if verb in writers:
-            return verb
+        row = rows.get(inner.get('verb') if isinstance(inner, dict) else None)
+        if row is None:
+            continue
+        if row['pack'] not in enabled:
+            return (f'batch takes verbs of the enabled packs here; {row["verb"]} is in {row["pack"]}: '
+                    f'packs {{"action": "enable", "pack": "{row["pack"]}"}} first')
+        if row.get('writes'):
+            return f'batch takes read-only verbs here; send {row["verb"]} as its own tool, so it is approved'
     return None
 
 
-def served(row, families, read_only):
-    """Whether the server offers a tool for this verb."""
-    if row['verb'] == 'quit' or row.get('blocks') or (read_only and row.get('writes')):
-        return False
-    return families is None or row['origin'] in families
+def served(row, enabled):
+    """Whether the server offers a tool for this verb: its pack is enabled, and it neither quits nor blocks."""
+    return row['verb'] != 'quit' and not row.get('blocks') and row['pack'] in enabled
+
+
+PACKS_TOOL = 'packs'
+
+
+def pack_names(table):
+    """The tool packs in table order (help --json `packs`)."""
+    packs = [pack['pack'] for pack in table.get('packs', [])]
+    if not packs:
+        raise ValueError('the console\'s table has no tool packs: rebuild the console')
+    return packs
+
+
+def pack_set(names, table, flag):
+    """A list of pack names as a set, checked against the table."""
+    known = pack_names(table)
+    if unknown := [name for name in names if name not in known]:
+        raise ValueError(f'{flag}: unknown pack{"s" if len(unknown) > 1 else ""} {", ".join(unknown)}; '
+                         f'this console has {", ".join(known)}')
+    return set(names)
+
+
+class Packs:
+    """Which packs are served now (`enabled`) and which may be (`ceiling`): explore always, the rest as named."""
+
+    def __init__(self, table, packs=('explore',), allow=()):
+        self.order = pack_names(table)
+        self.enabled = pack_set(packs, table, '--packs') | {self.order[0]}
+        self.ceiling = self.enabled | pack_set(allow, table, '--allow')
+
+    def listed(self, names):
+        """Names in table order, comma-separated."""
+        return ','.join(pack for pack in self.order if pack in names)
+
+    def report(self, table):
+        """Each pack, its state and its tools: what the `packs` tool answers."""
+        rows = []
+        for pack in table.get('packs', []):
+            name = pack['pack']
+            state = 'on' if name in self.enabled else 'off' if name in self.ceiling else 'outside'
+            tools = [tool_name(row) for row in table['rows'] if row['pack'] == name and row['verb'] != 'quit'
+                     and not row.get('blocks')]
+            rows.append({'pack': name, 'job': pack['job'], 'state': state, 'tools': tools})
+        return {'packs': rows}
+
+    def change(self, action, name):
+        """Enable or disable a pack; True when the served list changed. Refusals raise RuntimeError."""
+        if name not in self.order:
+            raise RuntimeError(f'no pack {name!r}; packs: {", ".join(self.order)}')
+        if action == 'enable':
+            if name not in self.ceiling:
+                raise RuntimeError(f'{name} is outside this server\'s ceiling ({self.listed(self.ceiling)}): '
+                                   f'only the person who starts the server can add it, with --allow {name}')
+            changed = name not in self.enabled
+            self.enabled.add(name)
+            return changed
+        if name == self.order[0]:
+            raise RuntimeError(f'{name} is always on')
+        changed = name in self.enabled
+        self.enabled.discard(name)
+        return changed
+
+
+def packs_tool(packs):
+    """The `packs` tool: always served, read-only (it changes what this server offers, never the target)."""
+    text = ('The tool packs this server can serve: list them (no arguments: each pack, its state and its tools), '
+            'or enable or disable one. Enabling adds its tools; the client is told the list changed. '
+            f'Served now: {packs.listed(packs.enabled)}; may be enabled: {packs.listed(packs.ceiling)}. '
+            'A pack outside that ceiling is refused: only the person who starts the server can widen it.')
+    schema = {'type': 'object', 'properties': {
+        'action': {'type': 'string', 'enum': ['list', 'enable', 'disable'], 'description': 'default list'},
+        'pack': {'type': 'string', 'enum': list(packs.order), 'description': 'the pack to enable or disable'}},
+        'additionalProperties': False}
+    return types.Tool(name=PACKS_TOOL, description=text, input_schema=schema,
+                      annotations=types.ToolAnnotations(read_only_hint=True, destructive_hint=False,
+                                                        idempotent_hint=True, open_world_hint=False))
 
 
 class Live:
@@ -276,39 +364,41 @@ class ReAgentLiveServer(Server):
                                                      *args, **kwargs)
 
 
-def instructions(families, read_only):
-    """The server's instructions, saying what it leaves out."""
-    text = INSTRUCTIONS
-    if families is not None:
-        text += f' This server serves only the {", ".join(sorted(families))} verbs; the console has more (help lists them).'
-    if read_only:
-        text += ' It serves no verb that writes the target or calls into it.'
+def instructions(packs):
+    """The server's instructions, saying which packs it serves and which it may."""
+    text = (INSTRUCTIONS + f' Tools come in packs; this server serves {packs.listed(packs.enabled)}.')
+    if more := packs.ceiling - packs.enabled:
+        text += f' `packs` enables {packs.listed(more)} when a task needs it.'
+    if 'modify' not in packs.ceiling:
+        text += ' Nothing here writes the target or calls into it.'
     return text
 
 
-def build(console, args=(), name='reagentlive', output_schemas='compact', families=None, read_only=False):
+def tool(row, named, output_schemas):
+    """A verb's tool, as the server lists it."""
+    return types.Tool(name=tool_name(row), description=description(row), input_schema=input_schema(row),
+                      output_schema=output_schema(row, named) if output_schemas == 'compact' else None,
+                      annotations=types.ToolAnnotations(read_only_hint=not row.get('writes'),
+                                                        destructive_hint=bool(row.get('writes')),
+                                                        idempotent_hint=False, open_world_hint=False))
+
+
+def build(console, args=(), name='reagentlive', output_schemas='compact', packs=('explore',), allow=()):
     """The server for a console: its tools from the console's table, which needs no target.
 
-    output_schemas: compact or off. families: the origins to serve (None: all). read_only: no writing verbs.
+    output_schemas: compact or off. packs: served from the start (explore always). allow: packs the agent may
+    enable later; their union is the ceiling every console gets as --packs.
     """
     if output_schemas not in OUTPUT_SCHEMAS:
         raise ValueError(f'output_schemas is one of {", ".join(OUTPUT_SCHEMAS)}, not {output_schemas!r}')
     live = Live(console, args)
-    if families is not None:
-        families = set(families)
-        known = {origin['origin'] for origin in live.table.get('origins', [])}
-        if unknown := families - known:
-            raise ValueError(f'unknown famil{"ies" if len(unknown) > 1 else "y"} {", ".join(sorted(unknown))}; '
-                             f'this console has {", ".join(sorted(known))}')
+    state = Packs(live.table, packs, allow)
+    live.args += ['--packs', state.listed(state.ceiling)]
 
     def tools():
         named = live.table.get('types', {})
-        return [types.Tool(name=tool_name(row), description=description(row), input_schema=input_schema(row),
-                           output_schema=output_schema(row, named) if output_schemas == 'compact' else None,
-                           annotations=types.ToolAnnotations(read_only_hint=not row.get('writes'),
-                                                             destructive_hint=bool(row.get('writes')),
-                                                             idempotent_hint=False, open_world_hint=False))
-                for row in live.table['rows'] if served(row, families, read_only)]
+        return [packs_tool(state)] + [tool(row, named, output_schemas) for row in live.table['rows']
+                                      if served(row, state.enabled)]
 
     tools()  # A type this file lacks stops the server at start, not at the client's first list.
 
@@ -318,15 +408,42 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
     async def list_tools(ctx, params):
         return types.ListToolsResult(tools=tools())
 
+    async def changed_list(session):
+        # Both eras: a 2026-07-28 client hears it on its subscriptions/listen stream (the bus), an older
+        # one as a plain notification (dropped by the SDK on a modern connection).
+        await bus.publish(ToolsListChanged())
+        await session.send_tool_list_changed()
+
+    async def call_packs(ctx, arguments):
+        action, pack = arguments.get('action') or 'list', arguments.get('pack')
+        if action not in ('list', 'enable', 'disable'):
+            return failed(f'action is list, enable or disable, not {action!r}')
+        changed = False
+        if action != 'list':
+            if not pack:
+                return failed(f'{action} needs a pack: one of {", ".join(state.order)}')
+            try:
+                changed = state.change(action, pack)
+            except RuntimeError as error:
+                return failed(str(error))
+        report = dict(state.report(live.table), changed=changed)
+        if changed:
+            await changed_list(ctx.session)
+        return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(report))],
+                                    structured_content=report)
+
     # No get_tool_input_schema: the SDK checks no arguments. Live.run checks them against the row of the
     # console it started, which may be newer than the list the client holds.
     async def call_tool(ctx, params):
         name, arguments = params.name, params.arguments or {}
+        if name == PACKS_TOOL:
+            return await call_packs(ctx, arguments)
         row = live.row(name)
-        if row is None or not served(row, families, read_only):
-            return failed(f'no tool {name}')
-        if row['verb'] == 'batch' and (writer := batch_writer(live.table, arguments)):
-            return failed(f'batch takes read-only verbs here; send {writer} as its own tool, so it is approved')
+        if row is None or not served(row, state.enabled):
+            known = row is not None and row['pack'] in state.ceiling
+            return failed(f'no tool {name}' + (f' while {row["pack"]} is off: enable it with packs' if known else ''))
+        if row['verb'] == 'batch' and (refusal := batch_refusal(live.table, state.enabled, arguments)):
+            return failed(refusal)
         try:
             raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments)
         except RuntimeError as error:
@@ -340,17 +457,14 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
                 content = [types.TextContent(type='text', text=json.dumps(raw))]
             result = types.CallToolResult(content=content, structured_content=raw)
         if changed:
-            # Both eras: a 2026-07-28 client hears it on its subscriptions/listen stream (the bus), an older
-            # one as a plain notification (dropped by the SDK on a modern connection).
-            await bus.publish(ToolsListChanged())
-            await ctx.session.send_tool_list_changed()
+            await changed_list(ctx.session)
         return result
 
     bus = InMemorySubscriptionBus()
-    server = ReAgentLiveServer(name, instructions=instructions(families, read_only),
+    server = ReAgentLiveServer(name, instructions=instructions(state),
                                on_list_tools=list_tools, on_call_tool=call_tool,
                                on_subscriptions_listen=ListenHandler(bus))
-    server.live = live
+    server.live, server.packs = live, state
     return server
 
 
@@ -365,13 +479,16 @@ def main(argv=None):
     parser.add_argument('--name', default='reagentlive', help='the server name clients show')
     parser.add_argument('--output-schemas', choices=OUTPUT_SCHEMAS, default='compact',
                         help='result schemas in the tool list: top-level keys only, or none')
-    parser.add_argument('--families', help='serve only these origins, comma-separated (help --json lists them)')
-    parser.add_argument('--read-only', action='store_true', help='leave out every verb that writes or calls')
+    parser.add_argument('--packs', default='explore',
+                        help='tool packs served from the start, comma-separated (default explore, always on)')
+    parser.add_argument('--allow', default='',
+                        help='tool packs the agent may enable later with the packs tool; modify only if named')
     parser.add_argument('console_args', nargs='*', help='after --: arguments for the console (a pid, --names <file>)')
     args = parser.parse_args(argv)
-    families = [f.strip() for f in args.families.split(',') if f.strip()] if args.families else None
+    split = lambda text: [part.strip() for part in text.split(',') if part.strip()]
     try:
-        server = build(args.console, args.console_args, args.name, args.output_schemas, families, args.read_only)
+        server = build(args.console, args.console_args, args.name, args.output_schemas, split(args.packs),
+                       split(args.allow))
     except ValueError as error:
         parser.error(str(error))
     anyio.run(serve, server)

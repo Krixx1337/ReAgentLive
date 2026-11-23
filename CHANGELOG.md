@@ -27,6 +27,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **MCP tool packs replace `--families` and `--read-only`:** the adapter
+  serves `--packs` (default `explore`) and lets the agent enable `--allow`
+  packs through the always-served `packs` tool; `modify` only when named.
+  Every console it starts gets that ceiling. A server that used
+  `--read-only` now runs with no flag; one that needs every tool takes
+  `--packs explore,native,observe,modify`. Restart MCP servers
+  ([MCP tools](docs/client.md#mcp-tools)).
 - **Exact write marks:** `each` reads fields only and is no longer marked
   `writes`; a getter over every instance is `call-pure <Class> <Fn> --each
   [--seconds N]` (read-only, same table, `mode: call`). `game-thread` takes
