@@ -326,3 +326,37 @@ TEST_CASE("usage baseline: what got worse and better against a saved report") {
     CHECK_FALSE(Call(R"({"verb": "usage", "args": {"sessions": true, "save": "b.json"}})").has_value());
     CHECK(Call(R"({"verb": "usage", "args": {"session": "s", "baseline": "b.json", "save": "c.json"}})").has_value());
 }
+
+TEST_CASE("usage refusals: by verb, kind and the arg at fault, most first") {
+    std::vector<UsageLine> lines;
+    const auto add = [&](std::string verb, std::string kind, std::string key) {
+        UsageLine usage;
+        usage.time = "2026-01-02T03:04:05Z";
+        usage.session = "s";
+        usage.verb = std::move(verb);
+        usage.origin = "ue";
+        usage.caller = "tool";
+        usage.hash = std::to_string(lines.size());
+        usage.ok = kind.empty();
+        usage.refused = std::move(kind);
+        usage.refusedKey = std::move(key);
+        lines.push_back(std::move(usage));
+    };
+    add("get", "schema", "view.limit");
+    add("find", "validation", "");
+    add("get", "schema", "view.limit");
+    add("get", "schema", "paths");
+    add("get", "", "");
+    const auto usage = MakeUsage(lines, std::string("s"), AllVerbs());
+    Checked(usage);
+    REQUIRE(usage.refusals.has_value());
+    REQUIRE(usage.refusals->size() == 3);
+    const auto& top = usage.refusals->front();
+    CHECK(top.verb == "get");
+    CHECK(top.kind == "schema");
+    CHECK(top.key == "view.limit");
+    CHECK(top.count == 2);
+    CHECK(std::ranges::any_of(*usage.refusals, [](const shape::UsageRefusal& r) { return r.verb == "find" && !r.key; }));
+    CHECK(ParseUsageLine(UsageText(lines[0]))->refusedKey == "view.limit");
+    CHECK_FALSE(MakeUsage({}, std::string("s"), AllVerbs()).refusals.has_value());   // None: no list.
+}

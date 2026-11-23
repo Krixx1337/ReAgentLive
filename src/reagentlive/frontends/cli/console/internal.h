@@ -63,7 +63,7 @@ struct LineUsage {
     uint64_t digest = 0;                    // The results digests stood in for, at their full size.
     uint64_t outHash = UsageHashStart;      // What it printed, as the call made it (no timing, no context warning).
     bool ok = true;
-    std::string refused;
+    std::string refused, refusedKey;        // The first error's kind and the arg it names.
 };
 
 // The call being run, as its result cap (max_chars) needs it (output.cpp):

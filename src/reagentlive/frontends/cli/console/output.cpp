@@ -48,6 +48,8 @@ void Count(Session& session, const Json& record, size_t size) {
         const auto& error = record.contains("error") ? record["error"] : Json();
         session.line->refused = error.is_object() && error.contains("kind") && error["kind"].is_string() ?
             error["kind"].get<std::string>() : "error";
+        if (error.is_object() && error.contains("key") && error["key"].is_string())
+            session.line->refusedKey = error["key"].get<std::string>().substr(0, MaxUsageVerb);
     }
 }
 std::string Text(const Json& record) { return record.dump(-1, ' ', true, Json::error_handler_t::replace); }

@@ -412,6 +412,7 @@ struct UsageScope {
         if (line.digest && !record.cap) record.cap = session.input.maxChars;
         record.ok = line.ok;
         record.refused = line.refused;
+        record.refusedKey = line.refusedKey;
         record.ms = std::chrono::duration<double, std::milli>(Clock::now() - began).count();
         std::ofstream file(session.usage.path, std::ios::binary | std::ios::app);
         file << UsageText(record) << '\n';

@@ -51,8 +51,8 @@ appeared. Otherwise delete the scratch file, if any, and stop. Budget: one
 
 1. `usage` for the session with `advice`
    (`{"verb": "usage", "args": {"session": "<id>", "advice": true}}`; drop
-   `session` while it runs); copy its marks and its `advice` rows into
-   Friction.
+   `session` while it runs); copy its marks, its `advice` rows and its
+   `refusals` (verb, kind, arg: the help texts that misled) into Friction.
 2. Turn Friction and Wrong turns into candidates. Apply the rubric to each;
    drop any that fails one question:
    - Would it have saved a step, a refusal or an approval round?

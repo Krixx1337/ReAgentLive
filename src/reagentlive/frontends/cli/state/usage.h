@@ -26,6 +26,7 @@ struct UsageLine {
     uint64_t digest = 0;                // The result's size when a digest stood in for it (out is the digest's).
     bool ok = true;
     std::string refused;                // The error's kind; empty when ok.
+    std::string refusedKey;             // The arg at fault (the error's key, view.limit), when it names one.
     double ms = 0;
     bool batch = false;                 // Ran inside a batch.
     // The call's max_chars when it set one (big: 0), else the cap a digest
@@ -57,6 +58,7 @@ inline std::string UsageText(const UsageLine& line) {
         {"in", line.in}, {"out", line.out},
         {"ok", line.ok}, {"ms", static_cast<double>(static_cast<int64_t>(line.ms * 10 + 0.5)) / 10}};
     if (!line.refused.empty()) json["refused"] = line.refused;
+    if (!line.refusedKey.empty()) json["refused_key"] = line.refusedKey;
     if (line.batch) json["batch"] = true;
     if (line.digest) json["digest"] = line.digest;
     if (line.cap) json["cap"] = *line.cap;
@@ -89,6 +91,7 @@ inline std::optional<UsageLine> ParseUsageLine(std::string_view text) {
     for (const auto& key : json["keys"])
         if (key.is_string()) line.keys.push_back(key.get<std::string>());
     str("refused", line.refused);
+    str("refused_key", line.refusedKey);
     str("out_hash", line.outHash);
     number("digest", line.digest);
     if (uint64_t cap = 0; number("cap", cap)) line.cap = cap;

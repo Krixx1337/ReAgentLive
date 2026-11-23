@@ -68,7 +68,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             "figures that moved (totals calls, refused, digested, context and ms; refused_by.<kind>; per verb calls, "
             "refused, digested and ms_per_call), totals first, largest move first. A count is worse when it grew, "
             "time when it grew by a quarter and past noise (100 ms in all, 50 ms a call). baseline and save take one "
-            "session (session, or none for this one), never all or sessions."},
+            "session (session, or none for this one), never all or sessions. refusals lists refused calls by verb, error "
+            "kind and the arg at fault (key, when the error named one), most first: the help examples and arg texts "
+            "to fix first."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
             {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,

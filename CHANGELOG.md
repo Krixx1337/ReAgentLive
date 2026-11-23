@@ -104,6 +104,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **`usage` lists `refusals`:** refused calls by verb, error kind and the
+  arg at fault, most first, so the help texts that mislead get fixed
+  first.
 - **`usage` against a baseline:** `save` writes a session's report to a
   file; `baseline` compares a session with it and lists what got worse
   (and better): calls, refusals by kind, context, digests and time per

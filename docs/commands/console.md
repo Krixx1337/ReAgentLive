@@ -329,7 +329,9 @@ the generated functions, the MCP tools), so one log covers them
 - **`unfiltered`** marks only a call that printed past 2000 characters
   with none of its verb's filters; `get`'s `paths` is one (it picks what
   is read), whatever the size.
-- **Refused calls** count under `refused`; they never get `unfiltered`, and
+- **Refused calls** keep the arg the error named (`refused_key`), so
+  `usage` lists `refusals` by verb, kind and arg, most first: the help
+  examples and arg texts to fix first. They count under `refused`; they never get `unfiltered`, and
   one refused for its pack does not count in `calls_by_pack`.
 - **Context limit:** a session's `tool` output is what reached an
   agent's context. `--context-limit <chars>` (default 400,000; `0`: none)

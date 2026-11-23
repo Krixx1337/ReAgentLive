@@ -142,6 +142,19 @@ struct UsageCompare {
         v("better", &UsageCompare::better);
     }
 };
+// usage: refused calls by verb, kind and the arg at fault, most first: the
+// help examples and arg texts to fix first.
+struct UsageRefusal {
+    std::string verb, kind;
+    std::optional<std::string> key;
+    uint64_t count = 0;
+    template<class V> static void Describe(V& v) {
+        v("verb", &UsageRefusal::verb);
+        v("kind", &UsageRefusal::kind);
+        v("key", &UsageRefusal::key);
+        v("count", &UsageRefusal::count);
+    }
+};
 // usage with sessions: one session of the log.
 struct UsageSession {
     std::string session, since, until;  // Its first and last call.
@@ -173,6 +186,7 @@ struct UsageReport {
     std::optional<std::vector<UsageSession>> sessionRows;
     std::optional<UsageContext> context;
     std::optional<std::vector<UsageAdvice>> advice;
+    std::optional<std::vector<UsageRefusal>> refusals;
     std::optional<std::string> saved;           // save: the file this report went to.
     std::optional<UsageCompare> compare;        // baseline: what moved against it.
     template<class V> static void Describe(V& v) {
@@ -185,6 +199,7 @@ struct UsageReport {
         v("never_called", &UsageReport::neverCalled);
         v("session_rows", &UsageReport::sessionRows);
         v("context", &UsageReport::context);
+        v("refusals", &UsageReport::refusals);
         v("advice", &UsageReport::advice);
         v("saved", &UsageReport::saved);
         v("compare", &UsageReport::compare);
@@ -242,6 +257,7 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
     std::set<std::string> sessions;
     std::vector<const UsageLine*> calls;
     std::map<std::pair<std::string, std::string>, const UsageLine*> digestOf;  // (session, verb): its last digest.
+    std::map<std::tuple<std::string, std::string, std::string>, uint64_t> refusals;  // (verb, kind, key).
     const auto bump = [](std::optional<uint64_t>& count) { count = count.value_or(0) + 1; };
     for (const auto& line : lines) {
         if (!all && line.session != *session) continue;
@@ -259,6 +275,7 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
             bump(row.refused);
             if (!row.refusedBy) row.refusedBy.emplace();
             ++(*row.refusedBy)[line.refused.empty() ? "error" : line.refused];
+            ++refusals[{line.verb, line.refused.empty() ? "error" : line.refused, line.refusedKey}];
         }
         const bool sameInput = !seen.insert({line.session, line.hash}).second;
         const bool sameResult = !seenResult.insert({line.session, line.hash, line.outHash}).second;
@@ -311,6 +328,14 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
         stats.rows.push_back(std::move(row));
     }
     std::ranges::stable_sort(stats.rows, std::greater{}, &shape::UsageVerb::out);
+    if (!refusals.empty()) {
+        stats.refusals.emplace();
+        for (const auto& [at, count] : refusals) {
+            const auto& [verb, kind, key] = at;
+            stats.refusals->push_back({verb, kind, key.empty() ? std::nullopt : std::optional(key), count});
+        }
+        std::ranges::stable_sort(*stats.refusals, std::greater{}, &shape::UsageRefusal::count);
+    }
     std::ranges::stable_sort(calls, std::greater{}, [](const UsageLine* line) { return line->out; });
     for (size_t i = 0; i < calls.size() && i < UsageLargestCalls; ++i) {
         shape::UsageCall call{calls[i]->verb, calls[i]->caller, calls[i]->keys, calls[i]->out};
@@ -461,6 +486,7 @@ inline shape::UsageReport MakeSessionList(std::span<const UsageLine> lines, std:
     stats.rows.clear();
     stats.largest.clear();
     stats.neverCalled.reset();
+    stats.refusals.reset();
     std::map<std::string, shape::UsageSession> bySession;
     for (const auto& line : lines) {
         auto& row = bySession[line.session];
