@@ -137,6 +137,8 @@ CALLS = [
         {'path': 'C', 'error': 'no field C'}]})],
     [C('name', {'indices': [5, 6]}), ok({'rows': [{'index': 5, 'name': 'Five'}, {'index': 6}]})],
     [C('refs', {'name': 'Missing'}), error(kind='validation', message='no pooled name is exactly Missing')],
+    [C('disasm', {'addr': 4096}), error(kind='pack', message='disasm is in the native pack, outside this console\'s '
+                                        '--packs explore: start it with native in --packs')],
     [C('call', {'object': REF, 'function': 'Pawn:Fn', 'params': ['01']}), ok(CALL)],
     [C('call', {'object': REF, 'function': 'Pawn:Get', 'params': ['Name=#5', 'Mode=2']}), ok(dict(
         CALL, mode='typed', kept=True, kept_reason='ReturnValue is a String', truncated=False, outputs=[
@@ -407,6 +409,17 @@ class SessionTests(unittest.TestCase):
         with self.assertRaises(dl.ReAgentLiveError):
             self.session.call('bogus')
         self.assertEqual(self.c.status()['packs'], ['ue'])
+
+    def test_packs_reach_the_console_and_a_refusal_is_kind_pack(self):
+        open(self.log, 'w').close()
+        with dl.Session(sys.executable, ['-I', FAKE], packs=['explore', 'observe']) as session:
+            self.assertEqual(session.packs, ['explore', 'observe'])
+            with self.assertRaises(dl.ReAgentLiveError) as caught:
+                self.gen.Console(session).disasm(4096)        # The module keeps every verb; the console refuses.
+        self.assertEqual(caught.exception.kind, 'pack')
+        with open(self.log) as f:
+            self.assertIn('packs explore,observe', f.read().splitlines())
+        self.assertIsNone(self.session.packs)                     # No packs: the console's default, all.
 
     def test_the_generator_runs_from_a_console(self):
         replies = os.environ['REAGENTLIVE_FAKE_REPLIES']

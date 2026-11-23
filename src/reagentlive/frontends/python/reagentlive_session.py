@@ -35,6 +35,11 @@ instead: its size, its largest parts and `next`, the call narrowed, or
 `file`, where the console kept the whole result of a call that must not run
 again.
 
+`Session(console, packs=['explore', 'native'])` runs the console with that
+ceiling (`--packs`): a verb of another tool pack, through a generated
+function, `call` or a batch item, raises ReAgentLiveError with kind 'pack'.
+The generated module keeps every verb; the console decides.
+
 `s.call(verb, args)` sends any verb by name; a generated function does the
 same with checked argument names. Three helpers do what a generated function
 cannot: `s.batch_results` (a strict result per batch item), `s.watch` (a
@@ -59,10 +64,12 @@ __all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'D
 
 
 class ReAgentLiveError(RuntimeError):
-    """The console answered `ok: false`; `.error` holds its error object."""
+    """The console answered `ok: false`; `.error` holds its error object and `.kind` its kind ('pack': a verb
+    outside the session's tool packs)."""
 
     def __init__(self, command, error):
         self.command, self.error = command, error or {}
+        self.kind = self.error.get('kind')
         super().__init__(f'{command}: {self.error.get("message", "failed")}')
 
 
@@ -205,10 +212,11 @@ class Session:
     `table`: a `help --json` result already read from this console; the
     session then asks only for its hash (`help --hash`) and reads the whole
     table again only when it changed. `console` is a path (relative to the
-    current directory) or a name on PATH.
+    current directory) or a name on PATH. `packs`: the tool packs the console
+    runs (its --packs; explore always); None runs every pack.
     """
 
-    def __init__(self, console, args=(), caller='script', table=None):
+    def __init__(self, console, args=(), caller='script', table=None, packs=None):
         console = os.fspath(console)
         found = shutil.which(console) if not os.path.dirname(console) else None
         path = os.path.abspath(found or console)
@@ -217,7 +225,11 @@ class Session:
         console = path
         # stderr goes to a file, read only when the start fails: a pipe nobody reads could fill and stall the console.
         self._stderr = tempfile.TemporaryFile('w+', encoding='utf-8', errors='replace')
-        self._process = subprocess.Popen([console, *args, '--caller', caller], stdin=subprocess.PIPE,
+        if isinstance(packs, str):
+            packs = [packs]
+        self.packs = list(packs) if packs is not None else None
+        ceiling = ['--packs', ','.join(self.packs)] if self.packs is not None else []
+        self._process = subprocess.Popen([console, *args, *ceiling, '--caller', caller], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=self._stderr, text=True, bufsize=1)
         self._types = {}
         self.digest = None  # The last call's Digest (its result was past the budget), or None.

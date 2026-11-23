@@ -82,6 +82,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   those packs' verbs; others, `batch` items included, are refused with
   kind `pack`. `status` lists `tool_packs`; `stats` counts
   `calls_by_pack` ([console](docs/commands/console.md#one-shot-use)).
+- **Python sessions take packs:** `Session(console, packs=[...])` passes
+  the ceiling; a refused call raises `ReAgentLiveError` with `kind`
+  `pack` ([clients](docs/client.md#python-session)).
 - **Names that survive a patch:** `labels-sign` stores a byte signature on
   each name people confirmed (functions and globals); after a patch
   `labels-port` finds them in the new build and adds them to the file,

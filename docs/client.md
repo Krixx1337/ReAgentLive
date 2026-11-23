@@ -151,6 +151,11 @@ module calls through it; scripts use it for the rest.
   `caller='tool'` when an agent reads every result. `table=` takes a
   `help --json` result read before: the session then asks only for the
   hash (`help --hash`) and reads the table again only when it changed.
+- `Session(console, packs=['explore', 'native', 'observe'])` runs the
+  console with that [`--packs`](commands/console.md#one-shot-use)
+  ceiling: the generated module keeps every verb, and a call outside the
+  packs (a `batch` item too) raises `ReAgentLiveError` whose `kind` is
+  `pack`. A script that must not change the target leaves `modify` out.
 - **No timeout:** a call waits until the console answers or exits. The
   console's own waits still apply (2 s for a busy agent, then `busy`).
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
