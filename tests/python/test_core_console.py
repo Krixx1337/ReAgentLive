@@ -1,7 +1,7 @@
 """The console built without the engine pack (no agent or game): its verb table and what is made from it.
 
 Its `help --json` (--console <reagentlive-core-console.exe>) holds core rows
-only, less those that need a pack; every core row it keeps is the same as in
+only, every one of them, each the same as in
 the full table (--table <reagentlive-table.exe>). The generated module follows
 the table, so it has no pack class and no function for a pack verb.
 """
@@ -41,14 +41,8 @@ class CoreConsoleTests(unittest.TestCase):
         self.assertEqual([origin['origin'] for origin in self.core['origins']], ['core'])
         self.assertTrue(self.pack_verbs, 'the full table has pack rows')
 
-    def test_rows_that_need_a_pack_are_left_out(self):
-        verbs = [row['verb'] for row in self.core['rows']]
-        self.assertNotIn('trial', verbs)
-        self.assertIn('trial-list', verbs)
-        self.assertIn('trial', self.full_rows)
-
-    def test_kept_core_rows_are_unchanged(self):
-        full_core = [row['verb'] for row in self.full['rows'] if row['origin'] == 'core' and row['verb'] != 'trial']
+    def test_core_rows_are_unchanged(self):
+        full_core = [row['verb'] for row in self.full['rows'] if row['origin'] == 'core']
         self.assertEqual([row['verb'] for row in self.core['rows']], full_core)
         for row in self.core['rows']:
             self.assertEqual(row, self.full_rows[row['verb']], row['verb'])

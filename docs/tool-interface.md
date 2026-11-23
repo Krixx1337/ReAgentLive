@@ -92,11 +92,10 @@ the console.
 - **A pack gives its own title.** Each origin (`core`, a pack, `host`)
   comes with a title in `help --json`; the generated results page takes
   its headings from there, so no core file spells a pack's id.
-- **Mixed verbs stay on the side of their state.** `trial` is the core's
-  (the write, the undo, the guard); its owner check is borrowed from the
-  pack through `console/pack.h`, and without a pack it is refused. Its
-  row is marked `needsPack`, so a console built without a pack leaves it
-  out of its table ([source layout](design.md#source-layout)).
+- **Mixed verbs stay on the side of their state.** `write --undo` is the
+  core's (the write, the undo, the guard); its owner check is borrowed
+  from the pack through `console/pack.h`, and without a pack it is
+  refused ([source layout](design.md#source-layout)).
 
 Rejected:
 

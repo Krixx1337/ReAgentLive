@@ -20,7 +20,7 @@ console (`docs/commands/console.md`).
 | MCP not registered | console `-c` with literal refs |
 | A verb's keys before scripting | `help <verb>` (console, `s.help`, or the MCP `help` tool) |
 | Replay a record file | console `--replay <file>` |
-| Writes, calls, pins, `game-thread on` | any interface, after approval (skill rules) |
+| Writes (timed ones too), calls, `game-thread on` | any interface, after approval (skill rules) |
 
 Rule: MCP first; Python when the next step is a loop or a computation over
 results; the console when MCP is absent or for a human. The C++ client is
@@ -64,7 +64,7 @@ for building tools, not for investigating.
   `record`, a host's countdown capture): use `watch-start` / `watch-read` / `watch-stop`; for `record`
   use Python or the console.
 - **Each call is its own console run.** Nothing holds state between calls
-  but literal refs, pin, trial and capture ids, and the console's cache
+  but literal refs, timed-write and capture ids, and the console's cache
   file. The console can be rebuilt between calls; reconnect only if the
   client ignores the tool-list notice and a tool's arguments changed.
 - Output past the budget comes back as a `digest`: efficiency reference.

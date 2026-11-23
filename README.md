@@ -43,7 +43,7 @@ in the running game:
 | 2 | `ue_get` | your health: **87.5 / 100** |
 | 3 | `ue_each` | every soldier's health, read in the same tick |
 | 4 | `touches` | the one damage function that writes it |
-| 5 | `trial` | your health held at 1000 for 30 s, then restored *(asks you first)* |
+| 5 | `write --undo` | your health held at 1000 for 30 s, then restored *(asks you first)* |
 
 > **Agent:** Health is a float at `HealthComp+0x1A8`, written by one damage
 > function at `Game.exe+0x9A3F10`. Every soldier uses it. I held yours at

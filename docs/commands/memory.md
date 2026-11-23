@@ -1,10 +1,10 @@
 # Memory commands
 
-*Home of:* the core memory commands and their guards: `read`, `peek`, `write`, trials, `search`, `pin`, `watch`, `mem-snap`/`mem-diff`, typed layouts.
+*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `writes`, `search`, `watch`, `mem-snap`/`mem-diff`, typed layouts.
 
 **TL;DR:** Read, search and change raw memory in any process the agent
 runs in, with no engine pack (tier T0). Every write is guarded and can
-require the old bytes first; pins and trials undo themselves when they
+require the old bytes first; timed writes undo themselves when they
 expire. Writes change the running game: they are separate commands
 marked `writes`, so a client asks before running them.
 
@@ -20,10 +20,9 @@ keys: `help <verb>` or [result shapes](results.md).
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
 | `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
 | `mem-snap <addr> <len>` / `mem-diff <test> <type> [--keep] [--limit N]` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
-| `pin <addr> <hex> [--seconds N\|--ms N] [--expect <hex>]` | up to 8 pins of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests |
-| `pin-list` / `pin-clear [id]` | each pin's state (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`), writes and time left; clear one or all |
-| `trial <addr> <hex> --owner <ref> --expect <hex> [--object <addr>] [--seconds N\|--ms N]` | up to 8 trials of 1..64 bytes, 1 ms..60 s (default 10 s). One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear trials before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so a trial needs a host with the Unreal pack; the agent does not check classes |
-| `trial-list` / `trial-clear [id]` | each trial's state (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned), `original` bytes, `changed_tick` and time left; finished trials stay listed until cleared. Clear restores active ones and returns every cleared row |
+| `write <addr> <hex> --hold [duration] [--expect <hex>]` | a pin: up to 8 of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests ([timed writes](#timed-writes)) |
+| `write <addr> <hex> --undo <duration> --owner <ref> --expect <hex> [--object <addr>]` | a trial: up to 8 of 1..64 bytes, 1 ms..60 s. One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear them (`writes clear`) before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so `--undo` needs a host with the Unreal pack; the agent does not check classes |
+| `writes [clear [undo:N\|hold:N]]` | every timed write as a row (`id`, `mode`, `state`, time left): an `--undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `--hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one or all, restoring active `--undo` ones, and returns the rows it ended |
 | `watch <seconds\|Nms> <addr>:<len>... [--then call ...]` | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, up to 30 s; sampled at the start of every host tick into a 4 MB agent buffer |
 | `watch-start <duration> <addr\|offset>:<len>\|<object>.<Field>... [--every <duration>] [--follow <root>]` / `watch-read [--all]` / `watch-stop [--all]` | the same ranges, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
 
@@ -110,10 +109,12 @@ bounded narrowing scan over one range the agent names, not a memory
 scanner: no whole-process scan, no tolerance, no pointer scan
 ([design](../design.md#place-among-other-tools)).
 
-## pin
+## Timed writes
 
-`pin` freezes memory: the agent writes the same bytes every tick until the pin
-expires or stops. A target given relative to an object (`$N+0x3E4`, a literal
+`write --undo <duration>` writes once and the agent restores the original
+bytes when the time is up (a trial, above). `write --hold` freezes memory: the
+agent writes the same bytes every tick until the pin
+expires (its duration, default 10 s) or stops. A target given relative to an object (`$N+0x3E4`, a literal
 ref plus offset) is guarded on that object's identity (Unreal: object-table
 index and class, read when the pin starts), so the pin stops for good when the
 object is freed or replaced instead of writing into reused memory. `--expect`

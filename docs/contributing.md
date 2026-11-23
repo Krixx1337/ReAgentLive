@@ -91,7 +91,7 @@ console reaches the pack only through `console/pack.h`, which
 `packs/ue/cli/console/pack.cpp` implements (and `console/no_pack.cpp`, empty, for a
 console built without the pack): the pack's state for a run, its cache
 block, its rows of the verb table and `status` line, which commands are its own, and what core
-commands borrow (object guards, the trial owner check, `watch --then`,
+commands borrow (object guards, the `write --undo` owner check, `watch --then`,
 `peek`'s objects and names). `packs/ue/cli/console/internal_ue.h` is for
 `packs/ue/cli/console/` only. Why seams and not a pack interface:
 [design](design.md#source-layout).
@@ -139,7 +139,7 @@ one file:
 | `console/console.cpp` | the input line reader, `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole`, its busy wait and its no-target mode |
 | `console/output.cpp` | JSON records, the check of a result against its row, errors, `--timing`, output budgets (the digest, the kept-results file), batch capture, each line's output size for the usage log |
 | `results/budget.h` | output budgets: the size profile of a result, the narrower line and the digest |
-| `console/memory.cpp` | `status`, read decoding, `pin`, trials, `watch` (blocking and detached), `peek` |
+| `console/memory.cpp` | `status`, read decoding, timed writes (`write --undo`, `--hold`, `writes`), `watch` (blocking and detached), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
 | `console/sig.cpp` | `sig-check` (one pattern or `--file`), `sig-bytes`: byte signatures against the live image |
 | `console/label_sigs.cpp`, `code/label_sign.h` | `labels-sign`, `labels-port`: signatures on a labels file's names, grown and ported |
@@ -217,7 +217,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack; with the Unreal pack, the Unreal example's DLL the same way (`unreal_tests.cpp`, no engine: the `ue` pack listed, `game-thread` answering) |
 | `reagentlive.consumer` (`tests/consumer/`) | host projects built in their own tree: an agent-only host (no downloads with the console off, nothing past `src/` reachable through the include path) and an Unreal host with no SDK (`host_ue_base.cpp`: `ue-base` builds with no `SDK/` on the path) |
 | `reagentlive.engine-layout` (`tests/python/`) | engine offsets defined only in their homes (`engine_layout.h`, `engine_layout_sdk.h`, `globals.h`, `name_pool.h`) |
-| `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help --json` has core rows only, none marked `needsPack`, each the same as in the full table, and the module generated from it no pack verb |
+| `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help --json` has every core row and no other, each the same as in the full table, and the module generated from it no pack verb |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
 | `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, INDEX lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, `AGENTS.md` stays within its own, and no host or game name appears in the library |
 

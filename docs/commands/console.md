@@ -205,7 +205,7 @@ request costs up to a host tick. The console cuts both:
     a digest is never a dead end. It is for a
     line that only reads: reads, `each`, `call-pure`, and a typed `call`
     on a const or pure function.
-  - `file`: a line that may have changed state (a write, `trial`, `pin`,
+  - `file`: a line that may have changed state (a write, timed or not,
     a hook, a raw `call` or one on a function that is neither const nor
     pure) never runs again to show its result: the whole envelope goes to
     `%TEMP%\reagentlive-<pid>-<owner>.results\`, keyed like the cache

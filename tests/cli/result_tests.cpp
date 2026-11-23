@@ -133,7 +133,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     std::set<std::string> writers;
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
-    CHECK(writers == std::set<std::string>{"write", "trial", "trial-clear", "pin", "watch", "each", "call", "release", "calls-start", "game-thread"});
+    CHECK(writers == std::set<std::string>{"write", "writes", "watch", "each", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
         {"help", "start, or a page's next_cursor"}});
@@ -298,7 +298,7 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
 TEST_CASE("named types: listed once in the table, by name in the rows that use them") {
     const auto table = Checked(MakeHelpTable(AllVerbs(), AllOrigins()));
     REQUIRE(table.contains("types"));
-    for (const auto name : {"Chain", "Object", "Trial", "Pin", "WatchRange", "WatchSample", "ue.Name", "ue.FieldInfo"}) {
+    for (const auto name : {"Chain", "Object", "TimedWrite", "WatchRange", "WatchSample", "ue.Name", "ue.FieldInfo"}) {
         CAPTURE(name);
         CHECK(table["types"].contains(name));
     }

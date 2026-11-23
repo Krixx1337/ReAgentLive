@@ -175,8 +175,8 @@ TEST_CASE("func --script and refs parse to their kinds") {
     CHECK_FALSE(Parse("refs #0", NoRefs).has_value());
 }
 
-TEST_CASE("write --trial needs an owner ref and expected bytes") {
-    auto parsed = Parse("trial $1+0x10 2a 00 00 00 --owner $1 --expect 07 00 00 00 --seconds 5", TwoRefs);
+TEST_CASE("write --undo needs an owner ref and expected bytes") {
+    auto parsed = Parse("write $1+0x10 2a 00 00 00 --undo 5 --owner $1 --expect 07 00 00 00", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Trial);
     CHECK(parsed->request.op == op::Trial);
@@ -187,18 +187,39 @@ TEST_CASE("write --trial needs an owner ref and expected bytes") {
     CHECK(parsed->owner == Ref{0x1000, 5, 9});
     CHECK(parsed->object == 0);
     CHECK(parsed->milliseconds == 5000);
-    parsed = Parse("trial 0x5008 01 --owner $1 --object 0x5000 --expect 00", TwoRefs);
+    parsed = Parse("write 0x5008 01 --undo 500ms --owner $1 --object 0x5000 --expect 00", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->object == 0x5000);
-    CHECK_FALSE(Parse("trial $1 01 --expect 00", TwoRefs).has_value());          // No owner.
-    CHECK_FALSE(Parse("trial $1 01 --owner $1", TwoRefs).has_value());           // No --expect.
-    CHECK_FALSE(Parse("trial $1 01 --owner 0x1000 --expect 00", TwoRefs).has_value()); // Owner must be a ref.
-    CHECK_FALSE(Parse("trial $1 01 --owner $1 --expect 00 --seconds 61", TwoRefs).has_value());
-    parsed = Parse("trial-clear 3", NoRefs);
+    CHECK(parsed->milliseconds == 500);
+    CHECK_FALSE(Parse("write $1 01 --undo 5 --expect 00", TwoRefs).has_value());          // No owner.
+    CHECK_FALSE(Parse("write $1 01 --undo 5 --owner $1", TwoRefs).has_value());           // No --expect.
+    CHECK_FALSE(Parse("write $1 01 --undo 5 --owner 0x1000 --expect 00", TwoRefs).has_value()); // Owner must be a ref.
+    CHECK_FALSE(Parse("write $1 01 --undo 61 --owner $1 --expect 00", TwoRefs).has_value());
+    CHECK_FALSE(Parse("write $1 01 --owner $1 --expect 00", TwoRefs).has_value());       // --owner goes with --undo.
+    CHECK_FALSE(Parse("write $1 01 --undo 5 --hold --owner $1 --expect 00", TwoRefs).has_value());
+    CHECK_FALSE(Parse("write $1 01 --hold --owner $1", TwoRefs).has_value());
+    for (const char* gone : {"trial $1 01 --owner $1 --expect 00", "trial-list", "trial-clear", "pin 0x10 01", "pin-list", "pin-clear"})
+        CHECK_FALSE(Parse(gone, TwoRefs).has_value());
+}
+
+TEST_CASE("writes lists the timed writes; clear takes one id or none") {
+    auto parsed = Parse("writes", NoRefs);
     REQUIRE(parsed.has_value());
-    CHECK(parsed->request.flags == static_cast<uint32_t>(TrialAction::Clear));
+    CHECK(parsed->kind == Kind::Writes);
+    CHECK_FALSE(parsed->all);
+    parsed = Parse("writes clear", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->all);
+    CHECK(parsed->request.args[0] == 0);
+    parsed = Parse("writes clear undo:3", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->target == "undo");
     CHECK(parsed->request.args[0] == 3);
-    CHECK(Parse("trial-list", NoRefs).has_value());
+    CHECK(Parse("writes clear hold:2", NoRefs)->target == "hold");
+    CHECK_FALSE(Parse("writes clear 3", NoRefs).has_value());
+    CHECK_FALSE(Parse("writes clear pin:3", NoRefs).has_value());
+    CHECK_FALSE(Parse("writes list", NoRefs).has_value());
+    CHECK_FALSE(Parse("writes undo:3", NoRefs).has_value());
 }
 
 TEST_CASE("release is a call with the release flag and an optional block") {
@@ -367,9 +388,9 @@ TEST_CASE("search filters and safe write parse") {
     CHECK(parsed->request.flags == 0);
 }
 
-TEST_CASE("pin and watch parse targets, guards and durations") {
+TEST_CASE("write --hold and watch parse targets, guards and durations") {
     const Ref refs[] = {{0x7000, 12, 3}};
-    auto parsed = Parse("pin $1+0x3e4 00 00 80 3f --seconds 5 --expect 00 00 00 00", refs);
+    auto parsed = Parse("write $1+0x3e4 00 00 80 3f --hold 5s --expect 00 00 00 00", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Pin);
     CHECK(parsed->request.flags == static_cast<uint32_t>(PinAction::Add));
@@ -379,18 +400,12 @@ TEST_CASE("pin and watch parse targets, guards and durations") {
     CHECK(parsed->request.args[1] == 1);
     REQUIRE(parsed->guardObjects.size() == 1);
     CHECK(parsed->guardObjects[0] == 0x7000);
-    parsed = Parse("pin 0x5000 01", refs);
+    parsed = Parse("write 0x5000 01 --hold", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->guardObjects[0] == 0);
     CHECK(parsed->milliseconds == 10000);
-    parsed = Parse("pin-clear 3", refs);
-    REQUIRE(parsed.has_value());
-    CHECK(parsed->request.flags == static_cast<uint32_t>(PinAction::Clear));
-    CHECK(parsed->request.args[0] == 3);
-    CHECK(Parse("pin-list", refs).has_value());
-    CHECK_FALSE(Parse("pin 0x5000 01 --seconds 61", refs).has_value());
-    CHECK_FALSE(Parse("pin 0x5000 01 02 --expect 01", refs).has_value());
-    CHECK_FALSE(Parse("pin-clear x", refs).has_value());
+    CHECK_FALSE(Parse("write 0x5000 01 --hold 61", refs).has_value());
+    CHECK_FALSE(Parse("write 0x5000 01 02 --hold --expect 01", refs).has_value());
 
     parsed = Parse("watch 2 $1+0x3e4:4 0x7000#12:3+0x258:8 0x9000:16 --then call $1 Owner:SetAiming 01", refs);
     REQUIRE(parsed.has_value());

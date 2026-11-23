@@ -94,32 +94,32 @@ const char* PinStopText(PinStop stop) {
     return "unknown";
 }
 
-shape::Pin MakePin(const PinState& pin) {
-    return {pin.id, pin.spec.address, HexBytes(std::span(pin.spec.bytes, pin.spec.length)),
-        pin.spec.guard.address != 0, PinStopText(pin.stop), pin.writes, pin.remaining};
+shape::TimedWrite MakePin(const PinState& pin) {
+    shape::TimedWrite row;
+    row.id = "hold:" + std::to_string(pin.id);
+    row.mode = "hold";
+    row.address = pin.spec.address;
+    row.bytes = HexBytes(std::span(pin.spec.bytes, pin.spec.length));
+    row.state = PinStopText(pin.stop);
+    row.remainingMs = pin.remaining;
+    row.guarded = pin.spec.guard.address != 0;
+    row.writes = pin.writes;
+    return row;
 }
 
+// write's answer for a timed write: the write's place and size, and the write itself.
+shape::Write TimedResult(Session& session, shape::TimedWrite row, uint32_t length) {
+    shape::Write out{row.address, Locate(row.address.value, LoadedModules(session)), length, {}};
+    out.timed = std::move(row);
+    return out;
+}
 }
 
+// write --hold: a pin the agent writes every tick.
 void RunPin(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::Pin)) return JsonError(session, jsonCommand, "unsupported", "agent does not support pin");
+    if (!client.Supports(op::Pin)) return JsonError(session, jsonCommand, "unsupported", "agent does not support --hold");
     const Request& request = command.request;
-    switch (static_cast<PinAction>(request.flags)) {
-    case PinAction::List: {
-        auto pins = client.PinList();
-        if (!pins) return CommandError(session, jsonCommand, pins.error());
-        shape::PinList result;
-        for (const auto& pin : *pins) result.rows.push_back(MakePin(pin));
-        return Emit(session, jsonCommand, std::move(result));
-    }
-    case PinAction::Clear: {
-        auto cleared = client.PinClear(static_cast<uint32_t>(request.args[0]));
-        if (!cleared) return CommandError(session, jsonCommand, cleared.error());
-        return Emit(session, jsonCommand, shape::PinClear{*cleared});
-    }
-    default: break;
-    }
     PinSpec spec{};
     spec.address = request.address;
     spec.length = request.length;
@@ -132,7 +132,7 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
     spec.guard = *guard;
     auto pin = client.PinAdd(spec);
     if (!pin) return CommandError(session, jsonCommand, pin.error());
-    Emit(session, jsonCommand, MakePin(*pin));
+    Emit(session, jsonCommand, TimedResult(session, MakePin(*pin), request.length));
 }
 
 namespace {
@@ -154,10 +154,11 @@ const char* TrialGuardText(TrialGuard guard) {
     }
     return "unknown";
 }
-shape::Trial MakeTrial(const TrialState& trial) {
+shape::TimedWrite MakeTrial(const TrialState& trial) {
     const auto& spec = trial.spec;
-    shape::Trial row;
-    row.id = trial.id;
+    shape::TimedWrite row;
+    row.id = "undo:" + std::to_string(trial.id);
+    row.mode = "undo";
     row.address = spec.address;
     row.bytes = HexBytes(std::span(spec.bytes, spec.length));
     row.original = HexBytes(std::span(trial.original, spec.length));
@@ -169,32 +170,15 @@ shape::Trial MakeTrial(const TrialState& trial) {
     if (const char* guard = TrialGuardText(trial.guard)) row.guard = guard;
     return row;
 }
-std::vector<shape::Trial> TrialRows(const std::vector<TrialState>& trials) {
-    std::vector<shape::Trial> rows;
-    for (const auto& trial : trials) rows.push_back(MakeTrial(trial));
-    return rows;
-}
 }
 
+// write --undo: a trial the agent restores.
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
-    if (!client.Supports(op::Trial)) return JsonError(session, jsonCommand, "unsupported", "agent does not support trials");
+    if (!client.Supports(op::Trial)) return JsonError(session, jsonCommand, "unsupported", "agent does not support --undo");
     const Request& request = command.request;
-    switch (static_cast<TrialAction>(request.flags)) {
-    case TrialAction::List: {
-        auto trials = client.TrialList();
-        if (!trials) return CommandError(session, jsonCommand, trials.error());
-        return Emit(session, jsonCommand, shape::TrialList{TrialRows(*trials)});
-    }
-    case TrialAction::Clear: {
-        auto trials = client.TrialClear(static_cast<uint32_t>(request.args[0]));
-        if (!trials) return CommandError(session, jsonCommand, trials.error());
-        return Emit(session, jsonCommand, shape::TrialClear{trials->size(), TrialRows(*trials)});
-    }
-    default: break;
-    }
     auto ownerSize = TrialOwnerSize(session, command.owner);
-    if (!ownerSize) return JsonError(session, jsonCommand, "validation", "trial refused: " + ownerSize.error());
+    if (!ownerSize) return JsonError(session, jsonCommand, "validation", "write --undo refused: " + ownerSize.error());
     auto guard = ObjectGuard(session, command.owner.address);
     if (!guard) return CommandError(session, jsonCommand, guard.error());
     TrialSpec spec{};
@@ -209,11 +193,41 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
     spec.object = command.object;
     if (!TrialSpecValid(spec))
         return JsonError(session, jsonCommand, "validation", spec.object ?
-            "trial refused: the target must lie within 0x1000 bytes after --object" :
-            "trial refused: the target is outside the owner; give --object for a native object it points to");
+            "write --undo refused: the target must lie within 0x1000 bytes after --object" :
+            "write --undo refused: the target is outside the owner; give --object for a native object it points to");
     auto trial = client.TrialAdd(spec);
     if (!trial) return CommandError(session, jsonCommand, trial.error());
-    Emit(session, jsonCommand, MakeTrial(*trial));
+    Emit(session, jsonCommand, TimedResult(session, MakeTrial(*trial), request.length));
+}
+
+// writes [clear [undo:N|hold:N]]: every timed write, --undo ones first; clear ends them.
+void RunWrites(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    const bool trials = client.Supports(op::Trial), pins = client.Supports(op::Pin);
+    if (!trials && !pins) return JsonError(session, jsonCommand, "unsupported", "agent does not support timed writes");
+    const bool clear = command.all;
+    const auto id = static_cast<uint32_t>(command.request.args[0]);
+    shape::Writes result;
+    if (trials && command.target != "hold") {
+        auto rows = clear ? client.TrialClear(id) : client.TrialList();
+        if (!rows) return CommandError(session, jsonCommand, rows.error());
+        for (const auto& trial : *rows) result.rows.push_back(MakeTrial(trial));
+    }
+    if (pins && command.target != "undo") {
+        auto rows = client.PinList();
+        if (!rows) return CommandError(session, jsonCommand, rows.error());
+        std::vector<shape::TimedWrite> listed;
+        for (const auto& pin : *rows)
+            if (!id || pin.id == id) listed.push_back(MakePin(pin));
+        if (clear) {
+            auto cleared = client.PinClear(id);
+            if (!cleared) return CommandError(session, jsonCommand, cleared.error());
+            for (auto& row : listed) if (row.state == "active") row.state = "cleared";
+        }
+        result.rows.insert(result.rows.end(), listed.begin(), listed.end());
+    }
+    if (clear) result.cleared = result.rows.size();
+    Emit(session, jsonCommand, std::move(result));
 }
 
 namespace {

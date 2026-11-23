@@ -103,8 +103,9 @@ class McpTests(unittest.TestCase):
         self.assertEqual(schema['properties']['type']['type'], 'string')
         self.assertIn('rows', tools['ue_find'].output_schema['properties'])
         self.assertEqual(tools['batch'].input_schema['properties']['calls']['type'], 'array')
-        trial = tools['trial'].input_schema
-        self.assertIn('owner', trial['required'])                 # A required flag.
+        write = tools['write'].input_schema
+        self.assertEqual(write['required'], ['addr', 'data'])     # Flags are never required.
+        self.assertIn('undo', write['properties'])
         self.assertEqual(tools['search'].input_schema['properties']['type']['enum'][:2], ['hex', 'u32'])
         self.assertIn('read <addr> [len] [--type type]', tools['read'].description)
 

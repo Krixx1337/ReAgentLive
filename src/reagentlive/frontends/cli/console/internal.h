@@ -136,6 +136,7 @@ inline bool TickAccurate(const Session& session) { return session.client.AgentHo
 std::vector<Json> DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type);
 void RunPin(Session& session, const Command& command, std::string_view jsonCommand);
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand);
+void RunWrites(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWatch(Session& session, const Command& command, std::span<const Ref> refs, std::span<const Module> modules,
               std::string_view jsonCommand);

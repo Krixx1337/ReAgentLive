@@ -19,7 +19,7 @@
 int main(int argc, char** argv) {
     using namespace reagentlive::cli;
     const Origin pack[] = {UnrealOrigin};
-    const auto verbs = TableRows(UnrealVerbs(), pack, {});
+    const auto verbs = TableRows(UnrealVerbs(), {});
     const auto origins = TableOrigins(pack);
     auto help = MakeHelpTable(verbs, origins);
     help.tableHash = TableHash(verbs, origins);

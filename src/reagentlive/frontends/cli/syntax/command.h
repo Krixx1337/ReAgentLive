@@ -17,7 +17,7 @@
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
-    Trial, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
+    Trial, Writes, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
     MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread };
 struct Verb;
 struct Command {
@@ -40,11 +40,11 @@ struct Command {
     uint32_t limit = 0;         // census, call: rows to print, 0 = all. find: rows at most, 0 = one agent page.
     uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
     std::string view;           // read --type: element type or layout for decoded values.
-    // pin and watch: per target (watch: per range in `reads`), the object an
+    // write --hold and watch: per target (watch: per range in `reads`), the object an
     // address was given relative to ($N+0x10), 0 for raw addresses. The
     // console guards those on the object's identity.
     std::vector<uint64_t> guardObjects;
-    uint32_t milliseconds = 0;  // pin, watch: duration.
+    uint32_t milliseconds = 0;  // write --undo and --hold, watch: duration.
     // watch, watch-start, watch-read, watch-stop: `target` is empty (a
     // blocking watch), "start", "read" or "stop"; the sample interval (0: every tick) and a host root to follow.
     uint32_t interval = 0;
@@ -63,7 +63,7 @@ struct Command {
     // --outer on find, each and census: an object (its full ref) or an outer's name text.
     std::string outer, outerText;
     Ref outerRef{};
-    // write --trial: the owning object (guarded on its identity) and an
+    // write --undo: the owning object (guarded on its identity) and an
     // optional native object base inside it whose vtable is guarded too.
     Ref owner{};
     uint64_t object = 0;

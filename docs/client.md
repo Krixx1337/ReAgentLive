@@ -198,7 +198,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   the game).
 - **Only what the console has:** the tools are its table's rows, so a
   console built without the pack ([hosting](hosting.md#using-it-in-your-project)) serves no
-  pack tools and no core tool that needs a pack.
+  pack tools.
 - **Left out:** `quit` (the adapter owns the console) and verbs marked
   `blocks` (`watch`, `record`, a host's countdown capture): a call would
   outlast a client's timeout. Use `watch-start`, then `watch-read`; or

@@ -3,7 +3,7 @@
 // every couple of milliseconds, so it works in any x64 process unchanged.
 //
 // What it gives: every memory command and what the console builds on them
-// (read, write, search, pin, watch, peek, disasm, xrefs, sig, vtable, region).
+// (read, write and timed writes, search, watch, peek, disasm, xrefs, sig, vtable).
 // What it does not: object commands and engine calls (no pack), or tick
 // accuracy (its thread is not the game's, so a read can be torn and a write
 // can race the game). A real host ticks on the engine's thread instead

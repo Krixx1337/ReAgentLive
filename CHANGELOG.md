@@ -42,6 +42,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `raw` in place of `label`), `get <ref> --snap [file]` keeps a baseline
   and `get <ref> --changed [file]` compares with it. A path that names no
   field lists the closest field names. A class by name needs `--types`.
+- **One write verb:** `trial` is `write --undo <duration> --owner <ref>
+  --expect <hex>`, `pin` is `write --hold [duration]`; both answer
+  the write with `timed`. `writes` lists every timed write (ids `undo:N`,
+  `hold:N`) and `writes clear [id]` ends them, replacing `trial-list`,
+  `trial-clear`, `pin-list` and `pin-clear`.
 
 - **The MCP adapter needs the MCP Python SDK 2:** run
   `python -m pip install --upgrade "mcp>=2"` in the Python your MCP config

@@ -55,7 +55,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Where a value or string lives | `search` |
 | Which bytes of a range react to an action | `mem-snap`, then `mem-diff` |
 | A native object's class, bases, virtual table | `vtable --rtti` |
-| Change memory once / every tick / once with an undo | `write` / `pin` / `trial` (approval); `pin-list`, `pin-clear`, `trial-list`, `trial-clear` |
+| Change memory once / every tick / once with an undo | `write` / `write --hold` / `write --undo` (approval); `writes`, `writes clear` |
 
 ## Over time (`docs/commands/memory.md#watch`, `docs/commands/capture.md`)
 

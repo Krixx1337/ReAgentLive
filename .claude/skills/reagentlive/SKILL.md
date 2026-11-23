@@ -47,9 +47,9 @@ once `get Vector --types` answers. `host_thread: engine`: T3. Real serials (not 
 - Except the first call on a new host or in a new game (the known-answer
   call, `call-pure` included): ask first, since a wrong engine layout can
   crash the game.
-- Ask the user first for any `write`, `pin`, `calls-start`, `game-thread on`
+- Ask the user first for any `write` (`--hold` too), `writes clear`, `calls-start`, `game-thread on`
   (it writes one pointer in the viewport object) and any `call` that could
-  change state or crash; `trial` as the host's rules say. Give the address,
+  change state or crash; `write --undo` as the host's rules say. Give the address,
   the bytes now, the bytes new and the expected effect; for a call, its
   `call --dry` output. One approval covers one write.
 - Never guess a flag or a result key: `help <verb>` (no target needed).
@@ -79,7 +79,7 @@ Mapping, gaps and what MCP leaves out: load `references/interfaces.md`.
 | choose MCP, Python or the console, loop over many objects (`each` first), or need a verb's tool or function name | [references/interfaces.md](references/interfaces.md) |
 | drive the console or Python by hand: quoting, parsing JSON Lines, generating the module | [references/console-driving.md](references/console-driving.md) |
 | sample a value over time, record a function's calls, or see what changes across an action (one that resets at once, like a jump, too) | [references/capture-and-timing.md](references/capture-and-timing.md) |
-| send any `call` (pure getters too), `write`, `pin` or `trial` | [references/calls-and-writes.md](references/calls-and-writes.md) |
+| send any `call` (pure getters too) or `write` (`--undo`, `--hold`) | [references/calls-and-writes.md](references/calls-and-writes.md) |
 | read an object with no reflection, hunt padding or native state, or `search` memory | [references/hidden-state.md](references/hidden-state.md) |
 | disassemble, follow a native getter, read Blueprint bytecode, or cross to a static tool | [references/native-code.md](references/native-code.md) |
 | make or check a byte signature, or sign or port a labels file's names | [references/signatures.md](references/signatures.md) |

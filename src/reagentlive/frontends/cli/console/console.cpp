@@ -144,7 +144,7 @@ void RunHelp(Session& session, const Command& command, std::string_view jsonComm
 }
 
 // The verb table: the core's rows, the pack's, then the host's own.
-std::vector<Verb> AllVerbs(const ConsoleConfig& config) { return TableRows(PackVerbs(), PackOrigins(), config.verbs); }
+std::vector<Verb> AllVerbs(const ConsoleConfig& config) { return TableRows(PackVerbs(), config.verbs); }
 std::vector<Origin> AllOrigins() { return TableOrigins(PackOrigins()); }
 
 // A JSON call's own keys: the verb, its arguments, and the console's line flags.
@@ -336,7 +336,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
                 {"found", format_detail::Hex(found, found.size())}}}});
         }
         return Emit(session, jsonCommand,
-            shape::Write{request.address, Locate(request.address, LoadedModules(session)), request.length});
+            shape::Write{request.address, Locate(request.address, LoadedModules(session)), request.length, {}});
     }
     case op::Search: {
         SearchQuery query;
@@ -621,6 +621,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::Stats: RunStats(session, *parsed, jsonCommand); return false;
     case Kind::Pin: RunPin(session, *parsed, jsonCommand); return false;
     case Kind::Trial: RunTrial(session, *parsed, jsonCommand); return false;
+    case Kind::Writes: RunWrites(session, *parsed, jsonCommand); return false;
     case Kind::Watch: RunWatch(session, *parsed, session.refs, LoadedModules(session), jsonCommand); return false;
     case Kind::Batch: RunBatch(session, *parsed, jsonCommand); return false;
     case Kind::Sig: RunSig(session, *parsed, jsonCommand); return false;

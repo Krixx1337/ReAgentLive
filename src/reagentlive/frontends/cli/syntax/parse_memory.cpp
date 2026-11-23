@@ -1,4 +1,4 @@
-// reagentlive CLI: parsing the memory verbs (read, write, search, pin, watch, ...).
+// reagentlive CLI: parsing the memory verbs (read, write, writes, search, watch, ...).
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -8,28 +8,6 @@
 namespace reagentlive::cli::parse {
 using namespace text;
 namespace {
-// An optional pin, trial or capture id: 0 when absent.
-bool OptionalId(const Args& args, uint64_t& id) {
-    id = 0;
-    return args.At(0).empty() || (Number(args.At(0), id) && id && id <= UINT32_MAX);
-}
-
-// --seconds N or --ms N into milliseconds, up to `longest`; false when malformed.
-bool Duration(const Args& args, uint32_t longest, uint32_t& milliseconds, std::string& why, std::string_view what) {
-    for (const std::string_view flag : {"--seconds", "--ms"}) {
-        if (!args.Has(flag)) continue;
-        uint64_t n = 0;
-        if (!Number(args.Value(flag), n) || !n) return false;
-        n *= flag == "--seconds" ? 1000 : 1;
-        if (n > longest) {
-            why = std::string(what) + " lasts at most " + std::to_string(longest / 1000) + " s";
-            return false;
-        }
-        milliseconds = static_cast<uint32_t>(n);
-    }
-    return true;
-}
-
 // 10, 10s, 500ms, 10m: milliseconds; 0 when malformed.
 uint64_t Milliseconds(std::string_view text) {
     uint64_t n = 0, scale = 1000;
@@ -185,66 +163,73 @@ Parsed Peek(const Args& args, const ParseContext& context) {
     return command;
 }
 
+// write <addr> <hex> [--expect <hex>] [--undo <duration>] [--hold [duration]] [--owner <ref>] [--object <addr>]:
+// a plain write, a trial (--undo: the agent restores it) or a pin (--hold: rewritten every tick).
 Parsed Write(const Args& args, const ParseContext& context) {
     Command command;
     Request& request = command.request;
     if (IsChain(args.At(0))) return Fail(ChainRefused);
     if (!Address(args.At(0), context.refs, context.modules, request.address)) return Fail();
-    if (!Bytes(args.From(1), request.data, MaxWrite, request.length) || !request.length)
-        return Fail("bytes must be hex pairs, at most " + std::to_string(MaxWrite));
-    if (const auto* expect = args.Find("--expect")) {
-        uint32_t expected = 0;
-        if (!Bytes(Args::Joined(*expect), request.data + request.length, MaxWrite, expected) || expected != request.length)
-            return Fail("--expect needs as many hex bytes as the write");
-        request.flags = WriteExpect;
-    }
-    request.op = op::Write;
-    return command;
-}
-
-// trial <addr> <hex bytes> --owner <ref> --expect <hex bytes> [--object <addr>] [--seconds N | --ms N]:
-// one write the agent undoes.
-Parsed Trial(const Args& args, const ParseContext& context) {
-    Command command;
-    Request& request = command.request;
-    command.kind = Kind::Trial;
-    if (IsChain(args.At(0))) return Fail(ChainRefused);
-    if (!Address(args.At(0), context.refs, context.modules, request.address)) return Fail();
-    if (!Bytes(args.From(1), request.data, MaxTrialBytes, request.length) || !request.length)
-        return Fail("bytes must be hex pairs, at most " + std::to_string(MaxTrialBytes));
-    command.milliseconds = 10000;
-    std::string why;
-    if (!Duration(args, MaxTrialMilliseconds, command.milliseconds, why, "a trial")) return Fail(why);
+    const bool hold = args.Has("--hold"), undo = args.Has("--undo"), timed = hold || undo;
+    if (hold && undo) return Fail("--undo and --hold do not combine: --hold already ends on its own");
+    if (!undo && (args.Has("--owner") || args.Has("--object")))
+        return Fail("--owner and --object go with --undo" + std::string(hold ? ": --hold guards a $N+off target on its object" : ""));
+    const size_t most = !timed ? MaxWrite : hold ? MaxPinBytes : MaxTrialBytes;
+    if (!Bytes(args.From(1), request.data, most, request.length) || !request.length)
+        return Fail("bytes must be hex pairs, at most " + std::to_string(most));
     const auto* expect = args.Find("--expect");
-    if (!args.Has("--owner") || !expect) return Fail("a trial needs --owner and --expect");
+    uint32_t expected = 0;
+    // Expected bytes sit after the write's own: right after them for a write, at the spec's slot for a timed one.
+    uint8_t* expectAt = request.data + (!timed ? request.length : hold ? MaxPinBytes : MaxTrialBytes);
+    if (expect && (!Bytes(Args::Joined(*expect), expectAt, most, expected) || expected != request.length))
+        return Fail("--expect needs as many hex bytes as the write");
+    if (!timed) {
+        if (expect) request.flags = WriteExpect;
+        request.op = op::Write;
+        return command;
+    }
+    command.milliseconds = 10000;
+    if (const auto duration = args.Value(hold ? "--hold" : "--undo"); !duration.empty()) {
+        const uint64_t n = Milliseconds(duration);
+        const uint32_t longest = hold ? MaxPinMilliseconds : MaxTrialMilliseconds;
+        if (!n) return Fail("a duration is seconds, or Nms, Ns, Nm");
+        if (n > longest) return Fail("a timed write lasts at most " + std::to_string(longest / 1000) + " s");
+        command.milliseconds = static_cast<uint32_t>(n);
+    }
+    if (hold) {
+        command.kind = Kind::Pin;
+        command.guardObjects.push_back(ObjectBase(args.At(0), context.refs));
+        if (expect) request.args[1] = 1;
+        request.flags = static_cast<uint32_t>(PinAction::Add);
+        return command;
+    }
+    command.kind = Kind::Trial;
+    if (!args.Has("--owner") || !expect) return Fail("write --undo needs --owner and --expect");
     if (!Reference(args.Value("--owner"), context.refs, command.owner) || command.owner.index < 0)
         return Fail("--owner needs $N or a literal ref (the object's identity is guarded)");
     if (args.Has("--object") && !Address(args.Value("--object"), context.refs, context.modules, command.object))
         return Fail("--object is an address");
-    uint32_t count = 0;
-    if (!Bytes(Args::Joined(*expect), request.data + MaxTrialBytes, MaxTrialBytes, count) || count != request.length)
-        return Fail("--expect needs as many hex bytes as the write");
     request.op = op::Trial;
     request.flags = static_cast<uint32_t>(TrialAction::Add);
     return command;
 }
 
-Parsed TrialList(const Args&, const ParseContext&) {
+// writes [clear [undo:N|hold:N]]: the timed writes; clear ends one or all.
+Parsed Writes(const Args& args, const ParseContext&) {
     Command command;
-    command.kind = Kind::Trial;
-    command.request.op = op::Trial;
-    command.request.flags = static_cast<uint32_t>(TrialAction::List);
-    return command;
-}
-
-Parsed TrialClear(const Args& args, const ParseContext&) {
-    Command command;
-    uint64_t id = 0;
-    if (!OptionalId(args, id)) return Fail("id is a trial's number");
-    command.kind = Kind::Trial;
-    command.request.op = op::Trial;
-    command.request.flags = static_cast<uint32_t>(TrialAction::Clear);
-    command.request.args[0] = id;
+    command.kind = Kind::Writes;
+    if (args.At(0).empty()) return command;
+    if (args.At(0) != "clear") return Fail("writes takes clear, or nothing to list them");
+    command.all = true;                         // clear
+    const std::string_view id = args.At(1);
+    if (id.empty()) return command;
+    const size_t colon = id.find(':');
+    uint64_t n = 0;
+    const auto mode = id.substr(0, colon);
+    if (colon == std::string_view::npos || (mode != "undo" && mode != "hold") || !Number(id.substr(colon + 1), n) || !n ||
+        n > UINT32_MAX) return Fail("an id is undo:N or hold:N, as writes lists it");
+    command.target = mode;
+    command.request.args[0] = n;
     return command;
 }
 
@@ -330,45 +315,6 @@ Parsed Search(const Args& args, const ParseContext& context) {
     request.op = op::Search;
     if (Check(request) != Status::Ok) return Fail("invalid search: alignment 1, 2, 4, 8 or 16; --max 1.." +
         std::to_string(MaxSearchHits) + "; --to above --start");
-    return command;
-}
-
-Parsed Pin(const Args& args, const ParseContext& context) {
-    Command command;
-    Request& request = command.request;
-    command.kind = Kind::Pin;
-    if (IsChain(args.At(0))) return Fail(ChainRefused);
-    if (!Address(args.At(0), context.refs, context.modules, request.address)) return Fail();
-    command.guardObjects.push_back(ObjectBase(args.At(0), context.refs));
-    if (!Bytes(args.From(1), request.data, MaxPinBytes, request.length) || !request.length)
-        return Fail("bytes must be hex pairs, at most " + std::to_string(MaxPinBytes));
-    command.milliseconds = 10000;
-    std::string why;
-    if (!Duration(args, MaxPinMilliseconds, command.milliseconds, why, "a pin")) return Fail(why);
-    if (const auto* expect = args.Find("--expect")) {
-        uint32_t expected = 0;
-        if (!Bytes(Args::Joined(*expect), request.data + MaxPinBytes, MaxPinBytes, expected) || expected != request.length)
-            return Fail("--expect needs as many hex bytes as the pin");
-        request.args[1] = 1;
-    }
-    request.flags = static_cast<uint32_t>(PinAction::Add);
-    return command;
-}
-
-Parsed PinList(const Args&, const ParseContext&) {
-    Command command;
-    command.kind = Kind::Pin;
-    command.request.flags = static_cast<uint32_t>(PinAction::List);
-    return command;
-}
-
-Parsed PinClear(const Args& args, const ParseContext&) {
-    Command command;
-    uint64_t id = 0;
-    if (!OptionalId(args, id)) return Fail("id is a pin's number");
-    command.kind = Kind::Pin;
-    command.request.flags = static_cast<uint32_t>(PinAction::Clear);
-    command.request.args[0] = id;
     return command;
 }
 

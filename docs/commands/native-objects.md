@@ -62,7 +62,7 @@ the end; its result adds `chain`: `base`, `hops` (`hop`, `address` where
 the pointer was read, `value` it held, [`module`, `rva`]) and `address`. A
 null or unreadable hop fails the command with error kind `chain`, the
 message naming the hop, and the `chain` with `broken` and `reason` in place
-of `address`. `write`, `pin` and trials refuse chains: resolve the address
+of `address`. `write` (timed too) refuses chains: resolve the address
 first and write to what was read, never through a chain that may have
 changed.
 

@@ -193,14 +193,62 @@ struct Read {
         v("chain", &Read::chain);
     }
 };
+// A timed write, as write --undo and --hold answer it and writes lists it.
+// `id` is undo:N (--undo: the agent restores it) or hold:N (--hold: rewritten
+// every tick). An --undo write adds what it restores (`original`), its owner
+// and the tick memory changed; a --hold one whether it is guarded on an
+// object and how often it wrote.
+struct TimedWrite {
+    static constexpr std::string_view TypeName = "TimedWrite";
+    std::string id, mode;
+    Addr address;
+    HexBytes bytes;
+    std::string state;
+    uint32_t remainingMs = 0;
+    std::optional<HexBytes> original;
+    std::optional<Addr> owner, object;
+    std::optional<uint64_t> changedTick;
+    std::optional<std::string> guard;
+    std::optional<bool> guarded;
+    std::optional<uint32_t> writes;
+    template<class V> static void Describe(V& v) {
+        v("id", &TimedWrite::id);
+        v("mode", &TimedWrite::mode, "undo|hold");
+        v("address", &TimedWrite::address);
+        v("bytes", &TimedWrite::bytes);
+        v("state", &TimedWrite::state,
+          "active|restored|conflict|abandoned|expired|object changed|not writable|memory differed from --expect|"
+          "cleared|access faulted|unknown");
+        v("remaining_ms", &TimedWrite::remainingMs);
+        v("original", &TimedWrite::original);
+        v("owner", &TimedWrite::owner);
+        v("object", &TimedWrite::object);
+        v("changed_tick", &TimedWrite::changedTick);
+        v("guard", &TimedWrite::guard, "owner replaced or freed|object vtable changed|target unreadable|unknown");
+        v("guarded", &TimedWrite::guarded);
+        v("writes", &TimedWrite::writes);
+    }
+};
+// writes: every timed write; with clear, `cleared` and the rows it ended.
+struct Writes {
+    std::vector<TimedWrite> rows;
+    std::optional<uint64_t> cleared;
+    template<class V> static void Describe(V& v) {
+        v("rows", &Writes::rows);
+        v("cleared", &Writes::cleared);
+    }
+};
+
 struct Write {
     Addr address;
     Location where;
     uint64_t size = 0;
+    std::optional<TimedWrite> timed;    // --undo, --hold.
     template<class V> static void Describe(V& v) {
         v("address", &Write::address);
         v.flat("", &Write::where);
         v("size", &Write::size);
+        v("timed", &Write::timed);
     }
 };
 struct AddressRow {
@@ -221,71 +269,6 @@ struct Search {
         v("rows", &Search::rows);
         v("from", &Search::from);
         v("next_cursor", &Search::nextCursor);
-    }
-};
-
-struct Pin {
-    static constexpr std::string_view TypeName = "Pin";
-    uint32_t id = 0;
-    Addr address;
-    HexBytes bytes;
-    bool guarded = false;
-    std::string state;
-    uint32_t writes = 0, remainingMs = 0;
-    template<class V> static void Describe(V& v) {
-        v("id", &Pin::id);
-        v("address", &Pin::address);
-        v("bytes", &Pin::bytes);
-        v("guarded", &Pin::guarded);
-        v("state", &Pin::state,
-          "active|expired|object changed|not writable|memory differed from --expect|cleared|access faulted|unknown");
-        v("writes", &Pin::writes);
-        v("remaining_ms", &Pin::remainingMs);
-    }
-};
-struct PinList {
-    std::vector<Pin> rows;
-    template<class V> static void Describe(V& v) { v("rows", &PinList::rows); }
-};
-struct PinClear {
-    uint32_t cleared = 0;
-    template<class V> static void Describe(V& v) { v("cleared", &PinClear::cleared); }
-};
-
-struct Trial {
-    static constexpr std::string_view TypeName = "Trial";
-    uint32_t id = 0;
-    Addr address;
-    HexBytes bytes, original;
-    Addr owner;
-    std::optional<Addr> object;
-    std::string state;
-    uint64_t changedTick = 0;
-    uint32_t remainingMs = 0;
-    std::optional<std::string> guard;
-    template<class V> static void Describe(V& v) {
-        v("id", &Trial::id);
-        v("address", &Trial::address);
-        v("bytes", &Trial::bytes);
-        v("original", &Trial::original);
-        v("owner", &Trial::owner);
-        v("object", &Trial::object);
-        v("state", &Trial::state, "active|restored|conflict|abandoned|unknown");
-        v("changed_tick", &Trial::changedTick);
-        v("remaining_ms", &Trial::remainingMs);
-        v("guard", &Trial::guard, "owner replaced or freed|object vtable changed|target unreadable|unknown");
-    }
-};
-struct TrialList {
-    std::vector<Trial> rows;
-    template<class V> static void Describe(V& v) { v("rows", &TrialList::rows); }
-};
-struct TrialClear {
-    uint64_t cleared = 0;
-    std::vector<Trial> rows;
-    template<class V> static void Describe(V& v) {
-        v("cleared", &TrialClear::cleared);
-        v("rows", &TrialClear::rows);
     }
 };
 

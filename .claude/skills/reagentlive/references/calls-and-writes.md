@@ -1,6 +1,6 @@
-# Engine calls, writes and pins
+# Engine calls and writes
 
-Every `write`, `pin` and state-changing `call` needs the user's approval
+Every `write` (`--hold` included) and state-changing `call` needs the user's approval
 first (SKILL.md rules). Call semantics and named inputs:
 named calls (`docs/commands/unreal.md#named-calls`).
 
@@ -57,11 +57,11 @@ named calls (`docs/commands/unreal.md#named-calls`).
   evidence (getters, refcounts, designer data) that stands without the
   write, and leave the effect check to the user's session.
 
-## Trial writes
+## Timed writes (`write --undo`)
 
-- **Use a trial to settle which way a lead goes** (does a multiplier
+- **Use `write --undo` to settle which way a lead goes** (does a multiplier
   shorten an action?). It writes once and the agent restores the original.
-  Whether a trial needs approval follows the host's rules. A trial result
+  Whether it needs approval follows the host's rules. Its result
   is evidence for a lead's direction, not validation of a shipped feature.
 - For an attribute behind a lookup handle, the owner is the effect
   component. Look the handle up with `call` (the result is kept), read its
@@ -79,15 +79,15 @@ named calls (`docs/commands/unreal.md#named-calls`).
   1. Confirm the value sits still at rest: two reads a second apart.
   2. Capture the value and the action's progress over several untouched
      actions.
-  3. Trial-write the value and capture the same ranges again.
+  3. `write --undo` the value and capture the same ranges again.
   4. Compare durations on that one character, with an untouched one in the
      same capture as a control when one is in view.
-- Read the end state with `trial-list`. Clear trials (`trial-clear`) before
+- Read the end state with `writes`. Clear them (`writes clear`) before
   the host stops or you reinject: a stopped agent no longer ticks, so its
-  trials never restore.
+  `--undo` writes never restore.
 
-## Pins
+## Held writes (`write --hold`)
 
-- `pin` writes the same bytes every tick; `<ref>+off` targets stop when the
+- `write --hold` writes the same bytes every tick; `<ref>+off` targets stop when the
   object dies. A pinned value that holds is integrated state; one the game
   still overrides each frame is recomputed from scratch.

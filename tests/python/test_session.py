@@ -31,9 +31,10 @@ SIG = {'pattern': '48 8b', 'list': '0x48, 0x8B', 'module': 'Game.exe', 'unique':
        'rows': [{'address': '0x140001000', 'module': 'Game.exe', 'rva': '0x1000'}], 'length': 2, 'fixed_bytes': 2,
        'anchor': {'offset': 0, 'length': 2, 'hits': 1}, 'warnings': [], 'resolves': True}
 CALL = {'ref': '0x10#1:1', 'function': 'Pawn:Fn', 'mode': 'raw', 'block_size': 2, 'hex': '01 02', 'kept': False}
-PIN = {'id': 1, 'address': '0x10', 'bytes': '00 00 80 3f', 'guarded': True, 'state': 'active', 'writes': 1, 'remaining_ms': 2500}
-TRIAL = {'id': 1, 'address': '0x38', 'bytes': '00', 'original': '01', 'owner': '0x10', 'state': 'active', 'changed_tick': 5,
-         'remaining_ms': 5000}
+PIN = {'id': 'hold:1', 'mode': 'hold', 'address': '0x10', 'bytes': '00 00 80 3f', 'guarded': True, 'state': 'active',
+       'writes': 1, 'remaining_ms': 2500}
+TRIAL = {'id': 'undo:1', 'mode': 'undo', 'address': '0x38', 'bytes': '00', 'original': '01', 'owner': '0x10', 'state': 'active',
+         'changed_tick': 5, 'remaining_ms': 5000}
 REF = '0x10#1:1'
 
 
@@ -98,9 +99,10 @@ CALLS = [
         'address': '0x10', 'offsets': ['0x538', '0x540'], 'range': 4096,
         'scanned': {'from': '0x0', 'to': '0x1010', 'functions': 2, 'unlisted': 0, 'bytes': 64}, 'total': 1, 'capped': False, 'scan_ms': 1,
         'rows': [{'function': {'start': '0x20', 'end': '0x40'}, 'distinct': 1, 'writes': False, 'total': 0, 'uses': []}]})],
-    [C('pin', {'addr': '0x10#1:1+0x3e4', 'data': '0000803f', 'ms': 2500, 'expect': '00000000'}), ok(PIN)],
-    [C('pin-list'), ok({'rows': [PIN]})],
-    [C('pin-clear', {'id': 1}), ok({'cleared': 1})],
+    [C('write', {'addr': '0x10#1:1+0x3e4', 'data': '0000803f', 'expect': '00000000', 'hold': 2.5}),
+     ok({'address': '0x10', 'size': 4, 'timed': PIN})],
+    [C('writes'), ok({'rows': [TRIAL, PIN]})],
+    [C('writes', {'action': 'clear', 'id': 'hold:1'}), ok({'cleared': 1, 'rows': [dict(PIN, state='cleared')]})],
     [C('watch-start', {'duration': 600, 'ranges': ['0x538:16'], 'every': 10, 'follow': 'pawn'}), ok({
         'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
         'ranges': [{'offset': '0x538', 'length': 16, 'guarded': True}]})],
@@ -112,9 +114,9 @@ CALLS = [
     [C('watch', {'duration': 1.5, 'ranges': ['0x10#1:1+0x3e4:4', '0x9000:1'], 'then': 'call 0x10#1:1 Fn 01'}), ok({
         'capacity': 100, 'complete': True, 'ranges': [RANGE], 'then': {'ok': True, 'hex': '01'},
         'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
-    [C('trial', {'addr': '0x10#1:1+0x28', 'data': '0000000000000040', 'owner': REF, 'expect': '000000000000f03f',
-                 'object': 0x2000, 'seconds': 5}), ok(TRIAL)],
-    [C('trial-clear', {'id': 1}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
+    [C('write', {'addr': '0x10#1:1+0x28', 'data': '0000000000000040', 'expect': '000000000000f03f', 'undo': 5,
+                 'owner': REF, 'object': 0x2000}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
+    [C('writes', {'action': 'clear', 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
     [C('get', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
@@ -261,9 +263,9 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(list(read.parameters), ['self', 'addr', 'len', 'type'])
         self.assertEqual(read.parameters['type'].kind, inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(read.return_annotation.__name__, 'ReadResult')
-        trial = inspect.signature(self.gen.Console.trial)
-        self.assertIs(trial.parameters['owner'].default, inspect.Parameter.empty)   # A required flag.
-        self.assertEqual(trial.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
+        write = inspect.signature(self.gen.Console.write)
+        self.assertIsNone(write.parameters['owner'].default)                          # A flag: optional, by name.
+        self.assertEqual(write.parameters['owner'].kind, inspect.Parameter.KEYWORD_ONLY)
         find = inspect.signature(self.gen.UeVerbs.find)
         self.assertEqual(list(find.parameters), ['self', 'text', 'cls', 'live', 'outer', 'start', 'limit'])
         self.assertIn('Literal', str(inspect.signature(self.gen.Console.search).parameters['type'].annotation))
@@ -366,13 +368,15 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(caught.exception.error['found'], '00 00')
 
     def test_pins_trials_and_watches(self):
-        self.assertEqual(self.c.pin('0x10#1:1+0x3e4', dl.pack('f32', 1.0), ms=2500, expect=bytes(4))['id'], 1)
-        self.assertEqual(self.c.pin_list()['rows'][0]['state'], 'active')
-        self.assertEqual(self.c.pin_clear(1)['cleared'], 1)
-        row = self.c.trial('0x10#1:1+0x28', dl.pack('f64', 2.0), owner=REF, expect=dl.pack('f64', 1.0), seconds=5,
-                           object=0x2000)
+        held = self.c.write('0x10#1:1+0x3e4', dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
+        self.assertEqual(held['timed']['id'], 'hold:1')
+        self.assertEqual([row['mode'] for row in self.c.writes()['rows']], ['undo', 'hold'])
+        self.assertEqual(self.c.writes('clear', 'hold:1')['cleared'], 1)
+        row = self.c.write('0x10#1:1+0x28', dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0), owner=REF, object=0x2000,
+                           undo=5)['timed']
         self.assertIsNone(row['guard'])
-        self.assertEqual(self.c.trial_clear(1)['rows'][0]['state'], 'restored')
+        self.assertIsNone(row['writes'])                     # A --hold key, absent on an --undo write.
+        self.assertEqual(self.c.writes('clear', 'undo:1')['rows'][0]['state'], 'restored')
         result = self.c.watch(1.5, ['0x10#1:1+0x3e4:4', '0x9000:1'], then='call 0x10#1:1 Fn 01')
         rows = dl.samples(result)
         self.assertEqual(rows[1]['values'], [bytes([2, 0]), bytes([255])])

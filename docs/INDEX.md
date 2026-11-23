@@ -55,7 +55,7 @@ the README's paste prompts send an agent there.
 | [agents/setup.md](agents/setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
 | [agents/update.md](agents/update.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
-| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
+| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write` (and timed writes, `writes`), `search`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
 | [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`--rtti`), pointer chains, regions, strings |
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `get`, labels, readable names, native members |
@@ -83,9 +83,9 @@ offers (`packs`). **T3** commands also need the game thread
 | Command | Needs | Page |
 |---|---|---|
 | `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
-| `pin`, `pin-list`, `pin-clear` | T0 | [memory](commands/memory.md#pin) |
+| `write --hold`, `writes` | T0 | [memory](commands/memory.md#timed-writes) |
 | `watch`, `watch-start`, `watch-read`, `watch-stop` | T0 | [memory](commands/memory.md#watch) |
-| `trial`, `trial-list`, `trial-clear` | T0; the owner check needs T1 | [memory](commands/memory.md) |
+| `write --undo` | T0; the owner check needs T1 | [memory](commands/memory.md#timed-writes) |
 | `search` | T0 | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
 | `read --type "<layout>"` | T0 | [memory](commands/memory.md#typed-layouts) |
 | `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `vtable --rtti` | T0 | [native objects](commands/native-objects.md) |
@@ -140,7 +140,7 @@ offers (`packs`). **T3** commands also need the game thread
 | Ref, `$N` | an object address with its table slot and serial, so a replaced object is detected; `$N` is result N of the last command that lists refs ([console](commands/console.md#addresses-and-refs)) |
 | `module` + `rva` | an address as module and offset, stable across launches; the bridge to static tools |
 | Fast lane | one-address code questions answered from live bytes, no database ([fast lane](commands/fast-lane.md)) |
-| Pin | bytes rewritten every tick until it expires ([memory](commands/memory.md#pin)) |
+| Pin | bytes rewritten every tick until it expires: `write --hold` ([memory](commands/memory.md#timed-writes)) |
 | Trial | one guarded write that restores itself on expiry or clear ([memory](commands/memory.md)) |
 | Root | an object the host can always find again, for `watch-start --follow` |
 | Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](tool-interface.md#self-describing-console)) |

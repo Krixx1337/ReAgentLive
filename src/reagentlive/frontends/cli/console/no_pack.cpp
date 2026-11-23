@@ -1,6 +1,6 @@
 // reagentlive CLI console without an engine pack (REAGENTLIVE_PACKS empty):
 // pack.h answered for "no pack". No verbs, no state, no cache block, nothing
-// offered; the core rows that need a pack leave the table (TableRows).
+// offered; the table is the core's rows (TableRows).
 #include <cstdio>
 #include <filesystem>
 #include <span>

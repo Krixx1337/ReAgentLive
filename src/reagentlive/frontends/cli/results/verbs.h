@@ -65,23 +65,25 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Peek>, parse::Peek,
             "object needs a pack; value rows carry floats, a double and name_hint. Accepts a pointer chain. region is "
             "the memory the address lies in, as read gives it."},
-        {"write", "core", "write up to 4096 bytes",
+        {"write", "core", "write up to 256 bytes; --undo restores it after a while, --hold rewrites it every tick for a while",
             {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
-            {{"--expect", Takes::Some, "bytes", "hex bytes", "write only while memory still holds these bytes"}},
+            {{"--expect", Takes::Some, "bytes", "hex bytes", "write only while memory still holds these bytes (with --undo: required, restored afterwards)"},
+             {"--undo", Takes::One, "dur", "duration", "restore the bytes after this long (up to 60 s; needs --owner and --expect)"},
+             {"--hold", Takes::Maybe, "dur", "duration", "rewrite the bytes every tick for this long (default 10 s, up to 60 s)"},
+             {"--owner", Takes::One, "ref", "ref", "with --undo: the live actor or component holding the address (a pack names it)"},
+             {"--object", Takes::One, "addr", "addr", "with --undo: a native object inside the owner whose vtable is guarded too"}},
             Of<shape::Write>, parse::Write,
-            "e.g. write $1+0x120 00 00 80 3f. A refused --expect answers an error whose `found` holds the bytes there.", {}, true},
-        {"trial", "core", "one write the agent undoes (default 10 s, up to 60 s)",
-            {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
-            {{"--owner", Takes::One, "ref", "ref", "the live actor or component holding the address (a pack names it)", {}, true},
-             {"--expect", Takes::Some, "bytes", "hex bytes", "the bytes there now, restored afterwards", {}, true},
-             {"--object", Takes::One, "addr", "addr", "a native object inside the owner whose vtable is guarded too"},
-             {"--seconds", Takes::One, "int", "N", "how long", "10"}, {"--ms", Takes::One, "int", "N", "how long, in milliseconds"}},
-            Of<shape::Trial>, parse::Trial,
-            "Stops as conflict if the game changes the value, abandoned if the owner or --object's vtable changes. "
-            "The trial is the core's; the owner's check is the pack's, so without one it is refused.", {}, true, false, true},
-        {"trial-list", "core", "trials with their state", {}, {}, Of<shape::TrialList>, parse::TrialList},
-        {"trial-clear", "core", "end one trial or all, restoring active ones",
-            {{"id", "id", Optional, "int", "its id (default: all)"}}, {}, Of<shape::TrialClear>, parse::TrialClear, {}, {}, true},
+            "e.g. write $1+0x120 00 00 80 3f. A refused --expect answers an error whose `found` holds the bytes there. "
+            "--undo and --hold answer `timed`, the timed write as writes lists it; up to 64 bytes. --undo stops as "
+            "conflict if the game changes the value, abandoned if the owner or --object's vtable changes; the owner's "
+            "check is the pack's, so without one it is refused. --hold on $N+off stops when that object is freed or "
+            "replaced.", {}, true},
+        {"writes", "core", "the timed writes (write --undo, --hold) with their state; clear ends one or all, restoring --undo ones",
+            {{"action", "clear", Optional, "str", "clear: end them"},
+             {"id", "id", Optional, "str", "with clear: one write's id as writes lists it (undo:N or hold:N); default all"}},
+            {}, Of<shape::Writes>, parse::Writes,
+            "Rows are --undo writes (restored, conflict or abandoned ones stay listed until cleared) then --hold ones. "
+            "clear answers cleared and the rows it ended.", {}, true},
         {"modules", "core", "loaded modules, exe first (also refreshes the cached list)",
             {}, {}, Of<shape::Modules>, parse::Modules},
         {"search", "core", "addresses holding a value in resident, cacheable memory",
@@ -112,14 +114,6 @@ inline const std::vector<Verb>& CoreVerbs() {
             "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
             "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 --keep, act, mem-diff ... --keep "
             "until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
-        {"pin", "core", "write the bytes every tick (default 10 s, up to 60 s)",
-            {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
-            {{"--seconds", Takes::One, "int", "N", "how long", "10"}, {"--ms", Takes::One, "int", "N", "how long, in milliseconds"},
-             {"--expect", Takes::Some, "bytes", "hex bytes", "start only while memory holds these bytes"}},
-            Of<shape::Pin>, parse::Pin, "$N+off targets stop when that object is freed or replaced.", {}, true},
-        {"pin-list", "core", "pins with state and write counts", {}, {}, Of<shape::PinList>, parse::PinList},
-        {"pin-clear", "core", "clear one pin or all", {{"id", "id", Optional, "int", "its id (default: all)"}}, {},
-            Of<shape::PinClear>, parse::PinClear},
         {"watch", "core", "sample up to 8 ranges every tick (up to 30 s) and return the rows",
             {{"duration", "seconds|Nms", One, "dur", "how long: seconds, or Nms, Ns"},
              {"ranges", "addr:len|addr:type[n]", Some, "range", "a range to sample, per range: a length, or a read --type element (f64, i32[2]) to decode"}},
@@ -229,13 +223,9 @@ inline const std::vector<Verb>& CoreVerbs() {
 inline constexpr Origin CoreOrigin{"core", "Core"};
 inline constexpr Origin HostOrigin{"host", "Host"};
 
-// A console's verb table: the core's rows, the pack's, then the host's. With
-// no pack (no pack origin) the core rows that need one are left out.
-inline std::vector<Verb> TableRows(std::span<const Verb> packVerbs, std::span<const Origin> packOrigins,
-                                   std::span<const Verb> hostVerbs) {
-    std::vector<Verb> verbs;
-    for (const auto& verb : CoreVerbs())
-        if (!verb.needsPack || !packOrigins.empty()) verbs.push_back(verb);
+// A console's verb table: the core's rows, the pack's, then the host's.
+inline std::vector<Verb> TableRows(std::span<const Verb> packVerbs, std::span<const Verb> hostVerbs) {
+    std::vector<Verb> verbs(CoreVerbs().begin(), CoreVerbs().end());
     verbs.insert(verbs.end(), packVerbs.begin(), packVerbs.end());
     verbs.insert(verbs.end(), hostVerbs.begin(), hostVerbs.end());
     return verbs;

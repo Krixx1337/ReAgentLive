@@ -16,7 +16,7 @@ T4 SDK host       layout from the dump, real serials, no first-command scan, hos
 T3 Game thread    call, call-pure, params, each, script, refs, the call recorder          (+ game-thread on, or an engine host)
 T2 Reflection     fields, dump, get, entries, enum, func, funcs                           (+ the stock layout groups pass)
 T1 Unreal located find, describe, census, name, name-find, object reads                   (+ object table and name pool found)
-T0 Core           read, write, search, xrefs, disasm, sig-*, vtable, pin, watch, trial    (any x64 process)
+T0 Core           read, write (--undo, --hold), search, xrefs, disasm, sig-*, vtable, watch    (any x64 process)
 ```
 
 Each rung keeps everything below it. Which Unreal commands answer off the

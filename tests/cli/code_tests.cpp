@@ -919,7 +919,7 @@ TEST_CASE("pointer chains in read-only commands, refused for writes") {
     std::string tooLong = "read 0x1000";
     for (size_t i = 0; i <= MaxChainHops; ++i) tooLong += "->0x1";
     CHECK_FALSE(Parse(tooLong, refs));
-    for (const char* line : {"write 0x1000->0x8 01", "pin 0x1000->0x8 01", "trial 0x1000->0x8 01 --owner $1 --expect 00"}) {
+    for (const char* line : {"write 0x1000->0x8 01", "write 0x1000->0x8 01 --hold", "write 0x1000->0x8 01 --undo 5 --owner $1 --expect 00"}) {
         auto refused = Parse(line, refs);
         REQUIRE_FALSE(refused);
         CHECK(refused.error().starts_with(text::ChainRefused));
