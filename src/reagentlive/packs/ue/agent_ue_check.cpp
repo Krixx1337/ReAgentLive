@@ -38,12 +38,12 @@ struct Known {
 };
 
 template<class T> bool Get(const void* base, int32_t offset, T& out) {
-    return base && offset >= 0 && GuardedCopy(&out, reinterpret_cast<const uint8_t*>(base) + offset, sizeof(out));
+    return base && offset >= 0 && CheckedCopy(reinterpret_cast<const uint8_t*>(base) + offset, &out, sizeof(out));
 }
 bool Readable(const void* address, uint32_t bytes) {
     uint8_t probe[512];
     for (uint32_t at = 0; at < bytes; at += sizeof(probe))
-        if (!GuardedCopy(probe, reinterpret_cast<const uint8_t*>(address) + at, std::min<uint32_t>(sizeof(probe), bytes - at)))
+        if (!CheckedCopy(reinterpret_cast<const uint8_t*>(address) + at, probe, std::min<uint32_t>(sizeof(probe), bytes - at)))
             return false;
     return address != nullptr;
 }

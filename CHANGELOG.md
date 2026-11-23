@@ -115,6 +115,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **No junk import names:** a DLL import with no name table is left
+  unnamed in `disasm` and saves instead of read from resolved addresses.
+- **Decoy exception entries no longer break function bounds:** unwind data
+  of an unknown version counts as a plain entry, as the OS unwinder treats it.
+- **The Unreal pack's agent cannot crash on a guard page or hide a stack
+  overflow:** its startup checks look at the memory region before reading,
+  and name decoding catches only bad-memory faults.
 - **A stale IDA loader loaded newer saves silently:** the loader now
   refuses a row kind it does not know and says to copy the new
   `reagentlive_ida.py`, instead of loading the file without its chunks or names.

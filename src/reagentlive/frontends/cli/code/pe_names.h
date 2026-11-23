@@ -177,11 +177,12 @@ inline std::optional<std::string> ImportAt(const ReadFn& read, const Module& mod
             const size_t at = size_t{i} * 20;
             const uint32_t names = U32(*bytes, at), dll = U32(*bytes, at + 12), table = U32(*bytes, at + 16);
             if (!names && !dll && !table) { end = true; break; }
-            if (table <= slot && table > bestTable) { bestTable = table; bestNames = names ? names : table; bestDll = dll; }
+            // No name table: the import table itself holds resolved addresses in a live image, never names.
+            if (table <= slot && table > bestTable) { bestTable = table; bestNames = names; bestDll = dll; }
         }
         if (end) break;
     }
-    if (!bestTable || (slot - bestTable) % 8) return std::nullopt;
+    if (!bestTable || !bestNames || (slot - bestTable) % 8) return std::nullopt;
     auto entry = ReadOne(read, module.base + bestNames + (slot - bestTable), 8);
     if (!entry) return std::nullopt;
     auto dll = CString(read, module, module.base + bestDll, 256);

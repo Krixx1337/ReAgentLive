@@ -368,4 +368,8 @@ bool ObjectInTable(const SDK::UObject* object) {
     const int32_t index = ObjectIndex(object);
     return index >= 0 && ObjectClass(object) && TableObject(index) == object;
 }
+
+bool CheckedCopy(const void* source, void* out, size_t bytes) {
+    return Copy(nullptr, reinterpret_cast<uint64_t>(source), out, bytes);
+}
 }

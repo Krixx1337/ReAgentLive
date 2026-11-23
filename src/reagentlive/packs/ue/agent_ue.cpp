@@ -254,8 +254,9 @@ bool GuardedName(int32_t index, char* out, size_t capacity, size_t& length) {
     __try {
         length = NameInto(index, out, capacity);
         return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
+                EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return false; // Only bad memory: a stack overflow or a breakpoint is not ours to swallow.
     }
 }
 

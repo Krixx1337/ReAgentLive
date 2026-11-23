@@ -1197,6 +1197,38 @@ TEST_CASE("rtti names a live object's class and its base from this program's own
     CHECK_FALSE(pe::ReadRtti(SelfRead(), modules, self.base + 0x10).has_value());
 }
 
+TEST_CASE("unwind info of an unknown version is no chain: the entry stands on its own") {
+    Image image;
+    image.Headers(2);
+    image.Entry(0, 0x1100, 0x1180, 0x8000);
+    image.Entry(1, 0x1200, 0x1201, 0x8010);   // A decoy whose unwind data is garbage.
+    image.Put(Base + 0x8000, {0x01, 0x04, 0x00, 0x00});
+    image.Put(Base + 0x8010, {0x05 | (unwind::ChainInfo << 3), 0x00, 0xff, 0x00}); // Version 5, chain bit set.
+    unwind::Table table(image.Read(), image.module, {PdataRva, 2 * unwind::EntrySize});
+    const auto decoy = table.Lookup(Base + 0x1200);
+    REQUIRE_MESSAGE(decoy.has_value(), decoy.error());   // Not "chained unwind data malformed".
+    REQUIRE(*decoy);
+    CHECK((*decoy)->range == unwind::Range{Base + 0x1200, Base + 0x1201});
+    CHECK_FALSE((*decoy)->chunk);
+}
+
+TEST_CASE("an import with no name table is not named from the resolved import table") {
+    Image image;
+    constexpr uint32_t Descriptors = 0x9000, Table = 0x9100, Dll = 0x9200, Name = 0x9300;
+    image.Put32(Base + Descriptors, 0);                  // OriginalFirstThunk: none.
+    image.Put32(Base + Descriptors + 12, Dll);
+    image.Put32(Base + Descriptors + 16, Table);
+    image.Put(Base + Descriptors + 20, std::vector<uint8_t>(20, 0)); // The terminator.
+    image.Put(Base + Dll, {'x', '.', 'd', 'l', 'l', 0});
+    image.Put(Base + Name, {0, 0, 'J', 'u', 'n', 'k', 0});
+    // A resolved address whose low half happens to land on name-like bytes.
+    const uint64_t resolved = 0x7ff800000000 + Name;
+    image.Put(Base + Table, std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&resolved),
+                                                 reinterpret_cast<const uint8_t*>(&resolved) + 8));
+    const pe::ImportDirectories directories{Descriptors, 40, Table, 16};
+    CHECK_FALSE(pe::ImportAt(image.Read(), image.module, directories, Base + Table).has_value());
+}
+
 TEST_CASE("an import-table slot is named by its DLL and function") {
     const Module self = SelfModule();
     const auto read = SelfRead();

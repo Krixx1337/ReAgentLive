@@ -88,6 +88,10 @@ Object* TableObject(int32_t index);
 bool TableItem(int32_t index, Object*& object, int32_t& serial);
 
 bool HeaderReadable(const Object* object);
+// Committed, readable pages with no guard page (VirtualQuery), then a guarded
+// copy: for pointers nothing has checked yet. A guarded copy alone would let a
+// guard page's exception through.
+bool CheckedCopy(const void* source, void* out, size_t bytes);
 bool ClassMatches(const Object* object, std::string_view wanted, std::string& scratch);
 void ResetClassCache();
 std::string_view ClassArgument(const Request& request);

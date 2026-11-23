@@ -186,7 +186,10 @@ private:
             if (entry.unwind >= module_.size) return std::nullopt;
             auto header = detail::ReadOne(read_, module_.base + entry.unwind, 4);
             if (!header) return std::unexpected(header.error());
-            if (!(((*header)[0] >> 3) & ChainInfo)) return std::nullopt;
+            // Versions 1 and 2 only (as the OS unwinder): anything else is
+            // not unwind info (a decoy entry's garbage), so no chain.
+            const uint8_t version = (*header)[0] & 7;
+            if ((version != 1 && version != 2) || !(((*header)[0] >> 3) & ChainInfo)) return std::nullopt;
             const uint32_t codes = (*header)[2];
             at = entry.unwind + 4 + 2 * ((codes + 1) & ~1u);
         }
