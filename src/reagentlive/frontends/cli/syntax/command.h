@@ -36,7 +36,8 @@ struct Command {
     // funcs, params; each's class): the console resolves it before the request.
     std::string className;
     std::string target;         // A name the verb acts on (a function, a member, a watch action).
-    uint32_t seconds = 0;       // each: repeat for this long, printing changes.
+    uint32_t seconds = 0;       // each, call-pure --each: repeat for this long, printing changes.
+    bool eachCall = false;      // call-pure --each: one function called on every instance (each's call form).
     uint32_t limit = 0;         // census, call: rows to print, 0 = all. find: rows at most, 0 = one agent page.
     uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
     std::string view;           // read --type: element type or layout for decoded values.

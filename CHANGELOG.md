@@ -27,6 +27,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **Exact write marks:** `each` reads fields only and is no longer marked
+  `writes`; a getter over every instance is `call-pure <Class> <Fn> --each
+  [--seconds N]` (read-only, same table, `mode: call`). `game-thread` takes
+  only `on` or `off`; `status` carries its state as `game_thread`. Replace
+  `each <C> <Fn>` with `call-pure <C> <Fn> --each` and `game-thread status`
+  with `status`; regenerate Python modules and restart MCP servers.
 - **Fewer verbs, same answers:** `params` is gone, `func` returns the
   signature too (`params`, `block_size`; `params_error` off the game
   thread). `rtti` is `vtable --rtti`, `census-diff` is `census --diff` (rows

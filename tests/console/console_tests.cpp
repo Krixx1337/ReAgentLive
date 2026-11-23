@@ -410,6 +410,48 @@ TEST_CASE("get --elements lifts a top-level array's preview past 8") {
     CHECK(Result("get " + fixture.thing + " --match Crowd")["rows"][0]["preview"]["elements"].size() == 8);
 }
 
+namespace {
+// Thing:GetScore, pure, returning an int: what call-pure --each calls.
+void TheScoreFunction() {
+    static const bool added = [] {
+        TheFixture();
+        auto& world = TheWorld();
+        Object& object = world.Add("GetScore", "Function", 64);
+        Function function;
+        function.slot = object.ref.index;
+        function.blockSize = 4;
+        auto value = MakeField("ReturnValue", "IntProperty", 0, 4);
+        value.owner = "GetScore";
+        value.numbers.flags = ue::Param | ue::Output | ue::Return | ue::Plain;
+        function.parameters = {value};
+        world.functions.push_front(std::move(function)); // calls-read reads the last one.
+        return true;
+    }();
+    (void)added;
+}
+// The one record a line printed: its envelope, ok or not.
+Json Envelope(const std::string& line) {
+    auto records = RunLines(line);
+    REQUIRE(records.size() == 1);
+    return records.front();
+}
+}
+
+TEST_CASE("each never calls: a function goes to call-pure --each, which does") {
+    TheScoreFunction();
+    const auto each = Envelope("each Thing GetScore");
+    REQUIRE_FALSE(each.value("ok", true));
+    CHECK(each["error"]["message"].get<std::string>().starts_with(
+        "GetScore is a function of Thing: call-pure Thing GetScore --each calls it on every instance"));
+    // The fake engine refuses any call: reaching it is the point.
+    const auto called = Envelope("call-pure Thing GetScore --each");
+    REQUIRE_FALSE(called.value("ok", true));
+    CHECK(called["error"]["message"].get<std::string>().find("the fake engine calls nothing") != std::string::npos);
+    const auto missing = Envelope("call-pure Thing Health --each");
+    REQUIRE_FALSE(missing.value("ok", true));
+    CHECK(missing["error"]["message"] == "no function Health on Thing (each reads fields)");
+}
+
 TEST_CASE("calls-read decodes a recorded block through the shared reader, as a copy") {
     TheExtras();
     const auto calls = Result("calls-read");

@@ -93,16 +93,15 @@ Result<Ref> DefaultObject(Session& session, const std::string& name) {
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no object named " + name});
 }
 
-// game-thread [on|off|status]: the host's Draw tick, one request.
-void RunGameThread(Session& session, const Command& command, std::string_view jsonCommand) {
+// The host's Draw tick after one game-thread request (on, off or status).
+Result<shape::GameThread> SendGameThread(Session& session, const Request& request) {
     Client& client = session.client;
-    if (!client.Supports(ue::op::GameThread))
-        return JsonError(session, jsonCommand, "unsupported", "this agent's host has no game-thread tick");
-    auto response = client.Send(command.request);
-    if (!response) return CommandError(session, jsonCommand, response.error());
-    if (response->status != Status::Ok) return CommandError(session, jsonCommand, AgentError(*response));
+    auto response = client.Send(request);
+    if (!response) return std::unexpected(response.error());
+    if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
     ue::GameThreadState state{};
-    if (response->length != sizeof(state)) return JsonError(session, jsonCommand, "agent", "invalid game-thread reply size");
+    if (response->length != sizeof(state))
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid game-thread reply size"});
     memcpy(&state, response->data, sizeof(state));
     constexpr const char* Modes[] = {"off", "waiting", "conflict", "on", "stopped"};
     shape::GameThread out;
@@ -115,7 +114,16 @@ void RunGameThread(Session& session, const Command& command, std::string_view js
         out.draw = Addr(state.draw);
         out.drawWhere = Locate(state.draw, LoadedModules(session));
     }
-    Emit(session, jsonCommand, std::move(out));
+    return out;
+}
+
+// game-thread on|off: one request.
+void RunGameThread(Session& session, const Command& command, std::string_view jsonCommand) {
+    if (!session.client.Supports(ue::op::GameThread))
+        return JsonError(session, jsonCommand, "unsupported", "this agent's host has no game-thread tick");
+    auto out = SendGameThread(session, command.request);
+    if (!out) return CommandError(session, jsonCommand, out.error());
+    Emit(session, jsonCommand, std::move(*out));
 }
 
 // enum <object|Enum>: the names and values, named in one names request.
@@ -378,7 +386,8 @@ std::string MatchText(const Json& value) {
 }
 
 // each: one row per live instance, a value per column, the columns in the
-// order asked. A function is the only column (one call per instance). Field
+// order asked. call-pure --each: a function is the only column (one call per
+// instance); each alone never calls. Field
 // paths are resolved on the class: the spans they need inside the instance
 // (a field, or the pointer a path follows) are read by as few agent passes as
 // fit MaxEachValue bytes each, the first in one tick and the rest over its
@@ -460,18 +469,20 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         if (pollError) record.pollError = pollError->message;
     };
 
-    // A function: the only column, called on each instance.
-    if (paths.size() == 1 && !whereColumn) {
+    // call-pure --each: the function, the only column, called on each instance.
+    if (command.eachCall) {
         auto function = ue::Function(client, *type, paths[0]);
+        if (!function && function.error().kind == Error::Kind::Agent && function.error().status == Status::NotFound)
+            return fail("no function " + paths[0] + " on " + command.className + " (each reads fields)");
         if (function) {
             auto parameters = ue::Parameters(client, function->address);
             if (!parameters) return CommandError(session, jsonCommand, parameters.error());
             const ue::Signature signature = std::move(*parameters);
-            if (!ue::EachFunctionAllowed(function->flags)) return fail("each calls only const or pure functions");
+            if (!ue::EachFunctionAllowed(function->flags)) return fail("--each calls only const or pure functions");
             if (auto refusal = calls::EachRefusal(signature, structs); !refusal.empty()) return fail(std::move(refusal));
             if (!signature.size || signature.size > ue::MaxEachValue)
                 return fail(function->owner + ":" + function->name + "'s parameter block is " +
-                    std::to_string(signature.size) + " bytes; each takes 1.." + std::to_string(ue::MaxEachValue) +
+                    std::to_string(signature.size) + " bytes; --each takes 1.." + std::to_string(ue::MaxEachValue) +
                     " per instance (call it on one object instead)");
             const std::string target = function->owner + ":" + function->name;
             ue::EachQuery query{command.className};
@@ -503,8 +514,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                     for (auto& value : row.values) KeepNonZero(value);
             return Emit(session, jsonCommand, std::move(record));
         }
-        if (function.error().kind != Error::Kind::Agent || function.error().status != Status::NotFound)
-            return CommandError(session, jsonCommand, function.error());
+        return CommandError(session, jsonCommand, function.error());
     }
 
     // Field paths, resolved on the class; one past a pointer stops there for now.
@@ -515,9 +525,13 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         if (!column.error.empty())
             for (const char* pseudo : {"Outer", "Name", "Class"})
                 if (text::SameText(path, pseudo)) column = PathTarget{.pseudo = pseudo};
-        if (!column.error.empty())
-            return fail(paths.size() == 1 && !whereColumn ? "neither a function nor a field of " + command.className + ": " + path +
-                " (" + column.error + ")" : path + ": " + column.error + " (a function is each's only column)");
+        if (!column.error.empty()) {
+            // A function's name: say where it goes instead.
+            if (paths.size() == 1 && !whereColumn && ue::Function(client, *type, path))
+                return fail(path + " is a function of " + command.className + ": call-pure " + command.className + " " +
+                    path + " --each calls it on every instance (each reads fields)");
+            return fail("not a field of " + command.className + ": " + path + " (" + column.error + ")");
+        }
         // A set or map column reads its header in the pass; the decoder reads its elements per instance.
         if (IsContainer(column.field.type) && !column.pointer && column.size > ue::MaxEachValue)
             column.size = sizeof(ue::SparseHeader);

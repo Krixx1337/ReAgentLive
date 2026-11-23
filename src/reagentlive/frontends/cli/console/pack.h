@@ -7,6 +7,7 @@
 #pragma once
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -30,6 +31,9 @@ std::span<const Verb> PackVerbs();
 std::span<const Origin> PackOrigins();
 std::span<const std::string> PackNotes();
 std::vector<std::string> OfferedPacks(Session& session);
+// status: `game_thread`, the pack's game-thread tick (its own result type),
+// or nullopt when the host has none.
+std::optional<Json> PackGameThread(Session& session);
 // Pack verbs: whether a parsed command is one, whether it runs held (several
 // round trips), and running it. Refused with a clear message when the host
 // does not offer the pack.

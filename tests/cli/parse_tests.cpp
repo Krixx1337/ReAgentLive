@@ -5,6 +5,7 @@
 #include "doctest.h"
 #include "verbs.h"
 #include <cstring>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -233,6 +234,107 @@ TEST_CASE("release is a call with the release flag and an optional block") {
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.length == 2);
     CHECK_FALSE(Parse("release $1", TwoRefs).has_value());
+}
+
+TEST_CASE("each reads fields only; call-pure --each calls a function on every instance") {
+    // Owner:Function is a function: each never calls.
+    const auto refused = Parse("each Character Character:CanJump", NoRefs);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().starts_with("Character:CanJump is a function: call-pure Character Character:CanJump --each"));
+    auto parsed = Parse("call-pure Character Character:CanJump --each --seconds 10 --limit 5", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::Each);
+    CHECK(parsed->eachCall);
+    CHECK(parsed->className == "Character");
+    CHECK(parsed->fields == std::vector<std::string>{"Character:CanJump"});
+    CHECK(parsed->seconds == 10);
+    CHECK(parsed->limit == 5);
+    CHECK_FALSE(Parse("call-pure Character CanJump --each 00", NoRefs).has_value());       // No inputs.
+    CHECK_FALSE(Parse("call-pure Character CanJump --each --typed", NoRefs).has_value());
+    CHECK_FALSE(Parse("call-pure $1 CanJump --each", TwoRefs).has_value());               // A class, not an object.
+    CHECK_FALSE(Parse("call-pure $1 Actor:K2_GetActorLocation --seconds 2", TwoRefs).has_value()); // Needs --each.
+    // game-thread acts; status reads its state.
+    CHECK(Parse("game-thread on", NoRefs)->request.flags == static_cast<uint32_t>(ue::GameThreadAction::On));
+    CHECK_FALSE(Parse("game-thread status", NoRefs).has_value());
+    CHECK_FALSE(Parse("game-thread", NoRefs).has_value());
+}
+
+namespace {
+// What writes the target's memory or calls into it, from a parsed line. A
+// trace calls a line trace, which changes no state (its row's notes); a
+// batch's items are checked as their own verbs when they run.
+bool WritesOrCalls(const Command& command) {
+    const auto& request = command.request;
+    if (command.kind == Kind::Pin || command.kind == Kind::Trial || command.kind == Kind::Writes ||
+        command.kind == Kind::Release || (command.kind == Kind::TypedCall && !(request.flags & ue::CallPure))) return true;
+    if (request.op == reagentlive::op::Write || request.op == reagentlive::op::Pin || request.op == reagentlive::op::Trial)
+        return true;
+    if (request.op == ue::op::Call && !(request.flags & ue::CallPure)) return true;
+    if (request.op == ue::op::CallsStart || request.op == ue::op::CallsStop) return true;
+    return request.op == ue::op::GameThread && request.flags != static_cast<uint32_t>(ue::GameThreadAction::Status);
+}
+}
+
+TEST_CASE("no form of a read-only verb writes or calls") {
+    // Every form of every verb outside the writes mark: a new verb or flag lands here.
+    const std::map<std::string, std::vector<std::string>> forms = {
+        {"help", {"help", "help read", "help --json", "help --hash"}},
+        {"status", {"status"}},
+        {"quit", {"quit"}},
+        {"stats", {"stats", "stats --all", "stats --sessions", "stats --session abc"}},
+        {"batch", {"batch { read 0x1000 8; modules }"}},
+        {"read", {"read 0x1000", "read 0x1000 16 --type f32"}},
+        {"peek", {"peek 0x1000", "peek 0x1000 1 --label --name Foo"}},
+        {"modules", {"modules"}},
+        {"search", {"search f32 1.5", "search text abc --wide --background --max 8"}},
+        {"mem-snap", {"mem-snap 0x1000 64"}},
+        {"mem-diff", {"mem-diff changed f32", "mem-diff increased i32 --keep --limit 4"}},
+        {"watch-start", {"watch-start 5 0x1000:8", "watch-start 5 0x1000:f32 --every 100ms --file w.jsonl"}},
+        {"watch-read", {"watch-read", "watch-read --all"}},
+        {"watch-stop", {"watch-stop", "watch-stop --all"}},
+        {"sig-check", {"sig-check 48 8b 05 89 ?? 90", "sig-check --file sigs.txt"}},
+        {"sig-bytes", {"sig-bytes 0x1000", "sig-bytes 0x1000 32"}},
+        {"labels-sign", {"labels-sign", "labels-sign --again"}},
+        {"labels-port", {"labels-port"}},
+        {"disasm", {"disasm 0x1000", "disasm 0x1000 8 --function", "disasm 0x1000 --function --save f.json --callees"}},
+        {"xrefs", {"xrefs 0x1000", "xrefs 0x1000 --all"}},
+        {"touches", {"touches 0x1000 0x10", "touches 0x1000 0x10 --reads"}},
+        {"vtable", {"vtable $1", "vtable $1 4 --resolve --rtti"}},
+        {"find", {"find Pawn", "find --cls Pawn --live --limit 5"}},
+        {"census", {"census", "census --cls Pawn --diff"}},
+        {"name-find", {"name-find Health"}},
+        {"name", {"name 1 2"}},
+        {"each", {"each Pawn Health", "each Pawn Health --seconds 5", "each Pawn Health --where Name~a --limit 0"}},
+        {"call-pure", {"call-pure $1 Actor:K2_GetActorLocation", "call-pure $1 GetSocket SocketName=#42",
+            "call-pure $1 Actor:K2_GetActorLocation --dry", "call-pure Pawn GetHealth --each --seconds 5"}},
+        {"label", {"label $1 0x10 f32 Speed"}},
+        {"export-labels", {"export-labels", "export-labels out.jsonl"}},
+        {"layout-export", {"layout-export out.json Pawn"}},
+        {"layout-check", {"layout-check out.json"}},
+        {"entries", {"entries $1 Items", "entries $1 Items --start 8"}},
+        {"rows", {"rows $1", "rows $1 --match a --fields b"}},
+        {"get", {"get $1", "get $1 Health", "get Pawn --types", "get $1 --snap", "get $1 --changed"}},
+        {"trace", {"trace 0,0,0 1,1,1 --ignore $1"}},
+        {"describe", {"describe $1"}},
+        {"func", {"func $1 GetHealth"}},
+        {"script", {"script $1 Tick"}},
+        {"enum", {"enum EMode"}},
+        {"refs", {"refs Health", "refs #42"}},
+        {"funcs", {"funcs $1", "funcs Pawn Get --start 4"}},
+        // The recorder's reader and its stop live with calls-start.
+        {"calls-read", {"calls-read"}},
+    };
+    for (const auto& verb : AllVerbs()) {
+        // calls-stop restores the pointer calls-start swapped: a write, unmarked since only a recording asks for it.
+        if (verb.writes || verb.name == "calls-stop") continue;
+        const auto found = forms.find(std::string(verb.name));
+        REQUIRE_MESSAGE(found != forms.end(), "no forms listed for " << verb.name);
+        for (const auto& line : found->second) {
+            const auto parsed = Parse(line, TwoRefs);
+            CHECK_MESSAGE(parsed.has_value(), line << ": " << (parsed ? std::string() : parsed.error()));
+            if (parsed) CHECK_MESSAGE(!WritesOrCalls(*parsed), line);
+        }
+    }
 }
 
 TEST_CASE("call-pure is a call with the pure flag; --dry marks either form") {
@@ -798,13 +900,14 @@ TEST_CASE("name-find takes text and a cursor") {
 }
 
 TEST_CASE("each takes a class, its columns and an optional repeat") {
-    auto parsed = Parse("each Character Character:CanJump --seconds 10", NoRefs);
+    auto parsed = Parse("each Character Health --seconds 10", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Each);
     CHECK(parsed->request.op == ue::op::Each);
     CHECK(parsed->className == "Character");
-    CHECK(parsed->fields == std::vector<std::string>{"Character:CanJump"});
+    CHECK(parsed->fields == std::vector<std::string>{"Health"});
     CHECK(parsed->seconds == 10);
+    CHECK_FALSE(parsed->eachCall);
     parsed = Parse("each Pawn Health Stats.MaxSpeed Controller.PlayerState.Score", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->fields == std::vector<std::string>{"Health", "Stats.MaxSpeed", "Controller.PlayerState.Score"});

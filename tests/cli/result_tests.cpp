@@ -133,7 +133,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     std::set<std::string> writers;
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
-    CHECK(writers == std::set<std::string>{"write", "writes", "each", "call", "release", "calls-start", "game-thread"});
+    CHECK(writers == std::set<std::string>{"write", "writes", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
         {"help", "start, or a page's next_cursor"}});
@@ -987,16 +987,16 @@ TEST_CASE("each refusals and kept reasons speak of the parameter they name") {
     const ue::Signature tag{8, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StructProperty", "GameplayTag", TagType)}};
     CHECK(calls::EachRefusal(tag, Structs) ==
         "ReturnValue is a GameplayTag, which the engine does not mark plain data (it may need destroying); "
-        "each reads only plain values: use call");
+        "--each reads only plain values: use call");
     const ue::Signature container{24, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StructProperty",
         "GameplayTagContainer", ContainerType)}};
     CHECK(calls::EachRefusal(container, Structs) ==
-        "ReturnValue is a GameplayTagContainer, which owns GameplayTags (an array); each reads only plain values: use call");
+        "ReturnValue is a GameplayTagContainer, which owns GameplayTags (an array); --each reads only plain values: use call");
     CHECK(calls::KeptReason(container, Structs).starts_with("ReturnValue is a GameplayTagContainer, which owns GameplayTags"));
     const ue::Signature text{16, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StrProperty")}};
     CHECK(calls::KeptReason(text, Structs).starts_with("ReturnValue is a String, which owns memory; the agent keeps"));
     const ue::Signature input{8, {Parameter("Index", ue::Param | ue::Plain, "IntProperty")}};
-    CHECK(calls::EachRefusal(input, Structs) == "Index is an input; each calls only functions with no inputs: use call");
+    CHECK(calls::EachRefusal(input, Structs) == "Index is an input; --each calls only functions with no inputs: use call");
     const ue::Signature plain{24, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return | ue::Plain, "StructProperty", "Vector")}};
     CHECK(calls::EachRefusal(plain, Structs).empty());
     CHECK(calls::KeptReason(plain, Structs).empty());

@@ -6,8 +6,8 @@
 the command by the question: one object's fields across an action
 (`get --snap`, then `get --changed`), named fields or raw bytes over time
 (`watch-start` with `<ref>.<Field>` or address ranges), or every instance
-of a class (`each`, `census --diff`). These read and change nothing,
-except `each` with a function, which calls into the game.
+of a class (`each`, `census --diff`). These read and change nothing;
+`call-pure <Class> <Function> --each` calls a pure getter on every instance.
 
 Which command for which question about change:
 

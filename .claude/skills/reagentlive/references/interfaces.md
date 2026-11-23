@@ -53,11 +53,11 @@ for building tools, not for investigating.
 
 - **Literal refs only.** Pass the `ref` a result carries; `$N` is refused.
 - **Marks drive the client's prompts:** `writes` rows are destructive,
-  the rest read-only. Marked `writes` though the skill treats some uses as
-  reads: `each` (field paths are reads; a getter column calls) and
-  `game-thread` (even `status` prompts). `call-pure` is read-only, but its first call on a new host or in a new game still needs approval (SKILL.md rules).
+  the rest read-only, and exact per verb: `each` reads fields only (a
+  getter over every instance is `call-pure <Class> <Fn> --each`), `status`
+  shows the game-thread mode, `game-thread` only arms and removes it. `call-pure` is read-only, but its first call on a new host or in a new game still needs approval (SKILL.md rules).
 - **`batch` refuses writing verbs inside it** (every verb `help` marks
-  `writes`, so `each` and `game-thread` too): send each as its own tool so
+  `writes`, `game-thread` too): send each as its own tool so
   it is approved. Use `batch` for reads at one moment.
 - **Blocking verbs are left out** (`help` marks them `blocks`: a host's
   countdown capture): use the console or Python. Captures are

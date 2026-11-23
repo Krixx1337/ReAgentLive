@@ -188,8 +188,14 @@ Parsed CallLine(const Args& args, const ParseContext& context, uint32_t flags) {
 Parsed Call(const Args& args, const ParseContext& context) { return CallLine(args, context, 0); }
 
 // The agent refuses, before calling, a function that is not const or pure
-// or whose outputs own memory (ue::CallPure).
-Parsed CallPure(const Args& args, const ParseContext& context) { return CallLine(args, context, ue::CallPure); }
+// or whose outputs own memory (ue::CallPure). --each: each's call form, the
+// function called on every instance of the class (EachCall).
+Parsed CallPure(const Args& args, const ParseContext& context) {
+    if (args.Has("--each")) return EachCall(args, context);
+    for (const char* flag : {"--seconds", "--outer", "--limit", "--nonzero"})
+        if (args.Has(flag)) return Fail(std::string(flag) + " needs --each");
+    return CallLine(args, context, ue::CallPure);
+}
 
 // Drops a kept call result: one more call with zeroed inputs (or the given
 // block), so the engine releases what the kept block held.
@@ -231,16 +237,15 @@ Parsed Enum(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// game-thread [on|off|status]: the host's Draw tick (status by default).
+// game-thread on|off: the host's Draw tick (status reads its state).
 Parsed GameThread(const Args& args, const ParseContext&) {
     const std::string_view action = args.At(0);
     Command command;
     command.kind = Kind::GameThread;
     command.request.op = ue::op::GameThread;
-    if (action.empty() || action == "status") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::Status);
-    else if (action == "on") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::On);
+    if (action == "on") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::On);
     else if (action == "off") command.request.flags = static_cast<uint32_t>(ue::GameThreadAction::Off);
-    else return Fail("game-thread takes on, off or status");
+    else return Fail("game-thread takes on or off (status shows its state)");
     return command;
 }
 
@@ -544,8 +549,9 @@ Parsed NameFind(const Args& args, const ParseContext&) {
     return command;
 }
 
-// each <Class> <Field|[Owner:]Function> [--seconds N]
-Parsed Each(const Args& args, const ParseContext& context) {
+namespace {
+// each and call-pure --each: the class, the columns and the options both take.
+Parsed EachLine(const Args& args, const ParseContext& context) {
     Command command;
     if (auto why = Outer(args, context.refs, command); !why.empty()) return Fail(std::move(why));
     if (!ClassName(args.At(0))) return Fail("the first argument is a class name");
@@ -587,6 +593,26 @@ Parsed Each(const Args& args, const ParseContext& context) {
     command.kind = Kind::Each;
     command.className = args.At(0);
     command.request.op = ue::op::Each;
+    return command;
+}
+}
+
+// each <Class> <Field[.Field...]>... [--seconds N]: reads only; a function
+// is call-pure's (--each), and Owner:Function is refused here already.
+Parsed Each(const Args& args, const ParseContext& context) {
+    for (size_t i = 1; i < args.positionals.size(); ++i)
+        if (args.positionals[i].find(':') != std::string::npos)
+            return Fail(args.positionals[i] + " is a function: call-pure " + std::string(args.At(0)) + " " +
+                args.positionals[i] + " --each calls it on every instance");
+    return EachLine(args, context);
+}
+
+// call-pure <Class> <[Owner:]Function> --each: the one column a function.
+Parsed EachCall(const Args& args, const ParseContext& context) {
+    if (args.Has("--typed") || args.Has("--dry")) return Fail("--each takes neither --typed nor --dry");
+    if (args.positionals.size() > 2) return Fail("--each calls a function with no inputs: no params");
+    auto command = EachLine(args, context);
+    if (command) command->eachCall = true;
     return command;
 }
 }

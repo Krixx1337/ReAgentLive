@@ -420,9 +420,27 @@ inline Progress Each(const Request& request, Response& response, bool, const Hos
     return Progress::Done;
 }
 
-// No callable functions in the fake world: each tries a lone column as one first.
+// A function by name ([Owner:]Name): an object of class Function with a
+// world.functions entry, declared on Thing and pure. Nothing in the fake
+// world can be called (Each refuses a function).
 inline Progress FunctionOp(const Request& request, Response& response, bool, const Host&) {
     if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    auto& world = TheWorld();
+    std::string_view wanted(request.text);
+    if (const auto colon = wanted.rfind(':'); colon != std::string_view::npos) wanted.remove_prefix(colon + 1);
+    for (const auto& object : world.objects) {
+        if (object.name != wanted || object.className != "Function" ||
+            std::ranges::find(world.functions, object.ref.index, &Function::slot) == world.functions.end()) continue;
+        ue::FunctionEntry entry{};
+        entry.address = object.ref.address;
+        entry.flags = ue::flags::FunctionBlueprintPure;
+        entry.executable = 1;
+        memcpy(entry.owner, "Thing", 5);
+        memcpy(entry.name, object.name.data(), std::min<size_t>(object.name.size(), sizeof(entry.name) - 1));
+        memcpy(response.data, &entry, sizeof(entry));
+        response.length = sizeof(entry);
+        return Progress::Done;
+    }
     reagentlive::Refuse(response, Status::NotFound, "no such function");
     return Progress::Done;
 }

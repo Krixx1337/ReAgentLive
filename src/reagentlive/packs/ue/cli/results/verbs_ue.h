@@ -56,10 +56,9 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"name", "ue", "FName comparison indices as text (FName #N in dumps)",
             {{"indices", "index", Some, "int", "an FName comparison index"}}, {}, Of<shape::Names>, parse::Name,
             "A row has no name when the index is not where a pool entry starts (inside an entry) or does not decode."},
-        {"each", "ue", "a table over the live instances of a class: a value per column (up to 16 field paths, or one function)",
+        {"each", "ue", "a table over the live instances of a class: a value per column (up to 16 field paths)",
             {{"cls", "Class", One, "str", "a class or struct name"},
-             {"paths", "Field[.Field...]|[Owner:]Function", Some, "str",
-              "a field path per column (structs and object pointers, as get takes), or one function to call"}},
+             {"paths", "Field[.Field...]", Some, "str", "a field path per column (structs and object pointers, as get takes)"}},
             {{"--seconds", Takes::One, "int", "N", "one column: repeat for 1..60 s and report changes"},
              {"--where", Takes::One, "str", "Field~text", "only instances whose field's value contains text, any case "
               "(a string, a name or text; else its JSON); the field need not be a column; Outer, Name and Class "
@@ -71,8 +70,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
             Of<shape::Each>, parse::Each,
             "rows: {ref, name, values} in the columns' order (name: the instance's); a failed cell is null with an errors entry. Spans inside the "
             "instance are read in passes of up to 64 bytes, the first in one tick; a path through a pointer is "
-            "followed per instance (same_tick false). Functions must be const or pure with outputs only; a call's "
-            "value is its return value, or {return, outputs}. The instances become $1..$N.", {}, true},
+            "followed per instance (same_tick false). Reads only: a function is refused, call-pure <Class> <Function> "
+            "--each calls one on every instance. The instances become $1..$N."},
         {"call", "ue", "call a reflected function with a raw block or Name=value inputs",
             {{"object", "object", One, "ref", objectOrDefault}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
@@ -90,14 +89,22 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "owns memory (a handle, a string), so the agent reuses the block and the next call releases the old values. "
             "--dry answers mode dry: hex is the block that would be sent, with exec and pure; show it when asking to call. "
             "A call that faults in the engine is refused as faulted: the target may be left in a bad state.", {}, true},
-        {"call-pure", "ue", "call a const or pure function that keeps nothing (read-only); as call takes",
-            {{"object", "object", One, "ref", objectOrDefault}, {"function", "[Class:]Function", One, "str", function},
+        {"call-pure", "ue", "call a const or pure function that keeps nothing (read-only); as call takes, or --each on every instance",
+            {{"object", "object|Class", One, "ref", "an object ($N, a literal ref, an address or a Default__ name); with --each, a class"},
+             {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params | Name=value", Any, "str", "the parameter block as hex pairs, or one Name=value per input"}},
             {{"--typed", Takes::Nothing, "bool", "", "a typed call with no inputs"},
-             {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"}},
-            Of<shape::Call>, parse::CallPure,
+             {"--dry", Takes::Nothing, "bool", "", "resolve the function and build the block; call nothing"},
+             {"--each", Takes::Nothing, "bool", "", "call it on every live instance of the class or a subclass, in one tick: each's table"},
+             {"--seconds", Takes::One, "int", "N", "with --each: repeat for 1..60 s and report changes"},
+             outer,
+             {"--limit", Takes::One, "int", "N", "with --each: rows shown (0: all); omitted counts the rest", "100"},
+             nonzero},
+            Of<shape::CallPure>, parse::CallPure,
             "The agent refuses, before calling, a function that is neither const nor pure, or one with an output "
-            "that owns memory (use call). Pure is the engine's flag, not a proof: a function can still change state."},
+            "that owns memory (use call). Pure is the engine's flag, not a proof: a function can still change state. "
+            "--each answers as each does (mode call; rows {ref, name, values}, the one value its return value or "
+            "{return, outputs}): the function takes no inputs and its block is 1..64 bytes; the instances become $1..$N."},
         {"release", "ue", "one more call (zeroed inputs by default) that drops the kept block",
             {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params", Any, "bytes", "the parameter block as hex pairs (default: zeroed)"}},
@@ -209,8 +216,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"enum", "object|Enum", One, "str", "an enum object ($N, a literal ref, an address), or an enum by name"}},
             {}, Of<shape::Enum>, parse::Enum,
             "Byte and enum properties print numbers; this names them. Names keep the enum's prefix (EFoo::Bar)."},
-        {"game-thread", "ue", "the host's game-thread tick through the game viewport's Draw: status, on, off",
-            {{"action", "on|off|status", Optional, "str", "on arms it, off puts the viewport's table back", "status"}},
+        {"game-thread", "ue", "arm or remove the host's game-thread tick through the game viewport's Draw (status shows it)",
+            {{"action", "on|off", One, "on|off", "on arms it, off puts the viewport's table back"}},
             {}, Of<shape::GameThread>, parse::GameThread,
             "call, call-pure, release, func's params, each, script, refs, exec entries and the recorder need the game thread. on swaps one pointer in "
             "the viewport object for a copy of its Draw table: confirm Draw first (the skill's references/unreal/game-thread.md). "

@@ -458,7 +458,7 @@ tools, with their decisions and rejected alternatives:
   everything (a C++ exception or a debug break belongs to the engine) and
   no guard (one wrong block ended the process and the investigation).
 - **`call-pure` is a read the agent checks.** A const or blueprint-pure
-  function whose outputs own nothing is what `each` already calls freely,
+  function whose outputs own nothing is what `call-pure --each` calls on every instance,
   and the skill already called such getters without approval; the verb
   makes the claim checkable (`CallPure`, refused before calling) and gives
   it a read-only tool. The flag is the engine's convention, not a proof,

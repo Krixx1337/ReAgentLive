@@ -67,6 +67,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     if (client.Supports(op::Watch))
         if (auto roots = client.WatchRoots(); roots) result.roots = std::move(*roots);
     result.packs = OfferedPacks(session);
+    result.gameThread = PackGameThread(session);
     result.tableHash = session.tableHash;
     Emit(session, jsonCommand, std::move(result));
 }

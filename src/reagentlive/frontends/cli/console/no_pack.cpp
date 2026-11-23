@@ -26,6 +26,7 @@ std::span<const Verb> PackVerbs() { return {}; }
 std::span<const Origin> PackOrigins() { return {}; }
 std::span<const std::string> PackNotes() { return {}; }
 std::vector<std::string> OfferedPacks(Session&) { return {}; }
+std::optional<Json> PackGameThread(Session&) { return std::nullopt; }
 
 // No row parses to a pack command; a raw op in the pack range is refused.
 bool PackCommand(const Command& command) {

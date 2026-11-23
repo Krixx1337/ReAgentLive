@@ -18,7 +18,7 @@ when an investigation needs a larger read budget across ticks.
 
 ### 2 · Class-wide snapshot and compare
 
-`each` reads up to 16 fields or one getter across a class. Whole-object
+`each` reads up to 16 fields across a class, `call-pure --each` one getter. Whole-object
 snapshots across instances (every reflected field) remain open.
 
 ### 17 · `call-native` (caution)
@@ -209,17 +209,10 @@ layout's source (`stock`, `sdk`, later `profile`), with the failed group
 when one refused. Pull forward when an agent misreads its tier, or with
 idea 33, which needs the layout source in `status` anyway.
 
-### 36 · `game-thread status` as a read
-
-The `game-thread` row is marked `writes` as a whole, so an MCP client asks
-for approval even to read the mode. Shape: split the read (`status`) from
-the actions, as a separate read-only verb or a mark that depends on the
-action (the verb table has no per-argument marks today,
-[design](design.md#unreal-pack) on `call-pure`). Pull forward when the
-prompt for a status read gets in the way of a session.
-
 ## Done
 
+- **36 · `game-thread status` as a read:** `status` carries the mode as
+  `game_thread`; `game-thread` only arms and removes the tick.
 - **18 · Best-effort pack reads off the engine's thread:** shipped behind
   the host opt-in `Context::offThreadReads`, on in `examples/unreal` and
   used by library hosts; the list of what answers is in

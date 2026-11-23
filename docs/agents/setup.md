@@ -135,7 +135,7 @@ Add this under `"mcpServers"` in the client's MCP config file, for example
 
 Tools that write memory or call into the process are marked destructive,
 so the client asks before running them; read-only tools may be allowed.
-`ue_game_thread` asks even to read its mode. Which writes need the user's
+`status` reads the game-thread mode without a prompt. Which writes need the user's
 approval is the skill's rule, not the client's.
 
 ## 5. (Optional) Generate the typed functions

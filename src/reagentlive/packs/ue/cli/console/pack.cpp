@@ -304,6 +304,15 @@ std::vector<std::string> OfferedPacks(Session& session) {
     return HasUnreal(session.client) ? std::vector<std::string>{std::string(UnrealCachePack)} : std::vector<std::string>{};
 }
 
+std::optional<Json> PackGameThread(Session& session) {
+    if (!HasUnreal(session.client) || !session.client.Supports(ue::op::GameThread)) return std::nullopt;
+    Request request{};
+    request.op = ue::op::GameThread;
+    request.flags = static_cast<uint32_t>(ue::GameThreadAction::Status);
+    auto state = SendGameThread(session, request);
+    return state ? ToJson(*state) : Json{{"error", state.error().message}};
+}
+
 bool PackCommand(const Command& command) {
     switch (command.kind) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Each:
