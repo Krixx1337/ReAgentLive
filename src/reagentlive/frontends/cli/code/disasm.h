@@ -215,6 +215,12 @@ struct Listing {
     std::string stop;             // "count", "bytes", "function end", "walk end", or the end's reason.
     std::optional<uint64_t> next; // Stopped by "count" or "bytes": where to list on.
 };
+constexpr std::string_view PastBound = "instruction runs past the function end";
+// A bounded listing whose first instruction runs past the bound: the entry
+// holding the start is shorter than one instruction (a one-byte decoy).
+inline bool ShorterThanOne(const Listing& listing) {
+    return listing.rows.empty() && listing.end && listing.end->offset == 0 && listing.end->reason == PastBound;
+}
 
 // Lists up to `count` instructions and MaxBytes bytes from `start`, an
 // instruction boundary the caller gives. With `follow`, an unconditional
@@ -274,7 +280,7 @@ inline std::expected<Listing, std::string> List(const ReadFn& read, uint64_t sta
         }
         if (!instruction) {
             if (instruction.error() == DecodeError::Undecodable) stopAt("undecodable");
-            else if (until && cursor + available.size() >= *until) stopAt("instruction runs past the function end");
+            else if (until && cursor + available.size() >= *until) stopAt(std::string(PastBound));
             else stopAt("instruction runs past the byte limit");
             break;
         }

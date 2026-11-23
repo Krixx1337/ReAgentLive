@@ -184,9 +184,24 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         listing = list(address, command.limit, false, command.follow);
         if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
     }
+    // An entry shorter than one instruction (a one-byte decoy over real
+    // code): no entry holds the address, so walk from it as for unlisted code.
+    if (command.function && !walk && dis::ShorterThanOne(*listing)) {
+        listing = list(address, command.limit, true, command.follow);
+        if (!listing) return JsonError(session, jsonCommand, "read", listing.error());
+    }
     auto out = MakeDisasm(address, *listing, *function, modules, session.meta, command.function);
     if (piece) out.piece = shape::AddressRange{piece->start, piece->end};
     if (command.file.empty()) return Emit(session, jsonCommand, std::move(out));
+    if (listing->rows.empty()) {
+        std::string bound;
+        if (*function) {
+            const auto& entry = (*function)->chunk ? *(*function)->chunk : (*function)->range;
+            bound = " (entry " + save::Hex(entry.start) + ".." + save::Hex(entry.end) + ")";
+        }
+        return JsonError(session, jsonCommand, "start", "nothing to save at " + save::Hex(address) + ": " +
+            listing->stop + bound + "; save from an address the listing reaches (disasm without --save shows it)");
+    }
 
     const Module* module = ModuleAt(address, modules);
     if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
@@ -303,7 +318,8 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         for (auto& row : MergeLabels(std::move(rows))) labels[module->base + row.rva] = std::move(row.name);
     }
     std::vector<save::Saved> saved;
-    for (size_t i = 0; i < listings.size(); ++i) saved.push_back({starts[i], listings[i].rows, owners[i]});
+    for (size_t i = 0; i < listings.size(); ++i)
+        if (!listings[i].rows.empty()) saved.push_back({starts[i], listings[i].rows, owners[i]});
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
     if (!file || !(file << save::Lines(*module, *timestamp, saved, data, labels)))
         return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
@@ -312,6 +328,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     for (const auto& one : listings) rows += one.rows.size();
     out.savedRows = rows;
     for (size_t i = 0; i < listings.size(); ++i) {
+        if (listings[i].rows.empty()) continue;
         const auto& last = listings[i].rows.back();
         const shape::SavedFunction one{starts[i], last.address + last.bytes.size(), listings[i].rows.size()};
         if (owners[i]) {

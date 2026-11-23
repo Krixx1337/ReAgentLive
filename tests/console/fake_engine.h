@@ -491,6 +491,28 @@ inline Progress CallsRead(const Request& request, Response& response, bool, cons
     return Progress::Done;
 }
 
+// One module, "Game.exe": a block of this process's memory that the modules
+// op lists, for tests that write PE headers and code into it.
+struct Image {
+    static constexpr size_t Size = 0x20000;
+    uint8_t* bytes = static_cast<uint8_t*>(VirtualAlloc(nullptr, Size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    uint64_t Base() const { return reinterpret_cast<uint64_t>(bytes); }
+    void Put(uint64_t rva, std::initializer_list<uint8_t> data) { std::copy(data.begin(), data.end(), bytes + rva); }
+    void Put32(uint64_t rva, uint32_t value) { memcpy(bytes + rva, &value, 4); }
+};
+inline Image& TheImage() {
+    static Image image;
+    return image;
+}
+inline Progress Modules(const Request& request, Response& response, bool, const Host&) {
+    reagentlive::ModuleEntry entry{TheImage().Base(), Image::Size, "Game.exe"};
+    const bool shown = request.length == 0;
+    if (shown) memcpy(response.data, &entry, sizeof(entry));
+    response.length = shown ? static_cast<uint32_t>(sizeof(entry)) : 0;
+    response.detail = 1;
+    return Progress::Done;
+}
+
 inline bool Readable(const void* pointer, size_t bytes) {
     auto cursor = reinterpret_cast<uintptr_t>(pointer);
     const uintptr_t end = cursor + bytes;
@@ -506,6 +528,7 @@ inline bool Readable(const void* pointer, size_t bytes) {
 constexpr reagentlive::Command Commands[] = {
     {reagentlive::op::Read, "read", &reagentlive::Read},
     {reagentlive::op::ReadBatch, "read-batch", &reagentlive::ReadBatch},
+    {reagentlive::op::Modules, "modules", &Modules},
     {ue::op::Find, "find", &Find},
     {ue::op::Fields, "fields", &Fields},
     {ue::op::ReadObject, "read object", &ReadObject},

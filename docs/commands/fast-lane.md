@@ -55,6 +55,8 @@ of one is unreadable, up to the page end and on from there.
   from there (`--resume` starts at `addr`, not at the function's start).
   An entry whose start does not decode (a packed image may begin one a
   few bytes early) is listed from `addr` instead, still bounded by it.
+  An entry (or chunk) shorter than its first instruction, a one-byte
+  decoy over real code, counts as no entry: the listing walks.
   When no entry holds `addr`, it walks from `addr` instead: the
   listing stops (`stop: "walk end"`) at the first return or unconditional
   jump that no earlier forward branch passes, counting branches up to
@@ -133,7 +135,8 @@ only through a jump table is not found.
   after a tail jump shares its piece with the code before it); a call
   site lies far past one. Save from the function's start (junk bytes may lead the
   piece: `disasm` its first bytes), or pass `--resume` to save from the
-  address anyway.
+  address anyway. A listing with no rows is never saved: `--save` refuses
+  it (`start`), naming why it stopped.
 
 JSON lines:
 

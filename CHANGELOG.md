@@ -135,6 +135,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   unnamed in `disasm` and saves instead of read from resolved addresses.
 - **Decoy exception entries no longer break function bounds:** unwind data
   of an unknown version counts as a plain entry, as the OS unwinder treats it.
+- **`disasm --save` no longer exits the console on an empty listing:** it
+  refuses with `start`, and a one-byte decoy entry or chunk is walked past
+  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 - **The Unreal pack's agent cannot crash on a guard page or hide a stack
   overflow:** its startup checks look at the memory region before reading,
   and name decoding catches only bad-memory faults.

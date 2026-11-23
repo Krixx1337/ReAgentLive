@@ -392,3 +392,76 @@ TEST_CASE("calls-read decodes a recorded block through the shared reader, as a c
     CHECK(values["Amount"] == 12.5);
     CHECK(values["Label"] != "Rifle");                // The caller's string memory is not read.
 }
+
+namespace {
+// Game.exe (fake_engine.h): PE32+ headers, .text at 0x1000 and an exception
+// directory of one-byte entries over real code, the decoys a packed image
+// lists: a function's start (0x1000) and a chained chunk (0x1200).
+uint64_t TheCode() {
+    static const uint64_t base = [] {
+        auto& image = TheImage();
+        std::fill(image.bytes + 0x1000, image.bytes + 0x5000, uint8_t{0xcc});
+        image.Put32(0x3c, 0x80);
+        image.Put32(0x80, 0x00004550);
+        image.Put(0x86, {2, 0});            // NumberOfSections.
+        image.Put32(0x88, 0x5f5e100);       // TimeDateStamp.
+        image.Put(0x94, {0xf0, 0});         // SizeOfOptionalHeader.
+        image.Put(0x98, {0x0b, 0x02});
+        image.Put32(0x98 + 108, 16);
+        image.Put32(0x80 + 160, 0x5000);    // Exception directory: three entries.
+        image.Put32(0x80 + 164, 3 * 12);
+        const uint64_t sections = 0x98 + 0xf0;
+        image.Put(sections, {'.', 't', 'e', 'x', 't', 0, 0, 0});
+        image.Put32(sections + 8, 0x4000);
+        image.Put32(sections + 12, 0x1000);
+        image.Put32(sections + 36, 0x60000020);
+        image.Put(sections + 40, {'.', 'r', 'd', 'a', 't', 'a', 0, 0});
+        image.Put32(sections + 48, 0x3000);
+        image.Put32(sections + 52, 0x5000);
+        image.Put32(sections + 76, 0x40000040);
+        const auto entry = [&](uint32_t index, uint32_t begin, uint32_t end, uint32_t unwind) {
+            image.Put32(0x5000 + index * 12, begin);
+            image.Put32(0x5000 + index * 12 + 4, end);
+            image.Put32(0x5000 + index * 12 + 8, unwind);
+        };
+        entry(0, 0x1000, 0x1001, 0x6000);             // Decoy over a function's start.
+        entry(1, 0x1100, 0x1140, 0x6010);
+        entry(2, 0x1200, 0x1201, 0x5000 + 1 * 12 + 1); // A decoy chunk, chained to entry 1.
+        image.Put(0x6000, {0x01, 0x04, 0x00, 0x00});
+        image.Put(0x6010, {0x01, 0x04, 0x00, 0x00});
+        // sub rsp, 0x28; mov eax, 1; add rsp, 0x28; ret
+        image.Put(0x1000, {0x48, 0x83, 0xec, 0x28, 0xb8, 0x01, 0, 0, 0, 0x48, 0x83, 0xc4, 0x28, 0xc3});
+        image.Put(0x1100, {0x48, 0x83, 0xec, 0x28, 0x48, 0x83, 0xc4, 0x28, 0xc3});
+        // mov rax, rcx; add rsp, 0x28; ret
+        image.Put(0x1200, {0x48, 0x8b, 0xc1, 0x48, 0x83, 0xc4, 0x28, 0xc3});
+        image.Put(0x1300, {0x06});          // Undecodable in 64-bit mode.
+        return image.Base();
+    }();
+    return base;
+}
+std::string At(uint32_t rva) { return std::format("0x{:x}", TheCode() + rva); }
+std::string SaveFile(const char* name) {
+    return (std::filesystem::temp_directory_path() / std::format("reagentlive-fake-{}-{}", GetCurrentProcessId(), name)).string();
+}
+}
+
+TEST_CASE("disasm --save walks past a one-byte decoy entry and refuses an empty listing") {
+    // A decoy at the function's start: walked to its return and saved.
+    const auto file = SaveFile("decoy.jsonl");
+    const auto saved = Result("disasm " + At(0x1000) + " --function --save " + file);
+    CHECK(saved["saved_rows"] == 4);
+    CHECK(saved["stop"] == "walk end");
+    CHECK(std::filesystem::file_size(file) > 0);
+    // --resume in a one-byte chunk: walked too.
+    const auto chunk = Result("disasm " + At(0x1200) + " --function --resume --save " + file);
+    CHECK(chunk["saved_rows"] == 3);
+    // Without --save the listing is the same walk.
+    CHECK(Result("disasm " + At(0x1000) + " --function")["rows"].size() == 4);
+    // Nothing decodes: a refusal, and the console keeps running.
+    const auto records = RunLines("disasm " + At(0x1300) + " --function --resume --save " + file + "; status");
+    REQUIRE(records.size() == 2);
+    CHECK_FALSE(records[0]["ok"].get<bool>());
+    CHECK(records[0]["error"]["kind"] == "start");
+    CHECK(records[1]["ok"].get<bool>());
+    std::filesystem::remove(file);
+}
