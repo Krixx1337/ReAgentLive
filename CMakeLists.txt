@@ -90,7 +90,7 @@ target_link_libraries(reagentlive-client INTERFACE winmm) # timeBeginPeriod: 1 m
 # The packs. Each pack.cmake defines its targets and sets its CLI parts:
 # reagentlive_pack_call_sources, reagentlive_pack_console_sources and
 # reagentlive_pack_console_link. One console carries one pack until
-# console/pack.h becomes a table of packs (docs/design.md#source-layout).
+# console/pack.h becomes a table of packs (docs/design/architecture.md#source-layout).
 set(reagentlive_packs_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/packs")
 set(reagentlive_packs_seen)
 foreach(pack IN LISTS REAGENTLIVE_PACKS)
@@ -105,7 +105,7 @@ foreach(pack IN LISTS REAGENTLIVE_PACKS)
 endforeach()
 list(LENGTH REAGENTLIVE_PACKS reagentlive_pack_count)
 if(reagentlive_pack_count GREATER 1)
-    message(FATAL_ERROR "reagentlive: REAGENTLIVE_PACKS names ${reagentlive_pack_count} packs; one console carries one pack until console/pack.h becomes a table (docs/design.md#source-layout).")
+    message(FATAL_ERROR "reagentlive: REAGENTLIVE_PACKS names ${reagentlive_pack_count} packs; one console carries one pack until console/pack.h becomes a table (docs/design/architecture.md#source-layout).")
 endif()
 
 add_library(reagentlive-cli INTERFACE)
