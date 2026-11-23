@@ -25,6 +25,7 @@
 #include "reagentlive/core/client.h"
 
 #include "reagentlive/frontends/cli/console/internal.h"
+#include "reagentlive/frontends/cli/console/pack.h"
 
 namespace reagentlive::cli::detail {
 std::expected<const image::Layout*, std::string> LayoutOf(Session& session, const Module& module) {
@@ -442,8 +443,23 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     std::vector<save::Saved> saved;
     for (size_t i = 0; i < listings.size(); ++i)
         if (!listings[i].rows.empty()) saved.push_back({starts[i], listings[i].rows, owners[i]});
+    // The layouts of the classes the saved functions' labels name, as layout rows.
+    std::vector<std::string> methods;
+    for (size_t i = 0; i < listings.size(); ++i)
+        if (!owners[i] && !listings[i].rows.empty())
+            if (const auto label = labels.find(starts[i]); label != labels.end()) methods.push_back(label->second);
+    auto layouts = PackSaveLayouts(session, methods);
+    if (!layouts) return CommandError(session, jsonCommand, layouts.error());
+    std::string text = save::Lines(*module, *timestamp, saved, data, labels);
+    for (size_t at = 0; at < layouts->lines.size();) {
+        const size_t end = layouts->lines.find('\n', at);
+        Json row = Json::parse(layouts->lines.substr(at, end - at));
+        row["row"] = "layout";
+        text += row.dump() + "\n";
+        at = end == std::string::npos ? layouts->lines.size() : end + 1;
+    }
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
-    if (!file || !(file << save::Lines(*module, *timestamp, saved, data, labels)))
+    if (!file || !(file << text))
         return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
     KeepSaveSummary(out, command.file);
     uint64_t rows = 0;
@@ -469,6 +485,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         out.jumpoutsLeft.emplace(left.begin(), left.end());
     }
     if (capped) out.capped = true;
+    if (!layouts->owners.empty()) out.layouts = shape::SavedLayouts{std::move(layouts->owners), layouts->types};
     Emit(session, jsonCommand, std::move(out));
 }
 

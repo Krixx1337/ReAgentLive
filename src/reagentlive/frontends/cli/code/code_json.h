@@ -146,6 +146,16 @@ struct JumpTable {
         v("targets", &JumpTable::targets);
     }
 };
+// disasm save: the reflected classes owning the saved functions (by their
+// labels) and the types their layout rows describe.
+struct SavedLayouts {
+    std::vector<std::string> classes;
+    uint64_t types = 0;
+    template<class V> static void Describe(V& v) {
+        v("classes", &SavedLayouts::classes);
+        v("types", &SavedLayouts::types);
+    }
+};
 // disasm: the rows, how many bytes they cover, why the listing stopped
 // (`next` where a count or byte limit cut it), the hops --follow took, the
 // function entry holding the first address, and with --function the strings
@@ -166,6 +176,7 @@ struct Disasm {
     std::optional<std::vector<JumpTable>> tables;        // --save: the switches whose targets were followed.
     std::optional<std::vector<Addr>> jumpoutsLeft;       // --save: the function's jump targets still unsaved.
     std::optional<bool> capped;                          // --save: chunks stopped at the cap.
+    std::optional<SavedLayouts> layouts;                 // save: layout rows for the saved methods' classes.
     std::optional<AddressRange> piece;   // A walk from inside unlisted code: the piece holding the address.
     std::optional<FunctionBounds> function;
     std::optional<DisasmEnd> end;
@@ -187,6 +198,7 @@ struct Disasm {
         v("tables", &Disasm::tables);
         v("jumpouts_left", &Disasm::jumpoutsLeft);
         v("capped", &Disasm::capped);
+        v("layouts", &Disasm::layouts);
         v("piece", &Disasm::piece);
         v("function", &Disasm::function);
         v("end", &Disasm::end);

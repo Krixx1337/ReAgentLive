@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "reagentlive/packs/ue/cli/results/layout.h"
+#include "reagentlive/frontends/cli/console/pack.h"
 
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
 
@@ -27,6 +28,9 @@ bool NotFound(const Error& error) { return error.kind == Error::Kind::Agent && e
 
 // Types (classes and structs) one export writes at most; past it, capped.
 constexpr size_t MaxLayoutTypes = 1024;
+// disasm save: how far the layouts of the saved functions' classes reach
+// (their super chains always; the types their fields name, one step).
+constexpr uint32_t SaveLayoutClosure = 1;
 
 // One type to export: found by name or through a field's struct ref, and
 // how many references away from a named one it is.
@@ -127,13 +131,13 @@ Result<Ref> ResolveEnum(Session& session, const std::string& name) {
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no enum named " + name});
 }
 
-// The named classes, structs and enums; with --closure also what their
-// fields reference, to the depth, and each exported type's super chain.
-void RunLayoutExport(Session& session, const Command& command, std::string_view jsonCommand) {
-    shape::LayoutExport out;
-    out.path = command.file;
-    const bool closure = command.closure.has_value();
-    const uint32_t depth = command.closure.value_or(0);
+// The named classes, structs and enums as layout lines; with a closure also
+// what their fields reference, to the depth, and each exported type's super
+// chain. The counts and missing names go to `out` (its path stays).
+Result<std::string> ExportLayouts(Session& session, std::span<const std::string> names, std::optional<uint32_t> closureDepth,
+                                  shape::LayoutExport& out) {
+    const bool closure = closureDepth.has_value();
+    const uint32_t depth = closureDepth.value_or(0);
     std::deque<Pending> queue;
     std::vector<std::string> queued;                          // Type names taken, in order.
     struct EnumWanted { std::string name; std::optional<uint32_t> size; Ref ref; };
@@ -149,13 +153,13 @@ void RunLayoutExport(Session& session, const Command& command, std::string_view 
         queued.push_back(name);
         queue.push_back({name, ref, at});
     };
-    for (const auto& name : command.fields) {
+    for (const auto& name : names) {
         auto type = ResolveClass(session, name);
         if (type) { want(name, *type, 0); continue; }
-        if (!NotFound(type.error())) return CommandError(session, jsonCommand, type.error());
+        if (!NotFound(type.error())) return std::unexpected(type.error());
         auto found = ResolveEnum(session, name);
         if (found) { wantEnum(name, std::nullopt, *found); continue; }
-        if (!NotFound(found.error())) return CommandError(session, jsonCommand, found.error());
+        if (!NotFound(found.error())) return std::unexpected(found.error());
         if (!out.missing) out.missing.emplace();
         out.missing->push_back(name);
     }
@@ -166,23 +170,23 @@ void RunLayoutExport(Session& session, const Command& command, std::string_view 
         if (!type.ref.address) {
             auto resolved = ResolveClass(session, type.name);
             if (!resolved) {
-                if (!NotFound(resolved.error())) return CommandError(session, jsonCommand, resolved.error());
+                if (!NotFound(resolved.error())) return std::unexpected(resolved.error());
                 continue; // Named by a field but not found: the field line still names it.
             }
             type.ref = *resolved;
         }
         std::string super;
         auto head = TypeLine(session, type.ref, type.name, super);
-        if (!head) return CommandError(session, jsonCommand, head.error());
+        if (!head) return std::unexpected(head.error());
         auto fields = ObjectFields(session, type.ref);
-        if (!fields) return CommandError(session, jsonCommand, fields.error());
+        if (!fields) return std::unexpected(fields.error());
         ++((*head)["kind"] == "class" ? out.classes : out.structs);
         lines += head->dump() + "\n";
         if (closure && !super.empty()) want(super, Ref{}, type.depth);
         std::vector<ue::Field> own;
         for (const auto& field : *fields)
             if (field.owner == type.name) own.push_back(field); // Inherited: its own type's lines.
-        // Enums have no references of their own: with --closure, every one named is exported.
+        // Enums have no references of their own: with a closure, every one named is exported.
         const Refer refer = [&](const std::string& name, const Ref& ref, bool isEnum, uint32_t size) {
             if (!closure) return;
             if (isEnum) wantEnum(name, size ? std::optional(size) : std::nullopt, Ref{});
@@ -198,18 +202,26 @@ void RunLayoutExport(Session& session, const Command& command, std::string_view 
         if (!ref.address) {
             auto found = ResolveEnum(session, wanted.name);
             if (!found) {
-                if (!NotFound(found.error())) return CommandError(session, jsonCommand, found.error());
+                if (!NotFound(found.error())) return std::unexpected(found.error());
                 continue;
             }
             ref = *found;
         }
         auto line = EnumLine(session, ref, wanted.name, wanted.size);
-        if (!line) return CommandError(session, jsonCommand, line.error());
+        if (!line) return std::unexpected(line.error());
         lines += line->dump() + "\n";
         ++out.enums;
     }
+    return lines;
+}
+
+void RunLayoutExport(Session& session, const Command& command, std::string_view jsonCommand) {
+    shape::LayoutExport out;
+    out.path = command.file;
+    auto lines = ExportLayouts(session, command.fields, command.closure, out);
+    if (!lines) return CommandError(session, jsonCommand, lines.error());
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
-    if (!file || !(file << lines)) return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
+    if (!file || !(file << *lines)) return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
     Emit(session, jsonCommand, std::move(out));
 }
 
@@ -257,6 +269,42 @@ void RunLayoutCheck(Session& session, const Command& command, std::string_view j
     out.ok = out.mismatched == 0;
     Emit(session, jsonCommand, std::move(out));
 }
+}
+
+// disasm save: the classes owning the saved functions and their layouts.
+// A name's class is the part before its last `::`, else its longest prefix
+// cut at a `_` that names a class or struct (class names hold `_` too).
+Result<SaveLayouts> PackSaveLayouts(Session& session, std::span<const std::string> functionNames) {
+    SaveLayouts out;
+    if (!session.client.Supports(ue::op::Find)) return out;
+    std::map<std::string, bool> known;
+    const auto isType = [&](const std::string& name) -> Result<bool> {
+        if (const auto found = known.find(name); found != known.end()) return found->second;
+        auto type = ResolveClass(session, name);
+        if (!type && !NotFound(type.error())) return std::unexpected(type.error());
+        return known[name] = type.has_value();
+    };
+    for (const auto& name : functionNames) {
+        std::vector<std::string> heads;
+        if (const size_t colons = name.rfind("::"); colons != std::string::npos && colons) heads.push_back(name.substr(0, colons));
+        else
+            for (size_t cut = name.rfind('_'); cut != std::string::npos && cut; cut = name.rfind('_', cut - 1))
+                heads.push_back(name.substr(0, cut));
+        for (const auto& head : heads) {
+            auto found = isType(head);
+            if (!found) return std::unexpected(found.error());
+            if (!*found) continue;
+            if (std::ranges::find(out.owners, head) == out.owners.end()) out.owners.push_back(head);
+            break;
+        }
+    }
+    if (out.owners.empty()) return out;
+    shape::LayoutExport counts;
+    auto lines = ExportLayouts(session, out.owners, SaveLayoutClosure, counts);
+    if (!lines) return std::unexpected(lines.error());
+    out.lines = std::move(*lines);
+    out.types = counts.classes + counts.structs + counts.enums;
+    return out;
 }
 
 void RunLayout(Session& session, const Command& command, std::string_view jsonCommand) {

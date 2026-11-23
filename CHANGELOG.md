@@ -128,6 +128,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Types travel with a save:** a saved function whose label names a
+  reflected class brings that class's layout into the file, and the IDA
+  loader makes it a local type and types the function `Class *this` on
+  open and on `add_saved`: the first decompile shows `this->Field`
+  ([fast lane](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
+  Copy the new `reagentlive_ida.py` into IDA's loaders folder.
+
 - **A generated verb reference:** [docs/commands/reference.md](docs/commands/reference.md)
   lists every verb with its args and their help, result, notes and an
   example call, the shared `view` keys and every error kind with its

@@ -4,10 +4,11 @@ Copy this file into IDA's user loaders folder (Windows:
 %APPDATA%\\Hex-Rays\\IDA Pro\\loaders); IDA's headless library reads the
 same folder. Then:
 
-- **Open a save** (`disasm <addr> --function --save <file> [--callees]`):
+- **Open a save** (`disasm` with `function` and `save`):
   a small x64 database of the saved functions, their chained chunks
   (function tails) and the read-only data they reference, at their live
-  addresses, with the file's names. A name outside the saved bytes (a call
+  addresses, with the file's names, and its layout rows as local types
+  with `Class *this` on the methods they belong to. A name outside the saved bytes (a call
   or tail target not saved, a labelled global) gets a one-byte STUB segment
   so the decompiler shows the name, not a bare address. Names the file gives
   are auto names: export_names never mistakes them for yours. Rows that
@@ -56,9 +57,9 @@ def parse(lines):
     Plan: {'build': {module, module_size, timestamp, base}, 'functions': [(start, end)]
     in file order, 'chunks': [(start, end, function)], 'segments': [(start, bytes, 'CODE' | 'DATA')] sorted,
     'names': [(address, name, what)], 'stubs': [(address, what)] for names no
-    segment holds}.
+    segment holds, 'layouts': the layout rows as layout-export lines (JSON text)}.
     """
-    build, functions, chunks, segments, names = None, [], [], [], []
+    build, functions, chunks, segments, names, layout_rows = None, [], [], [], [], []
     for number, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
@@ -82,6 +83,9 @@ def parse(lines):
                     segments.append((int(row['address'], 16), data, 'CODE' if kind == 'code' else 'DATA'))
             elif kind == 'name':
                 names.append((int(row['address'], 16), sanitize(row['name']), row.get('what', '')))
+            elif kind == 'layout':
+                del row['row']
+                layout_rows.append(json.dumps(row))
             else:
                 # A row kind added since: skipping it would load the file
                 # silently with less in it (no chunks, no names).
@@ -97,7 +101,14 @@ def parse(lines):
         return segments
     held = [(start, start + len(data)) for start, data, _ in segments]
     return {'build': build, 'functions': functions, 'chunks': chunks, 'segments': segments, 'names': names,
-            'stubs': stubs(names, held)}
+            'stubs': stubs(names, held), 'layouts': layout_rows}
+
+
+def methods(plan):
+    """The saved functions a name row names, [(address, name)] in file order: the ones whose class
+    prefix may type `Class *this` (this_class)."""
+    named = {address: name for address, name, what in plan['names'] if what == 'function'}
+    return [(start, named[start]) for start, _ in plan['functions'] if start in named]
 
 
 def _groups(items):
@@ -286,6 +297,11 @@ def load_file(li, neflags, format):
         import ida_name
         ida_name.set_name(first, named[first], _auto_name())  # The entry's name is the file's too.
     ida_netnode.netnode(_NODE, 0, True).supset(0, json.dumps(plan['build']))
+    if plan['layouts']:
+        # The types now; `this` once auto-analysis is done (no decompiler while loading).
+        types = saved_types(plan, now=False)
+        if types.get('error') or types['types_failed']:
+            ida_kernwin.msg(f'ReAgentLive types: {json.dumps(types)}\n')
     return 1
 
 
@@ -332,8 +348,74 @@ def add_saved(path):
     replaced, failed = _apply(plan, writes)
     if failed:
         raise SaveError(f'{path}: {failed}')
-    return {'added': _ranges(report['added']), 'joined': _ranges(report['joined']),
-            'cut': _ranges(report['cut']), 'stubs_replaced': [f'{at:#x}' for at in replaced]}
+    summary = {'added': _ranges(report['added']), 'joined': _ranges(report['joined']),
+               'cut': _ranges(report['cut']), 'stubs_replaced': [f'{at:#x}' for at in replaced]}
+    if plan['layouts']:
+        types = saved_types(plan)
+        if types.get('error'):
+            raise SaveError(f"{path}: layout rows: {types['error']}")
+        summary.update(types)
+    return summary
+
+
+_PENDING = '$ reagentlive this'  # Functions a loaded save still has to type `Class *this`.
+
+
+def saved_types(plan, now=True):
+    """IDA: a save's layout rows as local types (import_layouts' logic: types of the same name are
+    replaced), then `Class *this` on its functions whose names give a class (apply_this' logic),
+    with any a load left pending. Returns {'types': types and enums declared, 'types_failed':
+    declarations IDA refused, 'this_typed': n, 'this_skipped': ['name: why']}, or {'error': why}
+    when the rows are no layout. With `now` false (while loading: no decompiler yet) the
+    functions wait in the database and are typed when auto-analysis ends, or by the next
+    add_saved; this_typed is then 0."""
+    parsed = layouts(plan['layouts'])
+    if isinstance(parsed, str):
+        return {'error': parsed}
+    report = _declare(*parsed)
+    out = {'types': len(report.get('types', [])) + len(report.get('enums', [])), 'types_failed': report['failed'],
+           'this_typed': 0, 'this_skipped': []}
+    if not now:
+        _defer_this(methods(plan))
+        return out
+    typed = _type_this(_take_pending() + methods(plan))
+    out.update(this_typed=typed['typed'], this_skipped=typed['skipped'] + [f'{name}: no decompiler' for _, name in typed['left']])
+    return out
+
+
+def _defer_this(named):
+    """IDA: keep [(start, name)] in the database and type them when auto-analysis ends."""
+    import ida_idp
+    import ida_netnode
+
+    ida_netnode.netnode(_PENDING, 0, True).supset(0, json.dumps(named))
+
+    class _AfterAnalysis(ida_idp.IDB_Hooks):
+        def auto_empty_finally(self):
+            self.unhook()
+            ida_idp.reagentlive_this_hook = None
+            pending = _take_pending()
+            if pending:
+                left = _type_this(pending)['left']
+                if left:  # No decompiler yet: the next add_saved types them.
+                    ida_netnode.netnode(_PENDING, 0, True).supset(0, json.dumps(left))
+            return 0
+
+    hook = _AfterAnalysis()
+    hook.hook()
+    ida_idp.reagentlive_this_hook = hook  # Kept alive past this loader module.
+
+
+def _take_pending():
+    """IDA: the functions a load left to type, removed from the database: [(start, name)]."""
+    import ida_netnode
+
+    node = ida_netnode.netnode(_PENDING, 0, False)
+    if node.index() == ida_netnode.BADNODE:
+        return []
+    named = [tuple(item) for item in json.loads(node.supstr(0) or '[]')]
+    node.kill()
+    return named
 
 
 # --- Names round trip: labels files in, your names out ---------------------
@@ -954,13 +1036,17 @@ def import_layouts(path):
     a packed struct per class or struct, an enum per enum (see declarations). Types of the
     same name are replaced. Returns the declarations' report plus 'failed': declarations IDA refused,
     each with its first 80 characters (those types are missing, the rest are in)."""
-    import ida_typeinf
-
     with open(path, encoding='utf-8') as handle:
         parsed = layouts(handle)
     if isinstance(parsed, str):
         raise ValueError(f'{path}: {parsed}')
-    classes, enums, report = parsed
+    return _declare(*parsed)
+
+
+def _declare(classes, enums, report):
+    """IDA: declare what layouts() read; import_layouts' report."""
+    import ida_typeinf
+
     text, built = declarations(classes, enums)
     flags = ida_typeinf.HTI_DCL | ida_typeinf.HTI_PAKDEF
     failed = []
@@ -990,13 +1076,6 @@ def apply_this(labels_path):
     class is a local struct type (import_layouts makes them), type the function's first argument
     `Class *this`. Other arguments and the return type stay as IDA has them (decompiler's guess when
     the function had no type). Returns {'typed': n, 'skipped': ['name: why']}."""
-    import ida_funcs
-    import ida_hexrays
-    import ida_nalt
-    import ida_typeinf
-    import ida_auto
-
-    ida_auto.auto_wait()
     with open(labels_path, encoding='utf-8') as handle:
         rows = load(handle)
     build = _database_build()
@@ -1005,25 +1084,45 @@ def apply_this(labels_path):
     rows = of_build(rows, build['module_size'], build['timestamp'])
     if isinstance(rows, str):
         raise ValueError(rows)
-    structs, typed, skipped = {}, 0, []
-    for row in best(rows):
-        ea = build['base'] + row['rva']
+    typed = _type_this([(build['base'] + row['rva'], row['name']) for row in best(rows)])
+    return {'typed': typed['typed'], 'skipped': typed['skipped'] + [f'{name}: no decompiler' for _, name in typed['left']]}
+
+
+def _type_this(named):
+    """IDA: `Class *this` on each function [(start, name)] whose name gives a local struct type.
+    Returns {'typed': n, 'skipped': ['name: why'], 'left': [(start, name)] with no function type
+    yet (no decompiler)}."""
+    import ida_auto
+    import ida_funcs
+    import ida_hexrays
+    import ida_nalt
+    import ida_typeinf
+
+    ida_auto.auto_wait()
+    structs, typed, skipped, left = {}, 0, [], []
+    decompiler = ida_hexrays.init_hexrays_plugin()
+    for ea, label in named:
         function = ida_funcs.get_func(ea)
         if not function or function.start_ea != ea:
             continue  # A global, or a function this database does not hold.
-        name = this_class(row['name'], lambda head: structs[head] if head in structs else structs.setdefault(head, _named_struct(c_name(head))))
+        name = this_class(label, lambda head: structs[head] if head in structs else structs.setdefault(head, _named_struct(c_name(head))))
         if name is None:
             continue  # No class part names a type: not a method of an imported class.
         current = ida_typeinf.tinfo_t()
-        if not ida_nalt.get_tinfo(current, ea) and not ida_typeinf.guess_tinfo(current, ea):
+        # A type IDA holds, else its guess when that has arguments (a guess right after
+        # analysis can be an empty one), else the decompiler's.
+        if not ida_nalt.get_tinfo(current, ea) and ida_typeinf.guess_tinfo(current, ea) != ida_typeinf.GUESS_FUNC_OK:
+            if not decompiler:
+                left.append((ea, label))
+                continue
             try:
                 current = ida_hexrays.decompile(ea).type
             except Exception as error:  # noqa: BLE001
-                skipped.append(f"{row['name']}: no function type ({error})")
+                skipped.append(f"{label}: no function type ({error})")
                 continue
         details = ida_typeinf.func_type_data_t()
         if not current.get_func_details(details) or details.size() == 0:
-            skipped.append(f"{row['name']}: no first argument")
+            skipped.append(f"{label}: no first argument")
             continue
         pointer = ida_typeinf.tinfo_t()
         pointer.create_ptr(structs[name])
@@ -1032,8 +1131,8 @@ def apply_this(labels_path):
         if changed.create_func(details) and ida_typeinf.apply_tinfo(ea, changed, ida_typeinf.TINFO_DEFINITE):
             typed += 1
         else:
-            skipped.append(f"{row['name']}: IDA refused the type")
-    return {'typed': typed, 'skipped': skipped}
+            skipped.append(f"{label}: IDA refused the type")
+    return {'typed': typed, 'skipped': skipped, 'left': left}
 
 
 if __name__ == '__main__':

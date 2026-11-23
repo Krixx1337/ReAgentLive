@@ -221,7 +221,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             "(chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets "
             "still unsaved in jumpouts_left; callees follows direct calls and tail jumps breadth-first and adds functions (each saved one, "
             "with its depth) and skipped (each target left out, why: depth, count past 16 callees, bytes past 256 KB of code in the whole "
-            "save, unreadable). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
+            "save, unreadable). With an engine pack, a saved function whose label names a reflected class (Class::Method, or "
+            "Class_Method by the longest class prefix) brings that class's layout (layout-export with closure 1) into the file "
+            "as layout rows, counted in layouts (classes, types). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
             "piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume. Options: count and function decide what is read (not a view: "
             "they bound the decoding), resume continues a cut listing, save writes files, follow steps through jumps."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",

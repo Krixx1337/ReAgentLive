@@ -181,5 +181,61 @@ class Types(unittest.TestCase):
         self.assertIsNone(loader.this_class('Thing', known))   # No method part.
 
 
+# A save with layout rows (disasm save of a labelled method): the console adds "row": "layout".
+SAVE = [
+    '{"base":"0x140000000","end":"0x140001006","module":"Game.exe","module_size":4096,"row":"function",'
+    '"start":"0x140001000","timestamp":7}',
+    '{"base":"0x140000000","end":"0x140002001","module":"Game.exe","module_size":4096,"row":"function",'
+    '"start":"0x140002000","timestamp":7}',
+    '{"address":"0x140001000","bytes":"8b4130c3c3c3","row":"code","rva":"0x1000"}',
+    '{"address":"0x140002000","bytes":"c3","row":"code","rva":"0x2000"}',
+    '{"address":"0x140001000","name":"Thing_Tick","row":"name","rva":"0x1000","what":"function"}',
+    '{"address":"0x140002000","name":"fn_2000","row":"name","rva":"0x2000","what":"function"}',
+    '{"address":"0x140003000","name":"Thing_Other","row":"name","rva":"0x3000","what":"call"}',
+] + ['{"row":"layout",' + line[1:] for line in LAYOUT[:16] if line]
+
+
+class SavedTypes(unittest.TestCase):
+    def test_layout_rows_read_as_a_layout_file(self):
+        plan = loader.parse(SAVE)
+        self.assertIsInstance(plan, dict)
+        self.assertEqual(len(plan['layouts']), 15)
+        classes, enums, report = loader.layouts(plan['layouts'])
+        self.assertEqual(set(classes), {'Thing', 'Base', 'Pair'})
+        self.assertEqual(set(enums), set())   # LAYOUT's enum lines come later.
+        self.assertEqual(report['lines_skipped'], [])
+        self.assertEqual(classes['Thing']['base'], 'Base')
+
+    def test_methods_are_the_saved_functions_with_names(self):
+        plan = loader.parse(SAVE)
+        self.assertEqual(loader.methods(plan), [(0x140001000, 'Thing_Tick'), (0x140002000, 'fn_2000')])
+
+    def test_saved_types_declares_then_types_this_with_what_a_load_left(self):
+        plan = loader.parse(SAVE)
+        calls = []
+        saved = (loader._declare, loader._type_this, loader._take_pending, loader._defer_this)
+        loader._declare = lambda classes, enums, report: calls.append(('declare', sorted(classes))) or             {'types': sorted(classes), 'enums': [], 'failed': []}
+        loader._type_this = lambda named: calls.append(('this', named)) or             {'typed': 1, 'skipped': ['fn_2000: x'], 'left': [(0x140005000, 'Thing_Late')]}
+        loader._take_pending = lambda: [(0x140004000, 'Thing_Earlier')]
+        loader._defer_this = lambda named: calls.append(('defer', named))
+        try:
+            now = loader.saved_types(plan)
+            self.assertEqual(now, {'types': 3, 'types_failed': [], 'this_typed': 1,
+                                   'this_skipped': ['fn_2000: x', 'Thing_Late: no decompiler']})
+            self.assertEqual(calls[1], ('this', [(0x140004000, 'Thing_Earlier'), (0x140001000, 'Thing_Tick'),
+                                                 (0x140002000, 'fn_2000')]))
+            calls.clear()
+            later = loader.saved_types(plan, now=False)   # While loading: the types, `this` waits.
+            self.assertEqual(later['this_typed'], 0)
+            self.assertEqual([call[0] for call in calls], ['declare', 'defer'])
+            self.assertIn('error', loader.saved_types(dict(plan, layouts=['not json'])))
+        finally:
+            loader._declare, loader._type_this, loader._take_pending, loader._defer_this = saved
+
+    def test_layout_rows_without_a_type_are_no_layout(self):
+        plan = loader.parse(SAVE[:4] + ['{"row":"layout","kind":"widget","name":"x"}'])
+        self.assertEqual(loader.layouts(plan['layouts']), 'no layout lines: not a layout-export file')
+
+
 if __name__ == '__main__':
     unittest.main()

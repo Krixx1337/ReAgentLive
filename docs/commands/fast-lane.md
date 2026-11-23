@@ -148,6 +148,14 @@ then `capped: true`; targets of the function still unsaved are listed in
   `save.labels` ([labels](unreal.md#labels-for-a-static-tool)): names
   you gave in IDA (`user`), the globals `peek` with `label` confirmed, exec
   thunks and interface implementations; the highest-ranked row per address.
+- **Types travel with the save.** With an engine pack, each saved function
+  whose label names a reflected class (`Class::Method`, or `Class_Method`
+  by the longest prefix that is a class or struct) brings that class's
+  layout into the file: `layout-export`'s lines with `closure` 1 (its super
+  chain and the types its fields name, one step), as `layout` rows. The
+  result names the classes and counts the types in `layouts`. The loader
+  makes them local types and types those functions `Class *this`, so the
+  first decompile shows `this->Field`.
 - **No partial saves.** A walk (no exception entry) from more than 32
   bytes past the last return, unconditional jump or padding in its
   unlisted piece adds `piece`, the piece holding the address, and `save`
@@ -168,6 +176,7 @@ JSON lines:
 | `code` | `address`, `rva`, `bytes` (hex): the listed code of every saved part, one row per contiguous run; runs that overlap or touch are joined, so no two rows overlap |
 | `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch, and each switch table whole; bytes a `code` row holds are left out |
 | `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
+| `layout` | a `layout-export` line (`kind` `class`, `struct`, `field` or `enum`, with its keys): the layouts of the saved methods' classes, last in the file |
 
 `frontends/ida/reagentlive_ida.py` is the IDA loader: copy it into IDA's
 user loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`) and
@@ -192,7 +201,13 @@ into one segment, so a function never ends at a segment's edge, and stubs
 are replaced by the code that arrives. Names you gave and comments already
 there stay. It returns a summary: `added` (new segments), `joined`
 (existing segments grown), `cut` (new bytes already held), each as
-`start-end` ranges, and `stubs_replaced`. It raises `SaveError` instead of
+`start-end` ranges, and `stubs_replaced`. A save with `layout` rows also
+declares them as local types (as `import_layouts`: types of the same name
+are replaced, not duplicated) and types its functions `Class *this` (as
+`apply_this`): `types` (declared), `types_failed`, `this_typed` and
+`this_skipped` (`'<name>: why'`). Opening such a save declares the types at
+once and types `this` when auto-analysis ends (the decompiler is not there
+while loading); one it could not type then waits for the next `add_saved`. It raises `SaveError` instead of
 loading less than the file holds: a file it cannot parse, another build, a
 byte that differs from the database, or a saved function or chunk start
 left without bytes.

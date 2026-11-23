@@ -52,6 +52,17 @@ struct WatchFieldRange { uint64_t address, object; uint32_t length, type; };
 std::expected<WatchFieldRange, std::string> PackWatchField(Session& session, const Ref& object, std::string_view path);
 // write --undo: the owner's size, or why the object cannot own a trial.
 std::expected<uint32_t, std::string> TrialOwnerSize(Session& session, const Ref& owner);
+// disasm save: the layout lines (layout-export's, with a small closure) of
+// the reflected classes owning the saved functions, by their names
+// (`Class::Method`, or `Class_Method` with the longest prefix that is a
+// class), the classes found and the types written; empty without a pack or
+// a host offering it.
+struct SaveLayouts {
+    std::string lines;
+    std::vector<std::string> owners;
+    uint64_t types = 0;
+};
+Result<SaveLayouts> PackSaveLayouts(Session& session, std::span<const std::string> functionNames);
 // peek: which pointer-shaped values are live objects, then name hints for value rows.
 void DescribePeek(Session& session, std::span<PeekValue> values);
 void NamePeek(Session& session, std::span<PeekValue> values, std::span<const Module> modules);

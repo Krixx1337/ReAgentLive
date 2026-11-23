@@ -1068,3 +1068,29 @@ TEST_CASE("layout-export writes type lines and full field lines; closure adds wh
     CHECK(enumOnly["missing"] == Json::array({"NoSuchType"}));
     CHECK_FALSE(FileLines(types.file)[0].contains("size"));
 }
+
+TEST_CASE("disasm save adds layout rows for the classes its labelled functions name") {
+    TheLayoutTypes();
+    const auto labels = SaveFile("save-labels.jsonl");
+    {
+        std::ofstream out(labels, std::ios::binary | std::ios::trunc);
+        out << LabelLine(0x1700, "NoClass_Run") << "\n" << LabelLine(0x1720, "LayoutThing_Do_Tick") << "\n"
+            << LabelLine(0x1740, "LayoutSpot::Get") << "\n";
+    }
+    const auto file = SaveFile("save-layout.jsonl");
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1700)}, {"function", true},
+        {"save", {{"file", file}, {"callees", 2}, {"labels", labels}}}}));
+    // The longest prefix that is a class (LayoutThing, not LayoutThing_Do); `::` names it whole.
+    REQUIRE(saved.contains("layouts"));
+    CHECK(saved["layouts"]["classes"] == Json::array({"LayoutThing", "LayoutSpot"}));
+    CHECK(saved["layouts"]["types"] == 5);   // The closure of one step: its super, struct, class and enum.
+    std::vector<std::string> types;
+    for (const auto& row : FileLines(file))
+        if (row["row"] == "layout" && row["kind"] != "field") types.push_back(row["name"].get<std::string>());
+    CHECK(types == std::vector<std::string>{"LayoutThing", "LayoutSpot", "LayoutBase", "LayoutOther", "ELayoutRole"});
+    // No label names a class: no layout rows.
+    const auto plain = Result(CallText("disasm", {{"addr", At(0x1760)}, {"function", true}, {"save", {{"file", file}, {"labels", labels}}}}));
+    CHECK_FALSE(plain.contains("layouts"));
+    std::filesystem::remove(file);
+    std::filesystem::remove(labels);
+}
