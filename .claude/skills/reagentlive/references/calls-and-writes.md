@@ -1,31 +1,25 @@
 # Engine calls and writes
 
-Every `write` (`hold` included) and state-changing `call` needs the user's approval
-first (SKILL.md rules). Call semantics and named inputs:
-named calls (`docs/commands/unreal.md#named-calls`).
+Approval: SKILL.md rules. Call semantics and named inputs:
+`docs/commands/unreal-calls.md#named-calls`; timed writes:
+`docs/commands/memory.md#timed-writes`.
 
 ## Calling functions
 
 - `call`, `call-pure`, `call-each` and `release` need `host_thread: engine` (T3);
   otherwise the game-thread reference first.
-- Approval: pure getters through `call-pure` need none (say what you
-  call), except the first call on a new host or in a new game, the
-  known-answer call (SKILL.md rules).
 - Find the function with `funcs`, copy exact input names from `func`'s `params`,
   then `call` with `dry` to see the block before anything runs:
   `{"verb": "call", "args": {"object": "0x1f2e3d4c50#123:4", "function": "GetHealth", "params": {}, "dry": true}}`.
-- Getters: `call-pure` first. A refusal means the function is not const or
-  pure, or keeps an owned result: it needs approval and `call`.
-- Before asking for a `call`, put its `dry` output in the request: the
-  function, its `exec` address, `pure`, and the exact block.
+- Getters: `call-pure` first; a refusal means it needs approval and
+  `call`. Before asking for a `call`, put its `dry` output in the request
+  (the function, its `exec` address, `pure`, the exact block).
 - A call refused as faulted was caught inside the engine; the
   game may now be unstable. Tell the user, and confirm later readings with
   a second read.
 - A `funcs` row declared only on a native interface (`help` on `funcs`): never
-  `call` it; follow the native-interface method in the native-code reference.
+  `call` it; follow the native-and-blueprint reference.
 - Static library functions: call them on the library's `Default__` object.
-- To cross-check a typed getter against a raw call, compare the complete
-  result blocks on a stable target before relying on decoded output.
 - **Owned results** (the result says it kept them; `help` on `call`):
   `release` with the same `object` and `function` once when done.
   Verify on the handle's control block with `read` (+8 shared, +12 weak
@@ -61,21 +55,14 @@ named calls (`docs/commands/unreal.md#named-calls`).
 ## Timed writes (`write` with `undo`)
 
 - **Use `write` with `undo` to settle which way a lead goes** (does a multiplier
-  shorten an action?). It writes once and the agent restores the original.
-  Whether it needs approval follows the host's rules. Its result
-  is evidence for a lead's direction, not validation of a shipped feature.
-- For an attribute behind a lookup handle, the owner is the effect
-  component. Look the handle up with `call` (the result is kept), read its
-  two pointers (object, control block), then `release` it. The attribute
-  object has no vtable at `+0`; use the control block as `undo.object` (16
-  bytes before the object, vtable in the game exe; base and current values
-  at control block `+0x38`).
+  shorten an action?). It writes once and the agent restores the original;
+  a value the game rewrites meanwhile ends `conflict`. Its result is
+  evidence for a lead's direction, not validation of a shipped feature.
+- An attribute behind a lookup handle: `references/unreal/gameplay-systems.md#attributes-and-effects`.
 - **To time an action**, capture its Blueprint action object's state fields
-  (frame counters, flags) during one untouched run and one trial run, then
-  compare the times between matching state changes. A reload's notify
-  sequence gave exact ratios.
-- Interactive timing: start the capture, end the turn telling the user to
-  act now, read the result when it completes.
+  (frame counters, flags) in one untouched and one trial run and compare
+  the times between matching state changes
+  (the capture-and-timing reference).
 - **A/B on an AI character.**
   1. Confirm the value sits still at rest: two reads a second apart.
   2. Capture the value and the action's progress over several untouched
@@ -90,6 +77,8 @@ named calls (`docs/commands/unreal.md#named-calls`).
 
 ## Held writes (`write` with `hold`)
 
-- `hold` writes the same bytes every tick; an `addr` of
-  `{"base": "0x1f2e3d4c50#123:4", "offset": 16}` stops when the object dies. A pinned value that holds is integrated state; one the game
-  still overrides each frame is recomputed from scratch.
+- `hold` writes the same bytes every tick and, when it runs out, leaves
+  them as they are (it restores nothing); an `addr` of
+  `{"base": "0x1f2e3d4c50#123:4", "offset": 16}` stops when the object
+  dies. A held value that holds is integrated state; one the game still
+  overrides each frame is recomputed from scratch.

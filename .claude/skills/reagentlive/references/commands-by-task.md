@@ -33,7 +33,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Name a native function or global for good | static tool name + `export_names`; `peek` with `label`; then `labels-sign` |
 | Bring confirmed names to a patched build | `labels-port`; re-find only `missing` and `ambiguous` |
 | Did a patch move the fields code reads | `layout-export`, later `layout-check` |
-| Typed structs for a static tool's decompiles | `layout-export` with `closure`, then the loader's `import_layouts` |
+| Typed structs for a static tool's decompiles | they come with the save (its methods' classes); `layout-export` with `closure`, then `import_layouts`, only for classes no label names |
 
 ## Calls, Blueprint, events
 

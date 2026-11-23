@@ -55,6 +55,12 @@
   character's attribute list: raw stride 20 (8-byte tag, 4-byte value, 8
   hash bytes). Read live base and current values with the attribute
   library's own getter on a lookup handle.
+- **An attribute behind a lookup handle** (for `write` with `undo`): the
+  owner is the effect component. Look the handle up with `call` (the
+  result is kept), read its two pointers (object, control block), then
+  `release` it. The attribute object has no vtable at `+0`; use the
+  control block as `undo.object` (16 bytes before the object, vtable in
+  the game exe; base and current values at control block `+0x38`).
 - Attributes live per owner. Character attributes sit in the pawn's effect
   component. An item can have its own effect component, but its
   tag-to-float map can be empty, so a raw `read` of the map data fails.

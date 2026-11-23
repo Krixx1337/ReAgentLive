@@ -1,7 +1,7 @@
 # Efficiency: fewer calls, smaller output
 
-Budgets, digests and `stats` keys:
-console (`docs/commands/console.md#usage-log-and-stats`).
+Budgets and digests: `docs/commands/console.md#fewer-round-trips`;
+`stats`: `docs/commands/console.md#usage-log-and-stats`.
 
 ## Fewer calls
 
@@ -11,6 +11,9 @@ console (`docs/commands/console.md#usage-log-and-stats`).
 - A loop, sweep or comparison over many results: `each` (or
   `call-each` for a getter) when it is one class (one tick, one
   call); else one Python script that prints a summary, not N tool calls.
+- The same calls over time, or a measurement to repeat later: one `run`
+  plan with `repeat` (the capture-and-timing reference), not a loop of
+  tool calls.
 - Enable a pack once, when the task first needs it; leave the rest off.
 - A bare class name costs one table scan the first time per agent; a
   literal ref never scans. Keep refs from earlier results.

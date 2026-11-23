@@ -6,7 +6,7 @@
   `watch-read` while it runs and `watch-stop` to end it. It returns at
   once; the agent keeps sampling while you work, and every interface has
   it. Minutes-long sampling and following a respawn: `help` on `watch-start`
-  (capture that does not hold the console: `docs/commands/memory.md#a-capture-that-does-not-hold-the-console`).
+  (capture that does not hold the console: `docs/commands/memory.md#watch`).
   Named fields: `{"object": "<ref>", "field": ["Health"]}` ranges. Every
   sample to a file: `file`.
   A script that should wait: the Python session's `watch(seconds, ranges)`.
@@ -19,12 +19,16 @@
   on the owning component (movement, not the pawn), tell the user to act
   now, then `watch-read`. Else `snap` at rest and `changed` while the user
   holds the state mid-action.
-- **Getters or mixed sources:** one `batch` (a `call-pure` and the `read`s)
-  per sample keeps a getter and raw reads in one tick; loop it from Python.
-  Polling gets at most one sample per host tick and misses ticks.
+- **Getters or mixed sources, sampled over time:** a `run` plan with one
+  `batch` step (a `call-pure` and the `read`s, one tick per sample) and
+  `repeat` (`{"every": 0.5, "for": 10}`), not a Python loop: the plan file
+  replays the measurement (`docs/commands/console.md#plans`). Run it from
+  the console `-c` or Python; MCP leaves `run` out. Repeated calls get at
+  most one sample per host tick and miss ticks.
 - **Data that lives about one tick** (replicated entries, events) slips
-  past polling: write a small probe on the C++ client in a scratch folder,
-  reading arrays with the same-tick array preview, one request per tick.
+  past repeated calls: `watch-start` samples every tick by default, so a
+  range on its container catches it. A C++ client probe in a scratch
+  folder only for data whose address moves every tick.
 
 ## What the game passed to a function
 
@@ -35,7 +39,7 @@
   bone?"); a watch only sees state afterwards.
 - Pick the function with `funcs` on the class that receives the event.
   What the recorder sees and how it prints values:
-  call recorder (`docs/commands/unreal.md#call-recorder`).
+  call recorder (`docs/commands/unreal-calls.md#call-recorder`).
 - Zero rows can mean the wrong function, not no event: record the native
   function a Blueprint calls, or the event that enters it.
 - A container parameter that prints only its header: `call` the function
@@ -57,7 +61,7 @@
   rest but agree across steady snapshots, map each offset to the reflected
   field that contains it (anim graph nodes are fields too), then watch only
   those offsets.
-- Past what `get` reads (`docs/commands/unreal.md#get`):
+- Past what `get` reads (`docs/commands/unreal-fields.md#get`):
   `read` the rest in chunks.
 
 ## Analysis

@@ -1,7 +1,7 @@
 # Signatures
 
 Verb behaviour: fast lane (`docs/commands/fast-lane.md#signatures`); labels
-files: Unreal pack (`docs/commands/unreal.md#names-that-survive-a-patch`).
+files: Unreal pack (`docs/commands/labels.md#names-that-survive-a-patch`).
 
 ## Two ways, never mixed up
 
