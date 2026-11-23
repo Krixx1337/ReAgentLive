@@ -49,7 +49,11 @@ As `call`, with the agent's pure check first (`CallPure`): the function
 must be const or blueprint-pure and no output may own memory (nothing is
 kept), otherwise it is refused before calling ("not a const or pure
 function: use call", "an output owns memory: use call"). Its row is not
-`writes`, so its tool is read-only. Pure is the engine's flag, not a
+`writes`, so its tool is read-only. With no `params` and no `block` the
+call is typed all the same, so its outputs come back decoded, as
+`call-each`'s do; inputs are never zeroed for you (a zero can be a valid,
+state-changing argument), so a function with inputs is refused until
+`params` names them. `block` keeps the raw form. Pure is the engine's flag, not a
 proof: a pure function can still change state; the skill's approval rules
 say which to call freely (not the first call on a new host or in a new
 game, since a wrong engine layout can crash the game).

@@ -952,13 +952,21 @@ TEST_CASE("each reads fields only; call-each calls a function on every instance"
     CHECK(Why(R"({"verb": "game-thread"})").starts_with("missing action"));
 }
 
-TEST_CASE("call-pure is a call with the pure flag; dry marks either form") {
+TEST_CASE("call-pure is a call with the pure flag, typed unless given a block; dry marks either form") {
     auto parsed = Call(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.op == ue::op::Call);
     CHECK(parsed->request.flags == ue::CallPure);
+    CHECK(parsed->kind == Kind::TypedCall);                 // No params: typed all the same, outputs decoded.
+    CHECK(parsed->fields.empty());
     CHECK_FALSE(parsed->dry);
     CHECK(ue::Check(parsed->request) == Status::Ok);
+    parsed = Call(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "block": "00"}})");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind != Kind::TypedCall);                 // A block: raw.
+    parsed = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation"}})");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind != Kind::TypedCall);                 // call without params: a zeroed raw block.
     parsed = Call(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "SceneComponent:GetSocketTransform", "params": {"SocketName": "#42", "TransformSpace": 0}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::TypedCall);

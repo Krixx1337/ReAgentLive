@@ -1040,6 +1040,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(json["session"] == "s1");
     CHECK_FALSE(json.contains("never_called"));
     CHECK(stats.totals.calls == 6);                         // The batched read is inside the batch's call.
+    CHECK(stats.totals.batched == 1);
     CHECK(stats.totals.out == 10790);
     CHECK(stats.totals.outByCaller.at("tool") == 10790);
     CHECK(stats.totals.in == 60);
@@ -1078,8 +1079,8 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK_FALSE(Checked(none).contains("session"));
     CHECK(none.rows.empty());
 
-    // Calls per tool pack, a batch's items included.
-    CHECK(stats.totals.callsByPack == std::map<std::string, uint64_t>{{"explore", 7}});
+    // Top-level calls per tool pack, as calls counts them: the batch, not its items.
+    CHECK(stats.totals.callsByPack == std::map<std::string, uint64_t>{{"explore", 6}});
     std::vector<UsageLine> mixed = {line("p", "disasm", 10, "1"), line("p", "write", 10, "2"),
                                     line("p", "disasm", 10, "3"), line("p", "nonsense", 10, "4"),
                                     line("p", "call", 10, "5")};
@@ -1088,6 +1089,13 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     const auto packs = MakeStats(mixed, std::string("p"), AllVerbs());
     CHECK(packs.totals.callsByPack == std::map<std::string, uint64_t>{{"native", 2}, {"modify", 1}});
     CHECK(packs.totals.refused == 1);
+
+    // get's paths pick what is read: never unfiltered, whatever the size.
+    const std::vector<UsageLine> picked = {line("q", "get", 50000, "1", {"object", "paths"}),
+                                           line("q", "get", 50000, "22", {"object"})};
+    const auto pickedStats = MakeStats(picked, std::string("q"), AllVerbs());
+    REQUIRE(pickedStats.rows.size() == 1);
+    CHECK(pickedStats.rows[0].unfiltered == 1u);            // Only the call with no paths.
 }
 
 TEST_CASE("stats counts digests and what they kept out, and lists and picks sessions") {

@@ -662,6 +662,27 @@ TEST_CASE("find with limit pages until N rows and continues after the last") {
     CHECK(Result(CallText("find", {{"text", "Extra_"}}))["rows"].size() == 24);   // One agent page without it.
 }
 
+TEST_CASE("a cls that names no class is refused by find, census and each; any case names one") {
+    TheFixture();
+    for (const auto& call : {CallText("find", {{"cls", "Thingy"}}), CallText("census", {{"cls", "Thingy"}}),
+                             CallText("each", {{"cls", "Thingy"}, {"paths", PathsOf("Health")}})}) {
+        const auto records = RunLines(call);
+        REQUIRE(records.size() == 1);
+        INFO(records[0].dump());
+        CHECK_FALSE(records[0].value("ok", true));
+        CHECK(records[0]["error"]["message"].get<std::string>().starts_with("no class named Thingy"));
+    }
+    // A part of a class name: the refusal names the classes containing it.
+    const auto part = RunLines(CallText("find", {{"cls", "hin"}}));
+    REQUIRE(part.size() == 1);
+    CHECK(part[0]["error"]["message"].get<std::string>().find("classes containing it: Thing") != std::string::npos);
+    // Another case finds the class, as the agent's filters compare.
+    CHECK_FALSE(Result(CallText("find", {{"cls", "thing"}}))["rows"].empty());
+    CHECK_FALSE(Result(CallText("census", {{"cls", "THING"}}))["rows"].empty());
+    // A class with no live instances is still an empty result, not a refusal.
+    CHECK(Result(CallText("find", {{"cls", "Thing"}, {"text", "NoSuchObjectName"}}))["rows"].empty());
+}
+
 TEST_CASE("disasm counts past 64 instructions and sig-bytes caps a long length") {
     const auto listed = Result(CallText("disasm", {{"addr", At(0x2000)}, {"count", 200}}));
     CHECK(listed["rows"].size() == 200);

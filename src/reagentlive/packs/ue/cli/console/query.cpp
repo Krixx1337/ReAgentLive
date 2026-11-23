@@ -73,6 +73,41 @@ Result<Ref> ResolveClass(Session& session, const std::string& name) {
     return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, "no class or struct named " + name});
 }
 
+// A class named `name` in any case, as the agent's class filters compare
+// (find, census, each): an exact match first, then a scan of the classes
+// whose names contain it. None: a not-found refusal naming up to five of
+// those classes, so a typo is not read as "no instances".
+Result<Ref> ResolveClassAnyCase(Session& session, const std::string& name) {
+    auto exact = ResolveClass(session, name);
+    if (exact || exact.error().kind != Error::Kind::Agent || exact.error().status != Status::NotFound) return exact;
+    const auto cut = [](std::string_view text) {
+        std::string out(text.substr(0, ue::FindNameBytes - 1));
+        for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return out;
+    };
+    const std::string wanted = cut(name);
+    std::vector<std::string> containing;
+    uint32_t from = 0;
+    for (int page = 0; page < 64; ++page) {
+        auto found = ue::Find(session.client, name, {"Class", from, false});
+        if (!found) return std::unexpected(found.error());
+        for (const auto& object : found->objects) {
+            if (cut(object.name) == wanted) return object.ref;
+            if (containing.size() < 5 && std::ranges::find(containing, object.name) == containing.end())
+                containing.push_back(object.name);
+        }
+        if (!found->next) break;
+        from = found->next;
+    }
+    std::string why = "no class named " + name;
+    if (containing.empty()) why += " (no class name contains it)";
+    else {
+        why += "; classes containing it: ";
+        for (size_t i = 0; i < containing.size(); ++i) why += (i ? ", " : "") + containing[i];
+    }
+    return std::unexpected(Error{Error::Kind::Agent, Status::NotFound, 0, {}, why});
+}
+
 // A bare name where an object or a class goes: a default object by its
 // name (Default__Class), else a class or struct.
 Result<Ref> ResolveObjectOrClass(Session& session, const std::string& name) {
@@ -408,7 +443,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     Client& client = session.client;
     session.input.reads = true; // Fields, or a function that must be const or pure: safe to run again.
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, ErrorKind::Validation, message); };
-    auto type = ResolveClass(session, command.className);
+    auto type = ResolveClassAnyCase(session, command.className);
     if (!type) return CommandError(session, jsonCommand, type.error());
     // `where`'s field is read as one more column, hidden unless asked for.
     std::vector<std::string> paths = command.fields;

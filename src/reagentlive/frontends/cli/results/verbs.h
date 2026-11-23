@@ -43,11 +43,12 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"sessions", "bool", "the log's sessions, newest first: one row each"},
              {"session", "str", "one session from the log, by its id"}},
             Of<shape::Stats>, build::Stats,
-            "From the usage log beside the console; works with no target (then: the log's latest session). out is "
-            "characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
+            "From the usage log beside the console; works with no target (then: the log's latest session). calls "
+            "counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a "
+            "verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
             "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
-            "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and "
-            "printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by "
+            "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or "
+            "an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by "
             "error kind; one refused for its pack is not in calls_by_pack). A batch's "
             "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log."},

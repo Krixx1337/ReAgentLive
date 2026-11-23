@@ -664,9 +664,9 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
 }
 
 
-// One-shot runs against the same agent instance join the cache's usage
-// session when they have its caller: a shell's checks stay out of a tool's figures.
-void LoadSessionCache(Session& session, const std::filesystem::path& path, bool oneShot) {
+// The cache's handed-on usage session is kept only for the same agent
+// instance; which run joins it is PickSession's (state/usage.h).
+void LoadSessionCache(Session& session, const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return;
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -674,8 +674,6 @@ void LoadSessionCache(Session& session, const std::filesystem::path& path, bool 
     if (!data || data->owner != session.client.AgentOwner()) return; // Another agent instance: start fresh.
     session.usage.handoff = data->session;
     session.usage.handoffCaller = data->sessionCaller;
-    if (oneShot && !data->session.empty() && data->sessionCaller == session.usage.caller)
-        session.usage.session = data->session;
     session.modules = std::move(data->modules);
     session.watchFile = std::move(data->watchFile);
     session.searchText = data->searchText;
@@ -958,11 +956,12 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         std::format("{:%Y%m%dT%H%M%S}-{}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()),
             GetCurrentProcessId()), caller};
     if (session.usage.record) TrimUsageFile(usagePath);
-    if (!cachePath.empty()) LoadSessionCache(session, cachePath, oneShot.has_value());
-    // A named session is its starter's (the MCP adapter's per server): one-shot
-    // runs never join it, so the cache keeps handing on the one it held.
-    if (!sessionId.empty()) session.usage.session = sessionId;
-    else session.usage.handoff = session.usage.session, session.usage.handoffCaller = caller;
+    if (!cachePath.empty()) LoadSessionCache(session, cachePath);
+    auto pick = PickSession(session.usage.session, caller, oneShot.has_value(), sessionId, session.usage.handoff,
+        session.usage.handoffCaller);
+    session.usage.session = std::move(pick.session);
+    session.usage.handoff = std::move(pick.handoff);
+    session.usage.handoffCaller = std::move(pick.handoffCaller);
     size_t next = 0;
     std::string line;
     const auto nextLine = [&] {

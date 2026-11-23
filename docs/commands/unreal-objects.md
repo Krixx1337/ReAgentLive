@@ -79,7 +79,7 @@ object:
 
 | Filter | Keeps |
 |---|---|
-| `cls` | instances of the class or a subclass |
+| `cls` | instances of the class or a subclass. A name that is no class (any case) is refused as not found, naming up to five classes whose names contain it, so a typo is never read as no instances; `each` checks it first, `find` and `census` only when nothing matched |
 | `outer` | objects with that object up their outer chain (at most 16 steps). It is an object when it parses as one (a literal ref, an address), checked like any object argument (a gone one is refused as not found, never a filter by whatever reuses its address), else text an outer's name contains, any case (no match is no rows) |
 | `live` (`find`) | no class default or archetype objects (`each` and `census` skip them always) |
 

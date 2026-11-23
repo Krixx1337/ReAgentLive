@@ -290,6 +290,29 @@ TEST_CASE("a usage line round-trips, and a torn or foreign line is skipped") {
     CHECK(UsageHash("read 0x1000") != UsageHash("read 0x1001"));
 }
 
+TEST_CASE("one-shot runs chain with each other; a long-lived or named console is never joined") {
+    // A one-shot joins the handed-on session of its caller and hands it on.
+    auto pick = PickSession("new", "tool", true, "", "burst", "tool");
+    CHECK(pick.session == "burst");
+    CHECK(pick.handoff == "burst");
+    // Another caller's session is not joined: the one-shot hands on its own.
+    pick = PickSession("new", "shell", true, "", "burst", "tool");
+    CHECK(pick.session == "new");
+    CHECK(pick.handoff == "new");
+    CHECK(pick.handoffCaller == "shell");
+    // A long-lived console (stdin) is its own session and keeps the cache's.
+    pick = PickSession("script", "tool", false, "", "burst", "tool");
+    CHECK(pick.session == "script");
+    CHECK(pick.handoff == "burst");
+    CHECK(pick.handoffCaller == "tool");
+    pick = PickSession("script", "tool", false, "", "", "");
+    CHECK(pick.handoff.empty());                                             // The next one-shot starts fresh.
+    // A named session is its own too, for one-shot and long-lived alike.
+    pick = PickSession("new", "tool", true, "mcp-1", "burst", "tool");
+    CHECK(pick.session == "mcp-1");
+    CHECK(pick.handoff == "burst");
+}
+
 TEST_CASE("the usage log past its cap keeps its newest whole sessions") {
     std::string text;
     for (const char* session : {"old", "mid", "new"})

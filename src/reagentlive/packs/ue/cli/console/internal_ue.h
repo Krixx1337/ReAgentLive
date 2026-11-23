@@ -112,6 +112,8 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
                   const ue::Signature& signature, StructCache& structs,
                   std::string_view jsonCommand);
 Result<Ref> ResolveClass(Session& session, const std::string& name);
+// A class in any case, as find, census and each filter; refused (not found) with classes containing the name.
+Result<Ref> ResolveClassAnyCase(Session& session, const std::string& name);
 Result<Ref> ResolveObjectOrClass(Session& session, const std::string& name);
 void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, StructCache& structs,
              std::string_view jsonCommand);

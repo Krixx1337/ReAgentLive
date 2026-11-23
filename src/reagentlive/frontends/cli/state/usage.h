@@ -134,4 +134,17 @@ inline std::optional<std::string> TrimUsage(std::string_view text, uint64_t cap 
         }
     return out;
 }
+// Which usage session a console run is in, and which one its cache file hands
+// on. One-shot (-c) runs chain with each other: one joins the handed-on session
+// when it has its caller, and hands its own on. A named session (--session)
+// and a long-lived console (calls on stdin: a script's session, the MCP
+// adapter's) are their own: never handed on, so the cache keeps the one it held.
+struct SessionPick { std::string session, handoff, handoffCaller; };
+inline SessionPick PickSession(const std::string& fresh, const std::string& caller, bool oneShot,
+                               const std::string& named, const std::string& handed, const std::string& handedCaller) {
+    if (!named.empty()) return {named, handed, handedCaller};
+    if (!oneShot) return {fresh, handed, handedCaller};
+    const std::string& session = !handed.empty() && handedCaller == caller ? handed : fresh;
+    return {session, session, caller};
+}
 }

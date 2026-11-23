@@ -47,7 +47,7 @@ struct Usage {
     bool record = false;                    // False with --no-usage.
     std::string session, caller = "shell";
     // The session the cache file hands to the next one-shot run, and its
-    // caller: this run's, unless --session named it (then the one loaded).
+    // caller: a one-shot run's own, else the one loaded (PickSession).
     std::string handoff, handoffCaller;
     bool internal = false;                  // A verb's own calls (ExecuteLine): no line; their output is the verb's.
 };

@@ -89,8 +89,9 @@ inline const std::vector<Verb>& UnrealVerbs() {
             Of<shape::Call>, build::CallPure,
             "The agent refuses, before calling, a function that is neither const nor pure, or one with an output "
             "that owns memory (use call). Pure is the engine's flag, not a proof: a function can still change state. "
-            "The result is call's; no view, since a returned array owns memory. On every instance of a class: "
-            "call-each."},
+            "The result is call's; no view, since a returned array owns memory. Without params or block the call is "
+            "typed all the same (outputs decoded, as call-each's); inputs are never zeroed for you: a function with "
+            "inputs needs params. On every instance of a class: call-each."},
         {"call-each", "ue", ToolPack::Observe, "call a const or pure function with no inputs on every live instance of a class, in one tick: each's table",
             {{"cls", "str", "a class name: its live instances and its subclasses'", {}, true},
              {"function", "str", function, {}, true},

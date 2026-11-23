@@ -16,13 +16,14 @@
 namespace reagentlive::cli {
 namespace shape {
 struct StatsTotals {
-    uint64_t calls = 0, in = 0, out = 0, refused = 0;
+    uint64_t calls = 0, batched = 0, in = 0, out = 0, refused = 0;  // calls: top-level (a batch is one); batched: inside one.
     std::map<std::string, uint64_t> outByCaller;
-    std::map<std::string, uint64_t> callsByPack;    // Every call (a batch's items too) by its verb's tool pack, but those refused for it.
+    std::map<std::string, uint64_t> callsByPack;    // The top-level calls by their verb's tool pack, but those refused for it.
     uint64_t digested = 0, saved = 0;   // Results past the budget; what their digests kept out.
     double ms = 0;
     template<class V> static void Describe(V& v) {
         v("calls", &StatsTotals::calls);
+        v("batched", &StatsTotals::batched);
         v("in", &StatsTotals::in);
         v("out", &StatsTotals::out);
         v("out_by_caller", &StatsTotals::outByCaller);
@@ -168,19 +169,23 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
             ++stats.totals.digested;
             stats.totals.saved += saved;
         }
-        // A call refused for its pack never ran in it: a refusal only.
-        if (const Verb* verb = FindVerb(verbs, line.verb); verb && (line.ok || line.refused != "pack"))
+        // Top-level calls, as `calls` counts them; one refused for its pack never ran in it: a refusal only.
+        if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.batch && (line.ok || line.refused != "pack"))
             ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
         // A digested call cost its digest only, a refused one its error: neither is worth a mark.
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && line.ok && !line.digest && line.out > StatsUnfilteredChars) {
             const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) {
                 return IsFilter(a.key) || std::ranges::any_of(a.fields, [](const Arg& f) { return IsFilter(f.key); });
             });
-            if (filters && std::ranges::none_of(line.keys, [](const std::string& k) { return IsFilter(k); }))
+            // An optional `paths` picks what is read (get's): a filter too. A required one is the call's subject.
+            const bool paths = std::ranges::find(line.keys, "paths") != line.keys.end() &&
+                std::ranges::any_of(verb->args, [](const Arg& a) { return a.key == "paths" && !a.required; });
+            if (filters && !paths && std::ranges::none_of(line.keys, [](const std::string& k) { return IsFilter(k); }))
                 bump(row.unfiltered);
         }
         // Totals count what the agent sent: a batch's items are inside its own call.
         if (!line.batch) ++stats.totals.calls;
+        else ++stats.totals.batched;
         if (!line.batch) stats.totals.ms += line.ms;
         if (!line.ok) ++stats.totals.refused;
         stats.totals.in += line.batch ? 0 : line.in;

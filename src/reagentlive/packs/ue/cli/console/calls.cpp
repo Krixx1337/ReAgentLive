@@ -158,7 +158,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
         const auto key = parameter.name + "=";
         const auto matches = [&](const std::string& argument) { return argument.starts_with(key); };
         const auto argument = std::ranges::find_if(arguments, matches);
-        if (argument == arguments.end()) return fail("missing parameter: " + parameter.name);
+        if (argument == arguments.end()) return fail("missing parameter: " + parameter.name + " (params gives the inputs by name)");
         if (std::count_if(argument, arguments.end(), matches) != 1) return fail("duplicate parameter: " + parameter.name);
         const auto value = std::string_view(*argument).substr(key.size());
         if ((parameter.type == "ObjectProperty" || parameter.type == "ClassProperty") && parameter.size == 8) {

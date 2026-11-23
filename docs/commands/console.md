@@ -288,12 +288,16 @@ the generated functions, the MCP tools), so one log covers them
   `digest`, the result's full size, when a [digest](#fewer-round-trips)
   stood in for it (`out` is then the digest's). No addresses, names, paths
   or results.
-- **A session** is one console run. One-shot (`-c`) runs against the same
-  agent instance and caller share one through the [cache file](#fewer-round-trips)
-  (a shell's checks never join a tool's session);
-  `<console> --session <id>` names it outright (the MCP adapter passes one
-  per server to the console it starts for each call). A named session is
-  never handed on: one-shot runs between a server's calls keep their own.
+- **A session** is one console run. One-shot (`-c`) runs chain with each
+  other: against the same agent instance and caller they share one through
+  the [cache file](#fewer-round-trips), so a burst of `-c` runs is one
+  session (a shell's checks never join a tool's session). A long-lived
+  console (calls on stdin, as the Python session sends them, with any `run`
+  plan inside it) is its own session and is never handed on: one-shot runs
+  after it keep chaining with the session the cache held before it.
+  `<console> --session <id>` names a session outright (the MCP adapter
+  passes one per server to the console it starts for each call); a named
+  session is never handed on either.
 - **A verb's own calls** (`export-assets` reading each object with `get`
   and `rows`) are not logged: their output goes to files, so only the
   verb's result counts as its output.
@@ -304,10 +308,15 @@ the generated functions, the MCP tools), so one log covers them
 - **Not recorded:** `help` with `json` or `hash` and `quit` (a program's
   own start and end), runs with no target, and anything with `--no-usage`.
 - **A batch** writes a line per call, under its own verb, and one for
-  itself holding only its wrapper, so no output counts twice. A `run`
+  itself holding only its wrapper, so no output counts twice. The totals'
+  `calls`, `calls_by_pack` and `ms` count top-level calls (a batch is
+  one); `batched` counts the calls run inside batches. A verb's row counts
+  its calls wherever they ran (its own `batched` says how many inside). A `run`
   plan's steps are lines of their own too, so a failed step (or a failed
   item of a batch step) counts in the session's `refused`.
-- **`unfiltered`** marks only a call that printed past 2000 characters.
+- **`unfiltered`** marks only a call that printed past 2000 characters
+  with none of its verb's filters; `get`'s `paths` is one (it picks what
+  is read), whatever the size.
 - **Refused calls** count under `refused`; they never get `unfiltered`, and
   one refused for its pack does not count in `calls_by_pack`.
 - **Capped:** past 4 MB the oldest sessions are dropped when a console

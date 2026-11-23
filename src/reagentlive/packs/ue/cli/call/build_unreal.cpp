@@ -137,16 +137,18 @@ std::string InputText(const Json& value) {
 }
 
 // call and call-pure: an object and a function; params (an object) makes a
-// typed call, block a raw one, neither a zeroed block.
+// typed call, block a raw one. Neither: call sends a zeroed block, call-pure
+// makes a typed call (decoded outputs; a function with inputs is refused, as
+// a zeroed block is).
 Parsed CallArgs(const Args& args, uint32_t flags) {
     Command command;
     command.request.flags = flags;
     command.dry = args.Has("dry");
-    const bool typed = args.Has("params");
+    const bool typed = args.Has("params") || ((flags & ue::CallPure) && !args.Has("block"));
     // fields, start, limit and nonzero pick from a typed call's outputs.
     const bool rows = args.Has("fields") || args.Has("start") || args.Has("limit") || args.Has("nonzero");
     command.limit = DefaultCallRows;
-    if (typed && args.Has("block")) return Fail("params: params makes a typed call, block a raw one; give one");
+    if (args.Has("params") && args.Has("block")) return Fail("params: params makes a typed call, block a raw one; give one");
     if (rows && args.Has("block")) return Fail("block: fields, start, limit and nonzero need a typed call (params), not a raw block");
     if (rows)
         if (auto why = RowOptions(args, command); !why.empty()) return Fail(why);
@@ -154,7 +156,8 @@ Parsed CallArgs(const Args& args, uint32_t flags) {
     if (!CallObject(args.Str("object"), command)) return Fail(ObjectWhy);
     if (auto why = FunctionName(args, command.request); !why.empty()) return Fail(why);
     command.kind = Kind::TypedCall;
-    for (const auto& [name, value] : args.At("params").items()) command.fields.push_back(name + "=" + InputText(value));
+    if (args.Has("params"))
+        for (const auto& [name, value] : args.At("params").items()) command.fields.push_back(name + "=" + InputText(value));
     command.request.op = ue::op::Call;
     return command;
 }

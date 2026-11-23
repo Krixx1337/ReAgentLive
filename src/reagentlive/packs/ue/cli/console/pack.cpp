@@ -60,6 +60,10 @@ void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs,
         const auto started = Clock::now();
         auto scanned = ue::Census(session.client, className, {command.outerText, command.outerRef});
         if (!scanned) return CommandError(session, jsonCommand, scanned.error());
+        // Nothing under a class filter: a name that is no class is refused, not counted as none.
+        if (scanned->rows.empty() && !className.empty())
+            if (auto type = ResolveClassAnyCase(session, className); !type)
+                return CommandError(session, jsonCommand, type.error());
         ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
         census = std::move(*scanned);
         Ue(session).censusBefore = std::move(Ue(session).census);
@@ -171,6 +175,10 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
             {command.outerText, command.outerRef}};
         auto found = ue::Find(client, request.text, options);
         if (!found) return CommandError(session, jsonCommand, found.error());
+        // Nothing under a class filter: a name that is no class is refused, not read as no objects.
+        if (found->objects.empty() && !from && !className.empty())
+            if (auto type = ResolveClassAnyCase(session, std::string(className)); !type)
+                return CommandError(session, jsonCommand, type.error());
         // `view.limit`: more pages until N rows or the end, then cut at N; the
         // cursor goes on from the slot after the last row kept.
         if (command.limit) {

@@ -175,6 +175,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **A `cls` that names no class is refused:** `find`, `census` and `each`
+  answer not found, naming up to five classes that contain the name,
+  instead of an empty result a typo could pass for "no instances"; `each`
+  takes the class in any case, as the others do
+  ([object filters](docs/commands/unreal-objects.md#object-filters)).
+- **`call-pure` decodes by default:** without `params` or `block` the call
+  is typed, its outputs decoded as `call-each`'s; a function with inputs
+  still needs `params` ([call-pure](docs/commands/unreal-calls.md#call-pure)).
 - **`find` by `cls` and `each` use a class index:** the agent rereads only
   the object-table slots that changed, so a class lookup no longer walks
   every object ([find](docs/commands/unreal-objects.md#find)). Rebuild and
@@ -227,10 +235,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   overflow:** its startup checks look at the memory region before reading,
   and name decoding catches only bad-memory faults.
 - **`touches` rows no longer lose their `text` on long instructions.**
-- **`stats`:** one-shot runs no longer join a session named with
-  `--session` (the MCP adapter's), where they were counted and missing
-  from `stats` with `sessions`; a refused call is never marked
-  `unfiltered`, nor one that printed 2000 characters or less.
+- **`stats`:** one-shot runs chain only with each other: they no longer
+  join a session named with `--session` (the MCP adapter's) or a
+  long-lived console's (a Python session's), where they were counted and
+  missing from `stats` with `sessions`. The totals' `calls`,
+  `calls_by_pack` and `ms` all count top-level calls, with `batched` for
+  the calls inside batches. A refused call is never marked `unfiltered`,
+  nor one that printed 2000 characters or less, nor a `get` with `paths`.
 - **`disasm` with `save` leaves `rows` out** instead of an empty list.
 - **`get` decodes maps and sets of big structs:** the agent refused any
   element slot past 512 bytes as an unknown layout. A container it still
