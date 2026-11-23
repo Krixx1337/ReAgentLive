@@ -24,6 +24,7 @@ Parsed Write(const Args& args, const ParseContext& context);
 Parsed Writes(const Args& args, const ParseContext& context);
 Parsed Modules(const Args& args, const ParseContext& context);
 Parsed Search(const Args& args, const ParseContext& context);
+Parsed SearchJob(const Args& args, const ParseContext& context);
 Parsed WatchStart(const Args& args, const ParseContext& context);
 Parsed WatchRead(const Args& args, const ParseContext& context);
 Parsed WatchStop(const Args& args, const ParseContext& context);

@@ -71,8 +71,27 @@ constexpr uint32_t SearchWritable = 0x100; // Skip read-only and code pages.
 constexpr uint32_t SearchPrivate = 0x200;  // Process-private memory only (heaps, stacks); no images or file mappings.
 constexpr uint32_t SearchPaged = 0x400;    // Also pages outside the working set (slow: each is faulted in).
 constexpr uint32_t SearchBackground = 0x800; // Scan on the agent's worker thread, if the host allows it.
-constexpr uint32_t SearchFlags = SearchWritable | SearchPrivate | SearchPaged | SearchBackground;
+// Search jobs. SearchJobStart, with a search as above (not SearchBackground,
+// most hits up to MaxSearchJobHits), starts a job and answers at once; a
+// job still running is stopped first. The job scans on the worker thread
+// when the host allows background search and the worker is idle, else in
+// SearchSliceMicroseconds at the start of every host tick, while other
+// requests run. SearchJobStatus and SearchJobStop (alone, args[0] = the
+// job's id, no pattern) answer how far it is; Stop ends it first. One job
+// at a time: only the last one answers, its result kept until the next
+// starts (NotFound for another id). Response for all three: a
+// SearchJobInfo, then its hits so far (uint64 each); detail = the id.
+constexpr uint32_t SearchJobStart = 0x1000, SearchJobStatus = 0x2000, SearchJobStop = 0x4000;
+constexpr uint32_t SearchFlags = SearchWritable | SearchPrivate | SearchPaged | SearchBackground | SearchJobStart;
 constexpr uint32_t SearchAlignment(uint32_t flags) { return (flags & 0xFF) ? (flags & 0xFF) : 1; }
+// Done: the range is scanned, or the hits are full (cursor < end: resume there).
+// Stopped: by SearchJobStop or a newer job; resume at the cursor.
+enum class SearchJobState : uint32_t { Running = 1, Done, Stopped };
+struct SearchJobInfo {
+    uint32_t id, state, hits, reserved;
+    uint64_t start, cursor, end; // Where it began, how far it got, where it ends (exclusive).
+};
+constexpr size_t MaxSearchJobHits = (MaxRead - sizeof(SearchJobInfo)) / sizeof(uint64_t);
 
 // Xrefs: every 4-byte field that, read as a signed offset from its own end,
 // lands on a target: how calls, jumps and RIP-relative operands encode one.
@@ -391,7 +410,7 @@ constexpr uint32_t LayoutCore = static_cast<uint32_t>(sizeof(Section) * 31 + siz
     sizeof(Response) * 3 + sizeof(ModuleEntry) * 13 + offsetof(Section, request) + offsetof(Request, text) * 5 +
     sizeof(ReadSpan) * 17 + sizeof(Guard) * 19 + sizeof(PinSpec) * 23 + sizeof(PinState) * 29 +
     sizeof(TrialSpec) * 37 + sizeof(TrialState) * 41 + sizeof(WatchSpec) * 43 + sizeof(WatchRowHeader) * 47 +
-    sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59 + ProtocolRevision * 61);
+    sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59 + ProtocolRevision * 61 + sizeof(SearchJobInfo) * 67);
 
 constexpr const char* StatusText(Status status) {
     switch (status) {
@@ -440,6 +459,11 @@ inline Status Check(const Request& request) {
     case op::Modules:
         return Status::Ok;
     case op::Search: {
+        if (request.flags & (SearchJobStatus | SearchJobStop))
+            return (request.flags == SearchJobStatus || request.flags == SearchJobStop) && !request.length &&
+                request.args[0] && request.args[0] <= UINT32_MAX ? Status::Ok : Status::BadRequest;
+        if ((request.flags & SearchJobStart) && ((request.flags & SearchBackground) || request.args[1] > MaxSearchJobHits))
+            return Status::BadRequest;
         const uint32_t align = SearchAlignment(request.flags);
         const bool alignOk = align == 1 || align == 2 || align == 4 || align == 8 || align == 16;
         return request.length && request.length <= MaxSearchPattern && alignOk &&

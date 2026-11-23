@@ -18,7 +18,7 @@ keys: `help <verb>` or [result shapes](results.md).
 | `peek <addr> [count] [--label [file]] [--name <name>]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address (`region`) and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file (default: the console's labels file); `--name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
 | `write <addr> <hex> [--expect <hex>]` | 1..256 bytes; committed, writable pages; page protection is never changed. `--expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
-| `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--max N]` | committed, readable, cacheable pages in the working set; at most 2 ms of scanning per host tick; 1..512 hits per page |
+| `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--wait N] [--max N]` / `search-job <id> [--stop]` | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
 | `mem-snap <addr> <len>` / `mem-diff <test> <type> [--keep] [--limit N]` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
 | `write <addr> <hex> --hold [duration] [--expect <hex>]` | a pin: up to 8 of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests ([timed writes](#timed-writes)) |
 | `write <addr> <hex> --undo <duration> --owner <ref> --expect <hex> [--object <addr>]` | a trial: up to 8 of 1..64 bytes, 1 ms..60 s. One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear them (`writes clear`) before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so `--undo` needs a host with the Unreal pack; the agent does not check classes |
@@ -63,11 +63,29 @@ matches; quoted text is taken exactly, see
 characters). Typed
 values align to their size unless `--align` says otherwise; hex aligns to 1.
 Aligned 4- and 8-byte values compare whole words; other patterns jump
-between first-byte candidates. It returns `rows` (`address`, with
-`module` and `rva` inside a module), `from` and `next_cursor`: the address
-to pass as `--start` for the next page, absent once the range is done.
+between first-byte candidates.
 
-`--background` runs the scan on the agent's worker thread instead of in host-tick slices, so the host pays only a poll per tick; the host must allow it (`Host::backgroundSearch`), otherwise the search is refused. A newer background search cancels an abandoned one first.
+**Range.** The main module (the process exe) unless the call says
+otherwise: `--module <name>` for another module, `--start`/`--to` for an
+address range (`--start` alone ends with the module it lies in, or the top
+of memory outside modules), `--heap` or `--writable` for all memory.
+
+**A job.** Every search is a job the agent runs while other requests do:
+on its worker thread when the host allows it (`Host::backgroundSearch`)
+and the worker is idle, else in 2 ms slices at the start of every host
+tick. The console starts it and polls it for up to `--wait` seconds
+(default 10, 0 answers at once), so a long scan never holds the console or
+the agent's request slot. The answer is the job's state: `rows` (hits so
+far: `address`, with `module` and `rva` inside a module), `job`, `state`
+(`running`, `done` or `stopped`), `from` and `to` (the range), `scanned`
+(the share of the range's addresses behind the cursor; address space is
+sparse, so for wide ranges it is a rough guide) and `next_cursor`.
+`search-job <id>` answers the same for a running or finished job,
+`search-job <id> --stop` ends it first. One job at a time: a new search
+stops the last one, and only the last answers. The job stops once it has
+`--max` hits; then, and after a stop, `next_cursor` is the address to pass
+as `--start` (with the same range options) to go on, absent once the range
+is done.
 
 Filters: `--writable` skips read-only and code pages; `--heap` keeps
 process-private memory (heaps, stacks) and skips images and file mappings;

@@ -92,6 +92,8 @@ struct Session {
     std::vector<Module> modules;            // Exe first.
     bool modulesListed = false;             // Listed by this run, not only loaded from the cache.
     bool sliceSearch = false;               // sig, xrefs: the host refused background search; scan in tick slices.
+    // search text: the last job's pattern, so search-job shows the text around its hits too.
+    struct { uint32_t job = 0, length = 0; uint8_t step = 0; } searchText;
     // Header layouts by module base (exception directory, sections), for the
     // session and the cache file; lookups keep their sampled entries for this run.
     std::map<uint64_t, image::Layout> layouts;
@@ -140,6 +142,8 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
+// search (a job: started, then polled up to --wait) and search-job.
+void RunSearch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWatch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunSig(Session& session, const Command& command, std::string_view jsonCommand);
 void RunDisasm(Session& session, const Command& command, std::string_view jsonCommand);

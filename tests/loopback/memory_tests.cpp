@@ -413,6 +413,66 @@ TEST_CASE("background search needs the host's opt-in and finds the same hits") {
     CHECK(rest->hits[0] == base + 2 * 4096 + 8);
 }
 
+TEST_CASE("a search job runs in tick slices or on the worker, answers its state and stops") {
+    Client client = Attach();
+    std::vector<uint8_t> block(3 * 4096);
+    const uint8_t marker[] = {0x4a, 0xe1, 0x07, 0x9c, 0x33, 0xd8, 0x6f, 0x12, 0xbb, 0x50};
+    memcpy(block.data() + 40, marker, sizeof(marker));
+    memcpy(block.data() + 2 * 4096 + 16, marker, sizeof(marker));
+    const auto base = reinterpret_cast<uint64_t>(block.data());
+    SearchQuery query;
+    query.pattern.assign(std::begin(marker), std::end(marker));
+    query.from = base;
+    query.to = base + block.size();
+    const auto finish = [&client](SearchJobResult job) {
+        for (int i = 0; i < 500 && job.state == SearchJobState::Running; ++i) {
+            Sleep(2);
+            auto next = client.SearchPoll(job.id, false);
+            REQUIRE(next);
+            job = std::move(*next);
+        }
+        return job;
+    };
+    for (const bool worker : {false, true}) {
+        TheAgent().background = worker;
+        auto started = client.SearchStart(query);
+        REQUIRE(started);
+        CHECK(started->start == base);
+        CHECK(started->end == base + block.size());
+        const auto done = finish(*started);
+        CHECK(done.id == started->id);
+        CHECK(done.state == SearchJobState::Done);
+        CHECK(done.cursor >= done.end);
+        REQUIRE(done.hits.size() == 2);
+        CHECK(done.hits[0] == base + 40);
+        CHECK(done.hits[1] == base + 2 * 4096 + 16);
+
+        // Full hits: done, with the cursor to resume at.
+        query.maxHits = 1;
+        const auto full = finish(*client.SearchStart(query));
+        query.maxHits = 64;
+        CHECK(full.state == SearchJobState::Done);
+        REQUIRE(full.hits.size() == 1);
+        CHECK(full.cursor < full.end);
+        CHECK_FALSE(client.SearchPoll(started->id, false)); // Only the last job answers.
+    }
+    TheAgent().background = false;
+
+    // Stop: a whole address-space job ends where it got to, with its cursor.
+    query.from = 0;
+    query.to = 0;
+    query.paged = true;
+    auto big = client.SearchStart(query);
+    REQUIRE(big);
+    auto stopped = client.SearchPoll(big->id, true);
+    REQUIRE(stopped);
+    CHECK(stopped->state == SearchJobState::Stopped);
+    CHECK(stopped->cursor < stopped->end);
+    auto again = client.SearchPoll(big->id, false);
+    REQUIRE(again);
+    CHECK(again->state == SearchJobState::Stopped);
+}
+
 TEST_CASE("search skips other views of the agent's own section") {
     Client client = Attach();
     // A second view, as an agent injected earlier into the same process holds.

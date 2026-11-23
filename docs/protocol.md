@@ -102,7 +102,7 @@ stays inside its slot.
 | `write` | 2 | core |
 | `modules` | 3 | core |
 | `read-batch` | 4 | core |
-| `search` | 5 | core |
+| `search` (with `SearchJobStart`, `SearchJobStatus`, `SearchJobStop`: the search job, response `SearchJobInfo` then hits; `protocol.h`) | 5 | core |
 | `pin` | 6 | core |
 | `watch` (start, read, stop, info, roots; interval and followed root in `WatchSpec`, `protocol.h`; each range's `note` is the client's, kept and returned by info, never read by the agent) | 7 | core |
 | `trial` | 8 | core |

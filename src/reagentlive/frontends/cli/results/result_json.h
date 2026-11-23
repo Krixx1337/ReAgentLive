@@ -261,13 +261,23 @@ struct AddressRow {
         v("text", &AddressRow::text);
     }
 };
+// search and search-job: a job's hits so far. scanned is the share of the
+// range's addresses behind the cursor; next_cursor resumes a job that
+// stopped or filled its hits.
 struct Search {
     std::vector<AddressRow> rows;
-    Addr from;
+    uint32_t job = 0;
+    std::string state;
+    Addr from, to;
+    double scanned = 0;
     std::optional<Addr> nextCursor;
     template<class V> static void Describe(V& v) {
         v("rows", &Search::rows);
+        v("job", &Search::job);
+        v("state", &Search::state, "running|done|stopped");
         v("from", &Search::from);
+        v("to", &Search::to);
+        v("scanned", &Search::scanned);
         v("next_cursor", &Search::nextCursor);
     }
 };

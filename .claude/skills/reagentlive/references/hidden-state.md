@@ -76,7 +76,8 @@ No reflection, no engine pack, or a native member behind a reflected one:
 
 - Narrow long searches (`help search`): the heap for structs (search a
   vtable pointer to find every copy), one module for code and static data,
-  in the background when the host allows it, to keep the game smooth.
+  in the main module by default. A long one answers `state: running`: do
+  other reads and poll `search-job <id>`; stop it with `--stop`.
 - `search` matches exact bytes. For a value that moves, search while it
   rests at a known value (full, zero), or search the exact bytes a getter
   returned in the same `batch`.

@@ -153,7 +153,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 
 | Target | Carries |
 |---|---|
-| `reagentlive::core` | `core/agent.cpp`, include root, C++23 |
+| `reagentlive::core` | `core/agent.cpp`, `core/agent_search.cpp`, include root, C++23 |
 | `reagentlive::ue-base` | every Unreal pack agent file, `packs/ue/agent_ue*.cpp` (defined with `ue` in `REAGENTLIVE_PACKS`), links `core`; no SDK: the stock UE5 layout, each group checked on known objects before its ops run ([without an SDK](commands/unreal.md#without-an-sdk)) |
 | `reagentlive::ue-draw` | opt-in host helper, links `ue-base`: a game-thread tick through the game viewport's Draw and the `game-thread` op (`packs/ue/host_draw.h`) |
 | `reagentlive::ue` | links `ue-base` and builds it with the host's SDK as the layout (`REAGENTLIVE_UE_SDK`, every group on without checks); it adds no op. The consumer provides its Dumper-7 SDK on the include path as `SDK/...` |
@@ -221,9 +221,10 @@ The full op list with numbers is in [protocol](protocol.md#ops).
 
 - **The agent never hooks, and starts no threads unless the host opts in.**
   Where `Tick` runs is the host's decision and its responsibility. A host that
-  sets `Host::backgroundSearch` lets `search --background` run on one
-  agent-owned worker thread (started on first use, kept for the process);
-  each search still opts in. The two opt-in swaps are the call recorder (a
+  sets `Host::backgroundSearch` lets search jobs and the console's
+  internal scans run on one agent-owned worker thread (started on first
+  use, kept for the process); without it a job scans in slices of each
+  host tick. The two opt-in swaps are the call recorder (a
   host that lists its ops) and `reagentlive::ue-draw` (a host that links it,
   on `game-thread on`); neither writes code or the game's tables.
 - **Held requests** make the agent spin briefly on the host's thread for the

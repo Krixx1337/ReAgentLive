@@ -292,12 +292,16 @@ Parsed Search(const Args& args, const ParseContext& context) {
         put(&number, 8);
     } else return Fail("type is hex, u32, i32, u64, ptr, f32, f64 or text");
     request.args[1] = 64;
+    uint64_t n = 0;
     if (args.Has("--writable")) request.flags |= SearchWritable;
     if (args.Has("--heap")) request.flags |= SearchPrivate;
     if (args.Has("--paged")) request.flags |= SearchPaged;
-    if (args.Has("--background")) request.flags |= SearchBackground;
+    command.seconds = 10;
+    if (args.Has("--wait")) {
+        if (!Number(args.Value("--wait"), n) || n > 60) return Fail("--wait is 0..60 seconds");
+        command.seconds = static_cast<uint32_t>(n);
+    }
     command.target = args.Value("--module"); // The console turns it into --start/--to.
-    uint64_t n = 0;
     if (args.Has("--start") && !Address(args.Value("--start"), context.refs, context.modules, request.address))
         return Fail("--start is an address");
     if (args.Has("--to") && !Address(args.Value("--to"), context.refs, context.modules, request.args[0]))
@@ -307,14 +311,26 @@ Parsed Search(const Args& args, const ParseContext& context) {
         align = static_cast<uint32_t>(n);
     }
     if (args.Has("--max")) {
-        if (!Number(args.Value("--max"), n) || !n || n > MaxSearchHits) return Fail("--max is 1.." + std::to_string(MaxSearchHits));
+        if (!Number(args.Value("--max"), n) || !n || n > MaxSearchJobHits) return Fail("--max is 1.." + std::to_string(MaxSearchJobHits));
         request.args[1] = n;
     }
     if (!command.target.empty() && (request.address || request.args[0])) return Fail("--module replaces --start and --to");
-    request.flags |= align;
+    request.flags |= align | SearchJobStart;
     request.op = op::Search;
     if (Check(request) != Status::Ok) return Fail("invalid search: alignment 1, 2, 4, 8 or 16; --max 1.." +
-        std::to_string(MaxSearchHits) + "; --to above --start");
+        std::to_string(MaxSearchJobHits) + "; --to above --start");
+    return command;
+}
+
+// search-job <id> [--stop]: the search job's hits so far, or stop it.
+Parsed SearchJob(const Args& args, const ParseContext&) {
+    Command command;
+    Request& request = command.request;
+    uint64_t id = 0;
+    if (!Number(args.At(0), id) || !id || id > UINT32_MAX) return Fail("the job id is a search's job");
+    request.op = op::Search;
+    request.args[0] = id;
+    request.flags = args.Has("--stop") ? SearchJobStop : SearchJobStatus;
     return command;
 }
 

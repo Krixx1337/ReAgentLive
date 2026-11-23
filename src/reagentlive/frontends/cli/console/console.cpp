@@ -338,54 +338,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
         return Emit(session, jsonCommand,
             shape::Write{request.address, Locate(request.address, LoadedModules(session)), request.length, {}});
     }
-    case op::Search: {
-        SearchQuery query;
-        query.pattern.assign(request.data, request.data + request.length);
-        query.from = request.address;
-        query.to = request.args[0];
-        query.alignment = SearchAlignment(request.flags);
-        query.writableOnly = request.flags & SearchWritable;
-        query.privateOnly = request.flags & SearchPrivate;
-        query.paged = request.flags & SearchPaged;
-        query.background = request.flags & SearchBackground;
-        query.maxHits = static_cast<uint32_t>(request.args[1]);
-        if (!command.target.empty()) {
-            const auto* match = text::ModuleNamed(command.target, LoadedModules(session));
-            if (!match && RefreshModules(session)) match = text::ModuleNamed(command.target, LoadedModules(session));
-            if (!match) return JsonError(session, jsonCommand, "module", "no loaded module with that name");
-            query.from = match->base;
-            query.to = match->base + match->size;
-        }
-        auto found = client.Search(query, std::max(client.Timeout(), std::chrono::milliseconds(180000)));
-        if (!found) return CommandError(session, jsonCommand, found.error());
-        const auto modules = LoadedModules(session);
-        shape::Search result;
-        for (uint64_t hit : found->hits) result.rows.push_back({hit, Locate(hit, modules), std::nullopt});
-        // search text: the string around each hit, read back MaxBatchReads per request.
-        if (command.textSearch && client.Supports(op::ReadBatch)) {
-            const size_t step = command.textSearch, length = request.length, around = (MaxSearchText + 1) * step;
-            std::vector<ReadSpan> spans;
-            std::vector<size_t> before;
-            for (uint64_t hit : found->hits) {
-                const size_t back = static_cast<size_t>(std::min<uint64_t>(hit, around));
-                spans.push_back({hit - back, back + length + around});
-                before.push_back(back);
-            }
-            const auto read = AgentRead(session);
-            for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
-                const size_t n = std::min(MaxBatchReads, spans.size() - first);
-                auto items = read(std::span(spans).subspan(first, n));
-                if (!items) break;  // The hits stand without text.
-                for (size_t i = 0; i < n && i < items->size(); ++i)
-                    if ((*items)[i])
-                        if (auto text = TextAround(*(*items)[i], before[first + i], length, step == 2,
-                                MaxSearchText); !text.empty()) result.rows[first + i].text = std::move(text);
-            }
-        }
-        result.from = query.from;
-        result.nextCursor = NonZero(found->resume);
-        return Emit(session, jsonCommand, std::move(result));
-    }
+    case op::Search: return RunSearch(session, command, jsonCommand);
     case op::Modules: {
         auto modules = client.Modules();
         if (!modules) return CommandError(session, jsonCommand, modules.error());

@@ -126,7 +126,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     CHECK(full["positionals"][1] == Json{{"key", "value"}, {"name", "value"}, {"arity", "some"}, {"type", "text"},
         {"help", "the value to find"}});
     CHECK(full["flags"].back() == Json{{"flag", "--max"}, {"key", "max"}, {"takes", "one"}, {"type", "int"}, {"value", "N"},
-        {"default", "64"}, {"help", "rows per page"}});
+        {"default", "64"}, {"help", "hits at most; the job stops when full"}});
     CHECK(read["positionals"][0]["name"] == "addr");
     CHECK(detail["positionals"].empty());
     // Only verbs that write the target's memory or call into it carry the mark.
@@ -138,7 +138,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), false, false))["pack"] == "explore");
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
-        {"help", "start, or a page's next_cursor"}});
+        {"help", "start, or a job's next_cursor"}});
     CHECK(full["type"]["struct"]["next_cursor"] == Json{{"type", "addr"}, {"optional", true}});
     CHECK(FindVerb(AllVerbs(), "exit") == FindVerb(AllVerbs(), "quit"));
     // The whole table, and a hash of it that moves with any row.

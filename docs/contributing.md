@@ -17,7 +17,7 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 
 | Layer | What | Where | Depends on |
 |---|---|---|---|
-| Core agent | wire protocol, shared section, tick and dispatch, `read`/`write`/`modules`/`search`/`xrefs`/`region`/`pin`/`watch` | `core/agent.*`, `core/protocol.h` | Windows, standard library |
+| Core agent | wire protocol, shared section, tick and dispatch, `read`/`write`/`modules`/`search` (and its job)/`xrefs`/`region`/`pin`/`watch` | `core/agent.*`, `core/agent_search.cpp`, `core/protocol.h` | Windows, standard library |
 | Core client | typed C++ API: attach, read, write, modules, search, xrefs, region, pointer chains, supported ops, raw `Send` | `core/client.*` | protocol |
 | Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls, every one with no SDK (`ue-base`, layouts through `engine_layout.h`); the opt-in game-thread tick for hosts (`host_draw.*`, `ue-draw`) | `packs/ue/` | core; only `reagentlive::ue` also the host's `SDK/` headers (`engine_layout_sdk.h`, `agent_ue_globals.cpp`) |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |
@@ -213,7 +213,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 
 | Suite | Covers |
 |---|---|
-| `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters and the background worker, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
+| `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters, the background worker and search jobs, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
 | `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get` (paths, and every field with values and previews), `each` and `entries` must print the same JSON, with and without `--nonzero` and `--meta`; status keys (`unnamed`, digested or not) and stale object arguments (positional and `--outer`) must agree. Add a case here when a verb gains a value or an object argument |
 | `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, the tokeniser, usage errors, help), the parsers, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
 | `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |

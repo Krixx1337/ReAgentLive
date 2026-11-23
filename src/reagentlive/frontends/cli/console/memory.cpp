@@ -9,6 +9,7 @@
 #include <tlhelp32.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <cstdio>
 #include <cstring>
@@ -504,5 +505,91 @@ void RunPeek(Session& session, const Command& command, std::string_view jsonComm
         result.labelled = std::move(label);
     }
     Emit(session, jsonCommand, std::move(result));
+}
+
+namespace {
+// Rows for a job's hits, with the text around each for search text.
+shape::Search SearchShape(Session& session, const SearchJobResult& job) {
+    const auto modules = LoadedModules(session);
+    shape::Search result;
+    for (uint64_t hit : job.hits) result.rows.push_back({hit, Locate(hit, modules), std::nullopt});
+    const auto& text = session.searchText;
+    if (text.job == job.id && text.step && session.client.Supports(op::ReadBatch)) {
+        const size_t step = text.step, length = text.length, around = (MaxSearchText + 1) * step;
+        std::vector<ReadSpan> spans;
+        std::vector<size_t> before;
+        for (uint64_t hit : job.hits) {
+            const size_t back = static_cast<size_t>(std::min<uint64_t>(hit, around));
+            spans.push_back({hit - back, back + length + around});
+            before.push_back(back);
+        }
+        const auto read = AgentRead(session);
+        for (size_t first = 0; first < spans.size(); first += MaxBatchReads) {
+            const size_t n = std::min(MaxBatchReads, spans.size() - first);
+            auto items = read(std::span(spans).subspan(first, n));
+            if (!items) break; // The hits stand without text.
+            for (size_t i = 0; i < n && i < items->size(); ++i)
+                if ((*items)[i])
+                    if (auto around_ = TextAround(*(*items)[i], before[first + i], length, step == 2, MaxSearchText);
+                        !around_.empty()) result.rows[first + i].text = std::move(around_);
+        }
+    }
+    result.job = job.id;
+    result.state = job.state == SearchJobState::Running ? "running" : job.state == SearchJobState::Done ? "done" : "stopped";
+    result.from = job.start;
+    result.to = job.end;
+    const uint64_t span = job.end > job.start ? job.end - job.start : 0;
+    const uint64_t behind = std::min(job.cursor, job.end) - std::min(job.start, job.cursor);
+    result.scanned = !span || job.cursor >= job.end ? 1.0 : std::round(static_cast<double>(behind) / span * 1000) / 1000;
+    if (job.state != SearchJobState::Running && job.cursor < job.end) result.nextCursor = job.cursor;
+    return result;
+}
+}
+
+void RunSearch(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    const Request& request = command.request;
+    if (request.flags & (SearchJobStatus | SearchJobStop)) {
+        auto job = client.SearchPoll(static_cast<uint32_t>(request.args[0]), request.flags & SearchJobStop);
+        if (!job) return CommandError(session, jsonCommand, job.error());
+        return Emit(session, jsonCommand, SearchShape(session, *job));
+    }
+    SearchQuery query;
+    query.pattern.assign(request.data, request.data + request.length);
+    query.from = request.address;
+    query.to = request.args[0];
+    query.alignment = SearchAlignment(request.flags);
+    query.writableOnly = request.flags & SearchWritable;
+    query.privateOnly = request.flags & SearchPrivate;
+    query.paged = request.flags & SearchPaged;
+    query.maxHits = static_cast<uint32_t>(request.args[1]);
+    // The range: a named module; else the main module when nothing else
+    // narrows it; a start alone ends with the module it lies in.
+    const auto inModule = [&](uint64_t address) { return ModuleAt(address, LoadedModules(session)); };
+    if (!command.target.empty()) {
+        const auto* match = text::ModuleNamed(command.target, LoadedModules(session));
+        if (!match && RefreshModules(session)) match = text::ModuleNamed(command.target, LoadedModules(session));
+        if (!match) return JsonError(session, jsonCommand, "module", "no loaded module with that name");
+        query.from = match->base;
+        query.to = match->base + match->size;
+    } else if (!query.to && !query.writableOnly && !query.privateOnly) {
+        if (LoadedModules(session).empty()) RefreshModules(session);
+        const Module* module = query.from ? inModule(query.from) : (LoadedModules(session).empty() ? nullptr : &LoadedModules(session)[0]);
+        if (module) {
+            if (!query.from) query.from = module->base;
+            query.to = module->base + module->size;
+        }
+    }
+    auto job = client.SearchStart(query);
+    if (!job) return CommandError(session, jsonCommand, job.error());
+    session.searchText = {job->id, request.length, command.textSearch};
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(command.seconds);
+    while (job->state == SearchJobState::Running && std::chrono::steady_clock::now() < until) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        auto next = client.SearchPoll(job->id, false);
+        if (!next) return CommandError(session, jsonCommand, next.error());
+        job = std::move(next);
+    }
+    Emit(session, jsonCommand, SearchShape(session, *job));
 }
 }

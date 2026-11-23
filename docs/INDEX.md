@@ -86,7 +86,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `write --hold`, `writes` | T0 | [memory](commands/memory.md#timed-writes) |
 | `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
 | `write --undo` | T0; the owner check needs T1 | [memory](commands/memory.md#timed-writes) |
-| `search` | T0 | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
+| `search`, `search-job` | T0 | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
 | `read --type "<layout>"` | T0 | [memory](commands/memory.md#typed-layouts) |
 | `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `vtable --rtti` | T0 | [native objects](commands/native-objects.md) |
 | `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |

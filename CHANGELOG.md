@@ -27,6 +27,16 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **`search` is a job, in the main module by default:** it answers within
+  `--wait` seconds (default 10) with `job`, `state`, `to` and `scanned`; a
+  scan still running keeps going in the agent while other commands run,
+  and `search-job <id> [--stop]` reads or ends it. `--background` is gone
+  (the agent uses its worker when the host allows it). A search without
+  `--module`, `--start`, `--to`, `--heap` or `--writable` now covers the
+  main module only: add `--heap` or `--writable` for data in memory
+  ([search](docs/commands/memory.md#search)). Regenerate Python modules and
+  restart MCP servers. Protocol change: rebuild and re-inject.
+
 - **MCP tool packs replace `--families` and `--read-only`:** the adapter
   serves `--packs` (default `explore`) and lets the agent enable `--allow`
   packs through the always-served `packs` tool; `modify` only when named.

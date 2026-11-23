@@ -14,6 +14,7 @@
 #include <cstring>
 #include <iterator>
 #include "reagentlive/core/agent.h"
+#include "reagentlive/core/agent_internal.h"
 
 namespace reagentlive {
 namespace {
@@ -31,6 +32,7 @@ const Command* g_active;
 uint32_t g_activeSeq;
 uint32_t g_agentId; // This instance, in Section::owner while it answers.
 bool g_dormant;     // Another agent in this process took the section over.
+using detail::Microseconds;
 
 void Log(const Host& host, LogLevel level, unsigned status, const char* format, ...) {
     if (!host.log) return;
@@ -228,273 +230,6 @@ Progress Modules(const Request& request, Response& response, bool, const Host&) 
     return Progress::Done;
 }
 
-namespace {
-constexpr uintptr_t PageSize = 4096;
-constexpr size_t SearchChunkPages = 64; // 256 KB between clock and cancel checks.
-
-// One search, self-contained: the background worker must not read the shared
-// request slot, which the next request overwrites.
-struct SearchJob {
-    uint8_t pattern[MaxSearchPattern];
-    uint32_t length, align, flags, maxHits, hits;
-    uintptr_t cursor, end;
-    bool relative;   // Xrefs: 4-byte fields landing on `target` (protocol.h).
-    uint64_t target;
-    uint64_t found[MaxSearchHits];
-};
-SearchJob* g_job;        // Game-thread search (heap, like State).
-SearchJob* g_background; // Owned by the worker while it runs.
-
-// Background worker: started once, on the first background search a host
-// allows; it lives for the process, like the agent. Idle -> Running (agent)
-// -> Done (worker) -> Idle (agent, after copying the hits).
-enum : uint32_t { WorkerIdle, WorkerRunning, WorkerDone };
-std::atomic<uint32_t> g_workerState{WorkerIdle};
-std::atomic<bool> g_workerCancel{false};
-HANDLE g_workerWake;
-bool g_workerFailed;
-
-bool Searchable(const MEMORY_BASIC_INFORMATION& info, uint32_t flags) {
-    // Write-combined and uncached pages are GPU or device mappings: very slow
-    // to read from the CPU, and never the data an investigation looks for.
-    if (info.State != MEM_COMMIT || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS | PAGE_NOCACHE | PAGE_WRITECOMBINE)))
-        return false;
-    if ((flags & SearchPrivate) && info.Type != MEM_PRIVATE) return false;
-    const DWORD access = info.Protect & 0xFF;
-    const bool writable = access == PAGE_READWRITE || access == PAGE_WRITECOPY || access == PAGE_EXECUTE_READWRITE ||
-        access == PAGE_EXECUTE_WRITECOPY;
-    return (flags & SearchWritable) ? writable : writable || access == PAGE_READONLY || access == PAGE_EXECUTE_READ;
-}
-// Another view of this process's section: an agent injected earlier mapped
-// it too, and its view shows the current request, pattern included.
-bool SectionView(uintptr_t address) {
-    MEMORY_BASIC_INFORMATION info{};
-    if (!VirtualQuery(reinterpret_cast<const void*>(address), &info, sizeof(info)) || info.Type != MEM_MAPPED)
-        return false;
-    const auto base = reinterpret_cast<uintptr_t>(info.AllocationBase);
-    uint32_t header[3]{}; // magic, layout, agentPid
-    return address - base < sizeof(Section) && GuardedCopy(header, info.AllocationBase, sizeof(header)) &&
-        header[0] == Magic && header[2] == GetCurrentProcessId();
-}
-// The agent's own copies of the pattern are not results.
-bool OwnBuffer(uintptr_t address) {
-    const auto inside = [address](const void* base, size_t size) {
-        const auto start = reinterpret_cast<uintptr_t>(base);
-        return base && address >= start && address < start + size;
-    };
-    return inside(g_state, sizeof(State)) || inside(g_section, sizeof(Section)) || inside(g_job, sizeof(SearchJob)) ||
-        inside(g_background, sizeof(SearchJob)) || SectionView(address);
-}
-// Records a match; true once the page of hits is full.
-bool Hit(SearchJob& job, uintptr_t at) {
-    if (OwnBuffer(at)) return false;
-    job.found[job.hits++] = at;
-    return job.hits == job.maxHits;
-}
-// Scanners: positions [begin, last) whose pattern fits below `limit`; `stop`
-// is where to continue.
-template<class Word> void ScanWords(SearchJob& job, uintptr_t begin, uintptr_t last, uintptr_t limit, Word value,
-                                    uintptr_t& stop) {
-    for (uintptr_t at = begin; at < last && at + sizeof(Word) <= limit; at += sizeof(Word))
-        if (*reinterpret_cast<const Word*>(at) == value && Hit(job, at)) { stop = at + sizeof(Word); return; }
-    stop = last;
-}
-void ScanBytes(SearchJob& job, uintptr_t begin, uintptr_t last, uintptr_t limit, uintptr_t& stop) {
-    const uint8_t* pattern = job.pattern;
-    const size_t length = job.length;
-    const uintptr_t align = job.align;
-    stop = last;
-    for (uintptr_t at = begin; at < last && at + length <= limit; at += align) {
-        if (align == 1) { // Jump to the next first-byte candidate (vectorised in the CRT).
-            const void* next = memchr(reinterpret_cast<const void*>(at), pattern[0], last - at);
-            if (!next) return;
-            at = reinterpret_cast<uintptr_t>(next);
-            if (at + length > limit) return;
-        } else if (*reinterpret_cast<const uint8_t*>(at) != pattern[0]) continue;
-        if (!memcmp(reinterpret_cast<const void*>(at), pattern, length) && Hit(job, at)) {
-            stop = at + align;
-            return;
-        }
-    }
-}
-// Every byte: the signed 32-bit value there, measured from its end, lands
-// on the target or 1, 2 or 4 bytes after it (an immediate follows).
-void ScanRelative(SearchJob& job, uintptr_t begin, uintptr_t last, uintptr_t limit, uintptr_t& stop) {
-    const uint64_t target = job.target;
-    for (uintptr_t at = begin; at < last && at + 4 <= limit; ++at) {
-        int32_t value;
-        memcpy(&value, reinterpret_cast<const void*>(at), 4);
-        const uint64_t slack = target - (static_cast<uint64_t>(at) + 4) - static_cast<uint64_t>(static_cast<int64_t>(value));
-        if ((slack <= 2 || slack == 4) && Hit(job, at)) { stop = at + 1; return; }
-    }
-    stop = last;
-}
-// False on a fault (the range was freed after the region check).
-bool ScanSlice(SearchJob& job, uintptr_t begin, uintptr_t last, uintptr_t limit, uintptr_t& stop) {
-    __try {
-        if (job.relative) {
-            ScanRelative(job, begin, last, limit, stop);
-        } else if (job.length == 8 && job.align == 8) {
-            uint64_t value;
-            memcpy(&value, job.pattern, 8);
-            ScanWords(job, begin, last, limit, value, stop);
-        } else if (job.length == 4 && job.align == 4) {
-            uint32_t value;
-            memcpy(&value, job.pattern, 4);
-            ScanWords(job, begin, last, limit, value, stop);
-        } else {
-            ScanBytes(job, begin, last, limit, stop);
-        }
-        return true;
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
-                EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        return false;
-    }
-}
-// End of the run of resident pages from `page` (page aligned), checking at
-// most `pages` pages; `page` itself when the first is not resident. Reading a
-// non-resident page would make the OS fault it in (or create it, for memory
-// that was committed but never touched).
-uintptr_t ResidentEnd(uintptr_t page, size_t pages) {
-    PSAPI_WORKING_SET_EX_INFORMATION info[SearchChunkPages + 1]{};
-    for (size_t i = 0; i < pages; ++i) info[i].VirtualAddress = reinterpret_cast<void*>(page + i * PageSize);
-    if (!K32QueryWorkingSetEx(GetCurrentProcess(), info, static_cast<DWORD>(pages * sizeof(info[0]))))
-        return page + pages * PageSize;
-    size_t valid = 0;
-    while (valid < pages && info[valid].VirtualAttributes.Valid) ++valid;
-    return page + valid * PageSize;
-}
-int64_t Microseconds() {
-    LARGE_INTEGER frequency, now;
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&now);
-    return now.QuadPart / frequency.QuadPart * 1000000 + now.QuadPart % frequency.QuadPart * 1000000 / frequency.QuadPart;
-}
-uintptr_t AlignUp(uintptr_t value, uintptr_t align) { return (value + align - 1) & ~(align - 1); }
-
-void StartJob(SearchJob& job, const Request& request) {
-    SYSTEM_INFO system{};
-    GetSystemInfo(&system);
-    const auto top = reinterpret_cast<uintptr_t>(system.lpMaximumApplicationAddress) + 1;
-    job.relative = request.op == op::Xrefs;
-    job.target = 0;
-    if (job.relative) memcpy(&job.target, request.data, 8);
-    job.length = job.relative ? 4 : request.length;
-    if (!job.relative) memcpy(job.pattern, request.data, request.length);
-    job.align = job.relative ? 1 : SearchAlignment(request.flags);
-    job.flags = request.flags;
-    job.maxHits = static_cast<uint32_t>(request.args[1]);
-    job.hits = 0;
-    const uintptr_t start = std::max<uintptr_t>(static_cast<uintptr_t>(request.address),
-        reinterpret_cast<uintptr_t>(system.lpMinimumApplicationAddress));
-    job.cursor = AlignUp(start, job.align);
-    job.end = request.args[0] ? std::min<uintptr_t>(static_cast<uintptr_t>(request.args[0]), top) : top;
-}
-// Scans until the range is done, the page of hits is full, `deadline` passes
-// (0: none) or `cancel` is set. True once the job is finished.
-bool RunJob(SearchJob& job, int64_t deadline, const std::atomic<bool>* cancel) {
-    const bool paged = job.flags & SearchPaged;
-    while (job.cursor < job.end && job.hits < job.maxHits) {
-        if (deadline && Microseconds() >= deadline) return false;
-        if (cancel && cancel->load(std::memory_order_relaxed)) return true;
-        MEMORY_BASIC_INFORMATION info{};
-        if (!VirtualQuery(reinterpret_cast<const void*>(job.cursor), &info, sizeof(info))) { job.cursor = job.end; break; }
-        const uintptr_t regionEnd = std::min(reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize, job.end);
-        if (regionEnd <= job.cursor) { job.cursor = job.end; break; }
-        if (!Searchable(info, job.flags)) { job.cursor = regionEnd; continue; }
-        // One chunk, then the clock again. The residency check looks one page
-        // past the chunk so a match crossing into it is still found.
-        const uintptr_t page = job.cursor & ~(PageSize - 1);
-        const uintptr_t chunkEnd = std::min(regionEnd, page + SearchChunkPages * PageSize);
-        uintptr_t limit = regionEnd;
-        if (!paged) {
-            const size_t pages = (std::min(regionEnd, chunkEnd + PageSize) - page + PageSize - 1) / PageSize;
-            limit = std::min(regionEnd, ResidentEnd(page, pages));
-            if (limit <= job.cursor) { job.cursor = AlignUp(page + PageSize, job.align); continue; }
-        }
-        const uintptr_t last = std::min(limit, chunkEnd);
-        uintptr_t stop = last;
-        if (!ScanSlice(job, job.cursor, last, limit, stop)) stop = regionEnd; // Freed meanwhile.
-        job.cursor = stop > job.cursor ? stop : AlignUp(last, job.align);
-    }
-    return true;
-}
-void Answer(const SearchJob& job, Response& response) {
-    memcpy(response.data, job.found, job.hits * sizeof(uint64_t));
-    response.length = job.hits * static_cast<uint32_t>(sizeof(uint64_t));
-    response.detail = job.cursor < job.end ? job.cursor : 0;
-}
-
-DWORD WINAPI SearchWorker(void*) {
-    for (;;) {
-        WaitForSingleObject(g_workerWake, INFINITE);
-        if (g_workerState.load(std::memory_order_acquire) != WorkerRunning) continue;
-        RunJob(*g_background, 0, &g_workerCancel);
-        g_workerState.store(WorkerDone, std::memory_order_release);
-    }
-}
-// Starts the worker once; false if the host forbids it or it cannot start.
-bool EnsureWorker(const Host& host) {
-    if (g_workerWake) return true;
-    if (!host.backgroundSearch || g_workerFailed) return false;
-    g_workerFailed = true;
-    g_background = static_cast<SearchJob*>(HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(SearchJob)));
-    HANDLE wake = g_background ? CreateEventW(nullptr, FALSE, FALSE, nullptr) : nullptr;
-    HANDLE thread = wake ? CreateThread(nullptr, 64 * 1024, &SearchWorker, nullptr, 0, nullptr) : nullptr;
-    if (!thread) {
-        if (wake) CloseHandle(wake);
-        if (g_background) HeapFree(GetProcessHeap(), 0, g_background);
-        g_background = nullptr;
-        return false;
-    }
-    CloseHandle(thread); // Runs for the process; the agent never unloads.
-    g_workerWake = wake;
-    g_workerFailed = false;
-    return true;
-}
-// Background phases across ticks: a previous job (abandoned by the client)
-// is cancelled first, then this one starts and the handler waits for it.
-enum class Phase { Draining, Running };
-Phase g_phase;
-Progress BackgroundSearch(const Request& request, Response& response, bool first, const Host& host) {
-    if (first) {
-        if (!EnsureWorker(host)) {
-            Refuse(response, Status::Refused, host.backgroundSearch ? "background search thread unavailable" :
-                "host does not allow background search");
-            return Progress::Done;
-        }
-        g_phase = Phase::Draining;
-        if (g_workerState.load(std::memory_order_acquire) == WorkerRunning) g_workerCancel.store(true);
-    }
-    if (g_phase == Phase::Draining) {
-        if (g_workerState.load(std::memory_order_acquire) == WorkerRunning) return Progress::Continue;
-        g_workerCancel.store(false);
-        StartJob(*g_background, request);
-        g_workerState.store(WorkerRunning, std::memory_order_release);
-        SetEvent(g_workerWake);
-        g_phase = Phase::Running;
-        return Progress::Continue;
-    }
-    if (g_workerState.load(std::memory_order_acquire) != WorkerDone) return Progress::Continue;
-    Answer(*g_background, response);
-    g_workerState.store(WorkerIdle, std::memory_order_release);
-    return Progress::Done;
-}
-}
-
-Progress Search(const Request& request, Response& response, bool first, const Host& host) {
-    if (first && (response.status = Check(request)) != Status::Ok) return Progress::Done;
-    if (request.flags & SearchBackground) return BackgroundSearch(request, response, first, host);
-    if (first) {
-        if (!g_job) g_job = static_cast<SearchJob*>(HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(SearchJob)));
-        if (!g_job) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
-        StartJob(*g_job, request);
-    }
-    if (!RunJob(*g_job, Microseconds() + SearchSliceMicroseconds, nullptr)) return Progress::Continue;
-    Answer(*g_job, response);
-    return Progress::Done;
-}
-
 Progress Region(const Request& request, Response& response, bool, const Host&) {
     if ((response.status = Check(request)) != Status::Ok) return Progress::Done;
     MEMORY_BASIC_INFORMATION info{};
@@ -509,8 +244,14 @@ Progress Region(const Request& request, Response& response, bool, const Host&) {
     return Progress::Done;
 }
 
-Progress Xrefs(const Request& request, Response& response, bool first, const Host& host) {
-    return Search(request, response, first, host); // Check and StartJob tell the ops apart.
+namespace detail {
+bool InAgentState(uintptr_t address) {
+    const auto inside = [address](const void* base, size_t size) {
+        const auto start = reinterpret_cast<uintptr_t>(base);
+        return base && address >= start && address < start + size;
+    };
+    return inside(g_state, sizeof(State)) || inside(g_section, sizeof(Section));
+}
 }
 
 namespace {
@@ -700,6 +441,7 @@ void TickServices(const Host& host) {
         for (size_t i = 0; i < MaxTrials; ++i)
             if (g_trials[i].used) CheckTrial(host, g_trials[i], false);
     if (g_watch && g_watch->running) SampleWatch(host);
+    detail::TickSearchJob();
 }
 }
 

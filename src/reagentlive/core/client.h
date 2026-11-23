@@ -38,6 +38,13 @@ struct SearchQuery {
     uint32_t maxHits = 64;          // 1..MaxSearchHits.
 };
 struct SearchResult { std::vector<uint64_t> hits; uint64_t resume; }; // resume 0: range done.
+// A search job's state and its hits so far (protocol.h, SearchJobStart).
+struct SearchJobResult {
+    uint32_t id = 0;
+    SearchJobState state = SearchJobState::Running;
+    uint64_t start = 0, cursor = 0, end = 0;
+    std::vector<uint64_t> hits;
+};
 // Relative references to `target` (protocol.h, Xrefs): fields in [from, to).
 struct XrefQuery {
     uint64_t target = 0;
@@ -127,6 +134,12 @@ public:
                          std::vector<uint8_t>* found = nullptr);
     // One page of matches; scans across agent ticks, so give it a long timeout.
     Result<SearchResult> Search(const SearchQuery& query, std::chrono::milliseconds timeout);
+    // Starts a search job (a running one is stopped) and answers at once;
+    // query.background is ignored: the agent picks its worker when it may.
+    Result<SearchJobResult> SearchStart(const SearchQuery& query);
+    // The job's state and hits so far; `stop` ends it first. NotFound for
+    // any id but the last job's.
+    Result<SearchJobResult> SearchPoll(uint32_t id, bool stop);
     // One page of field addresses whose rel32 lands on the target; resume like Search.
     Result<SearchResult> Xrefs(const XrefQuery& query, std::chrono::milliseconds timeout);
     // Pins: the agent rewrites the bytes every tick until the pin stops.

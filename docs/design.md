@@ -21,9 +21,9 @@ Current behaviour lives in the [command pages](INDEX.md#commands),
   approved one by one.
 - **The core never hooks, and starts no threads unless the host opts in.**
   The host calls `Tick()` from a thread it trusts. The one exception is
-  `search --background`, allowed only by `Host::backgroundSearch`: a single
-  worker thread that reads memory (no engine calls) while the host tick
-  only polls.
+  the search worker, allowed only by `Host::backgroundSearch`: a single
+  thread that runs search jobs and the console's internal scans (reads
+  only, no engine calls) while the host tick only polls.
 - **Two opt-in pointer swaps, never code.** The Unreal pack's
   `calls-start` swaps one `UFunction`'s native pointer (heap data) for a
   fixed thunk that records and forwards each call, and puts it back with a
@@ -499,6 +499,16 @@ tools, with their decisions and rejected alternatives:
   calls or misses new objects for that long); building it on a thread of
   its own (the pass is a few milliseconds, inside the existing scan
   budget, and a pack thread would need a host opt-in).
+- **Every search is a job.** A blocking search over the whole address
+  space ran for minutes, timed out and lost its work, holding the
+  console's one request slot meanwhile. Now the agent keeps one job,
+  scanned on the worker or between requests, and the console polls it up
+  to `--wait`; the default range is the main module. Rejected: a `--job`
+  flag beside the blocking form (two result shapes for one verb); a job
+  kept in the console (gone when a one-shot console exits, and the
+  agent's slot still busy); separate status and stop verbs (one
+  `search-job` with `--stop`). The console's own scans (`xrefs`, `sig`,
+  `labels-sign`) stay blocking: they cover one module and need every page.
 - **Known debt: the interface stub pattern decodes bytes in the agent.**
   `func` on an interface function matches one stub shape
   (`mov rax, [reg]; call [rax + disp]`, `StubVtableSlot`) inside the agent,

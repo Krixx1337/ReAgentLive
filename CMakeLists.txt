@@ -66,7 +66,8 @@ set(reagentlive_include_root "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 add_library(reagentlive-core INTERFACE)
 add_library(reagentlive::core ALIAS reagentlive-core)
-target_sources(reagentlive-core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent.cpp")
+target_sources(reagentlive-core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_search.cpp")
 target_include_directories(reagentlive-core INTERFACE "${reagentlive_include_root}")
 target_compile_features(reagentlive-core INTERFACE cxx_std_23)
 

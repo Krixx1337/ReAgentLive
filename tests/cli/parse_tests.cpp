@@ -293,7 +293,8 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"read", {"read 0x1000", "read 0x1000 16 --type f32"}},
         {"peek", {"peek 0x1000", "peek 0x1000 1 --label --name Foo"}},
         {"modules", {"modules"}},
-        {"search", {"search f32 1.5", "search text abc --wide --background --max 8"}},
+        {"search", {"search f32 1.5", "search text abc --wide --wait 0 --max 8"}},
+        {"search-job", {"search-job 3", "search-job 3 --stop"}},
         {"mem-snap", {"mem-snap 0x1000 64"}},
         {"mem-diff", {"mem-diff changed f32", "mem-diff increased i32 --keep --limit 4"}},
         {"watch-start", {"watch-start 5 0x1000:8", "watch-start 5 0x1000:f32 --every 100ms --file w.jsonl"}},
@@ -404,6 +405,8 @@ TEST_CASE("search parses typed values, options and limits") {
     CHECK(value == 100.0f);
     CHECK(SearchAlignment(parsed->request.flags) == 4);
     CHECK(parsed->request.args[1] == 64);
+    CHECK((parsed->request.flags & SearchJobStart) != 0);
+    CHECK(parsed->seconds == 10);
     CHECK(Check(parsed->request) == Status::Ok);
 
     parsed = Parse("search ptr 0x7ff7bb2a7740 --writable --max 8 --start 0x10000 --to 0x20000", NoRefs);
@@ -470,15 +473,25 @@ TEST_CASE("search text takes a quoted string exactly") {
 }
 
 TEST_CASE("search filters and safe write parse") {
-    auto parsed = Parse("search ptr 0x1234 --heap --paged --background --module Game.exe", NoRefs);
+    auto parsed = Parse("search ptr 0x1234 --heap --paged --wait 30 --module Game.exe", NoRefs);
     REQUIRE(parsed.has_value());
-    CHECK((parsed->request.flags & SearchBackground) != 0);
+    CHECK(parsed->seconds == 30);
+    CHECK((parsed->request.flags & SearchBackground) == 0);
     CHECK((parsed->request.flags & SearchPrivate) != 0);
     CHECK((parsed->request.flags & SearchPaged) != 0);
     CHECK(parsed->target == "Game.exe");
     CHECK(Check(parsed->request) == Status::Ok);
     CHECK_FALSE(Parse("search ptr 0x1234 --module Game.exe --start 0x1000", NoRefs).has_value());
     CHECK_FALSE(Parse("search ptr 0x1234 --module", NoRefs).has_value());
+    CHECK_FALSE(Parse("search ptr 0x1234 --wait 61", NoRefs).has_value());
+    parsed = Parse("search-job 7 --stop", NoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->request.op == op::Search);
+    CHECK(parsed->request.flags == SearchJobStop);
+    CHECK(parsed->request.args[0] == 7);
+    CHECK(Check(parsed->request) == Status::Ok);
+    CHECK(Parse("search-job 7", NoRefs)->request.flags == SearchJobStatus);
+    CHECK_FALSE(Parse("search-job 0", NoRefs).has_value());
 
     parsed = Parse("write 0x1000 01 02 --expect 03 04", NoRefs);
     REQUIRE(parsed.has_value());

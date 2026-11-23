@@ -283,6 +283,52 @@ Result<SearchResult> Client::Search(const SearchQuery& query, std::chrono::milli
     return result;
 }
 
+namespace {
+Result<SearchJobResult> JobResult(const Response& response) {
+    if (response.status != Status::Ok) return std::unexpected(AgentError(response));
+    SearchJobInfo info{};
+    if (response.length < sizeof(info) || (response.length - sizeof(info)) % sizeof(uint64_t))
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid search job response"});
+    memcpy(&info, response.data, sizeof(info));
+    const size_t count = (response.length - sizeof(info)) / sizeof(uint64_t);
+    if (count != info.hits || info.state < 1 || info.state > 3)
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid search job response"});
+    SearchJobResult result{info.id, static_cast<SearchJobState>(info.state), info.start, info.cursor, info.end,
+        std::vector<uint64_t>(count)};
+    memcpy(result.hits.data(), response.data + sizeof(info), count * sizeof(uint64_t));
+    return result;
+}
+}
+
+Result<SearchJobResult> Client::SearchStart(const SearchQuery& query) {
+    Request request{};
+    request.op = op::Search;
+    request.address = query.from;
+    request.args[0] = query.to;
+    request.args[1] = query.maxHits;
+    request.flags = (query.alignment & 0xFF) | (query.writableOnly ? SearchWritable : 0) |
+        (query.privateOnly ? SearchPrivate : 0) | (query.paged ? SearchPaged : 0) | SearchJobStart;
+    request.length = static_cast<uint32_t>(std::min(query.pattern.size(), sizeof(request.data)));
+    if (query.pattern.size() > MaxSearchPattern || Check(request) != Status::Ok)
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid search"});
+    memcpy(request.data, query.pattern.data(), request.length);
+    auto response = Send(request, Timeout());
+    if (!response) return std::unexpected(response.error());
+    return JobResult(*response);
+}
+
+Result<SearchJobResult> Client::SearchPoll(uint32_t id, bool stop) {
+    Request request{};
+    request.op = op::Search;
+    request.flags = stop ? SearchJobStop : SearchJobStatus;
+    request.args[0] = id;
+    if (Check(request) != Status::Ok)
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid search job id"});
+    auto response = Send(request, Timeout());
+    if (!response) return std::unexpected(response.error());
+    return JobResult(*response);
+}
+
 Result<SearchResult> Client::Xrefs(const XrefQuery& query, std::chrono::milliseconds timeout) {
     Request request{};
     request.op = op::Xrefs;

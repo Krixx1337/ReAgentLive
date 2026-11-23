@@ -30,9 +30,10 @@ struct Host {
     // open while it is Unset, so the claim is always deliberate. Clients
     // read it from the section; nothing checks it is true.
     HostThread thread = HostThread::Unset;
-    // Opt-in: lets `search --background` run on one agent-owned worker thread
-    // (started on first use, kept for the process). Off: the agent never
-    // starts threads and such searches are refused.
+    // Opt-in: lets search jobs and SearchBackground scans run on one
+    // agent-owned worker thread (started on first use, kept for the
+    // process). Off: the agent never starts threads; jobs scan in tick
+    // slices and SearchBackground scans are refused.
     bool backgroundSearch = false;
     // Hold (Request::hold): after answering a held request the agent spins
     // on this thread for up to holdWaitMicroseconds for the next request and
@@ -76,7 +77,8 @@ Progress Watch(const Request&, Response&, bool first, const Host&);
 Progress Trial(const Request&, Response&, bool first, const Host&);
 // Multi-tick: scans for at most SearchSliceMicroseconds per host tick, or,
 // with SearchBackground and a host that allows it, on the worker thread
-// while the host tick only polls.
+// while the host tick only polls. SearchJobStart, Status and Stop: the
+// search job (protocol.h), which runs between requests.
 Progress Search(const Request&, Response&, bool first, const Host&);
 constexpr int64_t SearchSliceMicroseconds = 2000;
 // What the memory at an address is (protocol.h): one VirtualQuery.
