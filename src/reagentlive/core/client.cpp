@@ -144,7 +144,12 @@ Result<Response> Client::Send(const Request& request, std::chrono::milliseconds 
         timeBeginPeriod(1);
         timerRaised_ = true;
     }
-    const uint32_t seq = std::atomic_ref(section_->requestSeq).load(std::memory_order_relaxed) + 1;
+    // Seqlock write (protocol.h): mark the slot first, so an agent still
+    // copying the previous request (one this client timed out on) sees it
+    // changed and drops its copy.
+    const uint32_t seq = NextRequestSeq(std::atomic_ref(section_->requestSeq).load(std::memory_order_relaxed));
+    std::atomic_ref(section_->requestSeq).store(RequestWriting, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
     memcpy(&section_->request, &request, sizeof(request));
     section_->request.hold = holdDepth_ ? RequestHold : 0;
     const int64_t sent = NowMicroseconds();

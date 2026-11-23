@@ -10,6 +10,12 @@
 // Fixed-size POD only: the client writes a request and bumps requestSeq; the
 // agent's tick answers and sets responseSeq to the same value. One request in
 // flight. No engine, game or Windows types.
+//
+// requestSeq is a seqlock: the client stores RequestWriting before it
+// overwrites the request and the new number after, and the agent re-reads
+// requestSeq after copying the request. After a timeout the client reuses
+// the slot while the agent may still pick up the old number; without this
+// the agent could copy half of each request and run it.
 namespace reagentlive {
 constexpr uint32_t Magic = 0x4b4c5644; // "DVLK"
 constexpr size_t MaxRead = 4096;
@@ -358,6 +364,14 @@ constexpr const char* HostThreadText(HostThread thread) {
 // label for the loaded build (Host::build), else the agent's compile time,
 // so a client can tell which build answers.
 constexpr size_t MaxBuildText = 48;
+constexpr uint32_t RequestWriting = 0; // requestSeq while the client overwrites the request; never a request's number.
+// The number after `last`, skipping RequestWriting.
+constexpr uint32_t NextRequestSeq(uint32_t last) { return last + 1 == RequestWriting ? last + 2 : last + 1; }
+// Whether requestSeq holds a request the agent has not handled yet.
+constexpr bool RequestPending(uint32_t seq, uint32_t handled) { return seq != RequestWriting && seq != handled; }
+// Bumped when a field's meaning changes but no size does (so the sizes alone
+// would not refuse a mismatched pair). 1: requestSeq is a seqlock.
+constexpr uint32_t ProtocolRevision = 1;
 struct Section {
     uint32_t magic, layout, agentPid, opCount;
     uint64_t heartbeat; // Agent ticks.
@@ -377,7 +391,7 @@ constexpr uint32_t LayoutCore = static_cast<uint32_t>(sizeof(Section) * 31 + siz
     sizeof(Response) * 3 + sizeof(ModuleEntry) * 13 + offsetof(Section, request) + offsetof(Request, text) * 5 +
     sizeof(ReadSpan) * 17 + sizeof(Guard) * 19 + sizeof(PinSpec) * 23 + sizeof(PinState) * 29 +
     sizeof(TrialSpec) * 37 + sizeof(TrialState) * 41 + sizeof(WatchSpec) * 43 + sizeof(WatchRowHeader) * 47 +
-    sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59);
+    sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59 + ProtocolRevision * 61);
 
 constexpr const char* StatusText(Status status) {
     switch (status) {

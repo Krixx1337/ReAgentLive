@@ -252,3 +252,34 @@ TEST_CASE("a span inside a hold reports its own first tick") {
     CHECK(hold.FirstTick() == first);
     CHECK(hold.LastTick() >= first + 2);
 }
+
+TEST_CASE("a request the client is still writing is never run") {
+    Client client = Attach();
+    REQUIRE(client.Read(reinterpret_cast<uint64_t>(&g_staticTarget), 4).has_value());
+    HANDLE mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, SectionName().c_str());
+    REQUIRE(mapping);
+    auto* section = static_cast<Section*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Section)));
+    REQUIRE(section);
+    std::atomic_ref requestSeq(section->requestSeq), responseSeq(section->responseSeq);
+    const uint32_t handled = requestSeq.load();
+    REQUIRE(responseSeq.load() == handled);
+    // Mid-write: the marker stands in requestSeq while the slot holds a new request.
+    requestSeq.store(RequestWriting);
+    section->request.op = op::Read;
+    section->request.address = reinterpret_cast<uint64_t>(&g_staticTarget);
+    section->request.length = 4;
+    Sleep(30); // Many agent ticks.
+    CHECK(responseSeq.load() == handled); // Not run, not answered.
+    requestSeq.store(handled);            // The write never finished: back to the last handled number.
+    UnmapViewOfFile(section);
+    CloseHandle(mapping);
+    CHECK(client.Read(reinterpret_cast<uint64_t>(&g_staticTarget), 4).has_value()); // The channel still works.
+}
+
+TEST_CASE("request numbers skip the write marker") {
+    CHECK(NextRequestSeq(5) == 6);
+    CHECK(NextRequestSeq(UINT32_MAX) == 1);
+    CHECK_FALSE(RequestPending(RequestWriting, 4));
+    CHECK_FALSE(RequestPending(4, 4));
+    CHECK(RequestPending(5, 4));
+}

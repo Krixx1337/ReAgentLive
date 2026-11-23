@@ -23,7 +23,7 @@ by name and never opens the target process itself.
 | `agentPid` | agent | process id of the target |
 | `opCount`, `ops` | agent, before `magic` | the op numbers the host's command table handles (up to 64) |
 | `heartbeat` | agent | incremented every `Tick`; a client derives the tick rate |
-| `requestSeq` | client | bumped after writing `request` |
+| `requestSeq` | client | `RequestWriting` (0) while it writes `request`, then the next number (never 0) |
 | `responseSeq` | agent | set to the handled `requestSeq` after writing `response` |
 | `owner` | agent | id of the agent instance that answers; a newer agent of the same protocol in the same process takes over and the older one stops ticking, after restoring its active trials once under their guards |
 | `takeovers` | agent | how many agents in this process were replaced |
@@ -36,14 +36,21 @@ Sequence, heartbeat, owner and takeovers fields are accessed only through `std::
 
 ```text
 client                                   agent (host thread, every Tick)
-write request, requestSeq++  ─────────►  requestSeq != last handled?
+requestSeq = RequestWriting
+write request, requestSeq = next ──────►  requestSeq not 0 and != last handled?
                                            no  → return
-                                           yes → copy request, run handler,
+                                           yes → copy request; requestSeq changed? drop it
+                                                 run handler,
 poll responseSeq             ◄─────────        write response, responseSeq = requestSeq
 read response                              request held? wait for the next one (budgets)
 ```
 
 - **One request in flight.** The agent copies the request before running it.
+- **A seqlock on the slot.** After a timeout the client reuses the slot
+  while the agent may still pick up the old number. The marker before the
+  write and the agent's re-read of `requestSeq` after its copy (behind an
+  acquire fence) mean a copy that overlapped a write is dropped, never run;
+  the newer request runs on the next tick.
 - **Hold.** A request with `hold = RequestHold` says more follow. After
   answering it, the agent spins on `requestSeq` for up to
   `Host::holdWaitMicroseconds` (default 200) and runs the next request in

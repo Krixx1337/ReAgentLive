@@ -122,6 +122,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **The Unreal pack's agent cannot crash on a guard page or hide a stack
   overflow:** its startup checks look at the memory region before reading,
   and name decoding catches only bad-memory faults.
+- **A request after a timeout can no longer run half-written:** the agent
+  could copy the shared request while the console overwrote it with the
+  next one, and run a mix of both (a write at the wrong address). The
+  request number is now a seqlock. Protocol change: rebuild and re-inject.
 - **A stale IDA loader loaded newer saves silently:** the loader now
   refuses a row kind it does not know and says to copy the new
   `reagentlive_ida.py`, instead of loading the file without its chunks or names.

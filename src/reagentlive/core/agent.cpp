@@ -923,6 +923,10 @@ Progress Invoke(const Command& command, bool first, const Host& host) {
 bool RunNew(const Host& host, std::span<const Command> commands, uint32_t seq) {
     g_active = nullptr;
     memcpy(&g_state->request, &g_section->request, sizeof(Request));
+    // Seqlock read (protocol.h): the client rewrote the slot while it was
+    // copied, so the copy may be half of each. The newer one runs next tick.
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if (std::atomic_ref(g_section->requestSeq).load(std::memory_order_relaxed) != seq) return false;
     g_state->response = {};
     g_state->response.status = Status::Ok;
     const Command* command = nullptr;
@@ -961,7 +965,7 @@ void Tick(const Host& host, std::span<const Command> commands) {
         std::atomic_ref(g_section->hostThread).store(static_cast<uint32_t>(host.thread), std::memory_order_relaxed);
     TickServices(host);
     uint32_t seq = std::atomic_ref(g_section->requestSeq).load(std::memory_order_acquire);
-    if (seq == g_handled) return;
+    if (!RequestPending(seq, g_handled)) return;
     if (g_active && g_activeSeq == seq) {
         if (Invoke(*g_active, false, host) == Progress::Continue) return;
         Finish(host, seq, g_active->name, g_active->logSuccess);
@@ -975,10 +979,10 @@ void Tick(const Host& host, std::span<const Command> commands) {
     while (g_state->request.hold == RequestHold && host.holdWaitMicroseconds && host.holdTickMicroseconds) {
         const int64_t now = Microseconds();
         const int64_t waitEnd = std::min(now + int64_t{host.holdWaitMicroseconds}, tickEnd);
-        while ((seq = std::atomic_ref(g_section->requestSeq).load(std::memory_order_acquire)) == g_handled &&
+        while (!RequestPending(seq = std::atomic_ref(g_section->requestSeq).load(std::memory_order_acquire), g_handled) &&
                Microseconds() < waitEnd)
             YieldProcessor();
-        if (seq == g_handled || !RunNew(host, commands, seq) || Microseconds() >= tickEnd) return;
+        if (!RequestPending(seq, g_handled) || !RunNew(host, commands, seq) || Microseconds() >= tickEnd) return;
     }
 }
 }
