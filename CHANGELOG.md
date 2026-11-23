@@ -104,6 +104,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **A session context limit:** `--context-limit <chars>` (console and MCP
+  adapter; default 400,000, `0` none) is a soft limit on what a tool
+  caller's session puts into an agent's context. Past it every envelope
+  carries `context_warning` (the MCP tools add it as a second text block,
+  the Python session as `s.context_warning`); `usage` shows `context`.
+  Nothing stops ([console](docs/commands/console.md#usage-log-and-usage)).
 - **Decompile live functions without a whole-image database:** `disasm`
   with `function` lists a whole function (up to 2,048 instructions, the
   value each read-only constant load reads, a `strings` summary), and

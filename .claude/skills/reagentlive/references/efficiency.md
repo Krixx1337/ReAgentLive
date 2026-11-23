@@ -1,6 +1,6 @@
 # Efficiency: fewer calls, smaller output
 
-Budgets and digests: `docs/commands/console.md#fewer-round-trips`;
+The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 `usage`: `docs/commands/console.md#usage-log-and-usage`.
 
 ## Fewer calls
@@ -36,6 +36,9 @@ Budgets and digests: `docs/commands/console.md#fewer-round-trips`;
   already written (open it, do not repeat the call), and `next` there is
   where a cut listing resumes.
 - Raise `max_chars` only for what `next` cannot narrow.
+- A `context_warning` on a result: this session is past its context
+  limit. Stop reading wide results: narrow every call, summarise in a
+  script, or hand off to a fresh session.
 
 ## Measure the session
 

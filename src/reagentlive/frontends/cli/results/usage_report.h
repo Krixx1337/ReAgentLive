@@ -71,6 +71,17 @@ struct UsageCall {
         v("digest", &UsageCall::digest);
     }
 };
+// usage of one session: the characters that reached an agent (caller
+// tool) and the console's soft limit on them (--context-limit).
+struct UsageContext {
+    uint64_t chars = 0, limit = 0;
+    bool over = false;
+    template<class V> static void Describe(V& v) {
+        v("chars", &UsageContext::chars);
+        v("limit", &UsageContext::limit);
+        v("over", &UsageContext::over);
+    }
+};
 // usage with sessions: one session of the log.
 struct UsageSession {
     std::string session, since, until;  // Its first and last call.
@@ -100,6 +111,7 @@ struct UsageReport {
     std::vector<UsageCall> largest;
     std::optional<std::vector<std::string>> neverCalled;
     std::optional<std::vector<UsageSession>> sessionRows;
+    std::optional<UsageContext> context;
     template<class V> static void Describe(V& v) {
         v("session", &UsageReport::session);
         v("sessions", &UsageReport::sessions);
@@ -109,6 +121,7 @@ struct UsageReport {
         v("largest", &UsageReport::largest);
         v("never_called", &UsageReport::neverCalled);
         v("session_rows", &UsageReport::sessionRows);
+        v("context", &UsageReport::context);
     }
 };
 }
@@ -123,6 +136,24 @@ inline bool IsFilter(std::string_view key) {
 }
 }
 constexpr size_t UsageLargestCalls = 5;
+// --context-limit's default: characters a session may put into an agent's
+// context before every result carries a warning. Soft: nothing stops.
+constexpr uint64_t DefaultContextLimit = 400000;
+
+// What a session's results put into an agent's context: the output of its
+// tool-caller lines.
+inline uint64_t ContextChars(std::span<const UsageLine> lines, std::string_view session) {
+    uint64_t chars = 0;
+    for (const auto& line : lines)
+        if (line.session == session && line.caller == "tool") chars += line.out;
+    return chars;
+}
+// The one line each envelope carries past the limit (`context_warning`).
+inline std::string ContextWarning(uint64_t chars, uint64_t limit) {
+    return "this session put " + std::to_string(chars) + " characters into the agent's context, past context_limit " +
+        std::to_string(limit) + ": narrow calls (view.fields, view.limit, filters), follow a digest's next, or start a "
+        "new session";
+}
 // A call printed at most this many characters is never `unfiltered`: a filter would not have saved much.
 constexpr uint64_t UsageUnfilteredChars = 2000;
 
@@ -263,16 +294,23 @@ inline shape::UsageReport MakeSessionList(std::span<const UsageLine> lines, std:
 struct UsageQuery {
     bool all = false, sessions = false;
     std::string session;
+    uint64_t contextLimit = 0;      // The console's --context-limit (0: none), shown with one session.
 };
 inline std::expected<shape::UsageReport, std::string> UsageFor(std::span<const UsageLine> lines, std::span<const Verb> verbs,
                                                          const UsageQuery& query, std::optional<std::string> current) {
     if (query.sessions) return MakeSessionList(lines, verbs);
     if (query.all) return MakeUsage(lines, std::nullopt, verbs);
+    const auto one = [&](const std::string& session) {
+        auto report = MakeUsage(lines, session, verbs);
+        const uint64_t chars = ContextChars(lines, session);
+        report.context = shape::UsageContext{chars, query.contextLimit, query.contextLimit && chars > query.contextLimit};
+        return report;
+    };
     if (!query.session.empty()) {
         if (std::ranges::none_of(lines, [&](const UsageLine& line) { return line.session == query.session; }))
             return std::unexpected("no session '" + query.session + "' in the usage log (usage with sessions lists them)");
-        return MakeUsage(lines, query.session, verbs);
+        return one(query.session);
     }
-    return MakeUsage(lines, current ? *current : LatestSession(lines), verbs);
+    return one(current ? *current : LatestSession(lines));
 }
 }

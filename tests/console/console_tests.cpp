@@ -1187,3 +1187,20 @@ TEST_CASE("a map of structs past 512 bytes decodes in get; one with no stride na
     CHECK(entries["error"]["kind"] == "validation");
     CHECK(entries["error"]["message"].get<std::string>().find("get the field") != std::string::npos);
 }
+
+TEST_CASE("past --context-limit a tool caller's every envelope carries context_warning; nothing stops") {
+    const auto calls = CallsText({CallOf("status"), CallOf("modules")});
+    const auto over = RunWith(calls, {L"--caller", L"tool", L"--context-limit", L"10"});
+    REQUIRE(over.size() == 2);
+    for (const auto& record : over) {
+        CHECK(record.value("ok", false));                                       // Never a stop.
+        REQUIRE(record.contains("context_warning"));
+        CHECK(record["context_warning"].get<std::string>().find("context_limit 10") != std::string::npos);
+    }
+    for (const auto& record : RunWith(calls, {L"--caller", L"tool"}))           // The default: far above two results.
+        CHECK_FALSE(record.contains("context_warning"));
+    for (const auto& record : RunWith(calls, {L"--caller", L"tool", L"--context-limit", L"0"}))  // 0: no limit.
+        CHECK_FALSE(record.contains("context_warning"));
+    for (const auto& record : RunWith(calls, {L"--context-limit", L"10"}))       // A shell's output is no context.
+        CHECK_FALSE(record.contains("context_warning"));
+}

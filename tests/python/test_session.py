@@ -56,6 +56,9 @@ DIGEST = {'chars': 90000, 'max_chars': 25000, 'rows': {'path': 'rows', 'count': 
           'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['view.match', 'view.fields', 'view.limit'],
           'next': json.dumps({'verb': 'rows', 'args': {'object': '0x10#1:1', 'view': {'fields': [['Cost']], 'limit': 40}}})}
 
+# A session past the console's --context-limit: every envelope carries one line.
+WARNING = 'this session put 400100 characters into the agent context, past context_limit 400000: narrow calls'
+
 # Replies by call: [call as the client sends it, reply].
 CALLS = [
     [C('rows', {'object': '0x10#1:1'}), {'ok': True, 'digest': DIGEST}],
@@ -135,6 +138,7 @@ CALLS = [
                                                        'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
+    [C('describe', {'index': 5, 'serial': 9}), dict(ok(dict(OBJECT, class_size=1264)), context_warning=WARNING)],
     [C('get', {'object': REF, 'paths': [['A', 'B']]}), ok({'ref': REF, 'same_tick': True, 'rows': [
         {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF}]})],
     [C('get', {'object': REF, 'paths': [['A', 'B'], ['C']]}), ok({'ref': REF, 'same_tick': True, 'rows': [
@@ -230,6 +234,12 @@ class SessionTests(unittest.TestCase):
             if reply['ok'] and 'result' in reply:
                 problems += conforms(reply['result'], self.rows[call['verb']]['type'], call['verb'], self.table['types'])
         self.assertEqual(problems, [])
+
+    def test_a_session_past_its_context_limit_carries_the_warning(self):
+        self.assertEqual(self.c.ue.describe(index=5, serial=9)['class_size'], 1264)   # The result is whole: no stop.
+        self.assertEqual(self.session.context_warning, WARNING)
+        self.c.modules()
+        self.assertIsNone(self.session.context_warning)               # Each call sets it again.
 
     def test_a_result_past_its_max_chars_is_a_digest(self):
         digest = self.session.call('rows', {'object': REF}, max_chars=25000)

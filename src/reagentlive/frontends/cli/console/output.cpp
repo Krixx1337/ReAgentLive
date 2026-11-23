@@ -25,6 +25,7 @@
 #include <vector>
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/results/budget.h"
+#include "reagentlive/frontends/cli/results/usage_report.h"
 #include "reagentlive/frontends/cli/results/verbs.h"
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/call/build.h"
@@ -121,6 +122,15 @@ void PrintJson(Session& session, Json record) {
     }
     std::string text = Text(record);
     budgeted(text);
+    // A tool caller's session past --context-limit: every envelope says so, on one line. Never a stop.
+    if (session.usage.caller == "tool" && !session.usage.internal) {
+        const uint64_t chars = session.usage.contextChars + text.size() + 1;
+        if (session.usage.contextLimit && chars > session.usage.contextLimit && record.is_object()) {
+            record["context_warning"] = ContextWarning(chars, session.usage.contextLimit);
+            text = Text(record);
+        }
+        session.usage.contextChars += text.size() + 1;
+    }
     Count(session, record, text.size() + 1);
     std::puts(text.c_str());
     std::fflush(stdout);

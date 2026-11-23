@@ -51,7 +51,10 @@ inline const std::vector<Verb>& CoreVerbs() {
             "an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by "
             "error kind; one refused for its pack is not in calls_by_pack). A batch's "
             "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
-            "sessions as session_rows, with totals over the whole log."},
+            "sessions as session_rows, with totals over the whole log. One session's report adds context: chars "
+            "(what its tool-caller results put into an agent's context), limit (the console's --context-limit, "
+            "default 400000; 0: none) and over; past it every envelope a tool caller gets carries context_warning, "
+            "one line. Nothing stops: max_chars stays the per-result cap."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
             {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,
@@ -305,7 +308,8 @@ inline const std::vector<std::string>& GeneralNotes() {
         "meta prints struct values with their layout; timing adds trips, wait_ms and total_ms.",
         "A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with "
         "its largest parts and next, the call narrowed (or file, for a call that must not run again). max_chars sets "
-        "the limit, big lifts it.",
+        "the limit, big lifts it. Past the session's --context-limit (default 400000 characters to a tool caller) "
+        "each envelope also carries context_warning; usage shows the total.",
         "One console per agent: a second one is refused as busy.",
         "The module list and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
         "One-shot: <console> [pid] -c '<call or list of calls>' (or -c @<file>, one call per line) emits JSON Lines.",

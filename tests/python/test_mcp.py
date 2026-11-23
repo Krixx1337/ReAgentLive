@@ -53,6 +53,8 @@ class McpTests(unittest.TestCase):
             json.dump({'table': table, 'calls': [
                 [call('find', {'text': 'A'}), {'ok': True, 'result': {'rows': [OBJECT], 'total': 1, 'from': 0}}],
                 [call('describe', {'object': REF}), {'ok': True, 'result': OBJECT}],
+                [call('describe', {'index': 5, 'serial': 9}), {'ok': True, 'result': OBJECT,
+                                                                 'context_warning': 'past context_limit 10'}],
                 [call('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'modules'}]}), {'ok': True, 'result': {
                     'all_ok': True, 'same_tick': True, 'first_tick': 4, 'last_tick': 4, 'spans_ticks': [], 'rows': [
                         {'command': 'describe', 'ok': True, 'result': OBJECT, 'tick': 4},
@@ -238,6 +240,14 @@ class McpTests(unittest.TestCase):
         self.assertIn('len: 5000 is past 4096; example: read {"addr": "0x10", "len": 4096}', refused.content[0].text)
         self.assertIn('"kind": "schema"', refused.content[0].text)   # The error object, not only its message.
         self.assertIn('"key": "len"', refused.content[0].text)
+
+    def test_a_session_past_its_context_limit_adds_the_warning_beside_the_result(self):
+        async def body(client):
+            return await client.call_tool('ue_describe', {'index': 5, 'serial': 9})
+        warned = self.run_client(body)
+        self.assertFalse(warned.is_error, warned.content[0].text)
+        self.assertEqual(warned.structured_content['ref'], REF)          # The result itself is unchanged.
+        self.assertEqual(warned.content[1].text, 'Context warning: past context_limit 10')
 
     def test_a_result_past_its_max_chars_is_a_digest_with_the_call_to_make(self):
         open(self.log, 'w').close()

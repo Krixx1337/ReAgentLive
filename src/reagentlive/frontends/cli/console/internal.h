@@ -50,6 +50,10 @@ struct Usage {
     // caller: a one-shot run's own, else the one loaded (PickSession).
     std::string handoff, handoffCaller;
     bool internal = false;                  // A verb's own calls (ExecuteLine): no line; their output is the verb's.
+    // --context-limit (0: none) and what this session's results put into an
+    // agent's context so far: the log's tool lines at start, then each printed
+    // envelope of this run when the caller is tool.
+    uint64_t contextLimit = 0, contextChars = 0;
 };
 // The line being run: its output so far and how it ended. A batch's items
 // add their own output to `inner`, so the batch's line keeps its wrapper alone.

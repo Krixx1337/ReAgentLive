@@ -33,7 +33,8 @@ A result past the call's cap (`max_chars=N` characters; a session
 started with caller='tool' has one by default) comes back as a Digest
 instead: its size, its largest parts and `next`, the call narrowed, or
 `file`, where the console kept the whole result of a call that must not run
-again.
+again. Past the console's `--context-limit` (a tool caller's session total) every call also sets
+`s.context_warning`, one line; else it is None.
 
 `Session(console, packs=['explore', 'native'])` runs the console with that
 ceiling (`--packs`): a verb of another tool pack, through a generated
@@ -238,6 +239,8 @@ class Session:
                                          stdout=subprocess.PIPE, stderr=self._stderr, text=True, bufsize=1)
         self._types = {}
         self.digest = None  # The last call's Digest (its result was past max_chars), or None.
+        # The last call's context_warning (the session is past the console's --context-limit), or None.
+        self.context_warning = None
         try:
             if table is not None:
                 current = self.send(_line('help', {'hash': True}))
@@ -334,6 +337,7 @@ class Session:
             call['max_chars'] = max_chars
         envelope = self.send(json.dumps(call, separators=(',', ':')))
         self.digest = Digest(envelope['digest']) if 'digest' in envelope else None
+        self.context_warning = envelope.get('context_warning')
         if not envelope.get('ok'):
             raise ReAgentLiveError(verb, envelope.get('error'))
         return self.digest if self.digest is not None else self.wrap(verb, envelope.get('result', {}))

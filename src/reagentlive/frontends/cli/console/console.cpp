@@ -79,14 +79,15 @@ std::string ReadFile(const std::filesystem::path& path) {
 
 // usage from the log; `current` is this run's session, nullopt with no target.
 std::expected<shape::UsageReport, std::string> BuildUsage(const std::filesystem::path& path, std::span<const Verb> verbs,
-                                                    const Command& command, std::optional<std::string> current) {
+                                                    const Command& command, std::optional<std::string> current,
+                                                    uint64_t contextLimit) {
     const auto lines = path.empty() ? std::vector<UsageLine>{} : ParseUsage(ReadFile(path));
-    return UsageFor(lines, verbs, {command.all, command.listSessions, command.target}, std::move(current));
+    return UsageFor(lines, verbs, {command.all, command.listSessions, command.target, contextLimit}, std::move(current));
 }
 }
 
 void RunUsage(Session& session, const Command& command, std::string_view jsonCommand) {
-    auto stats = BuildUsage(session.usage.path, session.verbs, command, session.usage.session);
+    auto stats = BuildUsage(session.usage.path, session.verbs, command, session.usage.session, session.usage.contextLimit);
     if (!stats) return JsonError(session, jsonCommand, ErrorKind::Validation, stats.error());
     Emit(session, jsonCommand, std::move(*stats));
 }
@@ -709,7 +710,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
 // target (kind startup, or busy while another client holds the agent) and
 // ends the console, so a client starts it again. Nothing is recorded.
 int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, const std::string& hash,
-               const std::filesystem::path& usagePath, const std::vector<std::string>* lines,
+               const std::filesystem::path& usagePath, uint64_t contextLimit, const std::vector<std::string>* lines,
                const std::function<bool(std::string&)>& readStdin, ErrorKind kind, std::string_view why) {
     const auto print = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
@@ -750,7 +751,7 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
             }
             break;
         case Kind::Usage:
-            if (auto stats = BuildUsage(usagePath, verbs, *parsed, std::nullopt)) print(ResultEnvelope(name, ToJson(*stats)));
+            if (auto stats = BuildUsage(usagePath, verbs, *parsed, std::nullopt, contextLimit)) print(ResultEnvelope(name, ToJson(*stats)));
             else {
                 print(ErrorEnvelope(name, ErrorKind::Validation, stats.error()));
                 failed = 1;
@@ -811,7 +812,8 @@ using namespace detail;
 
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     constexpr const char* usage = "Usage: <console> [pid] [-c '<call or list of calls>' | -c @<file>] [--names <file>] "
-        "[--caller tool|script|shell] [--session <id>] [--no-usage] [--packs explore,native,observe,modify] [--check]";
+        "[--caller tool|script|shell] [--session <id>] [--context-limit <chars>] [--no-usage] "
+        "[--packs explore,native,observe,modify] [--check]";
     // Before a session exists: print the envelope directly.
     const auto printStartup = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
@@ -827,6 +829,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     bool namesRequired = false, record = true, check = false;
     ToolPackSet toolPacks = AllToolPacks;
     std::string caller = "shell", sessionId;
+    uint64_t contextLimit = DefaultContextLimit;
     wchar_t module[MAX_PATH];
     if (const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH); length && length < MAX_PATH) {
         if (!config.namesFile.empty()) namesFile = std::filesystem::path(module).parent_path() / config.namesFile;
@@ -869,6 +872,12 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             if (value.empty() || value.size() > 64 || !std::ranges::all_of(value, plain))
                 return startupError("--session is 1 to 64 letters, digits, '-', '_' or '.'");
             for (const wchar_t c : value) sessionId += static_cast<char>(c);
+        } else if (arg == L"--context-limit" && i + 1 < argc) {
+            // The session's soft limit on characters reaching an agent (0: none).
+            const std::wstring_view value(argv[++i]);
+            if (value.empty() || value.size() > 12 || !std::ranges::all_of(value, [](wchar_t c) { return c >= L'0' && c <= L'9'; }))
+                return startupError("--context-limit is a number of characters (0: none)");
+            contextLimit = std::stoull(std::wstring(value));
         } else if (arg == L"--no-usage") {
             record = false;
         } else if (arg == L"--check") {
@@ -906,7 +915,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     if (check) return RunCheck(verbs, lines, readStdin);
     const auto offline = [&](std::string_view why, ErrorKind kind = ErrorKind::Startup) {
         if (!oneShot) std::fprintf(stderr, "  no target: help and usage only (%.*s)\n", static_cast<int>(why.size()), why.data());
-        return RunOffline(verbs, origins, tableHash, usagePath, lines, readStdin, kind, why);
+        return RunOffline(verbs, origins, tableHash, usagePath, contextLimit, lines, readStdin, kind, why);
     };
     if (oneShot && OfflineOnly(*oneShot)) return offline("");
     if (!pid) pid = FindProcess(config.exeName);
@@ -962,6 +971,11 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     session.usage.session = std::move(pick.session);
     session.usage.handoff = std::move(pick.handoff);
     session.usage.handoffCaller = std::move(pick.handoffCaller);
+    session.usage.contextLimit = contextLimit;
+    // What this session already put into an agent's context: a client that
+    // starts a console per call (the MCP adapter) keeps one session.
+    if (caller == "tool" && session.usage.record)
+        session.usage.contextChars = ContextChars(ParseUsage(ReadFile(usagePath)), session.usage.session);
     size_t next = 0;
     std::string line;
     const auto nextLine = [&] {

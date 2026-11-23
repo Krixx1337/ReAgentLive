@@ -632,24 +632,25 @@ inline std::string CallsText(std::initializer_list<Json> calls) {
 
 // One console run over `calls` (-c: one JSON call or a JSON list of them):
 // its JSON lines. `packs`: the console's --packs (empty: not given, all packs).
-inline std::vector<Json> RunLines(const std::string& calls, const std::string& packs = {}) {
+// The console run on `calls` (one -c text) with --no-usage and `extra` arguments; its records.
+inline std::vector<Json> RunWith(const std::string& calls, std::vector<std::wstring> extra) {
     TheAgent();
     static const std::wstring prefix = SectionPrefix(); // The config keeps a view of it.
     static const reagentlive::cli::ConsoleConfig config{prefix, L"", Layout};
     const auto out = std::filesystem::temp_directory_path() /
         (L"reagentlive-fake-" + std::to_wstring(GetCurrentProcessId()) + L".out");
-    std::wstring wide(calls.begin(), calls.end()); // The console takes ASCII -c text only.
-    std::wstring pid = std::to_wstring(GetCurrentProcessId());
-    std::wstring program = L"console", noUsage = L"--no-usage", dashC = L"-c", packsFlag = L"--packs";
-    std::wstring packsList(packs.begin(), packs.end());
-    wchar_t* argv[] = {program.data(), pid.data(), noUsage.data(), dashC.data(), wide.data(), packsFlag.data(), packsList.data()};
+    std::vector<std::wstring> words = {L"console", std::to_wstring(GetCurrentProcessId()), L"--no-usage", L"-c",
+        std::wstring(calls.begin(), calls.end())}; // The console takes ASCII -c text only.
+    for (auto& word : extra) words.push_back(std::move(word));
+    std::vector<wchar_t*> argv;
+    for (auto& word : words) argv.push_back(word.data());
     std::fflush(stdout);
     const int saved = _dup(_fileno(stdout));
     FILE* file = nullptr;
     _wfopen_s(&file, out.c_str(), L"wb");
     REQUIRE(file);
     _dup2(_fileno(file), _fileno(stdout));
-    reagentlive::cli::RunConsole(config, packs.empty() ? 5 : 7, argv);
+    reagentlive::cli::RunConsole(config, static_cast<int>(argv.size()), argv.data());
     std::fflush(stdout);
     _dup2(saved, _fileno(stdout));
     _close(saved);
@@ -659,6 +660,10 @@ inline std::vector<Json> RunLines(const std::string& calls, const std::string& p
     for (std::string line; std::getline(in, line);)
         if (!line.empty() && line.front() == '{') records.push_back(Json::parse(line));
     return records;
+}
+inline std::vector<Json> RunLines(const std::string& calls, const std::string& packs = {}) {
+    if (packs.empty()) return RunWith(calls, {});
+    return RunWith(calls, {L"--packs", std::wstring(packs.begin(), packs.end())});
 }
 // One call's result (`call`: its JSON text), which must be ok.
 inline Json Result(const std::string& call) {

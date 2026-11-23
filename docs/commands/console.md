@@ -244,12 +244,12 @@ baselines and last `get` `snap` from the [cache file](#fewer-round-trips)
 ([across runs](capture.md)). Literal refs always work. Without `-c`, send one JSON call (or list) per
 stdin line. The console keeps the baseline until EOF or `quit`.
 
-Console arguments: `<console> [pid] [-c '{...}' | -c @<file>] [--names <file>] [--caller tool|script|shell] [--session <id>] [--no-usage] [--packs <list>] [--check]`.
+Console arguments: `<console> [pid] [-c '{...}' | -c @<file>] [--names <file>] [--caller tool|script|shell] [--session <id>] [--context-limit <chars>] [--no-usage] [--packs <list>] [--check]`.
 `--check` attaches to nothing: each call (from `-c` or stdin) is checked as
 it would be before it runs (schema, builder, a `batch`'s calls, a plan
 step's `expect` and `repeat`; any `{"module": ...}` counts as loaded) and
 answered `{"checked": true}` or with its refusal.
-`--caller`, `--no-usage` and the session option (`<console> --session <id>`) are the
+`--caller`, `--no-usage`, `--context-limit` and the session option (`<console> --session <id>`) are the
 [usage log](#usage-log-and-usage)'s. `--names <file>` loads a
 [names file](unreal-fields.md#readable-names).
 
@@ -319,6 +319,15 @@ the generated functions, the MCP tools), so one log covers them
   is read), whatever the size.
 - **Refused calls** count under `refused`; they never get `unfiltered`, and
   one refused for its pack does not count in `calls_by_pack`.
+- **Context limit:** a session's `tool` output is what reached an
+  agent's context. `--context-limit <chars>` (default 400,000; `0`: none)
+  is a soft limit on it: a `--caller tool` console reads its session's
+  total from the log at start (a client that starts a console per call,
+  as the MCP adapter does, keeps one session) and adds what it prints;
+  past the limit every envelope carries `context_warning`, one line
+  naming the total and the limit. Nothing stops: `max_chars` stays the
+  per-result cap. `usage` of one session shows `context` (`chars`,
+  `limit`, `over`).
 - **Capped:** past 4 MB the oldest sessions are dropped when a console
   starts, down to three quarters of that. `usage` with `all` gives
   `since`, the oldest line kept.

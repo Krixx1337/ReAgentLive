@@ -1165,6 +1165,18 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     // Neither: the current session, else the log's latest.
     CHECK(UsageFor(lines, AllVerbs(), {}, std::string("old"))->session == "old");
     CHECK(UsageFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
+
+    // context: one session's tool output against the console's --context-limit.
+    const auto within = UsageFor(lines, AllVerbs(), {false, false, {}, 400000}, std::string("new"));
+    REQUIRE(within->context.has_value());
+    CHECK(within->context->chars == 20900);
+    CHECK(within->context->limit == 400000);
+    CHECK_FALSE(within->context->over);
+    const auto past = UsageFor(lines, AllVerbs(), {false, false, {}, 20000}, std::string("new"));
+    CHECK(past->context->over);
+    CHECK(ContextChars(lines, "old") == 0);                    // A shell's output is no context.
+    CHECK_FALSE(list->context.has_value());                    // sessions and all: no one session's context.
+    CHECK(ContextWarning(20900, 20000).find("past context_limit 20000") != std::string::npos);
 }
 
 TEST_CASE("a layout line round-trips and names the first thing that differs") {

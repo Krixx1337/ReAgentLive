@@ -153,7 +153,9 @@ module calls through it; scripts use it for the rest.
   result of a call that must not run again
   ([result cap](commands/console.md#fewer-round-trips)). A session
   started with `caller='tool'` has the console's tool cap by
-  default; `'script'` has none.
+  default; `'script'` has none. `s.context_warning` is the last call's
+  `context_warning` (a tool caller's session past the console's
+  `--context-limit`), else `None`.
 - `Session(console, args, caller='script')` starts the console with
   `--caller`: its [usage log](commands/console.md#usage-log-and-usage)
   counts a script's output apart from an agent's context. Pass
@@ -184,7 +186,8 @@ in checked, named arguments instead of writing a command line:
 
 ```
 python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--output-schemas compact|off]
-                          [--packs explore,native] [--allow observe,modify] [-- <console args: pid, --names <file>>]
+                          [--packs explore,native] [--allow observe,modify] [--context-limit <chars>]
+                          [-- <console args: pid, --names <file>>]
 ```
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
@@ -256,7 +259,10 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   ([result cap](commands/console.md#fewer-round-trips)).
 - **Usage:** every console runs with `--caller tool` and one session id
   per server, so `usage` counts every tool result as context and groups
-  the server's calls. Each result goes to the client twice, as text and
+  the server's calls. `--context-limit` goes to every console
+  ([context limit](commands/console.md#usage-log-and-usage)): past it a
+  result's text gets a second block, `Context warning: ...`, and the
+  result itself is unchanged. Each result goes to the client twice, as text and
   as structured content.
 - **A smaller tool list:** a client that loads every tool up front pays
   for the whole list before any work, so result schemas are `compact`
