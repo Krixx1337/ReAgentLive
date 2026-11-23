@@ -209,7 +209,8 @@ inline const std::vector<Verb>& CoreVerbs() {
                {"callees", "int", "also save the functions it calls or tail-jumps to, this many levels deep (1..3)"},
                {"labels", "file", "name from this labels file (default: the console's and the host's names file)"}}},
              {"follow", "bool", "step through up to 3 unconditional direct jumps"}},
-            Of<shape::Disasm>, build::Disasm, "Rows carry rva, bytes, text, targets, string hints, import names and the "
+            Of<shape::Disasm>, build::Disasm, "An answer about one address: the default count stays small, and a whole "
+            "function or more belongs in a save file for a static tool (save), not in a reply. Rows carry rva, bytes, text, targets, string hints, import names and the "
             "value a read-only [rip + disp] load reads; the listing names the module once. meta adds each row's module "
             "and address fields. function lists to the function's end, up to 2048 "
             "instructions or 16 KB (a cut gives next: continue with resume), with compact rows (no bytes, rva on the "

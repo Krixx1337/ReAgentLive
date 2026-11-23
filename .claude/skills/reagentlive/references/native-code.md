@@ -46,20 +46,27 @@ Answer one-address questions live, with no database:
   import the labels again. The first auto-analysis of a large Unreal image
   is slow: start it early. Decompiling from a session needs the tool
   running with its bridge plugin.
-- **No database of this build, or not worth one:**
-  `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "fn.json", "callees": 1}}}`
-  (named from the console's and host's labels) and the IDA
-  loader (`src/reagentlive/frontends/ida/reagentlive_ida.py`) give the function,
-  its chunks and callees in seconds; decompile all in one Python call,
-  `add_saved` the next save
-  (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`). Save
-  from the function's start.
+- **No database of this build, or not worth one: one call per question.**
+  In the workspace database, the loader's `fetch` with the address, a
+  `decompile_dir` and a `grep` runs the console's save (the console from
+  `REAGENTLIVE_CONSOLE`), adds it, types
+  `Class *this` from the save's layout rows and writes the `.c` files; read
+  its summary, open only the files it points to
+  (`docs/commands/fast-lane.md#from-an-address-to-pseudocode-in-one-call`).
+  Follow a chain hop by hop: the next address from the pseudocode, one
+  `fetch` each. `depth` 2 or 3 only when the callees matter; its summary
+  says what the depth or caps left out. A `FetchError` carries the console's
+  refusal: fix the call it names. When IDA cannot run the console, save by
+  hand:
+  `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "fn.json", "callees": 1}}}`,
+  then `add_saved` it. Save from the function's start.
   A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved (a jump
   table, a target past the cap): save it, `add_saved` it. A typed-pointer index
   (`p[27]`) is offset = index × size.
-- For `this->Field` in place of `*(a1 + 0x2c4)`: `layout-export` the
-  classes involved with `closure`, `import_layouts` and `apply_this` in the workspace
-  database. Many functions: `decompile_to` with a `grep`, read the summary,
+- For `this->Field` in place of `*(a1 + 0x2c4)`: a save brings the layouts
+  of classes its labels name (`Class_Method`); for others, `layout-export`
+  the classes with `closure`, `import_layouts` and `apply_this` in the
+  workspace database. Many functions: `decompile_to` with a `grep`, read the summary,
   open only the files it points to.
 
 ## One workspace database per investigation

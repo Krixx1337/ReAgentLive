@@ -104,6 +104,10 @@ of one is unreadable, up to the page end and on from there.
   limit or the function end, or into unreadable memory end it with `end`
   {`address`, `offset` (bytes listed before it), `reason`}, never a guess.
 - No summary of what a function does, no names beyond `string` and `import`.
+- **Small answers, big listings in files.** The default `count` stays
+  small: `disasm` answers about one address. A whole function or more goes
+  to a save file for the static tool (`save`), not into a reply an agent
+  reads.
 
 ### Saving a function for a static tool
 
@@ -420,7 +424,11 @@ walking references one address at a time:
 | A stub that only jumps → the real body | `disasm` with `follow` |
 
 Running that chain over every table is a script over the Python client, or
-the static tool's job, not a command.
+the static tool's job, not a command. No verb learns a reference chain:
+`run` executes a plan of calls and stays a generic runner, and `fetch`
+in IDA takes the addresses a hop gave and returns their pseudocode, one hop
+at a time. Callee depth stops at 3, inside the save's caps, with what it
+left out in `skipped`: past that, the call graph is the static tool's.
 
 ## Signatures
 

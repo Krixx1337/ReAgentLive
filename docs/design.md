@@ -647,7 +647,7 @@ database:
 | What points here? | `xrefs` |
 | Which code near here uses these member offsets? | `touches` |
 | Is this pattern unique, and does it land here? | `sig-check` |
-| Decompile this function and what it calls | `disasm` with `function` and `save` (`callees`), then the static tool |
+| Decompile this function and what it calls | `fetch` in IDA: `disasm` with `function` and `save` (`callees`), added and decompiled in one call |
 
 - **The fence is invasiveness, not size.** Anything that reads live bytes
   and hands its result on is in scope, however much analysis it does:
@@ -671,7 +671,11 @@ database:
   database of the whole image takes hours, a save seconds. Measured on a
   packed image: a handler and 16 callees in one save (0.75 s) and three tool
   calls to readable pseudocode, against about forty for seven functions one
-  at a time.
+  at a time. `fetch` makes it one call from IDA (the console's save,
+  `add_saved`, `decompile_to`), and the save carries the layouts of its
+  methods' classes, so `this->Field` shows in the first decompile. Callees
+  go at most 3 levels deep inside the save's caps: deeper is a call graph,
+  the static tool's job.
 - **Function bounds** come from the exception directory, a table lookup.
   Code it leaves out is never called a function: `xrefs` and `touches`
   label it `unlisted`, with the bounds of the piece between returns and
