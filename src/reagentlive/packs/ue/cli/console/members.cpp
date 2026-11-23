@@ -54,7 +54,7 @@ void RunLabel(Session& session, const Command& command, std::string_view jsonCom
     Client& client = session.client;
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, ErrorKind::Validation, message); };
     if (Ue(session).nativeFile.empty()) return fail("no native file: the console's path is unknown");
-    if (!client.Supports(ue::op::Fields)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "label needs an agent with fields");
+    if (!client.Supports(ue::op::Fields)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "member-name needs an agent with fields");
     Ref object = ue::GetRef(command.request);
     // A class by name is a class target; a Default__ name is an object, as a ref is.
     const std::string className = command.className.starts_with("Default__") ? std::string() : command.className;

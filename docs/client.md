@@ -32,7 +32,7 @@ revision; the layout check refuses a mismatched pair
 Each host ships a console executable (the examples': `reagentlive.exe`,
 `reagentlive-ue.exe`). It is the one frontend that owns behaviour; every
 other interface calls it or the same requests. How to drive it (JSON
-calls, addresses and refs, budgets, `batch`, the cache file,
+calls, addresses and refs, the result cap, `batch`, the cache file,
 one-shot runs, arguments, the usage log): [console](commands/console.md).
 What each verb takes and returns: `help` with `verb`, the
 [verb reference](commands/reference.md) and
@@ -67,7 +67,7 @@ auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 - A ready-made console: `reagentlive::cli::RunConsole({prefix, exeName, layout}, argc, argv)`
   ([host verbs](hosting.md#host-verbs) for commands of your own).
 - Commands that exist only in the console (`get`, `batch`,
-  `entries`, the cache, output budgets) are reached through its JSON calls,
+  `entries`, the cache, the result cap) are reached through its JSON calls,
   as the Python client does ([design](design/architecture.md#frontends)). So is
   `game-thread`, which has no typed wrapper.
 
@@ -133,7 +133,7 @@ module calls through it; scripts use it for the rest.
   objects, named types and list rows are strict too. A key guessed wrong
   fails on the line that guessed it, never as a quiet `None` or a caught
   `KeyError`. `record.raw` is the plain dict.
-- `s.call(verb, args, budget=None)` sends one JSON call with arguments
+- `s.call(verb, args, max_chars=None)` sends one JSON call with arguments
   named as `help` with `verb` shows them (None and False left out, bytes
   as hex) and returns the strict result. `s.help('<verb>')` shows a verb's arguments
   and result keys; `s.send(line)` is the raw exchange (the envelope as
@@ -146,16 +146,16 @@ module calls through it; scripts use it for the rest.
   `next_cursor` with `view.start`, or use the verb's `view.limit`
   (0 for every row on `census`).
 - `s.table_hash` is the console's `table_hash`.
-- **Output budget:** a result past the call's `budget` (characters; 0
+- **Result cap:** a result past the call's `max_chars` (characters; 0
   none) comes back as a `Digest` in place of the record, and
   `s.digest` holds the last one (else `None`): its size, largest parts and
   `next`, the call narrowed, or `file`, where the console kept the whole
   result of a call that must not run again
-  ([output budgets](commands/console.md#fewer-round-trips)). A session
-  started with `caller='tool'` has the console's tool budget by
+  ([result cap](commands/console.md#fewer-round-trips)). A session
+  started with `caller='tool'` has the console's tool cap by
   default; `'script'` has none.
 - `Session(console, args, caller='script')` starts the console with
-  `--caller`: its [usage log](commands/console.md#usage-log-and-stats)
+  `--caller`: its [usage log](commands/console.md#usage-log-and-usage)
   counts a script's output apart from an agent's context. Pass
   `caller='tool'` when an agent reads every result. `table=` takes a
   `help` with `json` result read before: the session then asks only for the
@@ -201,7 +201,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 - **Arguments are checked before a console starts,** against the row of
   the console's current table: a guessed argument name is refused with the
   verb's usage. A null argument counts as left out. Every tool also takes
-  `budget` (the console's [output budget](commands/console.md#fewer-round-trips)).
+  `max_chars` (the console's [result cap](commands/console.md#fewer-round-trips)).
 - **Tool packs:** a tool is served while its verb's
   [pack](tool-interface.md#tool-packs) is on. `--packs` names the packs
   on from the start (default `explore`, always on), `--allow` those the
@@ -242,7 +242,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   server) makes the console wait up to 2 s, then refuse as `busy`.
   Nothing holds the executable between calls, so the
   console can be rebuilt while the server runs and the next call runs the
-  new build. With no target the console answers `help` and `stats` and
+  new build. With no target the console answers `help` and `usage` and
   refuses the rest as `startup`.
 - **A rebuilt console's tools:** each start reads the table's hash
   (`help` with `hash`). When it changed, the adapter reads the new table before
@@ -250,12 +250,12 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   again gets the new list with no reconnect; one that ignores the notice
   keeps working for verbs whose arguments and result did not change, and
   needs a reconnect for the rest ([design](tool-interface.md#tool-interface)).
-- **Results past the budget** (the console's tool budget by default): the
+- **Results past `max_chars`** (the console's tool cap by default): the
   tool returns the console's `digest` and a text naming the call to make
   next, or the file holding the result of a call that must not run again
-  ([output budgets](commands/console.md#fewer-round-trips)).
+  ([result cap](commands/console.md#fewer-round-trips)).
 - **Usage:** every console runs with `--caller tool` and one session id
-  per server, so `stats` counts every tool result as context and groups
+  per server, so `usage` counts every tool result as context and groups
   the server's calls. Each result goes to the client twice, as text and
   as structured content.
 - **A smaller tool list:** a client that loads every tool up front pays

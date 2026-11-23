@@ -1,7 +1,7 @@
 // reagentlive CLI: the usage log, one JSON line per console call in a file
 // beside the console (<console>.usage.jsonl). A line holds facts about the
-// call, never its values: no addresses, names, paths or results. `stats`
-// (results/stats.h) reads it. Pure; the console writes and trims the file.
+// call, never its values: no addresses, names, paths or results. `usage`
+// (results/usage_report.h) reads it. Pure; the console writes and trims the file.
 #pragma once
 #include <algorithm>
 #include <cstdint>

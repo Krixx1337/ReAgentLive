@@ -23,10 +23,10 @@ The C++ client is for building tools, not for investigating.
 
 | Pack | Holds |
 |---|---|
-| `explore` (always on) | `find`, `get`, `each`, `rows`, `name-find`, `read`, `peek`, `script`, `refs`... |
-| `native` | `disasm`, `xrefs`, `touches`, `vtable`, `sig-*`, `search`, `search-job`, `label`, `export-labels`, `export-assets`, `labels-*`, `layout-*` |
-| `observe` | `watch-*`, `census`, `mem-snap`, `mem-diff`, `trace`, `call-pure`, `call-each` |
-| `modify` | `write`, `writes`, `call`, `release`, `calls-start`/`-read`/`-stop`, `game-thread` |
+| `explore` (always on) | `find`, `get`, `each`, `rows`, `name-find`, `read`, `peek`, `script`, `name-refs`... |
+| `native` | `disasm`, `xrefs`, `touches`, `vtable`, `sig-*`, `search`, `search-job`, `member-name`, `labels-export`, `assets-export`, `labels-*`, `layout-*` |
+| `observe` | `watch-*`, `census`, `mem-snap`, `mem-diff`, `line-trace`, `call-pure`, `call-each` |
+| `modify` | `write`, `timed-writes`, `call`, `release`, `calls-start`/`-read`/`-stop`, `game-thread` |
 
 - **Enable before the first call that needs it:** MCP: the `packs` tool,
   `{"action": "enable", "pack": "native"}`; Python: `Session(console,

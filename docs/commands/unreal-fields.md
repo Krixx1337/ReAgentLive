@@ -1,6 +1,6 @@
 # Unreal fields
 
-*Home of:* reading reflected fields: `get` in every mode (paths, filters, layouts), compact values and `meta`, `entries`, `rows` (data and curve tables), text values, readable names, native members (`label`), and layouts in bulk (`layout-export`, `layout-check`).
+*Home of:* reading reflected fields: `get` in every mode (paths, filters, layouts), compact values and `meta`, `entries`, `rows` (data and curve tables), text values, readable names, native members (`member-name`), and layouts in bulk (`layout-export`, `layout-check`).
 
 **TL;DR:** `get` reads an object's fields by name: every field with its
 value, named paths through pointers and structs, the layout with no
@@ -216,8 +216,8 @@ field's type and count, name, the main image's PE timestamp), loaded with
 the names file. The host generates the names file and would wipe appended
 lines on its next regeneration, so nothing writes into it.
 
-- **`label`** appends one line
-  (`{"verb": "label", "args": {"object": "0x1f2e3d4c50#123:4", "offset": "0x538", "type": "f64[3]", "name": "Start"}}`),
+- **`member-name`** appends one line
+  (`{"verb": "member-name", "args": {"object": "0x1f2e3d4c50#123:4", "offset": "0x538", "type": "f64[3]", "name": "Start"}}`),
   so naming a member is one call.
   It is filed under the class that declares the reflected field before the
   offset, or under `Class` when that class declares one of the fields.

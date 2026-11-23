@@ -9,7 +9,7 @@ or flags (`find PC_`, `get --types`), a one-shot `-c` with no JSON, and a flag t
 
 Code names verbs too: in a C++ or Python file (.h, .cpp, .py) every string literal (adjacent C++ literals joined,
 comments left out) is checked as doc text, and also for a hyphenated word made only of verb words that is no verb
-(`export-labels` once the verb is `labels-export`) and an MCP tool name (`ue_find`) the table lacks. Refusal
+(`labels-export` once the verb is `labels-export`) and an MCP tool name (`ue_find`) the table lacks. Refusal
 hints, notes and messages then cannot name a renamed verb or arg.
 
 Usage: check_verb_names.py --table <reagentlive-table or a console> [--root DIR] [FILE_OR_DIR ...]
@@ -87,7 +87,7 @@ class Table:
         if not isinstance(args, dict):
             return out
         for key, value in args.items():
-            if key in ('meta', 'timing', 'big', 'budget'):
+            if key in ('meta', 'timing', 'big', 'max_chars'):
                 continue
             if key not in known:
                 out.append(f'{where}: {verb} has no arg {key!r}')
@@ -183,7 +183,7 @@ def check_text(table, text, name):
             continue
         known = {arg['key'] for arg in table.rows[verb].get('args', [])}
         for kw in py_kwargs(text, match.end()):
-            if kw.rstrip('_') not in known and kw not in ('budget', 'meta', 'timing', 'big'):
+            if kw.rstrip('_') not in known and kw not in ('max_chars', 'meta', 'timing', 'big'):
                 problems.append(f'{name}: {verb} has no arg {kw!r} ({match.group(0)}...)')
     for match in SESSION_CALL.finditer(text):
         if match.group(1) not in table.rows:

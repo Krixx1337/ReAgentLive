@@ -43,7 +43,7 @@ struct Beat { uint64_t ticks; Clock::time_point at; };
 
 // The usage log (state/usage.h): where it goes, this run's session and caller.
 struct Usage {
-    std::filesystem::path path;             // <console>.usage.jsonl; stats reads it.
+    std::filesystem::path path;             // <console>.usage.jsonl; usage reads it.
     bool record = false;                    // False with --no-usage.
     std::string session, caller = "shell";
     // The session the cache file hands to the next one-shot run, and its
@@ -60,13 +60,13 @@ struct LineUsage {
     std::string refused;
 };
 
-// The call being run, as its output budget needs it (output.cpp): what to
-// run again, narrowed, when the result is past the budget.
+// The call being run, as its result cap (max_chars) needs it (output.cpp):
+// what to run again, narrowed, when the result is past the cap.
 struct LineInput {
     std::optional<Json> call;       // The call as given.
-    size_t budget = 0;              // Characters; 0: none.
+    size_t maxChars = 0;            // The per-result cap in characters (max_chars); 0: none.
     // Safe to run again: no write and no call that may change state. False
-    // keeps a result past the budget in a file instead. A pack sets it true
+    // keeps a result past the cap in a file instead. A pack sets it true
     // for a call it knows is const or pure.
     bool reads = true;
 };
@@ -101,9 +101,9 @@ struct Session {
     std::shared_ptr<PackState> pack;        // Made by the pack (pack.h).
     Usage usage;
     LineUsage* line = nullptr;              // The line being run, for the usage log.
-    LineInput input;                        // The line being run, for its budget.
+    LineInput input;                        // The line being run, for its result cap.
     std::filesystem::path results;          // Whole results of lines that must not run again; empty: none.
-    // <console>.labels.jsonl: the derived names export-labels writes when
+    // <console>.labels.jsonl: the derived names labels-export writes when
     // given no file. `hostLabels`: the host's file for names people confirm
     // (ConsoleConfig::labelsFile), where peek with `label` writes; empty: `labels`.
     // disasm with `save` reads both.
@@ -160,12 +160,12 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
 void RunVtable(Session& session, const Command& command, std::string_view jsonCommand);
 // %TEMP%\reagentlive-<pid>.cache: the cache file of the agent in that process.
 std::filesystem::path CachePath(uint32_t pid);
-// %TEMP%\reagentlive-<pid>-<owner>.results: whole results kept by the output budget.
+// %TEMP%\reagentlive-<pid>-<owner>.results: whole results kept by the result cap.
 std::filesystem::path ResultsFolder(uint32_t pid, uint32_t owner);
 // mem-snap and mem-diff: a raw range kept in a file beside the cache, then compared.
 void RunMemSnap(Session& session, const Command& command, std::string_view jsonCommand);
 void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand);
-void RunStats(Session& session, const Command& command, std::string_view jsonCommand);
+void RunUsage(Session& session, const Command& command, std::string_view jsonCommand);
 // The region kind at an address (code, data, private, mapped...), nullopt
 // when the agent has no region op or the query fails.
 std::optional<std::string> RegionKind(Session& session, uint64_t address);

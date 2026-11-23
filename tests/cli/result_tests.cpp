@@ -152,7 +152,7 @@ TEST_CASE("help rows come from the table: args, an example call, the result in n
     std::set<std::string> writers;
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
-    CHECK(writers == std::set<std::string>{"write", "writes", "call", "release", "calls-start", "game-thread"});
+    CHECK(writers == std::set<std::string>{"write", "timed-writes", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), false, false))["pack"] == "explore");
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["type"]["struct"]["next_cursor"] == Json{{"type", "addr"}, {"optional", true}});
@@ -1035,7 +1035,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     lines[3].refused = "schema";
     lines[4].origin = lines[5].origin = "core";
     lines[5].batch = true;                                  // Inside the batch: counted under read.
-    const auto stats = MakeStats(lines, std::string("s1"), AllVerbs());
+    const auto stats = MakeUsage(lines, std::string("s1"), AllVerbs());
     const auto json = Checked(stats);
     CHECK(json["session"] == "s1");
     CHECK_FALSE(json.contains("never_called"));
@@ -1046,7 +1046,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(stats.totals.in == 60);
     CHECK(stats.totals.refused == 1);
     REQUIRE(stats.rows.size() == 5);
-    const auto funcs = std::ranges::find(stats.rows, std::string("funcs"), &shape::StatsVerb::verb);
+    const auto funcs = std::ranges::find(stats.rows, std::string("funcs"), &shape::UsageVerb::verb);
     REQUIRE(funcs != stats.rows.end());
     CHECK_FALSE(funcs->unfiltered.has_value());
     CHECK(stats.rows[0].verb == "get");
@@ -1059,7 +1059,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK_FALSE(stats.rows[1].unfiltered.has_value());      // Refused: never a filter mark.
     CHECK(stats.rows[1].refused == 1u);
     CHECK(stats.rows[1].refusedBy->at("schema") == 1);
-    const auto read = std::ranges::find(stats.rows, std::string("read"), &shape::StatsVerb::verb);
+    const auto read = std::ranges::find(stats.rows, std::string("read"), &shape::UsageVerb::verb);
     REQUIRE(read != stats.rows.end());
     CHECK(read->batched == 1u);
     CHECK_FALSE(read->unfiltered.has_value());              // read has no filter args.
@@ -1067,7 +1067,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(stats.largest[0].verb == "get");
     CHECK(stats.largest[0].out == 5000);
 
-    const auto all = MakeStats(lines, std::nullopt, AllVerbs());
+    const auto all = MakeUsage(lines, std::nullopt, AllVerbs());
     Checked(all);
     CHECK(all.sessions == 2u);
     CHECK(all.since == "2026-01-02T03:04:01Z");
@@ -1075,7 +1075,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(std::ranges::find(*all.neverCalled, "census") != all.neverCalled->end());
     CHECK(std::ranges::find(*all.neverCalled, "get") == all.neverCalled->end());
 
-    const auto none = MakeStats({}, std::string(), AllVerbs());
+    const auto none = MakeUsage({}, std::string(), AllVerbs());
     CHECK_FALSE(Checked(none).contains("session"));
     CHECK(none.rows.empty());
 
@@ -1086,14 +1086,14 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
                                     line("p", "call", 10, "5")};
     mixed[4].ok = false;
     mixed[4].refused = "pack";                              // Refused for its pack: a refusal, not a modify call.
-    const auto packs = MakeStats(mixed, std::string("p"), AllVerbs());
+    const auto packs = MakeUsage(mixed, std::string("p"), AllVerbs());
     CHECK(packs.totals.callsByPack == std::map<std::string, uint64_t>{{"native", 2}, {"modify", 1}});
     CHECK(packs.totals.refused == 1);
 
     // get's paths pick what is read: never unfiltered, whatever the size.
     const std::vector<UsageLine> picked = {line("q", "get", 50000, "1", {"object", "paths"}),
                                            line("q", "get", 50000, "22", {"object"})};
-    const auto pickedStats = MakeStats(picked, std::string("q"), AllVerbs());
+    const auto pickedStats = MakeUsage(picked, std::string("q"), AllVerbs());
     REQUIRE(pickedStats.rows.size() == 1);
     CHECK(pickedStats.rows[0].unfiltered == 1u);            // Only the call with no paths.
 }
@@ -1119,23 +1119,23 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     lines[1].digest = 430000;
     lines[3].digest = 22000;
     lines[2].keys = {"limit"};
-    const auto stats = MakeStats(lines, std::string("new"), AllVerbs());
+    const auto stats = MakeUsage(lines, std::string("new"), AllVerbs());
     Checked(stats);
     CHECK(stats.totals.digested == 2);
     CHECK(stats.totals.saved == (430000 - 500) + (22000 - 400));
-    const auto census = std::ranges::find(stats.rows, std::string("census"), &shape::StatsVerb::verb);
+    const auto census = std::ranges::find(stats.rows, std::string("census"), &shape::UsageVerb::verb);
     REQUIRE(census != stats.rows.end());
     CHECK(census->digested == 1u);
     CHECK(census->saved == 429500u);
     CHECK_FALSE(census->unfiltered.has_value());              // The digested one is not marked; the rerun had limit.
-    const auto dump = std::ranges::find(stats.rows, std::string("get"), &shape::StatsVerb::verb);
+    const auto dump = std::ranges::find(stats.rows, std::string("get"), &shape::UsageVerb::verb);
     CHECK_FALSE(dump->unfiltered.has_value());
-    const auto big = std::ranges::find(stats.largest, uint64_t{500}, &shape::StatsCall::out);
+    const auto big = std::ranges::find(stats.largest, uint64_t{500}, &shape::UsageCall::out);
     REQUIRE(big != stats.largest.end());
     CHECK(big->digest == 430000u);
 
     // sessions: newest first, totals over the whole log, no verb rows.
-    const auto list = StatsFor(lines, AllVerbs(), {false, true, {}}, std::nullopt);
+    const auto list = UsageFor(lines, AllVerbs(), {false, true, {}}, std::nullopt);
     REQUIRE(list.has_value());
     const auto json = Checked(*list);
     REQUIRE(list->sessionRows.has_value());
@@ -1155,16 +1155,16 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     CHECK_FALSE(json.contains("never_called"));
 
     // session: that one, or a refusal naming stats with sessions.
-    const auto old = StatsFor(lines, AllVerbs(), {false, false, "old"}, std::string("new"));
+    const auto old = UsageFor(lines, AllVerbs(), {false, false, "old"}, std::string("new"));
     REQUIRE(old.has_value());
     CHECK(old->session == "old");
     CHECK(old->totals.calls == 1);
-    const auto missing = StatsFor(lines, AllVerbs(), {false, false, "gone"}, std::nullopt);
+    const auto missing = UsageFor(lines, AllVerbs(), {false, false, "gone"}, std::nullopt);
     REQUIRE_FALSE(missing.has_value());
-    CHECK(missing.error().find("stats with sessions") != std::string::npos);
+    CHECK(missing.error().find("usage with sessions") != std::string::npos);
     // Neither: the current session, else the log's latest.
-    CHECK(StatsFor(lines, AllVerbs(), {}, std::string("old"))->session == "old");
-    CHECK(StatsFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
+    CHECK(UsageFor(lines, AllVerbs(), {}, std::string("old"))->session == "old");
+    CHECK(UsageFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
 }
 
 TEST_CASE("a layout line round-trips and names the first thing that differs") {
@@ -1196,7 +1196,7 @@ TEST_CASE("every verb is in one tool pack; every writer in modify, none in the o
     // The packs a research session loads by default hold nothing that writes or calls.
     for (const auto pack : {ToolPack::Explore, ToolPack::Native, ToolPack::Observe})
         for (const auto& name : byPack[pack]) CHECK_FALSE_MESSAGE(FindVerb(AllVerbs(), name)->writes, name);
-    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "writes", "call", "release", "calls-start", "calls-read",
+    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "timed-writes", "call", "release", "calls-start", "calls-read",
                                                              "calls-stop", "game-thread"});
     CHECK(byPack[ToolPack::Native].contains("disasm"));
     CHECK(byPack[ToolPack::Observe].contains("call-pure"));

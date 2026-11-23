@@ -24,7 +24,7 @@
    class it reads (`layout-check` after a patch), pure logic with unit
    tests, then a live capture that proves the new code path ran (a case
    only the new logic explains), then the evidence record.
-8. **Name it once.** A member: `label`. A native function: name it in the
+8. **Name it once.** A member: `member-name`. A native function: name it in the
    static tool, then `export_names` into the host's names file. A global:
    `peek` with `label`. Then `labels-sign`, so `labels-port` finds them after a
    patch. Later saves show those names: read a save's names before working

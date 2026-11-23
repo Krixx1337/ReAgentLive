@@ -270,17 +270,17 @@ TEST_CASE("every row's example call passes the checks and builds") {
     const std::map<std::string_view, std::string_view> minimal = {
         {"batch", R"({"calls": [{"verb": "modules", "args": {}}]})"},       // status is not allowed in a batch.
         {"search", R"({"type": "hex", "value": "00 00 80 3f"})"},           // hex takes a string, not 1.
-        {"mem-diff", R"({"test": "changed", "type": "f32"})"},              // type is an element type.
+        {"mem-diff", R"({"compare": "changed", "type": "f32"})"},              // type is an element type.
         {"sig-check", R"({"pattern": "48 8b 05 89 ?? 90"})"},               // pattern or file.
         {"find", R"({"text": "Pawn"})"},                                    // text, cls or outer.
         {"call", R"({"object": "0x1000#5:9", "function": "Name"})"},        // An object, not a class.
         {"call-pure", R"({"object": "0x1000#5:9", "function": "Name"})"},
-        {"label", R"({"object": "Name", "offset": 16, "type": "f32", "name": "Name"})"}, // An element type.
+        {"member-name", R"({"object": "Name", "offset": 16, "type": "f32", "name": "Name"})"}, // An element type.
         {"entries", R"({"object": "0x1000#5:9", "field": "Name"})"},
         {"rows", R"({"object": "0x1000#5:9"})"},
         {"get", R"({"object": "0x1000#5:9"})"},                             // A class by name needs types.
         {"describe", R"({"object": "0x1000#5:9"})"},                        // object, or index and serial.
-        {"refs", R"({"name": "Name"})"},                                    // name or index.
+        {"name-refs", R"({"name": "Name"})"},                                    // name or index.
     };
     for (const auto& verb : AllVerbs()) {
         const Json example = ExampleCall(verb);
@@ -374,7 +374,7 @@ namespace {
 // batch's items are checked as their own verbs when they run.
 bool WritesOrCalls(const Command& command) {
     const auto& request = command.request;
-    if (command.kind == Kind::Pin || command.kind == Kind::Trial || command.kind == Kind::Writes ||
+    if (command.kind == Kind::Pin || command.kind == Kind::Trial || command.kind == Kind::TimedWrites ||
         command.kind == Kind::Release || (command.kind == Kind::TypedCall && !(request.flags & ue::CallPure))) return true;
     if (request.op == reagentlive::op::Write || request.op == reagentlive::op::Pin || request.op == reagentlive::op::Trial)
         return true;
@@ -390,7 +390,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"help", {R"({})", R"({"verb": "read"})", R"({"json": true})", R"({"hash": true})"}},
         {"status", {R"({})"}},
         {"quit", {R"({})"}},
-        {"stats", {R"({})", R"({"all": true})", R"({"sessions": true})", R"({"session": "abc"})"}},
+        {"usage", {R"({})", R"({"all": true})", R"({"sessions": true})", R"({"session": "abc"})"}},
         {"batch", {R"({"calls": [{"verb": "read", "args": {"addr": "0x1000", "len": 8}}, {"verb": "modules"}]})"}},
         {"run", {R"({"plan": "plan.json"})", R"({"plan": "plan.json", "out": "lines.jsonl"})"}},
         {"read", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 16, "type": "f32"})",
@@ -400,14 +400,14 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"search", {R"({"type": "f32", "value": 1.5})", R"({"type": "wtext", "value": "abc", "wait": 0, "max": 8})"}},
         {"search-job", {R"({"job": 3})", R"({"job": 3, "stop": true})"}},
         {"mem-snap", {R"({"addr": "0x1000", "len": 64})"}},
-        {"mem-diff", {R"({"test": "changed", "type": "f32"})", R"({"test": "increased", "type": "i32", "keep": true, "view": {"limit": 4}})"}},
+        {"mem-diff", {R"({"compare": "changed", "type": "f32"})", R"({"compare": "increased", "type": "i32", "keep": true, "view": {"limit": 4}})"}},
         {"watch-start", {R"({"duration": 5, "ranges": [{"addr": "0x1000", "len": 8}]})",
             R"({"duration": 5, "ranges": [{"addr": "0x1000", "type": "f32"}], "every": 0.1, "file": "w.jsonl"})"}},
         {"watch-read", {R"({})", R"({"all": true})"}},
         {"watch-stop", {R"({})", R"({"all": true})"}},
         {"sig-check", {R"({"pattern": "48 8b 05 89 ?? 90"})", R"({"file": "sigs.txt"})"}},
         {"sig-bytes", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 32})"}},
-        {"labels-sign", {R"({})", R"({"again": true})"}},
+        {"labels-sign", {R"({})", R"({"retry": true})"}},
         {"labels-port", {R"({})"}},
         {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
             R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": 2}})"}},
@@ -425,9 +425,9 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "dry": true})"}},
         {"call-each", {R"({"cls": "Pawn", "function": "GetHealth"})", R"({"cls": "Pawn", "function": "GetHealth", "seconds": 5})",
             R"({"cls": "Pawn", "function": "GetHealth", "outer": "Level", "view": {"limit": 0, "nonzero": true}})"}},
-        {"label", {R"({"object": "0x1000#5:9", "offset": "0x10", "type": "f32", "name": "Speed"})"}},
-        {"export-labels", {R"({})", R"({"file": "out.jsonl"})"}},
-        {"export-assets", {R"({"dir": "out", "cls": ["DataTable"]})",
+        {"member-name", {R"({"object": "0x1000#5:9", "offset": "0x10", "type": "f32", "name": "Speed"})"}},
+        {"labels-export", {R"({})", R"({"file": "out.jsonl"})"}},
+        {"assets-export", {R"({"dir": "out", "cls": ["DataTable"]})",
             R"({"dir": "out", "cls": ["DataTable", "CurveTable"], "view": {"match": "Weapon"}})"}},
         {"layout-export", {R"({"file": "out.json", "classes": ["Pawn"]})", R"({"file": "out.json", "classes": ["Pawn"], "closure": 1})",
             R"({"file": "out.json", "classes": ["Pawn"], "closure": 2})"}},
@@ -437,13 +437,13 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"get", {R"({"object": "0x1000#5:9"})", R"({"object": "0x1000#5:9", "paths": [["Health"]]})",
             R"({"object": "Pawn", "mode": "types"})", R"({"object": "0x1000#5:9", "mode": "snap"})",
             R"({"object": "0x1000#5:9", "mode": "changed"})"}},
-        {"trace", {R"({"start": [0, 0, 0], "end": [1, 1, 1], "ignore": "0x1000#5:9"})"}},
+        {"line-trace", {R"({"start": [0, 0, 0], "end": [1, 1, 1], "ignore": "0x1000#5:9"})"}},
         {"describe", {R"({"object": "0x1000#5:9"})", R"({"index": 5, "serial": 9})"}},
         {"func", {R"({"object": "0x1000#5:9", "function": "GetHealth"})"}},
         {"script", {R"({"object": "0x1000#5:9", "function": "Tick"})", R"({"object": "0x1000#5:9", "function": "Tick", "decode": true})",
             R"({"object": "Pawn", "function": "ExecuteUbergraph_Pawn", "decode": true, "entry": "0x1c"})"}},
         {"enum", {R"({"enum": "EMode"})"}},
-        {"refs", {R"({"name": "Health"})", R"({"index": 42})"}},
+        {"name-refs", {R"({"name": "Health"})", R"({"index": 42})"}},
         {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"start": 4, "match": "Get"}})"}},
     };
     for (const auto& verb : AllVerbs()) {
@@ -511,7 +511,8 @@ TEST_CASE("an expect is a subset of the envelope; a mismatch names its path") {
 
 TEST_CASE("removed verbs are not in the table") {
     for (const char* gone : {"trial", "trial-list", "trial-clear", "pin", "pin-list", "pin-clear", "base", "region",
-                             "read-batch", "fields", "dump", "snap", "diff", "params", "watch", "record", "census-diff", "rtti"})
+                             "read-batch", "fields", "dump", "snap", "diff", "params", "watch", "record", "census-diff", "rtti",
+                             "stats", "refs", "label", "export-labels", "export-assets", "trace", "writes"})
         CHECK_MESSAGE(!FindVerb(AllVerbs(), gone), gone);
 }
 
@@ -939,22 +940,22 @@ TEST_CASE("write hold rewrites for seconds and guards a ref-based addr on its ob
 }
 
 TEST_CASE("writes lists the timed writes; clear ends one id or all") {
-    auto parsed = Call(R"({"verb": "writes"})");
+    auto parsed = Call(R"({"verb": "timed-writes"})");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->kind == Kind::Writes);
+    CHECK(parsed->kind == Kind::TimedWrites);
     CHECK_FALSE(parsed->all);
-    parsed = Call(R"({"verb": "writes", "args": {"clear": true}})");
+    parsed = Call(R"({"verb": "timed-writes", "args": {"clear": true}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->all);
     CHECK(parsed->request.args[0] == 0);
-    parsed = Call(R"({"verb": "writes", "args": {"clear": true, "id": "undo:3"}})");
+    parsed = Call(R"({"verb": "timed-writes", "args": {"clear": true, "id": "undo:3"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "undo");
     CHECK(parsed->request.args[0] == 3);
-    CHECK(Call(R"({"verb": "writes", "args": {"clear": true, "id": "hold:2"}})")->target == "hold");
-    CHECK(Why(R"({"verb": "writes", "args": {"clear": true, "id": "3"}})").starts_with("id is undo:N"));
-    CHECK(Why(R"({"verb": "writes", "args": {"clear": true, "id": "pin:3"}})").starts_with("id is undo:N"));
-    CHECK(Why(R"({"verb": "writes", "args": {"id": "undo:3"}})").starts_with("id goes with clear"));
+    CHECK(Call(R"({"verb": "timed-writes", "args": {"clear": true, "id": "hold:2"}})")->target == "hold");
+    CHECK(Why(R"({"verb": "timed-writes", "args": {"clear": true, "id": "3"}})").starts_with("id is undo:N"));
+    CHECK(Why(R"({"verb": "timed-writes", "args": {"clear": true, "id": "pin:3"}})").starts_with("id is undo:N"));
+    CHECK(Why(R"({"verb": "timed-writes", "args": {"id": "undo:3"}})").starts_with("id goes with clear"));
 }
 
 TEST_CASE("release is a call with the release flag and an optional block") {
@@ -1224,17 +1225,17 @@ TEST_CASE("script reads bytecode; decode with entry reads one event") {
 }
 
 TEST_CASE("refs takes a pooled name or its index") {
-    auto parsed = Call(R"({"verb": "refs", "args": {"index": 145935}})");
+    auto parsed = Call(R"({"verb": "name-refs", "args": {"index": 145935}})");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->kind == Kind::Refs);
+    CHECK(parsed->kind == Kind::NameRefs);
     CHECK(parsed->request.args[0] == 145935);
-    parsed = Call(R"({"verb": "refs", "args": {"name": "Attribute.Gameplay.Character.ReloadSpeedMultiplier"}})");
+    parsed = Call(R"({"verb": "name-refs", "args": {"name": "Attribute.Gameplay.Character.ReloadSpeedMultiplier"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.args[0] == 0);
     CHECK(std::string_view(parsed->request.text) == "Attribute.Gameplay.Character.ReloadSpeedMultiplier");
-    CHECK(Why(R"({"verb": "refs"})").starts_with("name: give"));
-    CHECK(Why(R"({"verb": "refs", "args": {"name": "A", "index": 3}})").starts_with("name: give"));
-    CHECK(Why(R"({"verb": "refs", "args": {"index": 0}})").starts_with("index is"));
+    CHECK(Why(R"({"verb": "name-refs"})").starts_with("name: give"));
+    CHECK(Why(R"({"verb": "name-refs", "args": {"name": "A", "index": 3}})").starts_with("name: give"));
+    CHECK(Why(R"({"verb": "name-refs", "args": {"index": 0}})").starts_with("index is"));
 }
 
 TEST_CASE("modules asks the agent") {
@@ -1253,14 +1254,14 @@ TEST_CASE("local verbs build no request") {
     CHECK(Why(R"({"verb": "help", "args": {"verb": "read", "json": true}})").starts_with("json "));
     CHECK(Call(R"({"verb": "status"})")->kind == Kind::Status);
     CHECK(Call(R"({"verb": "quit"})")->kind == Kind::Quit);
-    CHECK(Call(R"({"verb": "stats"})")->kind == Kind::Stats);
-    CHECK_FALSE(Call(R"({"verb": "stats"})")->all);
-    CHECK(Call(R"({"verb": "stats", "args": {"all": true}})")->all);
-    CHECK(Call(R"({"verb": "stats", "args": {"sessions": true}})")->listSessions);
-    CHECK(Call(R"({"verb": "stats", "args": {"session": "mcp-1"}})")->target == "mcp-1");
-    CHECK(Why(R"({"verb": "stats", "args": {"all": true, "sessions": true}})").starts_with("all, sessions and session"));
-    CHECK(Why(R"({"verb": "stats", "args": {"sessions": true, "session": "mcp-1"}})").starts_with("all, sessions and session"));
-    CHECK(Why(R"({"verb": "stats", "args": {"session": 1}})").starts_with("session: "));
+    CHECK(Call(R"({"verb": "usage"})")->kind == Kind::Usage);
+    CHECK_FALSE(Call(R"({"verb": "usage"})")->all);
+    CHECK(Call(R"({"verb": "usage", "args": {"all": true}})")->all);
+    CHECK(Call(R"({"verb": "usage", "args": {"sessions": true}})")->listSessions);
+    CHECK(Call(R"({"verb": "usage", "args": {"session": "mcp-1"}})")->target == "mcp-1");
+    CHECK(Why(R"({"verb": "usage", "args": {"all": true, "sessions": true}})").starts_with("all, sessions and session"));
+    CHECK(Why(R"({"verb": "usage", "args": {"sessions": true, "session": "mcp-1"}})").starts_with("all, sessions and session"));
+    CHECK(Why(R"({"verb": "usage", "args": {"session": 1}})").starts_with("session: "));
 }
 
 TEST_CASE("batch keeps its calls as JSON and refuses what cannot be held") {
@@ -1270,7 +1271,7 @@ TEST_CASE("batch keeps its calls as JSON and refuses what cannot be held") {
     REQUIRE(parsed->fields.size() == 3);
     CHECK(Json::parse(parsed->fields[1]) == Json::parse(R"({"verb": "read", "args": {"addr": "0x10", "len": 4}})"));
     CHECK(Json::parse(parsed->fields[2]) == Json::parse(R"({"verb": "modules"})"));
-    for (const char* inner : {"batch", "quit", "status", "help", "stats"}) {
+    for (const char* inner : {"batch", "quit", "status", "help", "usage"}) {
         const Json call{{"verb", "batch"}, {"args", {{"calls", Json::array({Json{{"verb", inner}}})}}}};
         CHECK_MESSAGE(Why(call).starts_with("calls: not allowed in a batch"), inner);
     }
@@ -1441,9 +1442,9 @@ TEST_CASE("each takes a class, its columns and an optional repeat") {
 }
 
 TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
-    auto parsed = Call(R"({"verb": "trace", "args": {"start": {"object": "0x1000#5:9", "socket": "Head"}, "end": [100.5, -2, 3e2], "channel": 1, "simple": true, "ignore": "0x2000#7:0"}})");
+    auto parsed = Call(R"({"verb": "line-trace", "args": {"start": {"object": "0x1000#5:9", "socket": "Head"}, "end": [100.5, -2, 3e2], "channel": 1, "simple": true, "ignore": "0x2000#7:0"}})");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->kind == Kind::Trace);
+    CHECK(parsed->kind == Kind::LineTrace);
     CHECK(parsed->traceEnds[0].object == One);
     CHECK(parsed->traceEnds[0].socket == "Head");
     CHECK_FALSE(parsed->traceEnds[0].literal);
@@ -1454,7 +1455,7 @@ TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
     CHECK(parsed->traceChannel == 1);
     CHECK(parsed->traceSimple);
     CHECK(parsed->traceIgnore == Two);
-    parsed = Call(R"({"verb": "trace", "args": {"start": [0, 0, 0], "end": "0x2000#7:0", "channel": 5}})");
+    parsed = Call(R"({"verb": "line-trace", "args": {"start": [0, 0, 0], "end": "0x2000#7:0", "channel": 5}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->traceEnds[0].literal);
     CHECK(parsed->traceEnds[1].object == Two);
@@ -1473,7 +1474,7 @@ TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
         {R"({"start": "0x1000#5:9", "end": "0x2000#7:0", "ignore": "0x7"})", "ignore is"},
     };
     for (const auto& each : bad) {
-        const Json call{{"verb", "trace"}, {"args", Json::parse(each.args)}};
+        const Json call{{"verb", "line-trace"}, {"args", Json::parse(each.args)}};
         CHECK_MESSAGE(Why(call).starts_with(each.message), each.args);
     }
 }
@@ -1513,39 +1514,39 @@ TEST_CASE("calls-start takes an owner, a function and a duration; read and stop 
 }
 
 TEST_CASE("label names an unreflected member by object or class, offset, type and name") {
-    auto parsed = Call(R"({"verb": "label", "args": {"object": "0x1000#5:2", "offset": "0x538", "type": "f64[3]", "name": "Start"}})");
+    auto parsed = Call(R"({"verb": "member-name", "args": {"object": "0x1000#5:2", "offset": "0x538", "type": "f64[3]", "name": "Start"}})");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->kind == Kind::Label);
+    CHECK(parsed->kind == Kind::MemberName);
     CHECK(parsed->offset == 0x538);
     CHECK(parsed->target == "f64[3]");
     CHECK(parsed->match == "Start");
-    parsed = Call(R"({"verb": "label", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "f32", "name": "Duration?"}})");
+    parsed = Call(R"({"verb": "member-name", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "f32", "name": "Duration?"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->className == "TriggerVolume");
-    CHECK(Why(R"({"verb": "label", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "f32"}})").starts_with("missing name"));
-    CHECK(Why(R"({"verb": "label", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "f16", "name": "X"}})").starts_with("type"));
-    CHECK(Why(R"({"verb": "label", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "pad", "name": "4"}})").starts_with("type"));
-    CHECK(Why(R"({"verb": "label", "args": {"object": "TriggerVolume", "offset": "0x10000", "type": "u8", "name": "X"}})").starts_with("offset is"));
-    CHECK(Why(R"({"verb": "label", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "u8", "name": "X Y"}})").starts_with("type"));
+    CHECK(Why(R"({"verb": "member-name", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "f32"}})").starts_with("missing name"));
+    CHECK(Why(R"({"verb": "member-name", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "f16", "name": "X"}})").starts_with("type"));
+    CHECK(Why(R"({"verb": "member-name", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "pad", "name": "4"}})").starts_with("type"));
+    CHECK(Why(R"({"verb": "member-name", "args": {"object": "TriggerVolume", "offset": "0x10000", "type": "u8", "name": "X"}})").starts_with("offset is"));
+    CHECK(Why(R"({"verb": "member-name", "args": {"object": "TriggerVolume", "offset": "0x53c", "type": "u8", "name": "X Y"}})").starts_with("type"));
 }
 
-TEST_CASE("export-labels takes an optional file, module and kinds") {
-    auto parsed = Call(R"({"verb": "export-labels", "args": {"file": "labels.jsonl"}})");
+TEST_CASE("labels-export takes an optional file, module and kinds") {
+    auto parsed = Call(R"({"verb": "labels-export", "args": {"file": "labels.jsonl"}})");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->kind == Kind::ExportLabels);
+    CHECK(parsed->kind == Kind::LabelsExport);
     CHECK(parsed->file == "labels.jsonl");
     CHECK(parsed->target.empty());
     CHECK(parsed->limit == label_kind::All); // Every kind by default.
-    parsed = Call(R"({"verb": "export-labels", "args": {"file": "labels.jsonl", "module": "engine.dll"}})");
+    parsed = Call(R"({"verb": "labels-export", "args": {"file": "labels.jsonl", "module": "engine.dll"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "engine.dll");
-    CHECK(Call(R"({"verb": "export-labels"})")->file.empty());       // The console's labels file.
-    parsed = Call(R"({"verb": "export-labels", "args": {"kinds": ["interface", "global"], "module": "engine.dll"}})");
+    CHECK(Call(R"({"verb": "labels-export"})")->file.empty());       // The console's labels file.
+    parsed = Call(R"({"verb": "labels-export", "args": {"kinds": ["interface", "global"], "module": "engine.dll"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->limit == (label_kind::Interface | label_kind::Global));
-    CHECK(Why(R"({"verb": "export-labels", "args": {"kinds": ["exec", "types"]}})").starts_with("kinds: ")); // Unknown kind.
-    CHECK(Why(R"({"verb": "export-labels", "args": {"kinds": []}})").starts_with("kinds: "));
-    CHECK(Why(R"({"verb": "export-labels", "args": {"kinds": "exec"}})").starts_with("kinds: "));
+    CHECK(Why(R"({"verb": "labels-export", "args": {"kinds": ["exec", "types"]}})").starts_with("kinds: ")); // Unknown kind.
+    CHECK(Why(R"({"verb": "labels-export", "args": {"kinds": []}})").starts_with("kinds: "));
+    CHECK(Why(R"({"verb": "labels-export", "args": {"kinds": "exec"}})").starts_with("kinds: "));
 }
 
 TEST_CASE("entries takes an object, a field and an optional cursor") {
@@ -1717,16 +1718,16 @@ TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an elemen
     CHECK(parsed->range == 4096);
     CHECK(Why(R"({"verb": "mem-snap", "args": {"addr": "0x10000", "len": 0}})").starts_with("len must be"));
     CHECK(Why(R"({"verb": "mem-snap", "args": {"addr": "0x10000", "len": 2000000}})").starts_with("len must be"));
-    parsed = Call(R"({"verb": "mem-diff", "args": {"test": "decreased", "type": "f32", "keep": true, "view": {"limit": 10}}})");
+    parsed = Call(R"({"verb": "mem-diff", "args": {"compare": "decreased", "type": "f32", "keep": true, "view": {"limit": 10}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::MemDiff);
     CHECK(parsed->target == "decreased");
     CHECK(parsed->view == "f32");
     CHECK(parsed->all);
     CHECK(parsed->limit == 10);
-    CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "bigger", "type": "f32"}})").starts_with("test: one of"));
-    CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "changed", "type": "cstr"}})").starts_with("type is"));
-    CHECK(Why(R"({"verb": "mem-diff", "args": {"test": "changed", "type": "f32", "view": {"limit": 257}}})").starts_with("limit is"));
+    CHECK(Why(R"({"verb": "mem-diff", "args": {"compare": "bigger", "type": "f32"}})").starts_with("compare: one of"));
+    CHECK(Why(R"({"verb": "mem-diff", "args": {"compare": "changed", "type": "cstr"}})").starts_with("type is"));
+    CHECK(Why(R"({"verb": "mem-diff", "args": {"compare": "changed", "type": "f32", "view": {"limit": 257}}})").starts_with("limit is"));
     const auto vtable = Call(R"({"verb": "vtable", "args": {"addr": "0x10000", "offset": "0x620", "rtti": true}})");
     REQUIRE(vtable.has_value());
     CHECK(vtable->kind == Kind::Vtable);

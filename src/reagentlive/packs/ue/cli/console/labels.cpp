@@ -1,4 +1,4 @@
-// reagentlive CLI console: export-labels, names ReAgentLive knows for a static-analysis tool.
+// reagentlive CLI console: labels-export, names ReAgentLive knows for a static-analysis tool.
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -50,7 +50,7 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
         ((wantVtables || wantInterfaces) && !client.Supports(ue::op::Find)) ||
         (wantInterfaces && (!client.Supports(ue::op::Function) || !client.Supports(ue::op::Functions) ||
                             !client.Supports(ue::op::DescribeMany))))
-        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "export-labels needs a newer agent for these kinds");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "labels-export needs a newer agent for these kinds");
     const auto modules = LoadedModules(session);
     const Module* module = command.target.empty() ? (modules.empty() ? nullptr : &modules.front())
                                                   : text::ModuleNamed(command.target, modules);

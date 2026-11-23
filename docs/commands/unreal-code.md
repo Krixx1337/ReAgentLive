@@ -1,10 +1,10 @@
 # Unreal code
 
-*Home of:* reading Blueprint bytecode and finding native code by reflection: `script` (the anchored scan and `decode`), `refs`, and exec entries.
+*Home of:* reading Blueprint bytecode and finding native code by reflection: `script` (the anchored scan and `decode`), `name-refs`, and exec entries.
 
 **TL;DR:** `script` lists what a Blueprint function's bytecode uses, or
 with `decode` reads it as statements (`if !(A > B) goto +0x58`) with no
-game thread; `refs` finds every function whose bytecode names a pooled
+game thread; `name-refs` finds every function whose bytecode names a pooled
 name; exec entries list every native function's thunk, for labels.
 Native code by address: [fast lane](fast-lane.md). Rules every pack
 command shares: [Unreal pack](unreal.md).
@@ -54,7 +54,7 @@ and opcode (`Speed = Vehicle.GetSpeedKPH()`, `if !(A > B) goto +0x58`,
   then come from the statements kept; a digest names both
   (`"narrow": ["to", "view.match"]`).
 
-## refs
+## name-refs
 
 Scans every function's bytecode for `EX_NameConst` with that comparison
 index, one table scan spread over ticks; later pages come from the cached
@@ -63,7 +63,7 @@ exactly (the console resolves it through `name-find`).
 
 ## Exec entries
 
-The agent op behind `export-labels`' `exec` rows: one object-table scan
+The agent op behind `labels-export`' `exec` rows: one object-table scan
 for native functions (`FUNC_Native`, with an exec thunk of their own),
 cached, then paged (`ExecEntry`: `exec`, `owner`, `name`). What the
-labels file does with them: [labels](labels.md#export-labels).
+labels file does with them: [labels](labels.md#labels-export).

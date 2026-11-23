@@ -86,7 +86,7 @@ std::optional<Json> Digested(const Session& session, Json& record, size_t chars)
     budget::Line line;
     line.verb = session.current;
     line.call = input.call;
-    line.limit = input.budget;
+    line.limit = input.maxChars;
     line.reads = input.reads;
     if (line.verb && input.call) {
         auto args = CheckCall(*line.verb, input.call->contains("args") ? (*input.call)["args"] : Json());
@@ -98,7 +98,7 @@ std::optional<Json> Digested(const Session& session, Json& record, size_t chars)
 
 void PrintJson(Session& session, Json record) {
     const auto budgeted = [&](std::string& text) {
-        if (!session.input.budget || text.size() <= session.input.budget || !record.contains("result")) return;
+        if (!session.input.maxChars || text.size() <= session.input.maxChars || !record.contains("result")) return;
         if (auto digest = Digested(session, record, text.size())) {
             if (session.line) session.line->digest += text.size();
             record = std::move(*digest);

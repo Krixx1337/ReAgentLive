@@ -36,7 +36,7 @@ struct MemDiff {
     Addr address;
     Location where;
     uint64_t length = 0;
-    std::string type, test;
+    std::string type, compare;
     uint64_t compared = 0, matched = 0, tick = 0;
     std::vector<MemDiffRow> rows;
     bool capped = false;
@@ -46,7 +46,7 @@ struct MemDiff {
         v.flat("", &MemDiff::where);
         v("length", &MemDiff::length);
         v("type", &MemDiff::type);
-        v("test", &MemDiff::test, "changed|unchanged|increased|decreased");
+        v("compare", &MemDiff::compare, "changed|unchanged|increased|decreased");
         v("compared", &MemDiff::compared);
         v("matched", &MemDiff::matched);
         v("tick", &MemDiff::tick);
@@ -79,7 +79,7 @@ inline shape::MemDiff MakeMemDiff(const memsnap::Snapshot& before, std::span<con
     out.where = Locate(before.address, modules);
     out.length = before.bytes.size();
     out.type = type;
-    out.test = test;
+    out.compare = test;
     out.compared = diff.compared;
     out.matched = diff.matched;
     out.tick = tick;

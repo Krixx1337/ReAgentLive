@@ -20,7 +20,7 @@ same folder. Then:
   by real code. Returns what it added, joined, cut and which stubs it
   replaced; raises SaveError instead of loading less than the file holds.
 - `import_labels(path)`: name a database from a labels file (the console's
-  `<console>.labels.jsonl`, `export-labels`, `peek` with `label`): a full database of
+  `<console>.labels.jsonl`, `labels-export`, `peek` with `label`): a full database of
   the build or a save database. Your own names stay; a label becomes a
   comment there.
 - `export_names(path)`: write the names you gave in this database into a

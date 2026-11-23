@@ -104,7 +104,7 @@ struct Diff {
 };
 
 // Elements of `size` bytes every `size` bytes from the start (or the snapshot's candidates)
-// that pass `test` from `before` to `now`. Bytes compare for changed and
+// that pass `compare` from `before` to `now`. Bytes compare for changed and
 // unchanged; numbers for increased and decreased.
 inline Diff Compare(const Snapshot& before, std::span<const uint8_t> now, std::string_view type, size_t size, Test test) {
     Diff out;

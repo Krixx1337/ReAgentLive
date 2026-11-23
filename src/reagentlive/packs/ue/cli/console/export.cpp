@@ -1,4 +1,4 @@
-// reagentlive CLI console: export-assets, each object of some classes into
+// reagentlive CLI console: assets-export, each object of some classes into
 // its own file (its get with `view.nonzero`, and a table's rows), for reading offline.
 #include <algorithm>
 #include <filesystem>
@@ -52,7 +52,7 @@ bool Table(const Json& get, std::string_view className, std::string_view asked) 
 void RunExportAssets(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(ue::op::Find) || !client.Supports(ue::op::Fields) || !client.Supports(ue::op::ReadObject))
-        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "export-assets needs an agent with find, fields and object reads");
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "assets-export needs an agent with find, fields and object reads");
     namespace fs = std::filesystem;
     const fs::path dir(command.file);
     std::error_code error;
@@ -85,11 +85,11 @@ void RunExportAssets(Session& session, const Command& command, std::string_view 
     result.capped = capped;
     Json index = Json::array();
     std::map<std::string, uint32_t> used; // Per file: names taken, so a repeated name gets ~N.
-    // The lines run as batch items do: no output budget per item, and an
+    // The lines run as batch items do: no result cap per item, and an
     // item's failure is the file's, not this command's.
-    const auto budget = session.input.budget;
+    const auto budget = session.input.maxChars;
     const bool failed = session.failed;
-    session.input.budget = 0;
+    session.input.maxChars = 0;
     for (const auto& [object, asked] : objects) {
         const std::string ref = RefText(object.ref);
         Json file{{"ref", ref}, {"name", object.name}, {"class", object.className}};
@@ -117,7 +117,7 @@ void RunExportAssets(Session& session, const Command& command, std::string_view 
         index.push_back(ToJson(row));
         if (result.rows.size() < ShownRows) result.rows.push_back(std::move(row));
     }
-    session.input.budget = budget;
+    session.input.maxChars = budget;
     session.failed = failed;
     const fs::path indexPath = dir / "index.json";
     std::ofstream out(indexPath, std::ios::binary | std::ios::trunc);

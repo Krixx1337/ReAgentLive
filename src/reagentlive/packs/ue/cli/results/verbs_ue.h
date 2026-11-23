@@ -106,25 +106,25 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"release", "ue", ToolPack::Modify, "one more call (zeroed inputs by default) that drops the kept block",
             {{"object", "ref", object, {}, true, false, ref}, {"function", "str", function, {}, true}, block},
             Of<shape::Call>, build::Release, {}, true},
-        {"label", "ue", ToolPack::Native, "name an unreflected member in <console>.native.txt",
+        {"member-name", "ue", ToolPack::Native, "name an unreflected member in <console>.native.txt",
             {{"object", "str", objectOrClass, {}, true, false, ref}, {"offset", "int", "the member's offset in the object", {}, true},
              {"type", "str", "its type, with a count for an array: f64[3]", {}, true, false, "\"f32\""},
              {"name", "str", "the member's name (a trailing ? marks it unconfirmed)", {}, true}},
-            Of<shape::NativeLabel>, build::Label, "get then shows it (native; stale after a patch)."},
-        {"export-labels", "ue", ToolPack::Native, "names for a static-analysis tool (JSON lines, one build)",
+            Of<shape::NativeLabel>, build::MemberName, "get then shows it (native; stale after a patch)."},
+        {"labels-export", "ue", ToolPack::Native, "names for a static-analysis tool (JSON lines, one build)",
             {{"file", "file", "the labels file (default: the console's, <console>.labels.jsonl)"},
              {"module", "str", "the module (default: the exe)"},
              {"kinds", "exec|vtable|interface|global", "which rows to derive (default: all)", {}, false, true}},
-            Of<shape::ExportLabels>, build::ExportLabels,
+            Of<shape::ExportLabels>, build::LabelsExport,
             "Native exec thunks, vtables and interface implementations, merged into the file: names a static tool "
             "wrote back (user), globals peek's label confirmed, kinds not derived now and other builds' lines are "
             "kept; per address the highest rank wins (user, global, exec, interface, vtable). global derives nothing "
             "(peek's label writes those). After another tool's mappings: kinds [\"interface\"]."},
-        {"export-assets", "ue", ToolPack::Native, "each object of the classes into its own JSON file: every nonzero field, and a table's rows",
+        {"assets-export", "ue", ToolPack::Native, "each object of the classes into its own JSON file: every nonzero field, and a table's rows",
             {{"dir", "file", "the folder to write (created when missing)", {}, true},
              {"cls", "str", "the classes (and their subclasses) to export, up to 16", {}, true, true},
              View("match")},
-            Of<shape::ExportAssets>, build::ExportAssets,
+            Of<shape::ExportAssets>, build::AssetsExport,
             "Live instances only (no Default__ or archetype objects), up to 2000 per call (then capped). A file "
             "<dir>/<Class>/<name>.json holds {ref, name, class, get, rows}: get is get's result with nonzero, rows "
             "(a data or curve table) is rows' with limit 0; a read that failed is {error} in its place. "
@@ -182,7 +182,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "own and the modes but values take no paths (there nonzero only trims values); types reads no values. "
             "Options: one mode, not four flags, since the modes exclude each other; own and paths pick fields, file "
             "names the baseline."},
-        {"trace", "ue", ToolPack::Observe, "the first thing a line hits: actor, component, physical material, distance (read-only)",
+        {"line-trace", "ue", ToolPack::Observe, "the first thing a line hits: actor, component, physical material, distance (read-only)",
             {{"start", "point",
               "the start: a world point [x, y, z] in cm, an object's location (actor, component, camera manager) by "
               "its ref, or {\"object\": <ref>, \"socket\": \"Name\"} on a mesh component", {}, true},
@@ -190,7 +190,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"channel", "int", "the trace type query (0..31): 0 visibility, 1 camera, N: TraceTypeQuery N+1", "0"},
              {"simple", "bool", "simple collision instead of complex"},
              {"ignore", "ref", "an actor the line passes through; also the world it runs in"}},
-            Of<shape::Trace>, build::Trace,
+            Of<shape::Trace>, build::LineTrace,
             "KismetSystemLibrary.LineTraceSingle on the game thread, decoded by GameplayStatics.BreakHitResult; it "
             "changes no state. The world comes from ignore, else from an end's object: two points need ignore. "
             "Distance and points are in cm; distance counts from start. A socket needs a mesh component (get the "
@@ -251,10 +251,10 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "call, call-pure, call-each, release, func's params, each, script, refs, exec entries and the recorder need the game thread. on swaps one pointer in "
             "the viewport object for a copy of its Draw table: confirm Draw first (the skill's references/unreal/game-thread.md). "
             "Agents whose host does not link reagentlive::ue-draw answer unsupported.", true},
-        {"refs", "ue", ToolPack::Explore, "Blueprint functions whose bytecode names a pooled name (EX_NameConst)",
+        {"name-refs", "ue", ToolPack::Explore, "Blueprint functions whose bytecode names a pooled name (EX_NameConst)",
             {{"name", "str", "the exact pooled name", {}, false, false, "\"None\""},
              {"index", "int", "in place of name: its comparison index"}},
-            Of<shape::Refs>, build::Refs, "Give name or index."},
+            Of<shape::Refs>, build::NameRefs, "Give name or index."},
         {"funcs", "ue", ToolPack::Explore, "functions on the class chain, then on the native interfaces it implements",
             {{"object", "str", objectOrClass, {}, true, false, ref}, View("match start")},
             Of<shape::Funcs>, build::Funcs,

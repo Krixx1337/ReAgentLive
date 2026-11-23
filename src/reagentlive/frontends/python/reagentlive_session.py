@@ -29,7 +29,7 @@ on the line that guessed it, never as a quiet None or a caught KeyError.
 `s.help(verb)` shows a verb's arguments and result keys; `s.table_hash`
 tells a generated module or cached script its table is stale.
 
-A result past the call's output budget (`budget=N` characters; a session
+A result past the call's cap (`max_chars=N` characters; a session
 started with caller='tool' has one by default) comes back as a Digest
 instead: its size, its largest parts and `next`, the call narrowed, or
 `file`, where the console kept the whole result of a call that must not run
@@ -74,7 +74,7 @@ class ReAgentLiveError(RuntimeError):
 
 
 class Digest(dict):
-    """A result past its output budget, not printed: chars, budget, largest, maybe rows, narrow, and `next` (the
+    """A result past its cap, not printed: chars, max_chars, largest, maybe rows, narrow, and `next` (the
     call narrowed: a JSON call's text) or `file` (the whole envelope, for a call that must not run again)."""
 
     def next_call(self):
@@ -237,7 +237,7 @@ class Session:
         self._process = subprocess.Popen([console, *args, *ceiling, '--caller', caller], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=self._stderr, text=True, bufsize=1)
         self._types = {}
-        self.digest = None  # The last call's Digest (its result was past the budget), or None.
+        self.digest = None  # The last call's Digest (its result was past max_chars), or None.
         try:
             if table is not None:
                 current = self.send(_line('help', {'hash': True}))
@@ -318,11 +318,11 @@ class Session:
         kind = self._types.get(verb)
         return _wrap(result, kind, verb, self._named) if kind else result
 
-    def call(self, verb, args=None, meta=False, timing=False, budget=None):
+    def call(self, verb, args=None, meta=False, timing=False, max_chars=None):
         """One verb by name with named arguments (keys as `help` with `verb` shows them); its strict result, or a
-        Digest when it was past the output budget.
+        Digest when it was past max_chars.
 
-        None arguments are left out (the console applies the default); bytes go as hex pairs. budget:
+        None arguments are left out (the console applies the default); bytes go as hex pairs. max_chars:
         characters (0: none; None: the caller's default).
         """
         call = {'verb': verb, 'args': {key: _value(value) for key, value in (args or {}).items() if value is not None}}
@@ -330,8 +330,8 @@ class Session:
             call['meta'] = True
         if timing:
             call['timing'] = True
-        if budget is not None:
-            call['budget'] = budget
+        if max_chars is not None:
+            call['max_chars'] = max_chars
         envelope = self.send(json.dumps(call, separators=(',', ':')))
         self.digest = Digest(envelope['digest']) if 'digest' in envelope else None
         if not envelope.get('ok'):

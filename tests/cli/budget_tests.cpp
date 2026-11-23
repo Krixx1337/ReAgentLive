@@ -57,7 +57,7 @@ budget::Line LineOf(bool reads, const Json& given = VendorArgs) {
     line.verb = &Row("call");
     line.args = ArgsOf(Row("call"), given);
     line.call = Json{{"verb", "call"}, {"args", given}};
-    line.limit = budget::ToolBudget;
+    line.limit = budget::ToolMaxChars;
     line.reads = reads;
     return line;
 }
@@ -125,7 +125,7 @@ TEST_CASE("profile: a table row's members sit under its value") {
 TEST_CASE("narrow: fields keeps the members that fit, whole where they can, limit when they do not fit") {
     const Json result = VendorCall(200);
     const budget::Profile profile(result);
-    const auto changes = budget::Narrow(profile, Row("call"), ArgsOf(Row("call"), VendorArgs), budget::ToolBudget);
+    const auto changes = budget::Narrow(profile, Row("call"), ArgsOf(Row("call"), VendorArgs), budget::ToolMaxChars);
     REQUIRE_FALSE(changes.empty());
     REQUIRE(changes.front().key == "view.fields");
     const Json& paths = changes.front().value;
@@ -142,7 +142,7 @@ TEST_CASE("narrow: fields keeps the members that fit, whole where they can, limi
             if (field == path || field.starts_with(path + ".")) kept += chars;
     }
     CHECK(tag);
-    if (kept > budget::ToolBudget / 4 * 3) {
+    if (kept > budget::ToolMaxChars / 4 * 3) {
         REQUIRE(changes.size() == 2);
         CHECK(changes[1].key == "view.limit");
         CHECK(changes[1].value.is_number());
@@ -163,22 +163,22 @@ TEST_CASE("narrow: limit for a list without fields; nonzero, then own, for get")
     const budget::Profile each(Json{{"class", "Pawn"}, {"rows", rows}});
     const auto& eachRow = Row("each");
     const auto changes = budget::Narrow(each, eachRow,
-        ArgsOf(eachRow, {{"cls", "Pawn"}, {"paths", Json::array({Json::array({"Health"})})}, {"view", {{"limit", 0}}}}), budget::ToolBudget);
+        ArgsOf(eachRow, {{"cls", "Pawn"}, {"paths", Json::array({Json::array({"Health"})})}, {"view", {{"limit", 0}}}}), budget::ToolMaxChars);
     REQUIRE(changes.size() == 1);
     CHECK(changes[0].key == "view.limit");
     REQUIRE(changes[0].value.is_number_unsigned());
-    CHECK(changes[0].value.get<size_t>() * 100 < budget::ToolBudget);
+    CHECK(changes[0].value.get<size_t>() * 100 < budget::ToolMaxChars);
 
     const budget::Profile all(Json{{"rows", Json::array({{{"name", std::string(30000, 'x')}}})}});
     const auto& getRow = Row("get");
-    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}}), budget::ToolBudget) ==
+    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}}), budget::ToolMaxChars) ==
         std::vector<budget::Change>{{"view.nonzero"}});
-    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}, {"view", {{"nonzero", true}}}}), budget::ToolBudget) ==
+    CHECK(budget::Narrow(all, getRow, ArgsOf(getRow, {{"object", "0x10#1:2"}, {"view", {{"nonzero", true}}}}), budget::ToolMaxChars) ==
         std::vector<budget::Change>{{"own"}});
 
     // A verb with no narrowing arg offers no call.
     const budget::Profile status(Json{{"blob", std::string(30000, 'x')}});
-    CHECK(budget::Narrow(status, Row("status"), Args{}, budget::ToolBudget).empty());
+    CHECK(budget::Narrow(status, Row("status"), Args{}, budget::ToolMaxChars).empty());
 }
 
 TEST_CASE("next call: the changes set in the call's args, its other keys kept") {
@@ -199,7 +199,7 @@ TEST_CASE("next call: the changes set in the call's args, its other keys kept") 
 TEST_CASE("digest: a const call gets a narrower line, a call that may change state a file") {
     const Json result = VendorCall(200);
     const size_t chars = Text(Envelope(result)).size();
-    REQUIRE(chars > budget::ToolBudget);
+    REQUIRE(chars > budget::ToolMaxChars);
 
     // Runs again: a digest with next, no file, no result.
     Json record = Envelope(result);
@@ -212,7 +212,7 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
     CHECK_FALSE(reads->contains("result"));
     const Json& digest = (*reads)["digest"];
     CHECK(digest["chars"] == chars);
-    CHECK(digest["budget"] == budget::ToolBudget);
+    CHECK(digest["max_chars"] == budget::ToolMaxChars);
     CHECK(digest["rows"]["path"] == "outputs[].value.rows");
     CHECK(digest["rows"]["count"] == 200);
     CHECK_FALSE(digest["largest"].empty());
@@ -228,7 +228,7 @@ TEST_CASE("digest: a const call gets a narrower line, a call that may change sta
     CHECK(Call(next));
     // narrow names the verb's narrowing args by their paths.
     CHECK(digest["narrow"] == Json::array({"view.limit", "view.fields", "view.nonzero"}));
-    CHECK(Text(*reads).size() < budget::ToolBudget);
+    CHECK(Text(*reads).size() < budget::ToolMaxChars);
 
     // Must not run again: the whole envelope goes to the file, no next.
     record = Envelope(result);
@@ -310,8 +310,8 @@ TEST_CASE("digest: no change that fits offers the same call with a budget, and n
     const Json next = Json::parse((*digest)["digest"]["next"].get<std::string>());
     CHECK(next["verb"] == "script");
     CHECK(next["args"] == Json{{"object", "0x10#1:2"}, {"function", "F"}});
-    REQUIRE(next["budget"].is_number_unsigned());
-    CHECK(next["budget"].get<size_t>() >= chars);
+    REQUIRE(next["max_chars"].is_number_unsigned());
+    CHECK(next["max_chars"].get<size_t>() >= chars);
     // A decode narrows by text (view.match) or by offset range (to).
     CHECK((*digest)["digest"]["narrow"] == Json::array({"to", "view.match"}));
 }

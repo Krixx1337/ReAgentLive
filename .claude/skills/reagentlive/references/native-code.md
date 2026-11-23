@@ -40,8 +40,8 @@ Answer one-address questions live, with no database:
   the code uses it where a tag is expected, then `peek` with `label` and
   `name` records it (`docs/commands/labels.md#peek-with-label`).
 - **Names for a full database:** after SDK-generator mappings,
-  `{"verb": "export-labels", "args": {"kinds": ["interface"]}}`, else a
-  full `export-labels`; then the loader's `import_labels`.
+  `{"verb": "labels-export", "args": {"kinds": ["interface"]}}`, else a
+  full `labels-export`; then the loader's `import_labels`.
 
 ## Following a native getter
 

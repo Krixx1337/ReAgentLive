@@ -1,6 +1,6 @@
 # Memory commands
 
-*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `writes`, `search`, captures (`watch-start`, `watch-read`, `watch-stop`), `mem-snap`/`mem-diff`, typed layouts.
+*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `timed-writes`, `search`, captures (`watch-start`, `watch-read`, `watch-stop`), `mem-snap`/`mem-diff`, typed layouts.
 
 **TL;DR:** Read, search and change raw memory in any process the agent
 runs in, with no engine pack (tier T0). Every write is guarded and can
@@ -18,7 +18,7 @@ keys: the [reference](reference.md), `help` with `verb`, or
 | `read` | 1..4096 bytes; the whole range must pass the host's `readable` check. `type` `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`, `f64` or `ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. A layout string as `type`: a block of mixed types (below). `type` `cstr` or `wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
 | `peek` | console only, held: what 1..64 qwords hold, for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with a pack), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `label` appends one qword as a confirmed global to a labels file (default: the host's names file, else the console's; [labels](labels.md#peek-with-label)) |
 | `write` | 1..256 bytes; committed, writable pages; page protection is never changed. `expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there. `hold` and `undo`: [timed writes](#timed-writes) |
-| `writes` | every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one (`id`: `undo:N` or `hold:N`) or all, restoring active `undo` ones, and returns the rows it ended |
+| `timed-writes` | every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one (`id`: `undo:N` or `hold:N`) or all, restoring active `undo` ones, and returns the rows it ended |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
 | `search`, `search-job` | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
 | `mem-snap`, `mem-diff` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
@@ -53,7 +53,7 @@ the field). `layout` is `{name: value}` (keys print sorted), `[n]` fields as
 lists, unnamed fields by offset (`"+0x8"`); `hex` stays. Nothing is saved:
 the same syntax names members for good in the
 [native names file](unreal-fields.md#native-members), so a layout that decoded here pastes
-into `label` unchanged.
+into `member-name` unchanged.
 
 ## search
 
@@ -128,10 +128,10 @@ refused. So "which value fell when I got hit?" is a snap of the owner's
 native range, then while nothing happens
 
 ```json
-{"verb": "mem-diff", "args": {"test": "unchanged", "type": "f32", "keep": true}}
+{"verb": "mem-diff", "args": {"compare": "unchanged", "type": "f32", "keep": true}}
 ```
 
-and after the hit the same with `"test": "decreased"`, repeated until a
+and after the hit the same with `"compare": "decreased"`, repeated until a
 few rows remain. Each diff is one read of the range, not one tick: values
 may be torn across 4 KB requests, so confirm a candidate with
 `watch-start`. This is a bounded narrowing scan over one range the agent
@@ -141,7 +141,7 @@ pointer scan ([design](../design/architecture.md#place-among-other-tools)).
 ## Timed writes
 
 Both forms take 1..64 bytes for up to 60 s, at most 8 of each at once,
-and run at the start of every host tick, before requests. `writes` lists
+and run at the start of every host tick, before requests. `timed-writes` lists
 them and `clear` ends them.
 
 - **`undo`** writes once, when memory holds `expect` (required), and the

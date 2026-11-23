@@ -1,6 +1,6 @@
 // reagentlive CLI: Build, a call's entry point (build.h), the checks a call
 // meets with no target, and the verbs that reach no agent (help, status,
-// quit, stats, batch).
+// quit, usage, batch).
 #include <string>
 #include <vector>
 #include "reagentlive/frontends/cli/call/build_internal.h"
@@ -30,12 +30,12 @@ std::string CallProblem(const Json& call) {
         return "a call is {\"verb\": \"<verb>\", \"args\": {...}}";
     for (const auto& [key, value] : call.items()) {
         if (key == "verb" || key == "args") continue;
-        if (key == "budget") {
-            if (!value.is_number_unsigned()) return "budget is a number of characters (0: none)";
+        if (key == "max_chars") {
+            if (!value.is_number_unsigned()) return "max_chars is a number of characters (0: none)";
             continue;
         }
         if (key != "meta" && key != "timing" && key != "big")
-            return "unknown key '" + key + "' (a call has verb, args, meta, timing, budget, big)";
+            return "unknown key '" + key + "' (a call has verb, args, meta, timing, max_chars, big)";
         if (!value.is_boolean()) return key + " is true or false";
     }
     return {};
@@ -121,9 +121,9 @@ Parsed Quit(const Args&, const ParseContext&) {
     return command;
 }
 
-Parsed Stats(const Args& args, const ParseContext&) {
+Parsed Usage(const Args& args, const ParseContext&) {
     Command command;
-    command.kind = Kind::Stats;
+    command.kind = Kind::Usage;
     command.all = args.Has("all");
     command.listSessions = args.Has("sessions");
     command.target = args.Str("session");
@@ -135,7 +135,7 @@ Parsed Stats(const Args& args, const ParseContext&) {
 namespace {
 // Verbs with nothing for a batch to hold.
 bool NotInBatch(std::string_view verb) {
-    return verb == "batch" || verb == "run" || verb == "quit" || verb == "help" || verb == "status" || verb == "stats";
+    return verb == "batch" || verb == "run" || verb == "quit" || verb == "help" || verb == "status" || verb == "usage";
 }
 }
 

@@ -13,7 +13,7 @@
 #include "reagentlive/frontends/cli/code/signature_json.h"
 #include "reagentlive/frontends/cli/results/mem_json.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
-#include "reagentlive/frontends/cli/results/stats.h"
+#include "reagentlive/frontends/cli/results/usage_report.h"
 #include "reagentlive/frontends/cli/call/build_internal.h"
 
 namespace reagentlive::cli {
@@ -38,15 +38,15 @@ inline const std::vector<Verb>& CoreVerbs() {
             {}, Of<shape::Status>, build::Status,
             "table_hash changes when any verb's args or result change: a cached script or skill is then stale."},
         {"quit", "core", ToolPack::Explore, "end the console", {}, Of<shape::Quit>, build::Quit},
-        {"stats", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
+        {"usage", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
             {{"all", "bool", "every session in the log, and the verbs none called"},
              {"sessions", "bool", "the log's sessions, newest first: one row each"},
              {"session", "str", "one session from the log, by its id"}},
-            Of<shape::Stats>, build::Stats,
+            Of<shape::UsageReport>, build::Usage,
             "From the usage log beside the console; works with no target (then: the log's latest session). calls "
             "counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a "
             "verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
-            "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
+            "result cap (max_chars), and saved the characters their digests kept out (full size less the digest). Marks per "
             "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or "
             "an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by "
             "error kind; one refused for its pack is not in calls_by_pack). A batch's "
@@ -56,7 +56,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,
             "rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, "
-            "status, stats, quit, batch and run are not allowed inside."},
+            "status, usage, quit, batch and run are not allowed inside."},
         {"run", "core", ToolPack::Explore, "a plan file's steps, each its own call: one NDJSON line per result, then a report",
             {{"plan", "file", "the plan: a JSON list of {\"verb\", \"args\"?, \"expect\"?, \"repeat\"?: {\"every\", \"for\"}}", {}, true},
              {"out", "file", "write the lines here (rewritten), not in the result"}},
@@ -100,15 +100,15 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"}},
             Of<shape::Write>, build::Write,
             "A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, "
-            "the timed write as writes lists it; up to 64 bytes. undo stops as conflict if the game changes the "
+            "the timed write as timed-writes lists it; up to 64 bytes. undo stops as conflict if the game changes the "
             "value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without "
             "one it is refused. hold on an addr based on a literal ref ({\"base\": <ref>, \"offset\": N}) stops "
             "when that object is freed or replaced. Options: expect guards every write; undo and hold are the two "
             "timed forms (undo's owner and object only guard an undo, so they live inside it).", true},
-        {"writes", "core", ToolPack::Modify, "the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones",
+        {"timed-writes", "core", ToolPack::Modify, "the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones",
             {{"clear", "bool", "end them"},
-             {"id", "str", "with clear: one write's id as writes lists it (undo:N or hold:N); default all"}},
-            Of<shape::Writes>, build::Writes,
+             {"id", "str", "with clear: one write's id as timed-writes lists it (undo:N or hold:N); default all"}},
+            Of<shape::Writes>, build::TimedWrites,
             "Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. "
             "clear answers cleared and the rows it ended.", true},
         {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
@@ -144,7 +144,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::MemSnap>, build::MemSnap,
             "A new snap replaces the last one and its candidates. Refused when part of the range is unreadable."},
         {"mem-diff", "core", ToolPack::Observe, "elements of the last mem-snap that changed, stayed, rose or fell since; keep narrows",
-            {{"test", "changed|unchanged|increased|decreased", "what an element must have done", {}, true},
+            {{"compare", "changed|unchanged|increased|decreased", "what an element must have done", {}, true},
              {"type", "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start", {}, true, false,
               "\"f32\""},
              {"keep", "bool", "keep only the matches as candidates and today's bytes as the new baseline"},
@@ -196,12 +196,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::SigBytes>, build::SigBytes},
         {"labels-sign", "core", ToolPack::Native, "a byte signature on each of this build's user and global names, so they survive a patch",
             {{"file", "file", labels}, {"module", "str", module},
-             {"again", "bool", "sign rows that have a signature or failed before too"}},
+             {"retry", "bool", "sign rows that have a signature or failed before too"}},
             Of<shape::LabelsSign>, build::LabelsSign,
             "A function's signature starts at it, a global's at the first code that loads it (a reference signature); "
             "each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's "
             "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and "
-            "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless again. "
+            "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless retry. "
             "The file is rewritten in place; other builds' lines stay as they are."},
         {"labels-port", "core", ToolPack::Native, "find other builds' signed names in the running build and add them to the file",
             {{"file", "file", labels}, {"module", "str", module}},
@@ -291,7 +291,7 @@ inline std::vector<Origin> TableOrigins(std::span<const Origin> packOrigins) {
 inline const std::vector<std::string>& GeneralNotes() {
     static const std::vector<std::string> notes = {
         "A call is one JSON object per line: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}, "
-        "args named as help shows them; \"meta\", \"timing\" and \"big\" as true, \"budget\" as a number. A line may "
+        "args named as help shows them; \"meta\", \"timing\" and \"big\" as true, \"max_chars\" as a number. A line may "
         "also hold a JSON list of calls.",
         "help with verb shows its args (type, default, help), its result's keys, notes and an example call; help "
         "with json the whole table.",
@@ -304,12 +304,12 @@ inline const std::vector<std::string>& GeneralNotes() {
         "A path is a list of field names: [\"Info\", \"Owner\"]. A key that does not apply is omitted from a result.",
         "meta prints struct values with their layout; timing adds trips, wait_ms and total_ms.",
         "A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with "
-        "its largest parts and next, the call narrowed (or file, for a call that must not run again). budget sets "
+        "its largest parts and next, the call narrowed (or file, for a call that must not run again). max_chars sets "
         "the limit, big lifts it.",
         "One console per agent: a second one is refused as busy.",
         "The module list and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
         "One-shot: <console> [pid] -c '<call or list of calls>' (or -c @<file>, one call per line) emits JSON Lines.",
-        "Each call is logged beside the console as facts (verb, keys, sizes, refusal), never values; stats reads it, "
+        "Each call is logged beside the console as facts (verb, keys, sizes, refusal), never values; usage reads it, "
         "also with no target. --caller tool|script|shell says who reads the output; --no-usage turns it off.",
     };
     return notes;

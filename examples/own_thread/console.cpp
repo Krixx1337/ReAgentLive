@@ -1,7 +1,7 @@
 // reagentlive: the generic console for the own-thread host (host.cpp). Core
 // layout only, so Unreal commands are refused by the agent's op list. With no
 // pid it attaches to the one process that has an own-thread agent; with none
-// or several it answers help and stats only.
+// or several it answers help and usage only.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -59,7 +59,7 @@ int wmain(int argc, wchar_t** argv) {
     std::wstring pid;
     if (!HasTarget(argc, argv)) {
         // With several, none is picked: the console still answers help and
-        // stats, and refuses the rest until a pid is given.
+        // usage, and refuses the rest until a pid is given.
         const auto processes = AgentProcesses();
         if (processes.size() > 1) {
             std::fprintf(stderr, "Several processes have an agent; pass one pid:");

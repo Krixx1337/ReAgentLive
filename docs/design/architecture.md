@@ -31,7 +31,7 @@ borrowed:
 
 | Need | Borrow from | Not built here because |
 |---|---|---|
-| What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch-start` for the tick a value changes on, `write` with `undo` or `hold` to tell a value recomputed every tick from one set once, and `script` or `refs` for Blueprint readers |
+| What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch-start` for the tick a value changes on, `write` with `undo` or `hold` to tell a value recomputed every tick from one set once, and `script` or `name-refs` for Blueprint readers |
 | Narrowing scans over the whole process, pointer scans | a memory scanner | large, and needs no tick or identity. A bounded one over one range (`mem-snap`, `mem-diff`, up to 1 MiB) is built: an AI agent cannot drive the scanner's window, and the range is usually an object it already found |
 | Tracing native code, direct C++ calls, code hooks | a dynamic instrumentation tool | code patches in the target; the core writes none. Reflected calls are covered by the call recorder (`calls-start`), one `UFunction` pointer |
 | What is at one address, what points at it, what uses a member offset, whether a signature holds there | nothing: the [fast lane](native.md#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |

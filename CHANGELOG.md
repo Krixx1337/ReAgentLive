@@ -27,6 +27,16 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **Verbs renamed so no two differ by a letter and families read alike:**
+  `stats` is `usage`, `refs` is `name-refs`, `label` is `member-name`,
+  `export-labels` is `labels-export`, `export-assets` is `assets-export`,
+  `trace` is `line-trace` and `writes` is `timed-writes`; their MCP tools
+  and Python functions follow (`ue_name_refs`, `c.usage()`). Args:
+  `labels-sign`'s `again` is `retry`, `mem-diff`'s `test` is `compare`
+  (and its result key). Update calls, plans and scripts to the new names.
+- **The per-result cap is `max_chars`:** the call key `budget`, the MCP
+  tools' `budget` argument, the Python session's `budget=` and the
+  digest's `budget` key are all `max_chars` now.
 - **The console takes JSON calls only:** the text grammar is gone. A call
   is `{"verb": ..., "args": {...}}`, one per line on stdin, through `-c`
   (one call or a list) or `-c @<file>`; `batch` takes `{"calls": [...]}`.

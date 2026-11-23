@@ -1,6 +1,6 @@
 # Console
 
-*Home of:* how to drive any ReAgentLive console: JSON calls and their keys, addresses and literal refs, holds and `batch`, output budgets and digests, the cache file, one-shot runs and console arguments, the usage log and `stats`, the JSON Lines output.
+*Home of:* how to drive any ReAgentLive console: JSON calls and their keys, addresses and literal refs, holds and `batch`, the result cap (`max_chars`) and digests, the cache file, one-shot runs and console arguments, the usage log and `usage`, the JSON Lines output.
 
 **TL;DR:** The console is the command line every interface ends in: send
 `{"verb": "help"}`, then `<console> -c '{"verb": "find", "args": {"cls":
@@ -43,7 +43,7 @@ a layout is one string.
   is `true` (or `false`, left out). An `int` is a number or `"0x..."` text;
   a `dur` is seconds (`1.5` is 1500 ms).
 - **Call keys** beside `verb` and `args`: `"meta": true` (struct values
-  with their layout), `"timing": true`, `"budget": N` and `"big": true`
+  with their layout), `"timing": true`, `"max_chars": N` and `"big": true`
   ([fewer round trips](#fewer-round-trips)).
 - **Marks:** `writes` on a verb that writes the target's memory or calls
   into it, `blocks` on one that holds the console for seconds by design
@@ -127,13 +127,13 @@ request costs up to a host tick. The console cuts both:
   and prints one envelope with `rows` (each call's own envelope), `all_ok`,
   `same_tick`, `first_tick` and `last_tick`. A value read in the batch
   cannot feed a later call: every call carries literal values. Not allowed
-  inside: `help`, `status`, `stats`, `quit`, `batch`, `run`, and `each`
+  inside: `help`, `status`, `usage`, `quit`, `batch`, `run`, and `each`
   with `seconds`. Same tick is
   best effort: check `same_tick`. Each envelope carries its own `tick` (its
   first response's) and `last_tick` when its responses spanned ticks;
   `spans_ticks` lists (`index`, `command`) the calls during which the
   batch's tick moved, so a skewed batch names the call that broke it. Some
-  verbs always span ticks: `each`, `census`, `search`, `refs`, `xrefs` and
+  verbs always span ticks: `each`, `census`, `search`, `name-refs`, `xrefs` and
   `touches` scan over several. For values that must line up, use `get`, or
   a batch without those.
 - **`get` with `paths`** reads several fields through pointers and
@@ -142,12 +142,12 @@ request costs up to a host tick. The console cuts both:
 - **`"timing": true`** on any call adds `timing` to its envelope:
   `trips` (requests sent), `wait_ms` (time waiting for responses) and
   `total_ms`.
-- **Output budgets.** A console started with `--caller tool` prints at
-  most 25,000 characters a result; scripts and shells have no limit. A
-  call's `"budget": N` sets its own (`0`: none), `"big": true` lifts it,
-  and a batch's covers its items. A result past the budget is not printed:
+- **The result cap (`max_chars`).** A console started with `--caller tool`
+  prints at most 25,000 characters a result; scripts and shells have no
+  limit. A call's `"max_chars": N` sets its own (`0`: none), `"big": true`
+  lifts it, and a batch's covers its items. A result past it is not printed:
   `digest` stands in for `result` (`ok` stays true) with its size
-  (`chars`, `budget`), the main list (`rows`: its path and count), its
+  (`chars`, `max_chars`), the main list (`rows`: its path and count), its
   `largest` parts (paths with array elements folded, `rows[].Price`), the
   verb's narrowing keys by path (`narrow`, such as `view.limit`) and
   `status`: every key the result had that says whether it is complete
@@ -163,7 +163,7 @@ request costs up to a host tick. The console cuts both:
     list's members that fit go in `view.fields` (whole members where they
     fit, else their own members), `view.limit` shrinks to the rows that
     fit, or `view.nonzero` (then `own`) is added. A call whose verb has no
-    key that would help comes back with a `budget` it fits (the result's
+    key that would help comes back with a `max_chars` it fits (the result's
     size plus a tenth, in thousands), so a digest is never a dead end. It
     is for a call that only reads: reads, `each`, `call-pure`, and a
     `call` with `params` on a const or pure function.
@@ -174,7 +174,7 @@ request costs up to a host tick. The console cuts both:
     file (a new agent instance starts a new folder; the last 16 are kept).
     When the file cannot be written, the result prints whole.
 
-  A batch item past the budget gets its own digest; the batch's result
+  A batch item past the cap gets its own digest; the batch's result
   goes to a file when any item may have changed state. How the MCP tools
   hand a digest on: [clients](../client.md#mcp-tools).
 - **Compact values.** Decoded values print compact (structs as
@@ -250,7 +250,7 @@ it would be before it runs (schema, builder, a `batch`'s calls, a plan
 step's `expect` and `repeat`; any `{"module": ...}` counts as loaded) and
 answered `{"checked": true}` or with its refusal.
 `--caller`, `--no-usage` and the session option (`<console> --session <id>`) are the
-[usage log](#usage-log-and-stats)'s. `--names <file>` loads a
+[usage log](#usage-log-and-usage)'s. `--names <file>` loads a
 [names file](unreal-fields.md#readable-names).
 
 **`--packs explore,native`** is a ceiling: the console runs only the verbs
@@ -268,12 +268,12 @@ alone (`{rows: [], table_hash}`), with no target: a program that keeps a
 table reads it to know whether the console changed.
 
 **No target.** When the target is not running or the agent cannot be
-attached, the console answers `help` and `stats` from its table and its
+attached, the console answers `help` and `usage` from its table and its
 log; any other verb is refused with an error of kind `startup` (why there
 is no target), or `busy` while another client holds the agent, and the console ends, so a client starts it again once the
-target runs. `-c` calls that are all `help` or `stats` never attach.
+target runs. `-c` calls that are all `help` or `usage` never attach.
 
-## Usage log and stats
+## Usage log and `usage`
 
 Every call the console runs appends one line to `<console>.usage.jsonl`
 beside the console executable, so an agent can look back at what its
@@ -298,7 +298,7 @@ the generated functions, the MCP tools), so one log covers them
   `<console> --session <id>` names a session outright (the MCP adapter
   passes one per server to the console it starts for each call); a named
   session is never handed on either.
-- **A verb's own calls** (`export-assets` reading each object with `get`
+- **A verb's own calls** (`assets-export` reading each object with `get`
   and `rows`) are not logged: their output goes to files, so only the
   verb's result counts as its output.
 - **The caller** is `tool` (an agent reads every result, as through the
@@ -320,16 +320,16 @@ the generated functions, the MCP tools), so one log covers them
 - **Refused calls** count under `refused`; they never get `unfiltered`, and
   one refused for its pack does not count in `calls_by_pack`.
 - **Capped:** past 4 MB the oldest sessions are dropped when a console
-  starts, down to three quarters of that. `stats` with `all` gives
+  starts, down to three quarters of that. `usage` with `all` gives
   `since`, the oldest line kept.
 
-`{"verb": "stats"}` reports the session the console is in (with no
+`{"verb": "usage"}` reports the session the console is in (with no
 target: the log's latest); with `session` (an id), one session of the log;
 with `all`, every session in the log, plus `never_called`, the verbs of
 this table none of them used; with `sessions`, the log's sessions, newest
 first. Ranked by output, largest first, with per-verb marks
 (`unfiltered`, `repeated`, `refused`); every key and mark:
-[reference](reference.md#stats).
+[reference](reference.md#usage).
 
 The marks state what happened; what to do about them is the
 [`reagentlive` skill](../../.claude/skills/reagentlive/SKILL.md)'s. Sizes

@@ -10,7 +10,7 @@ one-shot use and the cache file: `docs/commands/console.md#one-shot-use`.
   exit code 1 on any error. Use it for independent calls you read; a
   chain where one step's output feeds the next goes to Python.
 - **`--caller tool`** whenever you read the output: it gives you the
-  output budget and digests, and `stats` counts it as context.
+  result cap (`max_chars`) and digests, and `usage` counts it as context.
 - **`--packs`:** `-c` runs all four packs by default (a person's
   ceiling). Pass `--packs explore,native` (add `observe` as needed) for
   read-only work; add `modify` only for an approved write.
@@ -53,8 +53,8 @@ with Session(r'<console exe>', packs=['explore', 'native', 'observe']) as s:
 - `StaleTableError` at `Console(s)`: the console was rebuilt; generate
   again.
 - `caller='tool'` when you read every result yourself (it gives the
-  output budget; a result past it is a `Digest`, also in `s.digest`); the
-  default `script` keeps a script's output apart in `stats`.
+  result cap; a result past it is a `Digest`, also in `s.digest`); the
+  default `script` keeps a script's output apart in `usage`.
 - Page with the console's cursor: pass `next_cursor` back as `view.start`,
   or raise `view.limit`; check a list a verb can cut before treating it as
   complete.

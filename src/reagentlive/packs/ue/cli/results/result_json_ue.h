@@ -886,7 +886,7 @@ struct ExportLabels {
         v("capped", &ExportLabels::capped);
     }
 };
-// export-assets: one file per object; the index lists them all, rows the first.
+// assets-export: one file per object; the index lists them all, rows the first.
 struct ExportedAsset {
     static constexpr std::string_view TypeName = "ExportedAsset";
     std::string name, className, file;

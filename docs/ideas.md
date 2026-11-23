@@ -56,7 +56,7 @@ ticks, after a dry run.
   ask with its output, read a plain field instead of calling its getter),
   and each host's docs say whether it enables it.
 
-### 19 · Checks for native members (`label` verify)
+### 19 · Checks for native members (`member-name` verify)
 
 Waits for the first game patch that moves a labelled offset. Native lines
 already go `stale` under another image timestamp; this makes re-confirming
@@ -267,7 +267,7 @@ Also a census that marks which instances are new: it needs per-instance state
 in the agent for a question `census`'s `diff` plus `find` by `cls` answers.
 Also showing a function's first instructions inside `touches`: `disasm` on
 the row is one more command, and the result stays small.
-Also saved, named layouts or a type system: `label` names members one by
+Also saved, named layouts or a type system: `member-name` names members one by
 one; anything richer is the static tool's.
 Also renaming result keys so they can be guessed: the keys are documented
 and the Python client hides them; a rename moves the problem.

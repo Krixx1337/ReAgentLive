@@ -1,5 +1,5 @@
 // reagentlive Unreal pack: Blueprint bytecode: script (one function's anchored
-// names, calls and properties) and refs (functions whose bytecode names a tag).
+// names, calls and properties) and name-refs (functions whose bytecode names a tag).
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

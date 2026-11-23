@@ -29,7 +29,7 @@ class CoreConsoleTests(unittest.TestCase):
 
     def test_the_table_is_never_digested(self):
         # A tool client reads it before any call (the MCP server at start), whatever the budget.
-        call = json.dumps({'verb': 'help', 'args': {'json': True}, 'budget': 100})
+        call = json.dumps({'verb': 'help', 'args': {'json': True}, 'max_chars': 100})
         out = subprocess.run([CONSOLE, '--caller', 'tool', '--no-usage', '-c', call],
                              capture_output=True, text=True, timeout=30).stdout
         reply = json.loads(next(line for line in out.splitlines() if line.startswith('{')))

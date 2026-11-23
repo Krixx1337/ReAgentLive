@@ -89,7 +89,7 @@ Parsed MemSnap(const Args& args, const ParseContext& context) {
 
 Parsed MemDiff(const Args& args, const ParseContext&) {
     Command command;
-    command.target = args.Str("test");
+    command.target = args.Str("compare");
     command.view = args.Str("type");
     if (!ElementSize(command.view)) return Fail("type is one of i8..u64, f32, f64 or ptr");
     command.all = args.Has("keep");
@@ -205,9 +205,9 @@ Parsed Write(const Args& args, const ParseContext& context) {
 }
 
 // writes: the timed writes; clear ends one (id) or all.
-Parsed Writes(const Args& args, const ParseContext&) {
+Parsed TimedWrites(const Args& args, const ParseContext&) {
     Command command;
-    command.kind = Kind::Writes;
+    command.kind = Kind::TimedWrites;
     if (args.Has("id") && !args.Has("clear")) return Fail("id goes with clear");
     if (!args.Has("clear")) return command;
     command.all = true;                         // clear
@@ -217,7 +217,7 @@ Parsed Writes(const Args& args, const ParseContext&) {
     uint64_t n = 0;
     const auto mode = std::string_view(id).substr(0, colon);
     if (colon == std::string::npos || (mode != "undo" && mode != "hold") || !Number(std::string_view(id).substr(colon + 1), n) ||
-        !n || n > UINT32_MAX) return Fail("id is undo:N or hold:N, as writes lists it");
+        !n || n > UINT32_MAX) return Fail("id is undo:N or hold:N, as timed-writes lists it");
     command.target = mode;
     command.request.args[0] = n;
     return command;

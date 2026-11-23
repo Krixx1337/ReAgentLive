@@ -110,7 +110,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         if (!script) return CommandError(session, jsonCommand, script.error());
         return Emit(session, jsonCommand, MakeScript(object, function->owner + ":" + function->name, *script));
     }
-    if (command.kind == Kind::Refs) {
+    if (command.kind == Kind::NameRefs) {
         auto index = static_cast<int32_t>(request.args[0]);
         std::string name = request.text;
         if (!index) { // Exact text: walk the name pool's matches until it appears.
@@ -325,9 +325,9 @@ std::optional<Json> PackGameThread(Session& session) {
 bool PackCommand(const Command& command) {
     switch (command.kind) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Each:
-    case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
-    case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::GameThread:
-    case Kind::ExportAssets:
+    case Kind::Get: case Kind::Script: case Kind::NameRefs: case Kind::Entries: case Kind::LabelsExport: case Kind::MemberName:
+    case Kind::Layout: case Kind::LineTrace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::GameThread:
+    case Kind::AssetsExport:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -340,8 +340,8 @@ bool PackCommand(const Command& command) {
 bool PackHeld(const Command& command) {
     switch (command.kind) {
     case Kind::Dump: case Kind::Snap: case Kind::Get: case Kind::TypedCall: case Kind::Release:
-    case Kind::Script: case Kind::Entries: case Kind::ExportLabels: case Kind::Label: case Kind::Layout:
-    case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum: return true;
+    case Kind::Script: case Kind::Entries: case Kind::LabelsExport: case Kind::MemberName: case Kind::Layout:
+    case Kind::LineTrace: case Kind::Calls: case Kind::Rows: case Kind::Enum: return true;
     case Kind::Each: return !command.seconds;
     case Kind::Remote: break;
     default: return false;
@@ -367,15 +367,15 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
         ue::SetRef(command.request, *object);
         command.className.clear();
     }
-    if (command.kind == Kind::Label) {
+    if (command.kind == Kind::MemberName) {
         RunLabel(session, command, jsonCommand);
         return;
     }
-    if (command.kind == Kind::ExportLabels) {
+    if (command.kind == Kind::LabelsExport) {
         RunExportLabels(session, command, jsonCommand);
         return;
     }
-    if (command.kind == Kind::ExportAssets) {
+    if (command.kind == Kind::AssetsExport) {
         RunExportAssets(session, command, jsonCommand);
         return;
     }
@@ -387,7 +387,7 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
         RunCalls(session, command, jsonCommand);
         return;
     }
-    if (command.kind == Kind::Trace) {
+    if (command.kind == Kind::LineTrace) {
         RunTrace(session, command, jsonCommand);
         return;
     }

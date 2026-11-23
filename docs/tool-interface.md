@@ -321,8 +321,8 @@ pack, sized so a normal question stays inside the default ones:
 |---|---|---|
 | `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, functions' metadata, memory reads |
 | `native` | read code and keep names across builds | disassembly, references, signatures, memory search (`search`, `search-job`), labels, layout files |
-| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure`, `call-each` |
-| `modify` | change the target or call into it | `write`, `writes`, `call`, `release`, the call recorder, `game-thread` |
+| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `line-trace`, `call-pure`, `call-each` |
+| `modify` | change the target or call into it | `write`, `timed-writes`, `call`, `release`, the call recorder, `game-thread` |
 
 `help` with `json` is the list's source (each row's `pack`); membership is a
 one-line change in the row.
@@ -330,7 +330,7 @@ one-line change in the row.
 - **Exact marks first.** A verb's mark is per verb, so risk must be too:
   `each` reads fields only and its function form is `call-each`; `status` reads the game-thread mode and
   `game-thread` keeps only `on` and `off`. A test parses every form of
-  every verb outside `modify` and checks none writes or calls (a `trace`
+  every verb outside `modify` and checks none writes or calls (a `line-trace`
   calls a line trace that changes no state; a `batch`'s items are checked
   as their own verbs).
 - **The invariant:** a verb marked `writes` is in `modify`; `explore`,

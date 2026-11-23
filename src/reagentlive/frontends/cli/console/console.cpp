@@ -77,16 +77,16 @@ std::string ReadFile(const std::filesystem::path& path) {
     return file ? std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()) : std::string();
 }
 
-// stats from the log; `current` is this run's session, nullopt with no target.
-std::expected<shape::Stats, std::string> BuildStats(const std::filesystem::path& path, std::span<const Verb> verbs,
+// usage from the log; `current` is this run's session, nullopt with no target.
+std::expected<shape::UsageReport, std::string> BuildUsage(const std::filesystem::path& path, std::span<const Verb> verbs,
                                                     const Command& command, std::optional<std::string> current) {
     const auto lines = path.empty() ? std::vector<UsageLine>{} : ParseUsage(ReadFile(path));
-    return StatsFor(lines, verbs, {command.all, command.listSessions, command.target}, std::move(current));
+    return UsageFor(lines, verbs, {command.all, command.listSessions, command.target}, std::move(current));
 }
 }
 
-void RunStats(Session& session, const Command& command, std::string_view jsonCommand) {
-    auto stats = BuildStats(session.usage.path, session.verbs, command, session.usage.session);
+void RunUsage(Session& session, const Command& command, std::string_view jsonCommand) {
+    auto stats = BuildUsage(session.usage.path, session.verbs, command, session.usage.session);
     if (!stats) return JsonError(session, jsonCommand, ErrorKind::Validation, stats.error());
     Emit(session, jsonCommand, std::move(*stats));
 }
@@ -158,7 +158,7 @@ struct InputLine {
     std::optional<Json> call;
     std::string name;           // The verb as given; empty for a blank line.
     bool meta = false, timing = false, big = false;
-    std::optional<size_t> budget;
+    std::optional<size_t> maxChars;
     std::string problem;        // Not a call: refused under the verb "call".
 
     const Json& Args() const {
@@ -178,7 +178,7 @@ InputLine ReadLine(std::string_view line) {
     input.meta = CallFlag(call, "meta");
     input.timing = CallFlag(call, "timing");
     input.big = CallFlag(call, "big");
-    if (call.contains("budget")) input.budget = call["budget"].get<size_t>();
+    if (call.contains("max_chars")) input.maxChars = call["max_chars"].get<size_t>();
     input.name = call["verb"].get<std::string>();
     input.call = std::move(call);
     return input;
@@ -215,7 +215,7 @@ std::expected<Command, Json> BuildLine(std::span<const Verb> verbs, const InputL
     return BuildChecked(verbs, input.name, input.Args(), modules);
 }
 
-// One-shot lines that are all `help` or `stats`: answered from the table and
+// One-shot lines that are all `help` or `usage`: answered from the table and
 // the log, no agent needed.
 // How long a console waits for another client to leave the agent.
 constexpr std::chrono::milliseconds BusyWait{2000};
@@ -223,7 +223,7 @@ constexpr std::chrono::milliseconds BusyWait{2000};
 bool OfflineOnly(const std::vector<std::string>& lines) {
     return !lines.empty() && std::ranges::all_of(lines, [&](const std::string& line) {
         const InputLine input = ReadLine(line);
-        return input.name == "help" || input.name == "stats";
+        return input.name == "help" || input.name == "usage";
     });
 }
 
@@ -465,7 +465,7 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
             const double ms = since(callBegan);
             session.capture = outer;
             // A step that printed nothing is a console bug: its line says so, and the run's
-            // usage line counts it as refused, so stats shows it.
+            // usage line counts it as refused, so usage shows it.
             if (records.empty() && session.line && session.line->ok) {
                 session.line->ok = false;
                 session.line->refused = KindName(ErrorKind::Internal);
@@ -538,12 +538,12 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     } lineScope{session, session.meta, session.current, session.input};
     session.current = nullptr;
     {
-        // The budget: none for a verb's own calls (their output is never printed),
+        // The per-result cap (max_chars): none for a verb's own calls (their output is never printed),
         // else the call's own, a batch's for its items, else the caller's default.
         LineInput line;
         line.call = input.call;
-        line.budget = session.usage.internal || input.big ? 0 : input.budget ? *input.budget : inBatch ? session.input.budget :
-            session.usage.caller == "tool" ? budget::ToolBudget : 0;
+        line.maxChars = session.usage.internal || input.big ? 0 : input.maxChars ? *input.maxChars : inBatch ? session.input.maxChars :
+            session.usage.caller == "tool" ? budget::ToolMaxChars : 0;
         session.input = std::move(line);
     }
     UsageScope usage(session, input.original, inBatch);
@@ -601,7 +601,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     session.current = parsed->verb;
     session.input.reads = !parsed->verb || !parsed->verb->writes;
     // The table and the verbs' docs are what a client reads to call at all: never digested.
-    if (parsed->kind == Kind::Help) session.input.budget = 0;
+    if (parsed->kind == Kind::Help) session.input.maxChars = 0;
     if (inBatch && parsed->kind == Kind::Each && parsed->seconds) {
         JsonError(session, jsonCommand, ErrorKind::Schema, "seconds: each with seconds is not allowed in a batch");
         return false;
@@ -631,10 +631,10 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
         return true;
     case Kind::Help: RunHelp(session, *parsed, jsonCommand); return false;
     case Kind::Status: PrintStatus(session, jsonCommand); return false;
-    case Kind::Stats: RunStats(session, *parsed, jsonCommand); return false;
+    case Kind::Usage: RunUsage(session, *parsed, jsonCommand); return false;
     case Kind::Pin: RunPin(session, *parsed, jsonCommand); return false;
     case Kind::Trial: RunTrial(session, *parsed, jsonCommand); return false;
-    case Kind::Writes: RunWrites(session, *parsed, jsonCommand); return false;
+    case Kind::TimedWrites: RunWrites(session, *parsed, jsonCommand); return false;
     case Kind::Watch: RunWatch(session, *parsed, jsonCommand); return false;
     case Kind::Batch: RunBatch(session, *parsed, jsonCommand); return false;
     case Kind::Run: RunPlan(session, *parsed, jsonCommand); return false;
@@ -704,7 +704,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     std::filesystem::rename(temporary, path, error);
 }
 
-// With no target: help and stats from the table and the log (stats: the
+// With no target: help and usage from the table and the log (usage: the
 // log's latest session). Any other verb is refused with why there is no
 // target (kind startup, or busy while another client holds the agent) and
 // ends the console, so a client starts it again. Nothing is recorded.
@@ -749,8 +749,8 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
                 failed = 1;
             }
             break;
-        case Kind::Stats:
-            if (auto stats = BuildStats(usagePath, verbs, *parsed, std::nullopt)) print(ResultEnvelope(name, ToJson(*stats)));
+        case Kind::Usage:
+            if (auto stats = BuildUsage(usagePath, verbs, *parsed, std::nullopt)) print(ResultEnvelope(name, ToJson(*stats)));
             else {
                 print(ErrorEnvelope(name, ErrorKind::Validation, stats.error()));
                 failed = 1;
@@ -905,7 +905,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     };
     if (check) return RunCheck(verbs, lines, readStdin);
     const auto offline = [&](std::string_view why, ErrorKind kind = ErrorKind::Startup) {
-        if (!oneShot) std::fprintf(stderr, "  no target: help and stats only (%.*s)\n", static_cast<int>(why.size()), why.data());
+        if (!oneShot) std::fprintf(stderr, "  no target: help and usage only (%.*s)\n", static_cast<int>(why.size()), why.data());
         return RunOffline(verbs, origins, tableHash, usagePath, lines, readStdin, kind, why);
     };
     if (oneShot && OfflineOnly(*oneShot)) return offline("");

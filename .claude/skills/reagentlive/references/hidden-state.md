@@ -44,7 +44,7 @@ No reflection, no engine pack, or a native member behind a reflected one:
   with a layout type (`"type": "u8 phase, pad 3, f32 duration, f32 elapsed,
   f64[3] start"`). No hand slicing of hex.
 - **Name what you decoded, once:**
-  `{"verb": "label", "args": {"object": "0x1f2e3d4c50#123:4", "offset": "0x538", "type": "f64[3]", "name": "Start"}}`;
+  `{"verb": "member-name", "args": {"object": "0x1f2e3d4c50#123:4", "offset": "0x538", "type": "f64[3]", "name": "Start"}}`;
   `get` (every `mode`, and `paths` `[["Start"]]`) then shows it in every later run. Re-check
   labels marked `stale` after a patch. Readable names (labels, the host's
   names file) are hints: trust offsets and types.
@@ -67,8 +67,8 @@ No reflection, no engine pack, or a native member behind a reflected one:
 ## Narrowing by change
 
 - Which bytes of a range react to an action: `mem-snap` of the owner,
-  `{"verb": "mem-diff", "args": {"test": "unchanged", "type": "f32", "keep": true}}`
-  while nothing happens (drops noise), the user acts, the same with `test`
+  `{"verb": "mem-diff", "args": {"compare": "unchanged", "type": "f32", "keep": true}}`
+  while nothing happens (drops noise), the user acts, the same with `compare`
   `decreased` (or `changed`, `increased`);
   repeat until a few rows remain, then capture them for the timing. Use the
   type the value really has, and start the snap aligned: elements step by

@@ -36,7 +36,7 @@ struct ConsoleConfig {
 // Calls from -c and stdin emit JSON Lines and exit 1 if any call failed. A
 // call is {"verb": ..., "args": {...}}; a stdin line holds one call or a
 // list of them, a -c file one call per line or a list. -c calls that are all
-// `help` or `stats` are answered with no target running. --check attaches to
+// `help` or `usage` are answered with no target running. --check attaches to
 // nothing: each call is checked as it would be before it runs and answered
 // ok ({"checked": true}) or with its refusal.
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv);

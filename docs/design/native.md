@@ -14,7 +14,7 @@ except for one fixed loop. Part of [design](../design.md).
   filled it, which implementation a live object dispatches to). A static
   tool answers callers, references, whole functions and types. The bridge
   is `module` and `rva` both ways, `peek` for live globals, and
-  `export-labels` for names.
+  `labels-export` for names.
 - **No decoder in the agent:** it would grow the injected image for
   display-only work. The agent reads bytes; the console decodes them.
 - **Signatures: the agent makes them, ReAgentLive verifies them.** One

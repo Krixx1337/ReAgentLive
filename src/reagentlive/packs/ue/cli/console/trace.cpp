@@ -1,4 +1,4 @@
-// reagentlive CLI console, Unreal pack: trace, a read-only line trace through
+// reagentlive CLI console, Unreal pack: line-trace, a read-only line trace through
 // the engine's own query (KismetSystemLibrary.LineTraceSingle), its hit decoded
 // by GameplayStatics.BreakHitResult. Both are reached through call, by their
 // reflected parameters, so the agent needs nothing new.

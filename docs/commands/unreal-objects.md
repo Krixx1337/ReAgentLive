@@ -1,11 +1,11 @@
 # Unreal objects
 
-*Home of:* how the Unreal pack finds and counts objects: `find` and its class index, `describe`, `name`, `name-find`, `enum`, the object filters, `census` and its baselines, `each`, class names as arguments, and `export-assets`.
+*Home of:* how the Unreal pack finds and counts objects: `find` and its class index, `describe`, `name`, `name-find`, `enum`, the object filters, `census` and its baselines, `each`, class names as arguments, and `assets-export`.
 
 **TL;DR:** `find` lists objects by name or class, `census` counts live
 instances per class (and what changed since the last count), `each` reads
 a table of fields over every live instance of a class in one tick, and
-`export-assets` writes them to files. Rules every pack command shares:
+`assets-export` writes them to files. Rules every pack command shares:
 [Unreal pack](unreal.md); args and results: the [reference](reference.md).
 
 ## find
@@ -192,7 +192,7 @@ the slots up to it; only a name that is no class costs a full scan.
 
 ## Assets to files
 
-`export-assets` writes the live instances of up to 16 classes (`cls`,
+`assets-export` writes the live instances of up to 16 classes (`cls`,
 and their subclasses; no `Default__` or archetype objects) into `dir`,
 optionally only those whose name contains `view.match`, one
 JSON file per object, so asset data can be read, searched and compared
@@ -210,4 +210,4 @@ between builds offline instead of live again:
   `failed`, the first 100 rows and `omitted`. At most 2000 objects per
   call, then `capped`: narrow with `view.match` or fewer classes.
 - Each object costs the reads of its `get` and `rows`, run as batch items
-  run (no output budget per item); the files are replaced on every call.
+  run (no result cap per item); the files are replaced on every call.

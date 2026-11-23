@@ -1,7 +1,7 @@
 // reagentlive: the console for the Unreal example's host (host.cpp): the
 // generic console with the Unreal pack's layout and the example's section
 // prefix. With no pid it attaches to the one process that has this agent;
-// with none or several it answers help and stats only.
+// with none or several it answers help and usage only.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -61,7 +61,7 @@ int wmain(int argc, wchar_t** argv) {
     std::wstring pid;
     if (!HasTarget(argc, argv)) {
         // With several, none is picked: the console still answers help and
-        // stats, and refuses the rest until a pid is given.
+        // usage, and refuses the rest until a pid is given.
         const auto processes = AgentProcesses();
         if (processes.size() > 1) {
             std::fprintf(stderr, "Several processes have an agent; pass one pid:");

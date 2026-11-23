@@ -51,8 +51,8 @@ def C(verb, args=None):
     return {'verb': verb, 'args': args or {}}
 
 
-# A result past its budget: the console's digest, with the call narrowed.
-DIGEST = {'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
+# A result past its max_chars: the console's digest, with the call narrowed.
+DIGEST = {'chars': 90000, 'max_chars': 25000, 'rows': {'path': 'rows', 'count': 300},
           'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['view.match', 'view.fields', 'view.limit'],
           'next': json.dumps({'verb': 'rows', 'args': {'object': '0x10#1:1', 'view': {'fields': [['Cost']], 'limit': 40}}})}
 
@@ -105,8 +105,8 @@ CALLS = [
         'rows': [{'function': {'start': '0x20', 'end': '0x40'}, 'distinct': 1, 'writes': False, 'total': 0, 'uses': []}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x3e4}, 'data': '0000803f', 'expect': '00000000', 'hold': 2.5}),
      ok({'address': '0x10', 'size': 4, 'timed': PIN})],
-    [C('writes'), ok({'rows': [TRIAL, PIN]})],
-    [C('writes', {'clear': True, 'id': 'hold:1'}), ok({'cleared': 1, 'rows': [dict(PIN, state='cleared')]})],
+    [C('timed-writes'), ok({'rows': [TRIAL, PIN]})],
+    [C('timed-writes', {'clear': True, 'id': 'hold:1'}), ok({'cleared': 1, 'rows': [dict(PIN, state='cleared')]})],
     [C('watch-start', {'duration': 600, 'ranges': [{'offset': 0x538, 'len': 16}], 'every': 10, 'follow': 'pawn'}), ok({
         'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
         'ranges': [{'offset': '0x538', 'length': 16, 'guarded': True}]})],
@@ -123,7 +123,7 @@ CALLS = [
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x28}, 'data': '0000000000000040', 'expect': '000000000000f03f',
                  'undo': {'after': 5, 'owner': REF, 'object': '0x2000'}}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
-    [C('writes', {'clear': True, 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
+    [C('timed-writes', {'clear': True, 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'start': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
     [C('get', {'object': REF, 'mode': 'changed'}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
@@ -141,7 +141,7 @@ CALLS = [
         {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF},
         {'path': 'C', 'error': 'no field C'}]})],
     [C('name', {'indices': [5, 6]}), ok({'rows': [{'index': 5, 'name': 'Five'}, {'index': 6}]})],
-    [C('refs', {'name': 'Missing'}), error(kind='validation', message='no pooled name is exactly Missing')],
+    [C('name-refs', {'name': 'Missing'}), error(kind='validation', message='no pooled name is exactly Missing')],
     [C('disasm', {'addr': '0x1000'}), error(kind='pack', message='disasm is in the native pack, outside this console\'s '
                                         '--packs explore: start it with native in --packs')],
     [C('call', {'object': REF, 'function': 'Pawn:Get', 'params': {'Name': '#5', 'Mode': 2}}), ok(dict(
@@ -231,13 +231,13 @@ class SessionTests(unittest.TestCase):
                 problems += conforms(reply['result'], self.rows[call['verb']]['type'], call['verb'], self.table['types'])
         self.assertEqual(problems, [])
 
-    def test_a_result_past_its_budget_is_a_digest(self):
-        digest = self.session.call('rows', {'object': REF}, budget=25000)
+    def test_a_result_past_its_max_chars_is_a_digest(self):
+        digest = self.session.call('rows', {'object': REF}, max_chars=25000)
         self.assertIsInstance(digest, dl.Digest)
         self.assertIs(self.session.digest, digest)
         self.assertEqual(digest['chars'], 90000)
         self.assertEqual(digest.next_call()['args'], {'object': REF, 'view': {'fields': [['Cost']], 'limit': 40}})
-        self.assertEqual(self.sent()[-1]['budget'], 25000)        # The line flag, beside args.
+        self.assertEqual(self.sent()[-1]['max_chars'], 25000)     # The call's own key, beside args.
         self.c.read('0x1000', len=4)
         self.assertIsNone(self.session.digest)                    # Each call sets it again.
 
@@ -381,13 +381,13 @@ class SessionTests(unittest.TestCase):
     def test_timed_writes_and_captures(self):
         held = self.c.write({'base': REF, 'offset': 0x3e4}, dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
         self.assertEqual(held['timed']['id'], 'hold:1')
-        self.assertEqual([row['mode'] for row in self.c.writes()['rows']], ['undo', 'hold'])
-        self.assertEqual(self.c.writes(clear=True, id='hold:1')['cleared'], 1)
+        self.assertEqual([row['mode'] for row in self.c.timed_writes()['rows']], ['undo', 'hold'])
+        self.assertEqual(self.c.timed_writes(clear=True, id='hold:1')['cleared'], 1)
         row = self.c.write({'base': REF, 'offset': 0x28}, dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0),
                            undo={'after': 5, 'owner': REF, 'object': '0x2000'})['timed']
         self.assertIsNone(row['guard'])
         self.assertIsNone(row['writes'])                     # A --hold key, absent on an --undo write.
-        self.assertEqual(self.c.writes(clear=True, id='undo:1')['rows'][0]['state'], 'restored')
+        self.assertEqual(self.c.timed_writes(clear=True, id='undo:1')['rows'][0]['state'], 'restored')
         ranges = [{'object': REF, 'field': ['Health']}, {'addr': '0x9000', 'len': 1}]
         result = self.session.watch(0.3, ranges, file='cap.jsonl')   # start, wait, stop
         self.assertEqual(result['file'], 'cap.jsonl')
@@ -410,7 +410,7 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(typed['kept'])
         self.assertEqual(self.c.ue.call('0x10', 'Pawn:Get', params={})['mode'], 'typed')
         with self.assertRaises(dl.ReAgentLiveError) as caught:
-            self.c.ue.refs(name='Missing')
+            self.c.ue.name_refs(name='Missing')
         self.assertEqual(caught.exception.error['kind'], 'validation')
 
     def test_errors_raise(self):

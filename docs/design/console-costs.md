@@ -84,11 +84,11 @@ on live samples), where time and context went for no gain.
   stop a skewed reading; per-command ticks and `spans_ticks` come from the
   client's hold, no agent change.
 - **Native names in their own file.** The readable-names file is generated
-  by the host and would wipe appended lines, so `label` writes a hand-owned
+  by the host and would wipe appended lines, so `member-name` writes a hand-owned
   `<console>.native.txt`. Reflected names follow their field across patches;
   native offsets do not, so each line carries the main image's PE
   timestamp and shows `stale` under another one. Typed layouts share one
-  syntax with `read`'s `type`, so a decoded layout pastes into `label`.
+  syntax with `read`'s `type`, so a decoded layout pastes into `member-name`.
 - **A capture that does not hold the console**, without a second channel:
   the capture belongs to the agent instance (`watch-start`, `watch-read`,
   `watch-stop`), bounded by the existing buffer, so a long capture and other
@@ -136,8 +136,8 @@ where every question was answered and the cost was output and turns:
 
 ## Usage log
 
-The console records each call, and `stats` reads it back
-([console](../commands/console.md#usage-log-and-stats)), for two readers: the
+The console records each call, and `usage` reads it back
+([console](../commands/console.md#usage-log-and-usage)), for two readers: the
 agent in the session (before a long step, and for its final report) and
 whoever improves the tool or a skill across sessions.
 
@@ -152,9 +152,9 @@ whoever improves the tool or a skill across sessions.
   again.
 - **The caller says who it is** (`--caller`): only a tool's output lands in
   an agent's context, so context cost is its own number.
-- **`stats` is a core verb**, a tool and a function like any other, and it
+- **`usage` is a core verb**, a tool and a function like any other, and it
   answers with no target, so an agent can reflect after the target has
-  gone. For that, a console with no target answers `help` and `stats` and
+  gone. For that, a console with no target answers `help` and `usage` and
   ends on any other verb (kind `startup`), so a client starts it again.
 - **Marks, not advice.** `unfiltered`, `repeated` and `refused` state what
   happened; the skill says what to do. `unfiltered` uses a fixed list of
@@ -171,9 +171,9 @@ whoever improves the tool or a skill across sessions.
 | Rejected | Why |
 |---|---|
 | Recording in the MCP adapter | misses scripts and shell calls, and a second log would be wanted for them |
-| A stats service or a database | the console keeps state in files; there is no daemon ([round trips](#round-trips)) |
+| A usage service or a database | the console keeps state in files; there is no daemon ([round trips](#round-trips)) |
 | Storing arguments or results | size, and the target's data in a file that outlives the session |
-| A warning inside a large result | more output to cure output; the agent asks `stats` when it wants to know |
+| A warning inside a large result | more output to cure output; the agent asks `usage` when it wants to know |
 | Counting tokens | depends on the model; characters rank the same verbs |
 | Advice in the result ("use `view.match`") | a rule wrong for one call misleads; the marks state what happened |
 | Per-session files | all-time figures would read many files; one file with a session on each line gives both |

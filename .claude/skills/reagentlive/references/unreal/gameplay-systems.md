@@ -84,9 +84,9 @@
 
 ## Collision and traces
 
-- "What blocks this line?": `trace` before guessing from geometry or
+- "What blocks this line?": `line-trace` before guessing from geometry or
   rebuilding a host:
-  `{"verb": "trace", "args": {"start": "0x1f2e3d4c50#123:4", "end": [0, 0, 0], "ignore": "0x1f2e3d5d60#456:2"}}`.
+  `{"verb": "line-trace", "args": {"start": "0x1f2e3d4c50#123:4", "end": [0, 0, 0], "ignore": "0x1f2e3d5d60#456:2"}}`.
   Ends are points, objects or a mesh component and socket; `ignore` with
   your pawn keeps your own body out of a camera line. A
   collision shell or a material the game treats specially (glass, foliage)

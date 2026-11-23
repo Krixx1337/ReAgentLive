@@ -17,8 +17,8 @@
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
-    Trial, Writes, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
-    MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread, ExportAssets, Run };
+    Trial, TimedWrites, Script, NameRefs, Peek, Entries, LabelsExport, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, MemberName, Usage, Layout,
+    MemSnap, MemDiff, LineTrace, Calls, Rows, Enum, GameThread, AssetsExport, Run };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -73,9 +73,9 @@ struct Command {
     // `target` names the module (empty: the exe). sig-check file: `file`.
     // sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is json, `hashOnly` is hash.
-    // stats: `all` is all. watch-read, watch-stop: `all` is all (every sample).
+    // usage: `all` is all. watch-read, watch-stop: `all` is all (every sample).
     bool hashOnly = false;
-    bool listSessions = false;  // stats sessions; session <id> is `target`.
+    bool listSessions = false;  // usage sessions; session <id> is `target`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     bool capped = false;        // sig-bytes: the length asked passed sig::MaxPattern and was cut to it.
     sig::Pattern pattern;
@@ -88,7 +88,7 @@ struct Command {
     bool function = false, follow = false, all = false, resume = false;
     // disasm save: also save the functions it calls, breadth-first to this
     // depth (callees; 0: none), and name addresses from a labels file
-    // (labels, export-labels' format).
+    // (labels, labels-export' format).
     uint32_t calleeDepth = 0;
     std::string labels;
     // peek label: append the qword's label (to `file`, else the console's labels file).
@@ -116,7 +116,7 @@ struct Command {
     std::optional<float> curveAt;
     // layout-export closure: how many references away from the named types to export.
     std::optional<uint32_t> closure;
-    // trace: its two ends (a world point in cm, or an object's location or a
+    // line-trace: its two ends (a world point in cm, or an object's location or a
     // socket on it), the trace type query, simple collision, and an actor the
     // line passes through (also the world it runs in; else an end's object).
     struct TracePoint { bool literal = false; double point[3]{}; Ref object{}; std::string socket; };
@@ -142,7 +142,7 @@ constexpr size_t MaxTypeName = 128;
 constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;
 constexpr uint32_t DefaultCensusLimit = 100;
-constexpr uint32_t MaxExportClasses = 16, MaxExportObjects = 2000; // export-assets: per call.
+constexpr uint32_t MaxExportClasses = 16, MaxExportObjects = 2000; // assets-export: per call.
 constexpr uint32_t DefaultCallRows = 100;   // call: rows of a returned array per page.
 constexpr uint32_t DefaultEachRows = 100;   // each: rows printed.
 // mem-snap: bytes kept; mem-diff: rows shown and the tests it takes.
@@ -167,7 +167,7 @@ namespace touch {
 constexpr size_t MaxOffsets = 8;
 constexpr uint64_t DefaultRange = 0x80000, MaxRange = 0x400000; // Bytes each side of the address.
 }
-// export-labels kinds: which rows to derive. Globals in the file are always
+// labels-export kinds: which rows to derive. Globals in the file are always
 // kept (only peek label makes them), so "global" is accepted and changes nothing.
 namespace label_kind {
 constexpr uint32_t Exec = 1, Vtable = 2, Interface = 4, Global = 8, All = 15;

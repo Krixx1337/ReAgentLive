@@ -22,7 +22,7 @@ Parsed Build(const Verb& verb, const Args& args, std::span<const Module> modules
 // A whole call ({"verb", "args"}): the verb, the checks and the build; for
 // tests and the no-target mode. Errors as RefusalJson's message.
 Parsed BuildCall(std::span<const Verb> verbs, const Json& call, std::span<const Module> modules = {});
-// A call's own keys (verb, args, meta, timing, budget, big); why not, or empty.
+// A call's own keys (verb, args, meta, timing, max_chars, big); why not, or empty.
 std::string CallProblem(const Json& call);
 // The verb `name` with its args, as the console checks it before it runs:
 // the row's schema (check.h), then its builder. A refusal is the error object

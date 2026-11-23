@@ -17,7 +17,7 @@
 
 namespace reagentlive::cli::budget {
 // A tool caller's default: what one result may take of an agent's context.
-constexpr size_t ToolBudget = 25000;
+constexpr size_t ToolMaxChars = 25000;
 // The keys that say whether a result is complete, what a call left outside
 // its result, and which running thing it is. A digest keeps every one a
 // result has (a list as its length), so a capped or partial result never
@@ -334,7 +334,7 @@ inline Json CallLine(Json call, const std::vector<Change>& changes) {
 // not run again.
 inline Json Digest(const Profile& profile, size_t chars, size_t limit, const Verb* verb,
                    std::optional<std::string> next, std::optional<std::string> file, const Json& result = {}) {
-    Json digest = {{"chars", chars}, {"budget", limit}};
+    Json digest = {{"chars", chars}, {"max_chars", limit}};
     if (result.is_object()) {
         Json status = Json::object();
         for (const auto key : StatusKeys)
@@ -383,7 +383,7 @@ std::optional<Json> Replace(Json& record, size_t chars, const Line& line, Keep&&
             // Nothing narrows it: the same call with a budget it fits, so the
             // digest is never a dead end.
             Json call = *line.call;
-            call["budget"] = (chars + chars / 10 + 999) / 1000 * 1000;
+            call["max_chars"] = (chars + chars / 10 + 999) / 1000 * 1000;
             next = call.dump(-1, ' ', true, Json::error_handler_t::replace);
         }
     }

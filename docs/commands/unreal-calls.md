@@ -1,12 +1,12 @@
 # Unreal calls
 
-*Home of:* calling into the engine: `call` and its kept results, `call-pure`, `call-each`, `release`, `func` and `funcs` (native interfaces included), typed parameters and returned arrays, the call recorder, `trace`, and `game-thread`.
+*Home of:* calling into the engine: `call` and its kept results, `call-pure`, `call-each`, `release`, `func` and `funcs` (native interfaces included), typed parameters and returned arrays, the call recorder, `line-trace`, and `game-thread`.
 
 **TL;DR:** `func` shows a reflected function's parameters and native
 entry; `call` calls it with inputs by name (or a raw block) through
 `ProcessEvent` on the game thread; `call-pure` and `call-each` call only
 const or pure functions, one object or every instance of a class; the
-call recorder watches a function's calls; `trace` casts a line trace; and
+call recorder watches a function's calls; `line-trace` casts a line trace; and
 `game-thread` gives a host that ticks elsewhere the game thread. Rules
 every pack command shares: [Unreal pack](unreal.md).
 
@@ -212,7 +212,7 @@ approves.
   `note` when the function is not native. Record a native function it
   calls, or an event that enters it.
 
-## trace
+## line-trace
 
 Console only, no agent op of its own: `KismetSystemLibrary.LineTraceSingle`
 through `call` on `Default__KismetSystemLibrary`, its hit decoded by the

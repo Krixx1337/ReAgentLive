@@ -253,7 +253,7 @@ TEST_CASE("past the pointer cap, every verb counts unnamed alike, digested or no
     const auto each = Result(CallText("each", With(EachArgs(PathsOf("Crowd")), elements)));
     CHECK(each["unnamed"] == unnamed);
     // A digest keeps it.
-    const auto records = RunLines(CallText("get", With(GetArgs(PathsOf("Crowd")), elements), {{"budget", 1000}}));
+    const auto records = RunLines(CallText("get", With(GetArgs(PathsOf("Crowd")), elements), {{"max_chars", 1000}}));
     REQUIRE(records.size() == 1);
     REQUIRE(records[0].contains("digest"));
     CHECK(records[0]["digest"]["status"]["unnamed"] == unnamed);
@@ -728,7 +728,7 @@ TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unl
     CHECK(second["searches"] == 0);
     CHECK(second["rows"].empty());
     // again tries every row.
-    const auto again = Result(CallText("labels-sign", {{"file", file}, {"again", true}}));
+    const auto again = Result(CallText("labels-sign", {{"file", file}, {"retry", true}}));
     CHECK(again["rows"].size() == 2);
     CHECK(again["unsigned"] == 1);
     // A mark from another build is tried again and marked for this one.
@@ -944,12 +944,12 @@ TEST_CASE("rows reads a curve table's keys and evaluates them with at") {
     CHECK(refused[2]["error"]["kind"] == "schema");
 }
 
-TEST_CASE("export-assets writes each object's fields and a table's rows, one file each, and an index") {
+TEST_CASE("assets-export writes each object's fields and a table's rows, one file each, and an index") {
     const auto& fixture = TheFixture();
     TheCurveTables();
     const auto dir = std::filesystem::path(SaveFile("export"));
     std::filesystem::remove_all(dir);
-    const auto result = Result(CallText("export-assets", {{"dir", dir.string()}, {"cls", Json::array({"Thing", "CurveTable"})}}));
+    const auto result = Result(CallText("assets-export", {{"dir", dir.string()}, {"cls", Json::array({"Thing", "CurveTable"})}}));
     CHECK(result["failed"] == 0);
     CHECK(result["capped"] == false);
     CHECK(result["exported"] == result["rows"].size());
@@ -975,11 +975,11 @@ TEST_CASE("export-assets writes each object's fields and a table's rows, one fil
     CHECK(thing);
     CHECK(tables == result["tables"]);
     CHECK(tables == 3); // CT_Derived too: a subclass of the class asked for.
-    const auto sway = Result(CallText("export-assets", {{"dir", dir.string()}, {"cls", Json::array({"CurveTable"})}, {"view", {{"match", "sway"}}}}));
+    const auto sway = Result(CallText("assets-export", {{"dir", dir.string()}, {"cls", Json::array({"CurveTable"})}, {"view", {{"match", "sway"}}}}));
     CHECK(sway["exported"] == 1);
     CHECK(sway["rows"][0]["table_rows"] == 2);
     // A missing cls is refused before running.
-    CHECK(RunLines(CallText("export-assets", {{"dir", "x"}}))[0]["error"]["kind"] == "schema");
+    CHECK(RunLines(CallText("assets-export", {{"dir", "x"}}))[0]["error"]["kind"] == "schema");
 }
 
 TEST_CASE("disasm with save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {

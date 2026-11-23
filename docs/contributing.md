@@ -88,7 +88,7 @@ rule.
 | `call/` | `reagentlive::cli`: the verb table's row (`verb.h`), a call's checks (`check.h`), its typed values (`values.h`), `Build` (`build.h`) and the built `Command`, layouts, byte patterns (`pattern.h`) | includes only `call/` and `core/` (and nlohmann/json: a call is JSON); no decoder, no I/O |
 | `values/` | how a value prints: `format.h`, `json.h`, `layout_json.h` | pure; never `console/` |
 | `state/` | files that outlive a run: `cache.h`, `names.h`, `usage.h` (the usage log's line and trim) | pure; never `console/` |
-| `results/` | result builders: `result_json.h`, `labels.h`, `stats.h`, `budget.h` | pure; never `console/` |
+| `results/` | result builders: `result_json.h`, `labels.h`, `usage_report.h`, `budget.h` | pure; never `console/` |
 | `code/` | the fast lane and native objects: decoder, unwind, image, xrefs, touches, `sig` checker | pure; never `console/` |
 | `console/` | `reagentlive::console`: the only folder with I/O (agent, files, stdout) | `internal.h` and `pack.h` are for `console/` only |
 
@@ -260,7 +260,7 @@ Check this table before adding a fact; if it has a home, link there.
 | Error kinds and their message templates | `ErrorKinds` in `call/refusals.h` (listed in [the reference](commands/reference.md#error-kinds)) | handlers (they name an `ErrorKind`) |
 | A verb's behaviour and guards | its page under `commands/` | skill (links only) |
 | Which Unreal commands need the game thread | [commands/unreal.md](commands/unreal.md#off-the-engines-thread) | everywhere else (links) |
-| Console mechanics: calls, refs, budgets (the default budget's size), cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
+| Console mechanics: calls, refs, the result cap (its default size), cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
 | One client at a time; an agent taking over on re-inject | [protocol.md](protocol.md#handshake), [protocol.md](protocol.md#section) | elsewhere (links) |
 | The layout groups and their checks | [commands/unreal.md](commands/unreal.md#without-an-sdk) | design and skill (links) |
 | A `get` snapshot's baseline across runs | [commands/capture.md](commands/capture.md) | console.md (link) |

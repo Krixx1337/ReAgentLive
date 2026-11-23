@@ -45,7 +45,7 @@ reagentlive -c '[{"verb": "status"}, {"verb": "modules"}, {"verb": "read", "args
 
 - With no pid, the console attaches to the one process that has the
   example's section (`Local\reagentlive-<pid>`). With none or several (it
-  lists them on stderr) it answers `help` and `stats` only, so the MCP
+  lists them on stderr) it answers `help` and `usage` only, so the MCP
   server still starts; pass a pid for the rest.
 - **Works:** [memory commands](commands/memory.md), the
   [fast lane](commands/fast-lane.md) and
@@ -89,8 +89,8 @@ A host is whatever code inside the target calls `Tick`. It provides:
   lets lookups and reads run off the game thread
   ([which commands](commands/unreal.md#off-the-engines-thread)).
   `Context::scanMicroseconds` (default 1000, at most 50 000) is how long
-  each tick an object-table scan (`find` by `cls`, `census`, `each`, `refs`,
-  label export) may run: more is fewer ticks per scan and a longer stall
+  each tick an object-table scan (`find` by `cls`, `census`, `each`, `name-refs`,
+  `labels-export`) may run: more is fewer ticks per scan and a longer stall
   in each. A host that ticks at 100 Hz and can spare 4 ms finishes a
   370 000-object scan about four times sooner.
 - **Unreal helpers for hosts:** `reagentlive::ue::FirstLiveInstance(className)`
@@ -239,7 +239,7 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   takes the section over ([takeover](protocol.md#section)). `status`
   reports the answering agent's build time and how many it replaced. An
   agent its host has stopped no longer ticks, so it restores nothing:
-  clear `undo` writes (`writes` with `clear`) before stopping it. This holds only for a build with the same protocol:
+  clear `undo` writes (`timed-writes` with `clear`) before stopping it. This holds only for a build with the same protocol:
   after a protocol change the section keeps the old layout, so restart the
   process instead ([the update procedure](agents/update.md#7-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.

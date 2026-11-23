@@ -58,7 +58,7 @@ offers (`packs`). **T3** commands also need the game thread
 | Command | Needs | Page |
 |---|---|---|
 | `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
-| `write` with `hold` or `undo`, `writes` | T0; `undo`'s owner check needs T1 | [memory](commands/memory.md#timed-writes) |
+| `write` with `hold` or `undo`, `timed-writes` | T0; `undo`'s owner check needs T1 | [memory](commands/memory.md#timed-writes) |
 | `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
 | `search`, `search-job` | T0 | [memory](commands/memory.md#search) (text: [fast lane](commands/fast-lane.md#search-text)) |
 | `read` with a layout `type` | T0 | [memory](commands/memory.md#typed-layouts) |
@@ -67,21 +67,21 @@ offers (`packs`). **T3** commands also need the game thread
 | `disasm`, `xrefs`, `touches` | T0 | [fast lane](commands/fast-lane.md) |
 | `sig-check` (one `pattern` or a `file`), `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
 | `peek` with `label`, `labels-sign`, `labels-port` | T0 | [labels](commands/labels.md) |
-| `export-labels` | T3 (exec thunks); other `kinds` T2 | [labels](commands/labels.md#export-labels) |
+| `labels-export` | T3 (exec thunks); other `kinds` T2 | [labels](commands/labels.md#labels-export) |
 | `find`, `describe`, `name`, `name-find`, `census` (and its `diff`) | T1 | [Unreal objects](commands/unreal-objects.md) |
-| `enum`, `export-assets` | T2 | [Unreal objects](commands/unreal-objects.md) |
+| `enum`, `assets-export` | T2 | [Unreal objects](commands/unreal-objects.md) |
 | `each` | T3 | [Unreal objects](commands/unreal-objects.md#each) |
-| `get` (every mode), `entries`, `rows`, `label`, `layout-export`, `layout-check` | T2 | [Unreal fields](commands/unreal-fields.md) (snapshots over time: [capture](commands/capture.md)) |
+| `get` (every mode), `entries`, `rows`, `member-name`, `layout-export`, `layout-check` | T2 | [Unreal fields](commands/unreal-fields.md) (snapshots over time: [capture](commands/capture.md)) |
 | `func`, `funcs` | T2 (`func`'s `params`: T3) | [Unreal calls](commands/unreal-calls.md#func-and-funcs) |
-| `call`, `call-pure`, `call-each`, `release`, `trace` | T3 | [Unreal calls](commands/unreal-calls.md) |
+| `call`, `call-pure`, `call-each`, `release`, `line-trace` | T3 | [Unreal calls](commands/unreal-calls.md) |
 | `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal calls](commands/unreal-calls.md#call-recorder) |
 | `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal calls](commands/unreal-calls.md#game-thread) |
 | `script` with `decode` | T2 (any thread) | [Unreal code](commands/unreal-code.md#decode) |
-| `script`, `refs` | T3 | [Unreal code](commands/unreal-code.md) |
+| `script`, `name-refs` | T3 | [Unreal code](commands/unreal-code.md) |
 | `batch`, `timing` | T0 | [console](commands/console.md#fewer-round-trips) |
 | `run` (plan files) | T0 | [console](commands/console.md#plans) |
 | `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
-| `stats`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-stats) |
+| `usage`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-usage) |
 
 A host's own verbs (`help` lists them under its origin) come from the
 host, not this library: see the host's docs.
@@ -124,4 +124,4 @@ and [result shapes](commands/results.md). The Unreal pack's shared rules
 | Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](tool-interface.md#self-describing-console)) |
 | JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the console's only input form ([console](commands/console.md#json-calls)) |
 | Cache file | `%TEMP%\reagentlive-<pid>.cache`: state kept between console runs ([console](commands/console.md#fewer-round-trips)) |
-| Usage log | `<console>.usage.jsonl`: one line of facts per console call, read by `stats` ([console](commands/console.md#usage-log-and-stats)) |
+| Usage log | `<console>.usage.jsonl`: one line of facts per console call, read by `usage` ([console](commands/console.md#usage-log-and-usage)) |

@@ -59,11 +59,11 @@ class McpTests(unittest.TestCase):
                         {'command': 'modules', 'ok': True, 'result': {'rows': [{'name': 'Game.exe', 'base': '0x140000000',
                                                                                'size': 4096}]}, 'tick': 4}]}}],
                 [call('rows', {'object': REF}), {'ok': True, 'digest': {
-                    'chars': 90000, 'budget': 25000, 'rows': {'path': 'rows', 'count': 300},
+                    'chars': 90000, 'max_chars': 25000, 'rows': {'path': 'rows', 'count': 300},
                     'largest': [{'path': 'rows[].value.Icon', 'chars': 60000}], 'narrow': ['view.match', 'view.fields', 'view.limit'],
                     'next': json.dumps(call('rows', {'object': REF, 'view': {'fields': [['Cost']], 'limit': 40}}))}}],
                 [call('call', {'object': REF, 'function': 'Buy'}), {'ok': True, 'digest': {
-                    'chars': 40000, 'budget': 25000, 'largest': [], 'file': 'C:/temp/r.json'}}],
+                    'chars': 40000, 'max_chars': 25000, 'largest': [], 'file': 'C:/temp/r.json'}}],
                 [call('read', {'addr': '0x10', 'len': 5000}), {'ok': False, 'error': {
                     'kind': 'schema', 'message': 'len: 5000 is past 4096',
                     'arg': {'key': 'len', 'type': 'int', 'default': 64, 'help': 'how many bytes'},
@@ -101,7 +101,7 @@ class McpTests(unittest.TestCase):
         self.assertTrue(tools['ue_call'].annotations.destructive_hint)
         schema = tools['read'].input_schema
         self.assertEqual(schema['required'], ['addr'])
-        self.assertEqual(set(schema['properties']), {'addr', 'len', 'type', 'budget'})   # budget: every tool's.
+        self.assertEqual(set(schema['properties']), {'addr', 'len', 'type', 'max_chars'})   # max_chars: every tool's.
         self.assertFalse(schema['additionalProperties'])          # A guessed argument is refused.
         self.assertEqual(schema['properties']['type']['type'], 'string')
         self.assertIn('rows', tools['ue_find'].output_schema['properties'])
@@ -163,7 +163,7 @@ class McpTests(unittest.TestCase):
             self.assertFalse(any(tool.annotations.destructive_hint for tool in tools.values()), names)
         everything = self.tool_list(packs=ALL)
         self.assertEqual({name for name, tool in everything.items() if tool.annotations.destructive_hint},
-                         {'write', 'writes', 'ue_call', 'ue_release', 'ue_calls_start', 'ue_game_thread'})
+                         {'write', 'timed_writes', 'ue_call', 'ue_release', 'ue_calls_start', 'ue_game_thread'})
         self.assertEqual(packs['each'], 'explore')
         with self.assertRaisesRegex(ValueError, '--packs: unknown pack nope'):
             reagentlive_mcp.build(sys.executable, ['-I', FAKE], packs=['nope'])
@@ -239,18 +239,18 @@ class McpTests(unittest.TestCase):
         self.assertIn('"kind": "schema"', refused.content[0].text)   # The error object, not only its message.
         self.assertIn('"key": "len"', refused.content[0].text)
 
-    def test_a_result_past_its_budget_is_a_digest_with_the_call_to_make(self):
+    def test_a_result_past_its_max_chars_is_a_digest_with_the_call_to_make(self):
         open(self.log, 'w').close()
 
         async def body(client):
-            narrowed = await client.call_tool('ue_rows', {'object': REF, 'budget': 0})
+            narrowed = await client.call_tool('ue_rows', {'object': REF, 'max_chars': 0})
             kept = await client.call_tool('ue_call', {'object': REF, 'function': 'Buy'})
             return narrowed, kept
         narrowed, kept = self.run_client(body, packs=['modify'])
         self.assertFalse(narrowed.is_error, narrowed.content[0].text)
         self.assertEqual(narrowed.structured_content['digest']['chars'], 90000)
         text = narrowed.content[0].text
-        self.assertIn('past the budget of 25000', text)
+        self.assertIn('past max_chars 25000', text)
         self.assertIn('Call next: ue_rows {"object": "0x10#1:1", "view": {"fields": [["Cost"]], "limit": 40}}', text)
         self.assertIn('rows[].value.Icon (60000)', text)
         self.assertFalse(kept.is_error, kept.content[0].text)
@@ -259,8 +259,8 @@ class McpTests(unittest.TestCase):
         self.assertNotIn('Call next', kept.content[0].text)
         with open(self.log) as file:
             sent = [json.loads(line) for line in file if line.startswith('{')]
-        self.assertEqual(sent[0]['budget'], 0)                   # The line flag, not one of the verb's args.
-        self.assertNotIn('budget', sent[0]['args'])
+        self.assertEqual(sent[0]['max_chars'], 0)                # The call's own key, not one of the verb's args.
+        self.assertNotIn('max_chars', sent[0]['args'])
 
     def test_each_call_starts_a_console_that_shares_one_session(self):
         open(self.log, 'w').close()

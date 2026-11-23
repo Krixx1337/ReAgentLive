@@ -26,7 +26,7 @@ _spec = importlib.util.spec_from_file_location('check_verb_names', os.path.join(
 names = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(names)
 
-CALL_KEYS = {'verb', 'args', 'meta', 'timing', 'budget', 'big', 'expect', 'repeat'}
+CALL_KEYS = {'verb', 'args', 'meta', 'timing', 'max_chars', 'big', 'expect', 'repeat'}
 HELP_ROW_KEYS = {'origin', 'pack', 'usage', 'summary', 'writes', 'notes', 'type'}
 VERB_AT = re.compile(r'\{\s*"verb"\s*:\s*"([a-z][a-z0-9-]*)"')
 SESSION_CALL = re.compile(r"""\.call\(\s*['"]([a-z][a-z0-9-]*)['"]\s*,\s*""")

@@ -343,7 +343,7 @@ Parsed Describe(const Args& args, const ParseContext&) {
 }
 
 // label: names an unreflected member in the native file.
-Parsed Label(const Args& args, const ParseContext&) {
+Parsed MemberName(const Args& args, const ParseContext&) {
     Command command;
     const uint64_t offset = args.Int("offset");
     if (!ObjectOrClass(args.Str("object"), command)) return Fail(ObjectOrClassWhy);
@@ -353,13 +353,13 @@ Parsed Label(const Args& args, const ParseContext&) {
     if (auto field = layout::ParseField(command.target + " " + command.match, true); !field || field->type.empty())
         return Fail(field ? std::string("type is an element type, with [n] for an array") : "type: " + field.error());
     command.offset = offset;
-    command.kind = Kind::Label;
+    command.kind = Kind::MemberName;
     command.request.op = ue::op::Fields;
     return command;
 }
 
-// export-labels: names for a static-analysis tool.
-Parsed ExportLabels(const Args& args, const ParseContext&) {
+// labels-export: names for a static-analysis tool.
+Parsed LabelsExport(const Args& args, const ParseContext&) {
     Command command;
     command.file = args.Str("file");
     command.limit = label_kind::All;
@@ -369,15 +369,15 @@ Parsed ExportLabels(const Args& args, const ParseContext&) {
         for (const auto& kind : args.Strs("kinds")) list += (list.empty() ? "" : ",") + kind;
         command.limit = LabelKinds(list);
     }
-    command.kind = Kind::ExportLabels;
+    command.kind = Kind::LabelsExport;
     command.request.op = ue::op::ExecEntries;
     return command;
 }
 
-// export-assets: each object's fields and table rows, one file per object.
-Parsed ExportAssets(const Args& args, const ParseContext&) {
+// assets-export: each object's fields and table rows, one file per object.
+Parsed AssetsExport(const Args& args, const ParseContext&) {
     Command command;
-    command.kind = Kind::ExportAssets;
+    command.kind = Kind::AssetsExport;
     command.file = args.Str("dir");
     for (const auto& name : args.Strs("cls")) {
         if (!ClassName(name)) return Fail("cls: '" + name + "' is not a class name");
@@ -514,8 +514,8 @@ bool TraceEnd(const Json& end, Command::TracePoint& out) {
 }
 }
 
-// trace: the first thing a line hits.
-Parsed Trace(const Args& args, const ParseContext&) {
+// line-trace: the first thing a line hits.
+Parsed LineTrace(const Args& args, const ParseContext&) {
     Command command;
     for (int i = 0; i < 2; ++i) {
         const char* key = i ? "end" : "start";
@@ -527,7 +527,7 @@ Parsed Trace(const Args& args, const ParseContext&) {
     command.traceChannel = static_cast<uint8_t>(channel);
     command.traceSimple = args.Has("simple");
     if (args.Has("ignore") && !LiteralRef(args.Str("ignore"), command.traceIgnore)) return Fail("ignore is an actor's literal ref");
-    command.kind = Kind::Trace;
+    command.kind = Kind::LineTrace;
     return command;
 }
 
@@ -585,11 +585,11 @@ Parsed CallsStop(const Args& args, const ParseContext&) {
 // census: diff answers only the classes whose count differs from the last census of that cls.
 Parsed Census(const Args& args, const ParseContext&) { return CensusOptions(args); }
 
-// refs: functions whose bytecode names a pooled name (by text or index); the console resolves it.
-Parsed Refs(const Args& args, const ParseContext&) {
+// name-refs: functions whose bytecode names a pooled name (by text or index); the console resolves it.
+Parsed NameRefs(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
-    command.kind = Kind::Refs;
+    command.kind = Kind::NameRefs;
     request.op = ue::op::Refs;
     if (args.Has("name") == args.Has("index")) return Fail("name: give name or index");
     if (args.Has("index")) {

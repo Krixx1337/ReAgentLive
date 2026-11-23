@@ -9,18 +9,18 @@ same for one verb. Result keys and the notation: [result shapes](results.md); th
 
 ## General notes
 
-- A call is one JSON object per line: {"verb": "read", "args": {"addr": "0x1000", "len": 16}}, args named as help shows them; "meta", "timing" and "big" as true, "budget" as a number. A line may also hold a JSON list of calls.
+- A call is one JSON object per line: {"verb": "read", "args": {"addr": "0x1000", "len": 16}}, args named as help shows them; "meta", "timing" and "big" as true, "max_chars" as a number. A line may also hold a JSON list of calls.
 - help with verb shows its args (type, default, help), its result's keys, notes and an example call; help with json the whole table.
 - Unknown keys, missing required ones and values of the wrong type are refused (kind schema) with the key's part of the schema and a corrected example.
 - An int is a number or "0x..." text. An addr is "0x...", a literal ref, {"module": "x.dll", "rva": N} or {"base": <addr>, "offset": N}; addresses inside a module carry module and rva.
 - A chain is {"base": <addr>, "chain": [N, N]} in read, peek, mem-snap, vtable and disasm: each offset but the last reads a pointer, so one alone is refused ([0, N] reads the pointer at base and adds N).
 - A path is a list of field names: ["Info", "Owner"]. A key that does not apply is omitted from a result.
 - meta prints struct values with their layout; timing adds trips, wait_ms and total_ms.
-- A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with its largest parts and next, the call narrowed (or file, for a call that must not run again). budget sets the limit, big lifts it.
+- A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with its largest parts and next, the call narrowed (or file, for a call that must not run again). max_chars sets the limit, big lifts it.
 - One console per agent: a second one is refused as busy.
 - The module list and a pack's lookups persist for the agent instance in %TEMP%\reagentlive-<pid>.cache.
 - One-shot: <console> [pid] -c '<call or list of calls>' (or -c @<file>, one call per line) emits JSON Lines.
-- Each call is logged beside the console as facts (verb, keys, sizes, refusal), never values; stats reads it, also with no target. --caller tool|script|shell says who reads the output; --no-usage turns it off.
+- Each call is logged beside the console as facts (verb, keys, sizes, refusal), never values; usage reads it, also with no target. --caller tool|script|shell says who reads the output; --no-usage turns it off.
 - Unreal pack verbs are refused when the host does not offer the pack (status lists the packs).
 - Refs: pass the literal 0x<address>#<index>:<serial> a result printed (find, census, each, describe, get, entries); it works across runs.
 - A bare class or struct name works where an arg says so; the first lookup scans the table.
@@ -114,7 +114,7 @@ Result: `{quit: bool}`
 {"args":{},"verb":"quit"}
 ```
 
-### stats
+### usage
 
 what this session cost: calls, output and refusals per verb, largest output first.
 
@@ -128,10 +128,10 @@ Pack `explore`.
 
 Result: `{session?: str, sessions?: u64, since?: str, totals: {calls: u64, batched: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, ms: f64}, rows: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, ms: f64, batched?: u64, unfiltered?: u64, repeated?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64}], largest: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}]}`
 
-From the usage log beside the console; works with no target (then: the log's latest session). calls counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the output budget, and saved the characters their digests kept out (full size less the digest). Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log.
+From the usage log beside the console; works with no target (then: the log's latest session). calls counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the result cap (max_chars), and saved the characters their digests kept out (full size less the digest). Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log.
 
 ```json
-{"args":{},"verb":"stats"}
+{"args":{},"verb":"usage"}
 ```
 
 ### batch
@@ -146,7 +146,7 @@ Pack `explore`.
 
 Result: `{all_ok: bool, same_tick: bool, first_tick: u64, last_tick: u64, spans_ticks: [{index: u64, command: str}], rows: [value], tick_accurate?: bool}`
 
-rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, status, stats, quit, batch and run are not allowed inside.
+rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, status, usage, quit, batch and run are not allowed inside.
 
 ```json
 {"args":{"calls":[{"args":{"addr":"0x140001000"},"verb":"read"}]},"verb":"batch"}
@@ -232,13 +232,13 @@ Pack `modify`; **writes or calls**.
 
 Result: `{address: addr, module?: str, rva?: hex, size: u64, timed?: TimedWrite}`
 
-A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, the timed write as writes lists it; up to 64 bytes. undo stops as conflict if the game changes the value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without one it is refused. hold on an addr based on a literal ref ({"base": <ref>, "offset": N}) stops when that object is freed or replaced. Options: expect guards every write; undo and hold are the two timed forms (undo's owner and object only guard an undo, so they live inside it).
+A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, the timed write as timed-writes lists it; up to 64 bytes. undo stops as conflict if the game changes the value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without one it is refused. hold on an addr based on a literal ref ({"base": <ref>, "offset": N}) stops when that object is freed or replaced. Options: expect guards every write; undo and hold are the two timed forms (undo's owner and object only guard an undo, so they live inside it).
 
 ```json
 {"args":{"addr":"0x140001000","data":"00 00 80 3f"},"verb":"write"}
 ```
 
-### writes
+### timed-writes
 
 the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones.
 
@@ -247,14 +247,14 @@ Pack `modify`; **writes or calls**.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `clear` | `bool` |  |  | end them |
-| `id` | `str` |  |  | with clear: one write's id as writes lists it (undo:N or hold:N); default all |
+| `id` | `str` |  |  | with clear: one write's id as timed-writes lists it (undo:N or hold:N); default all |
 
 Result: `{rows: [TimedWrite], cleared?: u64}`
 
 Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. clear answers cleared and the rows it ended.
 
 ```json
-{"args":{},"verb":"writes"}
+{"args":{},"verb":"timed-writes"}
 ```
 
 ### modules
@@ -344,18 +344,18 @@ Pack `observe`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `test` | `changed\|unchanged\|increased\|decreased` | yes |  | what an element must have done |
+| `compare` | `changed\|unchanged\|increased\|decreased` | yes |  | what an element must have done |
 | `type` | `str` | yes |  | the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start |
 | `keep` | `bool` |  |  | keep only the matches as candidates and today's bytes as the new baseline |
 | `view` | `obj` |  |  | how the result is shown: page, row limit, filters (the shared view keys) |
 | `view.limit` | `int` |  | `64` | rows at most (the verb's notes say whether 0 means all) |
 
-Result: `{address: addr, module?: str, rva?: hex, length: u64, type: str, test: changed\|unchanged\|increased\|decreased, compared: u64, matched: u64, tick: u64, rows: [{address: addr, before: value, after: value}], capped: bool, kept?: bool}`
+Result: `{address: addr, module?: str, rva?: hex, length: u64, type: str, compare: changed\|unchanged\|increased\|decreased, compared: u64, matched: u64, tick: u64, rows: [{address: addr, before: value, after: value}], capped: bool, kept?: bool}`
 
 Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers (NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 with keep, act, mem-diff ... with keep until few remain; matched counts all, rows show the first (view.limit: 1..256). A snap from another agent instance is refused.
 
 ```json
-{"args":{"test":"changed","type":"f32"},"verb":"mem-diff"}
+{"args":{"compare":"changed","type":"f32"},"verb":"mem-diff"}
 ```
 
 ### watch-start
@@ -466,11 +466,11 @@ Pack `native`.
 |---|---|---|---|---|
 | `file` | `file` |  |  | the labels file (default: the host's names file, else the console's) |
 | `module` | `str` |  |  | the module (default: the exe) |
-| `again` | `bool` |  |  | sign rows that have a signature or failed before too |
+| `retry` | `bool` |  |  | sign rows that have a signature or failed before too |
 
 Result: `{path: str, module: str, timestamp: u32, signed: u64, unsigned: u64, skipped: u64, failed_before: u64, searches: u64, rows: [{name: str, kind: str, rva: hex, status: signed\|unsigned, length?: u64, site?: hex, reason?: str}]}`
 
-A function's signature starts at it, a global's at the first code that loads it (a reference signature); each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless again. The file is rewritten in place; other builds' lines stay as they are.
+A function's signature starts at it, a global's at the first code that loads it (a reference signature); each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless retry. The file is rewritten in place; other builds' lines stay as they are.
 
 ```json
 {"args":{},"verb":"labels-sign"}
@@ -788,7 +788,7 @@ Result: `{ref: ref, function: str, mode: raw\|typed\|release\|dry, block_size: u
 {"args":{"function":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"release"}
 ```
 
-### label
+### member-name
 
 name an unreflected member in <console>.native.txt.
 
@@ -806,10 +806,10 @@ Result: `{path: str, line: u64, owner: str, offset: hex, type: str, name: str, s
 get then shows it (native; stale after a patch).
 
 ```json
-{"args":{"name":"Name","object":"0x1f2e3d4c50#123:4","offset":16,"type":"f32"},"verb":"label"}
+{"args":{"name":"Name","object":"0x1f2e3d4c50#123:4","offset":16,"type":"f32"},"verb":"member-name"}
 ```
 
-### export-labels
+### labels-export
 
 names for a static-analysis tool (JSON lines, one build).
 
@@ -826,10 +826,10 @@ Result: `{path: str, module: str, timestamp: u32, total: u64, globals: u64, user
 Native exec thunks, vtables and interface implementations, merged into the file: names a static tool wrote back (user), globals peek's label confirmed, kinds not derived now and other builds' lines are kept; per address the highest rank wins (user, global, exec, interface, vtable). global derives nothing (peek's label writes those). After another tool's mappings: kinds ["interface"].
 
 ```json
-{"args":{},"verb":"export-labels"}
+{"args":{},"verb":"labels-export"}
 ```
 
-### export-assets
+### assets-export
 
 each object of the classes into its own JSON file: every nonzero field, and a table's rows.
 
@@ -847,7 +847,7 @@ Result: `{dir: str, index: str, exported: u64, tables: u64, failed: u64, capped:
 Live instances only (no Default__ or archetype objects), up to 2000 per call (then capped). A file <dir>/<Class>/<name>.json holds {ref, name, class, get, rows}: get is get's result with nonzero, rows (a data or curve table) is rows' with limit 0; a read that failed is {error} in its place. <dir>/index.json lists every file; rows here shows the first 100. view.match keeps objects whose name contains the text. Run it again to refresh: files are replaced.
 
 ```json
-{"args":{"cls":["Name"],"dir":"out.json"},"verb":"export-assets"}
+{"args":{"cls":["Name"],"dir":"out.json"},"verb":"assets-export"}
 ```
 
 ### layout-export
@@ -960,7 +960,7 @@ No paths: every field, compact (name, offset, value; raw beside a recovered name
 {"args":{"object":"0x1f2e3d4c50#123:4"},"verb":"get"}
 ```
 
-### trace
+### line-trace
 
 the first thing a line hits: actor, component, physical material, distance (read-only).
 
@@ -979,7 +979,7 @@ Result: `{start: [f64], end: [f64], channel: str, complex: bool, ignored?: ref, 
 KismetSystemLibrary.LineTraceSingle on the game thread, decoded by GameplayStatics.BreakHitResult; it changes no state. The world comes from ignore, else from an end's object: two points need ignore. Distance and points are in cm; distance counts from start. A socket needs a mesh component (get the actor's Mesh).
 
 ```json
-{"args":{"end":[0,0,0],"start":[0,0,0]},"verb":"trace"}
+{"args":{"end":[0,0,0],"start":[0,0,0]},"verb":"line-trace"}
 ```
 
 ### calls-start
@@ -1141,7 +1141,7 @@ call, call-pure, call-each, release, func's params, each, script, refs, exec ent
 {"args":{"action":"on"},"verb":"game-thread"}
 ```
 
-### refs
+### name-refs
 
 Blueprint functions whose bytecode names a pooled name (EX_NameConst).
 
@@ -1157,7 +1157,7 @@ Result: `{index: i32, name?: str, rows: [{ref: ref, owner: str, name: str, offse
 Give name or index.
 
 ```json
-{"args":{"name":"None"},"verb":"refs"}
+{"args":{"name":"None"},"verb":"name-refs"}
 ```
 
 ### funcs

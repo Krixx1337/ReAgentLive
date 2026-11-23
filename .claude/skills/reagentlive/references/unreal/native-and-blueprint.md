@@ -30,7 +30,7 @@ the native-code reference.
   list, then `entry` set to each event's offset.
 - If the decode reports it stopped, the statements before the stop are
   sound; read past it by hand only around the offset it names.
-- **Which Blueprints read a value:** `refs` with `name` (the tag text) or
+- **Which Blueprints read a value:** `name-refs` with `name` (the tag text) or
   `index`, then `script` with `decode` on each hit.
 - With an SDK dump: the parameter struct's `CallFunc_*` locals name every
   call the function makes (any math node in between shows); `grep` the

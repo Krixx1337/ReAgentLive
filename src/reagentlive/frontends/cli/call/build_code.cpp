@@ -129,7 +129,7 @@ Parsed LabelsSign(const Args& args, const ParseContext&) {
     command.request.op = op::Search;
     command.file = args.Str("file");
     command.target = args.Str("module");
-    command.all = args.Has("again");
+    command.all = args.Has("retry");
     return command;
 }
 

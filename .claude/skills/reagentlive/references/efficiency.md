@@ -1,7 +1,7 @@
 # Efficiency: fewer calls, smaller output
 
 Budgets and digests: `docs/commands/console.md#fewer-round-trips`;
-`stats`: `docs/commands/console.md#usage-log-and-stats`.
+`usage`: `docs/commands/console.md#usage-log-and-usage`.
 
 ## Fewer calls
 
@@ -35,14 +35,14 @@ Budgets and digests: `docs/commands/console.md#fewer-round-trips`;
 - Read the digest's `status` before running anything: a `saved` file is
   already written (open it, do not repeat the call), and `next` there is
   where a cut listing resumes.
-- Raise `budget` only for what `next` cannot narrow.
+- Raise `max_chars` only for what `next` cannot narrow.
 
 ## Measure the session
 
-- `stats` (also with no target) ranks this session's verbs by output and
-  marks wasteful calls (unfiltered, repeated, refused; `help` on `stats`). Check
+- `usage` (also with no target) ranks this session's verbs by output and
+  marks wasteful calls (unfiltered, repeated, refused; `help` on `usage`). Check
   it before a long step and act on the marks.
 - End the final report with its totals (context cost and what digests
   saved) and the two or three costliest habits.
-- `stats` also reads across sessions: patterns, verbs nobody calls, this
-  session against earlier ones (`stats` with `sessions` or `all`).
+- `usage` also reads across sessions: patterns, verbs nobody calls, this
+  session against earlier ones (`usage` with `sessions` or `all`).

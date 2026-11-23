@@ -19,11 +19,11 @@ shares; each command's behaviour and guards are on its page:
 
 | Page | Commands |
 |---|---|
-| [objects](unreal-objects.md) | `find`, `describe`, `name`, `name-find`, `enum`, `census`, `each`, object filters, class names, `export-assets` |
-| [fields](unreal-fields.md) | `get` in every mode, compact values, `entries`, `rows`, text values, readable names, native members (`label`), `layout-export`, `layout-check` |
-| [calls](unreal-calls.md) | `call`, `call-pure`, `call-each`, `release`, `func`, `funcs`, named calls, the call recorder, `trace`, `game-thread` |
-| [code](unreal-code.md) | `script` (and its `decode`), `refs`, exec entries |
-| [labels](labels.md) (core) | `export-labels`, labels files, `peek` with `label`, `labels-sign`, `labels-port` |
+| [objects](unreal-objects.md) | `find`, `describe`, `name`, `name-find`, `enum`, `census`, `each`, object filters, class names, `assets-export` |
+| [fields](unreal-fields.md) | `get` in every mode, compact values, `entries`, `rows`, text values, readable names, native members (`member-name`), `layout-export`, `layout-check` |
+| [calls](unreal-calls.md) | `call`, `call-pure`, `call-each`, `release`, `func`, `funcs`, named calls, the call recorder, `line-trace`, `game-thread` |
+| [code](unreal-code.md) | `script` (and its `decode`), `name-refs`, exec entries |
+| [labels](labels.md) (core) | `labels-export`, labels files, `peek` with `label`, `labels-sign`, `labels-port` |
 
 ## Every command
 
@@ -44,7 +44,7 @@ shares; each command's behaviour and guards are on its page:
 - **Globals:** every command first needs the object table and name pool
   located and checked ([below](#before-the-first-command)); until then it
   is refused with `pack off: <reason>`.
-- **Scans** (`find`, `census`, `each`, `refs`, exec entries) take at most
+- **Scans** (`find`, `census`, `each`, `name-refs`, exec entries) take at most
   1 ms of the host's tick each tick (`Progress::Continue`; the host may
   allow more, `Context::scanMicroseconds`, up to 50 ms).
 
@@ -152,7 +152,7 @@ pages link here. A host that ticks elsewhere (its own thread, as
 
 | Answer off the game thread (with `offThreadReads`) | Need the game thread |
 |---|---|
-| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `get` in every mode, array previews), `entries`, `enum`, `func` (its metadata), `funcs`, `script` with `decode` | `call`, `call-pure`, `call-each`, `release`, `func`'s `params`, `each`, `script`, `refs`, `exec entries` (and `export-labels`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `trace` and text values |
+| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `get` in every mode, array previews), `entries`, `enum`, `func` (its metadata), `funcs`, `script` with `decode` | `call`, `call-pure`, `call-each`, `release`, `func`'s `params`, `each`, `script`, `name-refs`, `exec entries` (and `labels-export`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `line-trace` and text values |
 
 Commands that need the game thread are refused off it with `not on the
 game thread`. A host gets onto the game thread by ticking there (an SDK

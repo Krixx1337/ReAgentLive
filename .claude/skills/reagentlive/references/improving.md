@@ -21,7 +21,7 @@ Read `improvement` from the setup record
 ## During the task: the scratch file
 
 - Path: `%LOCALAPPDATA%\reagentlive\sessions\<session>.md`, `<session>`
-  being the id `stats` reports for this console session.
+  being the id `usage` reports for this console session.
 - Create it at the first event, never before. One line per event:
 
 ```markdown
@@ -47,9 +47,9 @@ Read `improvement` from the setup record
 
 Run it only when the task ran 10 or more calls, or any mark or refusal
 appeared. Otherwise delete the scratch file, if any, and stop. Budget: one
-`stats` call and at most 10 lines of review.
+`usage` call and at most 10 lines of review.
 
-1. `stats` for the session (`{"verb": "stats", "args": {"session": "<id>"}}`
+1. `usage` for the session (`{"verb": "usage", "args": {"session": "<id>"}}`
    when the session has ended, e.g. after an MCP restart); copy its marks
    into Friction.
 2. Turn Friction and Wrong turns into candidates. Apply the rubric to each;

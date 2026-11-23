@@ -84,13 +84,13 @@ lost. Behaviour: [Unreal pack](../commands/unreal.md). Part of
   a field within one build.
 - **Static-tool names: borrow mappings where they exist** (seen live: the
   SDK generator's mappings named 17,652 exec functions and 21,613 types;
-  `export-labels` with `kinds` interface and global then named 213 more, the
+  `labels-export` with `kinds` interface and global then named 213 more, the
   generator's own static-FName naming having failed on an unanalysed
   database). Not checked: whether a full export after the mappings would
   comment rather than rename the generator's names; the docs say not to run
   one. A host whose SDK
   generator writes IDA mappings (Dumper-7) imports those first for exec
-  thunks, vtables, types and engine globals; `export-labels` with `kinds`
+  thunks, vtables, types and engine globals; `labels-export` with `kinds`
   interface and global then adds only what needs the running process. ReAgentLive
   never requires or reads those mappings, and keeps every kind so it can
   name a database alone. Rejected: dropping the `exec` and `vtable` kinds
@@ -184,7 +184,7 @@ ticks the host only for that viewport and only on the process's first
 thread. `off` restores the pointer only if it still holds the copy; the
 copy stays allocated. Host API: [hosting](../hosting.md#game-thread-tick).
 
-**Why.** Calls, `each`, `script`, `refs` and the recorder need the game
+**Why.** Calls, `each`, `script`, `name-refs` and the recorder need the game
 thread, and a host on its own thread (`examples/unreal`) has none. Draw
 runs once per frame on the game thread in every UE5 game, and a private
 table copy touches nothing shared.

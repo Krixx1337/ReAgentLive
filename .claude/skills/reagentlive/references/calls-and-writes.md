@@ -71,7 +71,7 @@ Approval: SKILL.md rules. Call semantics and named inputs:
   4. Compare durations on that one character, with an untouched one in the
      same capture as a control when one is in view.
 - Read the end state with `writes`. Clear them
-  (`{"verb": "writes", "args": {"clear": true}}`) before the host stops or
+  (`{"verb": "timed-writes", "args": {"clear": true}}`) before the host stops or
   you reinject: a stopped agent no longer ticks, so its `undo` writes never
   restore.
 
