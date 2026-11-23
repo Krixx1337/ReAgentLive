@@ -272,9 +272,18 @@ instance and beside a later snapshot. Literal refs always work. Without
 baseline until EOF or `quit`.
 
 Console arguments: `[pid] [-c "..."] [--names <file>] [--caller
-tool|script|shell] [--session <id>] [--no-usage]`; the last three are the
+tool|script|shell] [--session <id>] [--no-usage] [--packs <list>]`;
+`--caller`, `--session` and `--no-usage` are the
 [usage log](#usage-log-and-stats)'s. `--names <file>` loads a
 [names file](unreal.md#readable-names).
+
+**`--packs explore,native`** is a ceiling: the console runs only the verbs
+of those [tool packs](../tool-interface.md#tool-packs) (`explore` always;
+default: all four, for a person at the keyboard). Any other verb is
+refused before it is parsed, with an error of kind `pack` that names its
+pack and the flag to start with; `batch` items are checked one by one, so
+a batch cannot carry a verb past it. `status` lists the console's packs as
+`tool_packs`. The MCP adapter and the Python session pass their own.
 
 `help --hash` answers the verb table's hash alone (`{rows: [],
 table_hash}`), with no target: a program that keeps a table reads it to
@@ -325,7 +334,7 @@ none of them used. Ranked by output, largest first:
 
 | Key | Holds |
 |---|---|
-| `totals` | `calls` (what was sent: a batch's commands are inside its call), `in`, `out`, `out_by_caller` (`tool` is the context cost), `refused`, `digested` (results past the output budget), `saved` (what their digests kept out: full size less the digest), `ms` |
+| `totals` | `calls` (what was sent: a batch's commands are inside its call), `in`, `out`, `out_by_caller` (`tool` is the context cost), `calls_by_pack` (every call, a batch's items too, by its verb's tool pack), `refused`, `digested` (results past the output budget), `saved` (what their digests kept out: full size less the digest), `ms` |
 | `rows` | per verb: `calls`, `out` and its `largest`, `ms`, `batched`, `digested` and `saved`, and the marks |
 | `largest` | the five largest single calls: verb, flag names, output, caller, and `digest` (the full size) for one a digest stood in for |
 
@@ -339,7 +348,7 @@ none of them used. Ranked by output, largest first:
 |---|---|
 | `unfiltered` | went to a verb with `--match`, `--nonzero`, `--own`, `--changed`, `--cls` or `--limit`, gave none of them and printed whole (a digested call cost only its digest) |
 | `repeated` | sent an input already sent in the same session |
-| `refused`, `refused_by` | the console refused, by error kind (`syntax`, `validation`, `agent`...) |
+| `refused`, `refused_by` | the console refused, by error kind (`syntax`, `validation`, `agent`, `pack`...) |
 
 The marks state what happened; what to do about them is the
 [`reagentlive` skill](../../.claude/skills/reagentlive/SKILL.md)'s. Sizes

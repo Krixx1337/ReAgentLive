@@ -1072,6 +1072,13 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     const auto none = MakeStats({}, std::string(), AllVerbs());
     CHECK_FALSE(Checked(none).contains("session"));
     CHECK(none.rows.empty());
+
+    // Calls per tool pack, a batch's items included.
+    CHECK(stats.totals.callsByPack == std::map<std::string, uint64_t>{{"explore", 6}});
+    const std::vector<UsageLine> mixed = {line("p", "disasm", 10, "1"), line("p", "write", 10, "2"),
+                                          line("p", "disasm", 10, "3"), line("p", "nonsense", 10, "4")};
+    CHECK(MakeStats(mixed, std::string("p"), AllVerbs()).totals.callsByPack ==
+          std::map<std::string, uint64_t>{{"native", 2}, {"modify", 1}});
 }
 
 TEST_CASE("stats counts digests and what they kept out, and lists and picks sessions") {

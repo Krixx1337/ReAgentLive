@@ -550,6 +550,13 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     if (jsonCommand.empty()) return false;
     const Json& callArgs = input.Args();
     usage.Describe(input.name, call ? &callArgs : nullptr, rest);
+    // The ceiling (--packs): a verb of another pack is refused before it is parsed, inside a batch too.
+    if (const Verb* row = FindVerb(session.verbs, jsonCommand); row && !(session.toolPacks & ToolPackBit(row->pack))) {
+        const auto pack = std::string(ToolPackName(row->pack));
+        JsonError(session, jsonCommand, "pack", std::string(row->name) + " is in the " + pack + " pack, outside this console's --packs " +
+            ToolPackList(session.toolPacks) + ": start it with " + pack + " in --packs");
+        return false;
+    }
     // A host's verb: its row checks the arguments and the result, the host does the rest.
     if (const Verb* host = FindVerb(session.config.verbs, jsonCommand); host && session.config.hostCommand) {
         session.current = host;
@@ -773,7 +780,7 @@ using namespace detail;
 
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     constexpr const char* usage = "Usage: <console> [pid] [-c \"command; command ...\"] [--names <file>] "
-        "[--caller tool|script|shell] [--session <id>] [--no-usage]";
+        "[--caller tool|script|shell] [--session <id>] [--no-usage] [--packs explore,native,observe,modify]";
     // Before a session exists: print the envelope directly.
     const auto printStartup = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
@@ -787,6 +794,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     uint32_t pid = 0;
     std::filesystem::path namesFile, usagePath, labelsPath;
     bool namesRequired = false, record = true;
+    ToolPackSet toolPacks = AllToolPacks;
     std::string caller = "shell", sessionId;
     wchar_t module[MAX_PATH];
     if (const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH); length && length < MAX_PATH) {
@@ -825,6 +833,12 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             for (const wchar_t c : value) sessionId += static_cast<char>(c);
         } else if (arg == L"--no-usage") {
             record = false;
+        } else if (arg == L"--packs" && i + 1 < argc) {
+            std::string list;
+            for (const wchar_t c : std::wstring_view(argv[++i])) list += c < 0x80 ? static_cast<char>(c) : '?';
+            auto packs = ParseToolPacks(list);
+            if (!packs) return startupError("--packs: " + packs.error());
+            toolPacks = *packs;
         } else if (!pid && !arg.empty() && std::ranges::all_of(arg, [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
             pid = static_cast<uint32_t>(_wtoi(argv[i]));
         } else {
@@ -872,6 +886,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     session.verbs = verbs;
     session.origins = origins;
     session.tableHash = tableHash;
+    session.toolPacks = toolPacks;
     session.pack = MakePackState(session);
     if (const auto problem = LoadPackFiles(session); !problem.empty()) return startupError(problem);
     session.names = std::move(names);

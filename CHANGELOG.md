@@ -71,6 +71,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `modify`). `help` groups the verbs by pack; `help --json` rows carry
   `pack` and the table lists `packs`
   ([tool interface](docs/tool-interface.md#tool-packs)).
+- **A console's ceiling, `--packs`:** `--packs explore,native` runs only
+  those packs' verbs; others, `batch` items included, are refused with
+  kind `pack`. `status` lists `tool_packs`; `stats` counts
+  `calls_by_pack` ([console](docs/commands/console.md#one-shot-use)).
 - **Names that survive a patch:** `labels-sign` stores a byte signature on
   each name people confirmed (functions and globals); after a patch
   `labels-port` finds them in the new build and adds them to the file,

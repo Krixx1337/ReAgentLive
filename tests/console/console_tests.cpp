@@ -616,3 +616,32 @@ TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unl
     CHECK_FALSE(rows[0].contains("sig_failed"));
     std::filesystem::remove(file);
 }
+
+TEST_CASE("--packs is a ceiling: a verb of another pack is refused, inside a batch too") {
+    const auto& fixture = TheFixture();
+    // explore and native: a write and a capture are refused by name, reads run.
+    const auto records = RunLines("write 0x1000 00; watch-read; get " + fixture.thing + " Health; status", "native");
+    REQUIRE(records.size() == 4);
+    CHECK(records[0]["error"]["kind"] == "pack");
+    CHECK(records[0]["error"]["message"] ==
+          "write is in the modify pack, outside this console's --packs explore,native: start it with modify in --packs");
+    CHECK(records[1]["error"]["kind"] == "pack");
+    CHECK(records[2].value("ok", false));
+    CHECK(records[3]["result"]["tool_packs"] == Json{"explore", "native"});
+    // A batch is explore; its items obey the ceiling one by one.
+    const auto batch = RunLines("batch { get " + fixture.thing + " Health; call-pure Thing GetScore --each }", "explore");
+    REQUIRE(batch.size() == 1);
+    const auto& rows = batch[0]["result"]["rows"];
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].value("ok", false));
+    CHECK(rows[1]["error"]["kind"] == "pack");
+    // Default: every pack; a JSON call is checked the same way.
+    CHECK(Result("status")["tool_packs"] == Json{"explore", "native", "observe", "modify"});
+    const auto json = RunLines(R"({"verb": "watch-read"})", "explore");
+    REQUIRE(json.size() == 1);
+    CHECK(json[0]["error"]["kind"] == "pack");
+    // An unknown pack stops the console at startup.
+    const auto bad = RunLines("status", "explore,writes");
+    REQUIRE(bad.size() == 1);
+    CHECK(bad[0]["error"]["kind"] == "startup");
+}

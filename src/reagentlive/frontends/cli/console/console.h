@@ -31,7 +31,8 @@ struct ConsoleConfig {
     // in the console's own <console>.labels.jsonl. Empty: that file holds both.
     std::wstring_view labelsFile = {};
 };
-// Arguments: [pid] [-c "command; command ..."] [--names <file>].
+// Arguments: [pid] [-c "command; command ..."] [--names <file>] [--packs <list>]
+// (the tool packs whose verbs run; default all, explore always).
 // Commands from -c and stdin emit JSON Lines and exit 1 if any command failed.
 // A stdin line is a typed command or a JSON call ({"verb": ..., "args": {...}}).
 // -c lines that are all `help` are answered from the verb table, with no

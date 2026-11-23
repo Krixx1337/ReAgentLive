@@ -545,6 +545,7 @@ struct Status {
     std::optional<std::vector<std::string>> roots;
     std::vector<std::string> packs;
     std::optional<Json> gameThread;     // The engine pack's game-thread tick, as game-thread answers it.
+    std::vector<std::string> toolPacks; // The tool packs this console runs (--packs).
     std::string tableHash;
     template<class V> static void Describe(V& v) {
         v("pid", &Status::pid);
@@ -561,6 +562,7 @@ struct Status {
         v("roots", &Status::roots);
         v("packs", &Status::packs);
         v("game_thread", &Status::gameThread);
+        v("tool_packs", &Status::toolPacks);
         v("table_hash", &Status::tableHash);
     }
 };

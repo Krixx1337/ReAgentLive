@@ -18,6 +18,7 @@ namespace shape {
 struct StatsTotals {
     uint64_t calls = 0, in = 0, out = 0, refused = 0;
     std::map<std::string, uint64_t> outByCaller;
+    std::map<std::string, uint64_t> callsByPack;    // Every call (a batch's items too) by its verb's tool pack.
     uint64_t digested = 0, saved = 0;   // Results past the budget; what their digests kept out.
     double ms = 0;
     template<class V> static void Describe(V& v) {
@@ -25,6 +26,7 @@ struct StatsTotals {
         v("in", &StatsTotals::in);
         v("out", &StatsTotals::out);
         v("out_by_caller", &StatsTotals::outByCaller);
+        v("calls_by_pack", &StatsTotals::callsByPack);
         v("refused", &StatsTotals::refused);
         v("digested", &StatsTotals::digested);
         v("saved", &StatsTotals::saved);
@@ -161,6 +163,7 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
             ++stats.totals.digested;
             stats.totals.saved += saved;
         }
+        if (const Verb* verb = FindVerb(verbs, line.verb)) ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
         // A digested call cost its digest only: not worth a mark.
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.digest) {
             const bool filters = std::ranges::any_of(verb->flags, [](const Flag& f) { return IsFilter(f.name); });

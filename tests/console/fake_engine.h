@@ -597,7 +597,8 @@ inline Agent& TheAgent() {
 }
 
 // One console run over `lines` ("get ...; each ..."): its JSON lines.
-inline std::vector<Json> RunLines(const std::string& lines) {
+// `packs`: the console's --packs (empty: not given, all packs).
+inline std::vector<Json> RunLines(const std::string& lines, const std::string& packs = {}) {
     TheAgent();
     static const std::wstring prefix = SectionPrefix(); // The config keeps a view of it.
     static const reagentlive::cli::ConsoleConfig config{prefix, L"", Layout};
@@ -605,15 +606,16 @@ inline std::vector<Json> RunLines(const std::string& lines) {
         (L"reagentlive-fake-" + std::to_wstring(GetCurrentProcessId()) + L".out");
     std::wstring wide(lines.begin(), lines.end());
     std::wstring pid = std::to_wstring(GetCurrentProcessId());
-    std::wstring program = L"console", noUsage = L"--no-usage", dashC = L"-c";
-    wchar_t* argv[] = {program.data(), pid.data(), noUsage.data(), dashC.data(), wide.data()};
+    std::wstring program = L"console", noUsage = L"--no-usage", dashC = L"-c", packsFlag = L"--packs";
+    std::wstring packsList(packs.begin(), packs.end());
+    wchar_t* argv[] = {program.data(), pid.data(), noUsage.data(), dashC.data(), wide.data(), packsFlag.data(), packsList.data()};
     std::fflush(stdout);
     const int saved = _dup(_fileno(stdout));
     FILE* file = nullptr;
     _wfopen_s(&file, out.c_str(), L"wb");
     REQUIRE(file);
     _dup2(_fileno(file), _fileno(stdout));
-    reagentlive::cli::RunConsole(config, 5, argv);
+    reagentlive::cli::RunConsole(config, packs.empty() ? 5 : 7, argv);
     std::fflush(stdout);
     _dup2(saved, _fileno(stdout));
     _close(saved);

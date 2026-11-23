@@ -86,6 +86,7 @@ struct Session {
     std::vector<Verb> verbs;                // The verb table: core, pack and host rows.
     std::vector<Origin> origins;            // The core's, the pack's and the host's: help --json titles.
     std::string tableHash;                  // Of the whole table (status, help --json).
+    ToolPackSet toolPacks = AllToolPacks;   // --packs: the verbs this console runs; others are refused (kind pack).
     const Verb* current = nullptr;          // The row of the line being run; its result type checks what is printed.
     Beat lastBeat{};
     std::vector<Module> modules;            // Exe first.

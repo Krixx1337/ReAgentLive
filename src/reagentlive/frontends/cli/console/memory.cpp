@@ -68,6 +68,8 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
         if (auto roots = client.WatchRoots(); roots) result.roots = std::move(*roots);
     result.packs = OfferedPacks(session);
     result.gameThread = PackGameThread(session);
+    for (const auto& info : ToolPacks)
+        if (session.toolPacks & ToolPackBit(info.pack)) result.toolPacks.emplace_back(info.name);
     result.tableHash = session.tableHash;
     Emit(session, jsonCommand, std::move(result));
 }
