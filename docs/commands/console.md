@@ -283,7 +283,8 @@ the generated functions, the MCP tools), so one log covers them
 
 - **A line holds facts about the call, never its values:** time, session,
   verb and origin, caller, the names of the keys given, a hash of the
-  input line, input and output characters, `ok` or the refusal's error
+  input line and of its output (`out_hash`: what it printed, without
+  `timing` or a context warning), input and output characters, `ok` or the refusal's error
   kind, milliseconds, `batch` for a call that ran inside one, and
   `digest`, the result's full size, when a [digest](#fewer-round-trips)
   stood in for it (`out` is then the digest's). No addresses, names, paths
@@ -314,6 +315,10 @@ the generated functions, the MCP tools), so one log covers them
   its calls wherever they ran (its own `batched` says how many inside). A `run`
   plan's steps are lines of their own too, so a failed step (or a failed
   item of a batch step) counts in the session's `refused`.
+- **Repeats are judged by result:** `repeated` counts a call whose input
+  and output both match an earlier call of the session (it learned
+  nothing new); the same input with another output is `same_args` (the
+  state changed, so the call was needed).
 - **Digest follow-through:** after a digest, the same verb's next call in
   the session counts as `followed` when it changed the values of the
   verb's narrowing args (the digest's `narrow`, such as `view.limit`) and

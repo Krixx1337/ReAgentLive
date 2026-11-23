@@ -51,6 +51,18 @@ void Count(Session& session, const Json& record, size_t size) {
     }
 }
 std::string Text(const Json& record) { return record.dump(-1, ' ', true, Json::error_handler_t::replace); }
+// The line's output hash: the record as the call made it, so the same
+// result hashes alike whatever timing or context warning it carried.
+void Fingerprint(Session& session, const Json& record, const std::string& text) {
+    if (!session.line) return;
+    if (!record.contains("timing")) {
+        session.line->outHash = UsageFold(session.line->outHash, text);
+        return;
+    }
+    Json bare = record;
+    bare.erase("timing");
+    session.line->outHash = UsageFold(session.line->outHash, Text(bare));
+}
 
 // The whole envelope of a line that must not run again, in the results
 // folder; the last 16 are kept. Its path, or empty when it cannot be written.
@@ -109,7 +121,10 @@ void PrintJson(Session& session, Json record) {
     if (session.capture) {
         std::string text = Text(record);
         budgeted(text);
-        if (session.line && session.usage.record) Count(session, record, text.size() + 1);
+        if (session.line && session.usage.record) {
+            Count(session, record, text.size() + 1);
+            Fingerprint(session, record, text);
+        }
         session.capture->push_back(std::move(record));
         return;
     }
@@ -122,6 +137,7 @@ void PrintJson(Session& session, Json record) {
     }
     std::string text = Text(record);
     budgeted(text);
+    if (session.usage.record) Fingerprint(session, record, text);
     // A tool caller's session past --context-limit: every envelope says so, on one line. Never a stop.
     if (session.usage.caller == "tool" && !session.usage.internal) {
         const uint64_t chars = session.usage.contextChars + text.size() + 1;

@@ -21,6 +21,7 @@ struct UsageLine {
     std::string caller;                 // tool, script or shell: only a tool's output lands in an agent's context.
     std::vector<std::string> keys;      // The args given, by key.
     std::string hash;                   // Of the whole input line: the same call made again.
+    std::string outHash;                // Of what it printed (no timing, no context warning): the same result.
     uint64_t in = 0, out = 0;           // Characters. A batch's own line counts its wrapper alone.
     uint64_t digest = 0;                // The result's size when a digest stood in for it (out is the digest's).
     bool ok = true;
@@ -37,18 +38,23 @@ struct UsageLine {
 constexpr uint64_t UsageCap = uint64_t{4} << 20; // Bytes; past it, the oldest sessions go at console start.
 constexpr size_t MaxUsageVerb = 40;                 // An unknown verb is kept this long at most.
 
-// FNV-1a of the input, as 16 hex digits.
-inline std::string UsageHash(std::string_view text) {
-    uint64_t hash = 0xcbf29ce484222325ull;
+// FNV-1a, as 16 hex digits; UsageFold adds more text to a running hash.
+constexpr uint64_t UsageHashStart = 0xcbf29ce484222325ull;
+inline uint64_t UsageFold(uint64_t hash, std::string_view text) {
     for (const unsigned char c : text) hash = (hash ^ c) * 0x100000001b3ull;
+    return hash;
+}
+inline std::string UsageHashText(uint64_t hash) {
     char out[20];
     snprintf(out, sizeof(out), "%016llx", static_cast<unsigned long long>(hash));
     return out;
 }
+inline std::string UsageHash(std::string_view text) { return UsageHashText(UsageFold(UsageHashStart, text)); }
 
 inline std::string UsageText(const UsageLine& line) {
     Json json = {{"time", line.time}, {"session", line.session}, {"verb", line.verb}, {"origin", line.origin},
-        {"caller", line.caller}, {"keys", line.keys}, {"hash", line.hash}, {"in", line.in}, {"out", line.out},
+        {"caller", line.caller}, {"keys", line.keys}, {"hash", line.hash}, {"out_hash", line.outHash},
+        {"in", line.in}, {"out", line.out},
         {"ok", line.ok}, {"ms", static_cast<double>(static_cast<int64_t>(line.ms * 10 + 0.5)) / 10}};
     if (!line.refused.empty()) json["refused"] = line.refused;
     if (line.batch) json["batch"] = true;
@@ -83,6 +89,7 @@ inline std::optional<UsageLine> ParseUsageLine(std::string_view text) {
     for (const auto& key : json["keys"])
         if (key.is_string()) line.keys.push_back(key.get<std::string>());
     str("refused", line.refused);
+    str("out_hash", line.outHash);
     number("digest", line.digest);
     if (uint64_t cap = 0; number("cap", cap)) line.cap = cap;
     str("narrow", line.narrow);

@@ -226,3 +226,32 @@ TEST_CASE("usage: after a digest, the verb's next call followed its narrow hint 
     CHECK(parsed->cap == 100000u);
     CHECK(parsed->narrow == "a1");
 }
+
+TEST_CASE("usage: repeated is the same input and the same result; same_args the same input, another result") {
+    std::vector<UsageLine> lines;
+    const auto add = [&](std::string verb, std::string hash, std::string outHash) {
+        UsageLine usage;
+        usage.time = "2026-01-02T03:04:05Z";
+        usage.session = "s";
+        usage.verb = std::move(verb);
+        usage.origin = "core";
+        usage.caller = "tool";
+        usage.hash = std::move(hash);
+        usage.outHash = std::move(outHash);
+        lines.push_back(std::move(usage));
+    };
+    add("labels-sign", "in1", "outA");
+    add("labels-sign", "in1", "outB");      // Signed new names: needed, same_args.
+    add("labels-sign", "in1", "outB");      // Nothing changed since: repeated.
+    add("read", "in2", "outC");
+    add("read", "in2", "outC");             // repeated.
+    const auto usage = MakeUsage(lines, std::string("s"), AllVerbs());
+    Checked(usage);
+    const auto sign = *std::ranges::find(usage.rows, std::string("labels-sign"), &shape::UsageVerb::verb);
+    CHECK(sign.sameArgs == 1u);
+    CHECK(sign.repeated == 1u);
+    const auto read = *std::ranges::find(usage.rows, std::string("read"), &shape::UsageVerb::verb);
+    CHECK(read.repeated == 1u);
+    CHECK_FALSE(read.sameArgs.has_value());
+    CHECK(ParseUsageLine(UsageText(lines[1]))->outHash == "outB");
+}

@@ -194,6 +194,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **`usage`'s `repeated` is judged by result:** a call counts as repeated
+  only when its input and its output both match an earlier one; the same
+  input with a new result is `same_args` (needed work, not waste).
 - **A `cls` that names no class is refused:** `find`, `census` and `each`
   answer not found, naming up to five classes that contain the name,
   instead of an empty result a typo could pass for "no instances"; `each`

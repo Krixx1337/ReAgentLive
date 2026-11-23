@@ -390,6 +390,7 @@ struct UsageScope {
         record.caller = session.usage.caller;
         record.out = line.out > line.inner ? line.out - line.inner : 0;
         record.digest = line.digest;
+        record.outHash = UsageHashText(line.outHash);
         if (line.digest && !record.cap) record.cap = session.input.maxChars;
         record.ok = line.ok;
         record.refused = line.refused;

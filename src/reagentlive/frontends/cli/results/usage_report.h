@@ -9,6 +9,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <tuple>
 #include <vector>
 #include "reagentlive/frontends/cli/results/schema.h"
 #include "reagentlive/frontends/cli/state/usage.h"
@@ -38,7 +39,9 @@ struct UsageVerb {
     std::string verb, origin;
     uint64_t calls = 0, out = 0, largest = 0;
     double ms = 0;
-    std::optional<uint64_t> batched, unfiltered, repeated, refused, digested, saved;
+    // repeated: the same input and the same result as an earlier call of the
+    // session; sameArgs: the same input with another result (state changed).
+    std::optional<uint64_t> batched, unfiltered, repeated, sameArgs, refused, digested, saved;
     // After a digest, the verb's next call: one that changed its narrowing
     // args (followed) or only raised max_chars (raised).
     std::optional<uint64_t> followed, raised;
@@ -53,6 +56,7 @@ struct UsageVerb {
         v("batched", &UsageVerb::batched);
         v("unfiltered", &UsageVerb::unfiltered);
         v("repeated", &UsageVerb::repeated);
+        v("same_args", &UsageVerb::sameArgs);
         v("refused", &UsageVerb::refused);
         v("refused_by", &UsageVerb::refusedBy);
         v("digested", &UsageVerb::digested);
@@ -176,7 +180,8 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
         if (!session->empty()) stats.session = *session;
     }
     std::map<std::string, shape::UsageVerb> byVerb;
-    std::set<std::pair<std::string, std::string>> seen;   // (session, hash)
+    std::set<std::pair<std::string, std::string>> seen;   // (session, input hash)
+    std::set<std::tuple<std::string, std::string, std::string>> seenResult;   // (session, input hash, output hash)
     std::set<std::string> sessions;
     std::vector<const UsageLine*> calls;
     std::map<std::pair<std::string, std::string>, const UsageLine*> digestOf;  // (session, verb): its last digest.
@@ -198,7 +203,9 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
             if (!row.refusedBy) row.refusedBy.emplace();
             ++(*row.refusedBy)[line.refused.empty() ? "error" : line.refused];
         }
-        if (!seen.insert({line.session, line.hash}).second) bump(row.repeated);
+        const bool sameInput = !seen.insert({line.session, line.hash}).second;
+        const bool sameResult = !seenResult.insert({line.session, line.hash, line.outHash}).second;
+        if (sameInput) bump(sameResult ? row.repeated : row.sameArgs);
         // The call after a digest on the same verb: did it narrow, or only raise the cap?
         if (const auto pending = digestOf.find({line.session, line.verb}); pending != digestOf.end()) {
             const UsageLine& digested = *pending->second;

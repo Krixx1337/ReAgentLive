@@ -43,7 +43,8 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 ## Measure the session
 
 - `usage` (also with no target) ranks this session's verbs by output and
-  marks wasteful calls (unfiltered, repeated, refused; `help` on `usage`). Check
+  marks wasteful calls (unfiltered, repeated, refused; `help` on `usage`;
+  `same_args` is not waste: the state changed). Check
   it before a long step and act on the marks.
 - End the final report with its totals (context cost and what digests
   saved) and the two or three costliest habits.

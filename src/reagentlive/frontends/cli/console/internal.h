@@ -25,6 +25,7 @@
 #include "reagentlive/frontends/cli/code/image.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
 #include "reagentlive/frontends/cli/state/cache.h"
+#include "reagentlive/frontends/cli/state/usage.h"
 #include "reagentlive/core/client.h"
 
 namespace reagentlive::cli::detail {
@@ -60,6 +61,7 @@ struct Usage {
 struct LineUsage {
     uint64_t out = 0, inner = 0;
     uint64_t digest = 0;                    // The results digests stood in for, at their full size.
+    uint64_t outHash = UsageHashStart;      // What it printed, as the call made it (no timing, no context warning).
     bool ok = true;
     std::string refused;
 };
