@@ -53,6 +53,10 @@ Answer one-address questions live, with no database:
   A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved (a jump
   table, a target past the cap): save it, `add_saved` it. A typed-pointer index
   (`p[27]`) is offset = index × size.
+- For `this->Field` in place of `*(a1 + 0x2c4)`: `layout-export --closure`
+  the classes involved, `import_layouts` and `apply_this` in the workspace
+  database. Many functions: `decompile_to` with a `grep`, read the summary,
+  open only the files it points to.
 
 ## One workspace database per investigation
 

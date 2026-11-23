@@ -73,6 +73,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **IDA loader types and pseudocode files:** `decompile_to` writes a `.c`
+  file per function with a grep summary, `import_layouts` turns a
+  `layout-export --closure` file into local types and `apply_this` types
+  `this` on labelled methods
+  ([saving a function](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 - **Layouts for a static tool's types:** `layout-export` writes a `class`
   or `struct` line (super, size) before each type's fields, field lines
   name the struct, class or enum they hold (and containers' element, key

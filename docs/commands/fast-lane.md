@@ -213,11 +213,54 @@ left without bytes.
   rl.decompile_all()            # every function's pseudocode, one string
   rl.add_saved('<next save>')   # grow the database; returns the summary
   rl.export_names('<console>.labels.jsonl')   # names you gave, for later saves
+  rl.decompile_to(['0x<addr>', '<name>'], '<dir>', grep=r'this->\w+')   # .c files + summary
+  rl.import_layouts('<file>')   # layout-export --closure → local types
+  rl.apply_this('<console>.labels.jsonl')   # Class *this on Class_Method functions
   ```
 
   The pseudocode already shows the saved constants' values: no need to
   read them again. Close the database once read, and before opening a new
   save under the same name delete the database files beside it.
+
+`decompile_to(targets, out_dir, grep=None)` takes addresses (an int or
+`'0x..'` text; an address inside a function means that function) or names,
+and writes one `<name>.c` per function into `out_dir`: characters a file
+name cannot hold become `_`, the name is cut to 120, and a name already
+taken (ignoring case) gets the address appended. A function asked twice is
+written once. It returns one summary per function: `address`, `name`,
+`path`, `lines` and, with `grep` (a regex, or a plain substring when it is
+no valid regex), `matches` as `'<line>: <text>'`, at most 40, the rest
+counted in `matches_more`. A failed decompile writes the error into its file
+and adds `error`; a target that names no function comes back as `{target,
+error}`. Read the summary first and open only the files it points to.
+
+`import_layouts(<file>)` turns a `layout-export` file
+([layouts in bulk](unreal.md#layouts-in-bulk); `--closure` brings the types
+the fields name) into local types, replacing types of the same name. Each
+class or struct becomes a packed struct of its size with every field at its
+reflected offset: its `super` is the base class when the file holds it,
+else that part is padding. Fields are typed by property: numbers, a bool
+as a byte (bitfield bools sharing a byte become one member named after all
+of them), `FName`, `FString`, `FWeakObjectPtr` and `FScriptInterface` as
+engine structs, an object or class pointer as a pointer to its class's type
+when the file holds it (else `void *`), a struct by value and an enum when
+the file holds them (else an enum property is its integer), a `TArray` as
+`TArray_<element>` {Data, Num, Max} (plain `TArray` when its element has no
+C type), a static array as an array. Gaps become `pad_<offset>` bytes; sets,
+maps, delegates and soft pointers are untyped byte blobs of their size.
+A file from an agent without `class` and `enum` keys imports too: its
+pointers are `void *` and its enum fields their integer. It returns lists: `types`, `enums`, `arrays` (the
+`TArray_` types made), `untyped` (fields left as bytes, with why),
+`skipped` (overlapping fields, a super not in the file, enum values that do
+not fit), `lines_skipped` (lines it could not read) and `failed`
+(declarations IDA refused; those types are missing, the rest are in).
+
+`apply_this(<labels file>)` types the first argument `Class *this` on each
+function a label of this build names `Class::Method`, or `Class_Method`
+with the longest `Class` prefix that is a local struct type (class names
+hold `_` too), so the decompiler shows `this->Field`. Other arguments and
+the return type stay as IDA has them. It returns `typed` (a count) and
+`skipped` (`'<name>: why'`). Run `import_layouts` first.
 
 ## xrefs
 
