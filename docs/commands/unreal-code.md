@@ -48,6 +48,11 @@ and opcode (`Speed = Vehicle.GetSpeedKPH()`, `if !(A > B) goto +0x58`,
   enters it, from the class's functions that call it with an integer
   constant; `entry` (an offset) decodes one event from there to its first
   return, pop, goto or end.
+- A big decode narrows: `view.match` keeps the statements whose text or
+  opcode contains it (`filtered` counts them), `to` keeps those before an
+  offset, and `entry` with `to` reads that range past returns. The lists
+  then come from the statements kept; a digest names both
+  (`"narrow": ["to", "view.match"]`).
 
 ## refs
 

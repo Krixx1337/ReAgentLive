@@ -79,6 +79,21 @@ inline ue::Field MapValue(const ue::Field& map) {
     return value;
 }
 inline bool IsContainer(std::string_view type) { return type == "SetProperty" || type == "MapProperty"; }
+// Why a set's or map's elements are not decoded (the agent sent no stride):
+// the field by `name` (its readable one), its element types and sizes, and
+// what refused them.
+inline std::string ContainerLayoutRefused(const ue::Field& container, const std::string& name) {
+    const auto part = [](const ue::Field& f) {
+        return (f.structName.empty() ? f.type : f.structName) + " (" + std::to_string(f.size) + " bytes)";
+    };
+    const bool map = container.type == "MapProperty";
+    std::string text = "the element layout of " + name + " (" + (map ? "map " : "set ") + part(MapKey(container)) +
+        (map ? " -> " + part(MapValue(container)) : std::string()) + ") is unknown: the agent's layout check refused it";
+    if (size_t{container.elementSize} + container.valueSize + 8 > ue::MaxArrayElementBytes)
+        text += "; an agent built before slots past " + std::to_string(ue::MaxArrayElementBytes) +
+            " bytes were allowed refuses one this size: re-inject a current agent";
+    return text;
+}
 inline bool IsPointer(std::string_view type) {
     return type == "ObjectProperty" || type == "ClassProperty" || type == "WeakObjectProperty";
 }
@@ -286,6 +301,13 @@ public:
             return SoftPointer(bytes, names, truncated);
         if (field.type == "StructProperty" && field.structName == "InstancedStruct" && bytes.size() == 16 && nest < MaxStructs)
             return Instanced(field, bytes, paths, names, truncated, depth, nest);
+        // A curve's unreflected key-handle map (a TMap first): its handle count, not
+        // its header's bytes, so an empty one reads (and filters) as zero.
+        if (field.type == "StructProperty" && field.structName == "KeyHandleMap" && bytes.size() >= sizeof(ue::SparseHeader)) {
+            ue::SparseHeader header{};
+            memcpy(&header, bytes.data(), sizeof(header));
+            if (ue::SparseHeaderValid(header)) return Json{{"count", header.num - header.numFree}};
+        }
         const auto* members = field.type == "StructProperty" && nest < MaxStructs ? structs_(field.structType) : nullptr;
         if (!members || members->empty() || pack_input::LoneName(*members))
             return JsonFieldValue(field, bytes, structs_, names, truncated, style, 1);
@@ -338,7 +360,7 @@ private:
             return out;
         };
         ue::SparseHeader header{};
-        if (!field.stride) return fallback("the element layout is unknown (failed its check)");
+        if (!field.stride) return fallback(ContainerLayoutRefused(field, session_.names.Display(field)));
         if (bytes.size() < sizeof(header)) return fallback("too small for a set header");
         memcpy(&header, bytes.data(), sizeof(header));
         if (!ue::SparseHeaderValid(header)) return fallback("not a valid set header");

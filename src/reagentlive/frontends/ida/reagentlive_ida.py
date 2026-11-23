@@ -424,8 +424,18 @@ def _take_pending():
 
 # --- Names round trip: labels files in, your names out ---------------------
 
-# Names IDA or the loader make up: never exported as yours.
-_DEFAULT_NAME = re.compile(r'^(fn|sub|stub|loc|locret|j|nullsub|unknown|off|byte|word|dword|qword|unk|asc)_[0-9A-Fa-f]+(_\d+)?$')
+# Names IDA or the loader make up: never exported as yours. An address name
+# (sub_, a switch's def_ and jpt_ ...), a jump table, and the compiler's and
+# runtime's own names: `__` helpers (__alloca_probe), `?` mangled and `$` names.
+_DEFAULT_NAME = re.compile(
+    r'^(fn|sub|stub|loc|locret|j|nullsub|unknown|off|seg|byte|word|dword|qword|xmmword|ymmword|tbyte|flt|dbl'
+    r'|packreal|unk|asc|stru|algn|def|jpt|jumptable|funcs|str)_[0-9A-Fa-f]+(_\d+)?$'
+    r'|^jumptable |^__|^[?$]')
+
+
+def made_up(name):
+    """True for a name IDA, the compiler or the runtime gave: never exported as yours."""
+    return not name or bool(_DEFAULT_NAME.match(name))
 
 
 def load(lines):
@@ -494,7 +504,7 @@ def user_rows(names, build):
     """Label rows ('user') for the names a person gave: [(rva, name)] minus made-up names."""
     return [{'kind': 'user', 'module': build['module'], 'module_size': build['module_size'], 'name': name,
              'rva': hex(rva), 'timestamp': build['timestamp']}
-            for rva, name in sorted(names) if name and not _DEFAULT_NAME.match(name)]
+            for rva, name in sorted(names) if not made_up(name)]
 
 
 def merge_user_rows(lines, rows, build):
@@ -623,18 +633,25 @@ def import_labels(path=None):
 
 def export_names(path=None):
     """Write the names a person gave in this database into a labels file (asked for when None) as
-    `user` rows of its build, adding or updating them; names it does not hold stay. Library names (a
-    FLIRT function, a library item) are IDA's, not the person's: never exported. Returns how many."""
+    `user` rows of its build, adding or updating them; names it does not hold stay. Only names the
+    person set: library names (a FLIRT function, a library item), auto-generated ones (IDA's
+    switch and jump-table names, an address name) and names IDA rejects as a user's are IDA's,
+    never exported. Returns how many."""
     import ida_bytes
     import ida_funcs
     import ida_kernwin
     import ida_nalt
+    import ida_name
     import idautils
 
     def library(ea):
         function = ida_funcs.get_func(ea)
         return bool(function and function.flags & ida_funcs.FUNC_LIB) or ida_nalt.is_libitem(ea)
 
+    def yours(ea, name):
+        flags = ida_bytes.get_flags(ea)
+        return (ida_bytes.has_user_name(flags) and not ida_bytes.has_auto_name(flags)
+                and ida_name.is_uname(name) and not library(ea))
 
     if path is None:
         path = ida_kernwin.ask_file(1, '*.jsonl', 'ReAgentLive labels file to write your names into')
@@ -644,8 +661,7 @@ def export_names(path=None):
     if not build:
         ida_kernwin.warning('ReAgentLive names not exported: this database has no PE header and is no save')
         return None
-    names = [(ea - build['base'], name) for ea, name in idautils.Names()
-             if ida_bytes.has_user_name(ida_bytes.get_flags(ea)) and ea >= build['base'] and not library(ea)]
+    names = [(ea - build['base'], name) for ea, name in idautils.Names() if ea >= build['base'] and yours(ea, name)]
     rows = user_rows(names, build)
     try:
         with open(path, encoding='utf-8') as handle:

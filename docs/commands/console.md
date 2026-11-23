@@ -216,8 +216,12 @@ investigation.
 - **`expect`** is a subset of the envelope (`{"ok": true}`, `{"result":
   {"state": "done"}}`); a line adds `expect` (`met` or `failed`) and
   `expect_failed`, the first path where the envelope departs.
-- **`repeat`** runs a step every `every` seconds for `for` seconds, paced
-  from the step's start (up to 600 s and 1000 runs).
+- **Steps run one after another:** values from two steps are never from
+  the same moment. For one moment, make one `batch` step; its line holds
+  the batch's envelope, every item's included.
+- **`repeat`** runs a step at 0, `every`, 2 x `every`, ... seconds while
+  before `for`, paced from the step's start: `ceil(for / every)` runs, so
+  `{"every": 1, "for": 5}` is 5 runs (up to 600 s and 1000 runs).
 - **The packs ceiling applies per step:** a step of a pack outside
   `--packs` is a refused line (kind `pack`) and the plan goes on, so a plan
   with `modify` steps needs `modify` in `--packs` and the user's approval.
@@ -300,7 +304,10 @@ the generated functions, the MCP tools), so one log covers them
 - **Not recorded:** `help` with `json` or `hash` and `quit` (a program's
   own start and end), runs with no target, and anything with `--no-usage`.
 - **A batch** writes a line per call, under its own verb, and one for
-  itself holding only its wrapper, so no output counts twice.
+  itself holding only its wrapper, so no output counts twice. A `run`
+  plan's steps are lines of their own too, so a failed step (or a failed
+  item of a batch step) counts in the session's `refused`.
+- **`unfiltered`** marks only a call that printed past 2000 characters.
 - **Refused calls** count under `refused`; they never get `unfiltered`, and
   one refused for its pack does not count in `calls_by_pack`.
 - **Capped:** past 4 MB the oldest sessions are dropped when a console

@@ -117,7 +117,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   derive), and a host's names file (`ConsoleConfig::labelsFile`) the
   names people confirm (`peek` with `label`, IDA's `export_names`), apart
   and under version control; saves read both
-  ([labels](docs/commands/labels.md#labels-files)).
+  ([labels](docs/commands/labels.md#labels-files)). `export_names` writes
+  only names a person set: never IDA's switch and jump-table names
+  (`def_`, `jpt_`), auto-generated or library names, or compiler helpers
+  (`__alloca_probe`, `?` mangled names).
 - **Names that survive a patch:** `labels-sign` stores a byte signature on
   each confirmed name; after a patch `labels-port` finds them in the new
   build and adds them to the file, listing only what changed. A row it
@@ -128,7 +131,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   Kismet bytecode as statements with byte offsets
   (`if !(Speed > Limit) goto +0x58`), names properties by their readable
   names and needs no game thread; on an uber graph it lists each event's
-  entry offset, and `entry` reads one event alone
+  entry offset, and `entry` reads one event alone; `view.match` and an
+  offset range (`entry`, `to`) narrow a big decode
   ([Unreal code](docs/commands/unreal-code.md#decode)).
 - **Layouts for a static tool's types:** `layout-export` writes a `class`
   or `struct` line (super, size) before each type's fields, field lines
@@ -147,7 +151,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   ([assets to files](docs/commands/unreal-objects.md#assets-to-files)).
 - **Plan files:** `run` runs a JSON list of steps (`{verb, args, expect?,
   repeat?: {every, for}}`), each as its own call, and writes one NDJSON
-  line per result and a report. Rerun the file to replay an investigation
+  line per result and a report. Steps run one after another; a `batch`
+  step reads one moment. `repeat` `{"every": 1, "for": 5}` is 5 runs.
+  Rerun the file to replay an investigation
   ([plans](docs/commands/console.md#plans)).
 - **Tool packs and a ceiling:** every verb belongs to one workflow pack,
   `explore`, `native`, `observe` or `modify` (every verb that writes or
@@ -187,7 +193,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   hits it.
 - **`get`, `rows` and `entries` take a `Default__` name**, as `call` does
   ([class names](docs/commands/unreal-objects.md#class-names)).
-- **`search` text rows carry the string they hit** (`text`)
+- **`search` text rows carry the string they hit** (`text`), in
+  `search-job` reads too, from a later console run as well
   ([search text](docs/commands/fast-lane.md#search-text)).
 - **`each` rows carry the instance's `name`**
   ([each](docs/commands/unreal-objects.md#each)).
@@ -223,8 +230,15 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **`stats`:** one-shot runs no longer join a session named with
   `--session` (the MCP adapter's), where they were counted and missing
   from `stats` with `sessions`; a refused call is never marked
-  `unfiltered`.
+  `unfiltered`, nor one that printed 2000 characters or less.
 - **`disasm` with `save` leaves `rows` out** instead of an empty list.
+- **`get` decodes maps and sets of big structs:** the agent refused any
+  element slot past 512 bytes as an unknown layout. A container it still
+  cannot decode names its key and value types and sizes; `entries` refuses
+  slots past 512 bytes and points to `get`. Rebuild and re-inject the agent.
+- **`view.nonzero` drops a curve's engine defaults:** a float at its
+  maximum (an unset `DefaultValue`) and an empty key-handle map, which
+  `get` now prints as `{"count": N}` instead of its header bytes.
 - **IDA label import refused databases loaded the default way:** it reads
   the PE header IDA keeps.
 

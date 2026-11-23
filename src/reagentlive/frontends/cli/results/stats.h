@@ -122,6 +122,8 @@ inline bool IsFilter(std::string_view key) {
 }
 }
 constexpr size_t StatsLargestCalls = 5;
+// A call printed at most this many characters is never `unfiltered`: a filter would not have saved much.
+constexpr uint64_t StatsUnfilteredChars = 2000;
 
 // `session` nullopt: every session (`all`). `verbs`: the console's table, for
 // the unfiltered mark and the verbs never called.
@@ -170,7 +172,7 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && (line.ok || line.refused != "pack"))
             ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
         // A digested call cost its digest only, a refused one its error: neither is worth a mark.
-        if (const Verb* verb = FindVerb(verbs, line.verb); verb && line.ok && !line.digest) {
+        if (const Verb* verb = FindVerb(verbs, line.verb); verb && line.ok && !line.digest && line.out > StatsUnfilteredChars) {
             const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) {
                 return IsFilter(a.key) || std::ranges::any_of(a.fields, [](const Arg& f) { return IsFilter(f.key); });
             });

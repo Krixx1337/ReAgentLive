@@ -817,10 +817,13 @@ void RunEntries(Session& session, const Command& command, std::string_view jsonC
     } else if (field->type == "SetProperty" || field->type == "MapProperty") {
         kind = field->type == "MapProperty" ? ue::ContainerKind::Map : ue::ContainerKind::Set;
         stride = field->stride;
-        if (!stride) return JsonError(session, jsonCommand, ErrorKind::Layout, "the element layout is unknown (failed its check); read the header raw");
+        if (!stride) return JsonError(session, jsonCommand, ErrorKind::Layout, ContainerLayoutRefused(*field, session.names.Display(*field)) + "; read the header raw");
     } else {
         return JsonError(session, jsonCommand, ErrorKind::Field, field->name + " is " + field->type + ", not an array, set or map");
     }
+    if (stride > ue::MaxArrayElementBytes)
+        return JsonError(session, jsonCommand, ErrorKind::Validation, field->name + ": an element of " + std::to_string(stride) +
+            " bytes is past entries' " + std::to_string(ue::MaxArrayElementBytes) + "; get the field (paths) decodes it");
     auto page = ue::Entries(client, object, field->offset, kind, stride, command.limit);
     if (!page) return CommandError(session, jsonCommand, page.error());
     // Arrays hold elements; set and map slots hold the key at 0 and a map's value after it.

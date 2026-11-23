@@ -7,6 +7,7 @@
 #include "verbs.h"
 #include <cstring>
 #include <sstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -373,6 +374,11 @@ TEST_CASE("nonzero: zero members go, elements and non-zero values stay") {
     Json scalar = 0;
     KeepNonZero(scalar);
     CHECK(scalar == 0);
+    // A curve's defaults: DefaultValue at FLT_MAX (unset) and an empty key-handle map ({count: 0}) go.
+    Json curve = {{"DefaultValue", 3.4028235e38}, {"Unset", static_cast<double>(std::numeric_limits<float>::max())},
+        {"KeyHandlesToIndices", {{"count", 0}}}, {"PreInfinityExtrap", 4}};
+    CHECK_FALSE(DropZero(curve));
+    CHECK(curve == Json{{"PreInfinityExtrap", 4}});
 }
 
 TEST_CASE("search text shows the printable string around a hit") {

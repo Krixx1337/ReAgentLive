@@ -368,9 +368,11 @@ bool ReadFieldsPage(const uint8_t* data, size_t length, Visit&& visit) {
 // through them is checked before use.
 struct ContainerLayout { int32_t valueOffset, hashNextIdOffset, hashIndexOffset, stride; };
 // The key at 0, a map's value after it, then two int32 hash links, all inside
-// a stride of at most MaxArrayElementBytes. valueSize 0 = a set. Pure; tested.
+// a stride of at most MaxObjectBytes (a slot of a big struct is a valid layout;
+// only `entries` and previews keep to MaxArrayElementBytes). valueSize 0 = a
+// set. Pure; tested.
 inline bool ContainerLayoutValid(const ContainerLayout& layout, uint32_t keySize, uint32_t valueSize) {
-    if (!keySize || layout.stride <= 0 || static_cast<uint32_t>(layout.stride) > MaxArrayElementBytes) return false;
+    if (!keySize || layout.stride <= 0 || static_cast<uint32_t>(layout.stride) > MaxObjectBytes) return false;
     if (valueSize && (layout.valueOffset < 0 || static_cast<uint32_t>(layout.valueOffset) < keySize)) return false;
     const int64_t used = valueSize ? int64_t{layout.valueOffset} + valueSize : int64_t{keySize};
     return layout.hashNextIdOffset >= used && layout.hashIndexOffset == int64_t{layout.hashNextIdOffset} + 4 &&

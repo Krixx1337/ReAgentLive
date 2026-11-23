@@ -108,16 +108,22 @@ the databases an IDA MCP session opened.
 
 ## From an automated session
 
-An IDA bridge with Python: open the first save, then load this file as a
-module and call it:
+An IDA bridge with Python: open the first save, then import the loader
+and call it. With the loader installed in IDA's loaders folder, a plain
+import finds it:
 
 ```python
-import importlib.util, os, idaapi
-path = os.path.join(idaapi.get_user_idadir(), 'loaders', 'reagentlive_ida.py')
-spec = importlib.util.spec_from_file_location('reagentlive_ida', path)
-rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
+import reagentlive_ida as rl
 rl.fetch('0x<addr>', depth=2, decompile_dir='<dir>')   # save, add, type, decompile
 rl.export_names('<names file>')   # before closing: always with a path
+```
+
+Only for a copy outside the loaders folder (the repo's, say), load it by path:
+
+```python
+import importlib.util
+spec = importlib.util.spec_from_file_location('reagentlive_ida', '<path>/reagentlive_ida.py')
+rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
 ```
 
 Close the database once read, and before opening a new save under the
@@ -165,9 +171,12 @@ the return type stay as IDA has them. It returns `typed` (a count) and
   become functions. One undo step, a wait box that can cancel it; it
   prints how many rows it named, commented and skipped.
 - `export_names(path)` (path: the host's names file) writes every name you
-  gave in that database (not `sub_…`, `fn_…` or other made-up names, not
-  names a file brought in, nor library names: FLIRT functions and library
-  items) as `user` rows of its build, adding or updating them; names it
+  gave in that database as `user` rows of its build: not IDA's names
+  (`sub_…`, `fn_…`, a switch's `def_…` and `jpt_…`, a jump table, any
+  name IDA marks auto-generated or rejects as a user's), not the compiler's
+  or runtime's (`__` helpers such as `__alloca_probe`, `?` mangled and `$`
+  names), not names a file brought in, nor library names (FLIRT functions
+  and library items), adding or updating them; names it
   does not hold stay (a save database never wipes what another database
   named). The next save, import or export shows them: a finding named
   once stays named, in saves and in the full database alike.

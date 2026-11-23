@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -34,7 +35,8 @@ template<class T> Json JsonNumber(std::span<const uint8_t> bytes) {
 
 // `view.nonzero` on a decoded value: leaves out the zero members of its structs,
 // at any depth (0, false, null, "", the name None, an empty list or array,
-// a struct left with none). Elements stay, so a list keeps its positions; an
+// a float at its type's maximum, the usual "unset" default, a struct left with
+// none). Elements stay, so a list keeps its positions; an
 // element whose members were all zero says so, {"zeroed": N}, so it does not
 // read as empty. True when the whole value is zero.
 inline bool DropZero(Json& value) {
@@ -47,7 +49,11 @@ inline bool DropZero(Json& value) {
     };
     if (value.is_null()) return true;
     if (value.is_boolean()) return !value.get<bool>();
-    if (value.is_number()) return value == 0;
+    if (value.is_number()) {
+        // A float prints as its shortest decimal (3.4028235e+38): anything that rounds to FLT_MAX.
+        const double size = std::abs(value.get<double>());
+        return size == 0 || (size >= 3.4028234e38 && size < 3.4028236e38);
+    }
     if (value.is_string()) return value.get_ref<const std::string&>().empty() || value == "None";
     if (value.is_array()) {
         bool zero = true;

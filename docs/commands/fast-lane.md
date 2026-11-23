@@ -264,8 +264,10 @@ apply (a backslash in a path is written `\\`).
 
 Each row carries `text`: the printable string the hit lies in (ASCII, or
 UTF-16 with `type` `wtext`), up to 96 characters each side of the match with
-`...` where it was cut, read back in batches after the search. A hit that
-is not inside text gets none. `xrefs` the string's start, not the hit,
+`...` where it was cut, read back in batches after the search. A
+`search-job` read of the same job carries it too, in a later console run
+as well (the [cache file](console.md#fewer-round-trips) keeps the last
+text search). A hit that is not inside text gets none. `xrefs` the string's start, not the hit,
 when the match is inside a longer string.
 
 ## The chain

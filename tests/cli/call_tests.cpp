@@ -421,7 +421,16 @@ TEST_CASE("a plan is a list of steps: verb, args, expect and repeat, checked bef
     CHECK((*steps)[0].call == Json::parse(R"({"verb": "status", "args": {}})"));
     CHECK((*steps)[1].expect == Json{{"ok", true}});
     CHECK((*steps)[0].Runs() == 1);
-    CHECK((*steps)[2].Runs() == 5);
+    CHECK((*steps)[2].Runs() == 4);                         // At 0, 0.5, 1 and 1.5 s: for is the span, not runs + 1.
+    plan::Step step;
+    step.every = 1, step.seconds = 5;
+    CHECK(step.Runs() == 5);
+    step.every = 2;
+    CHECK(step.Runs() == 3);                                // 0, 2, 4.
+    step.every = 0.1, step.seconds = 0.3;
+    CHECK(step.Runs() == 3);                                // Not 4 from rounding.
+    step.every = 10, step.seconds = 1;
+    CHECK(step.Runs() == 1);
     const struct { const char* text; const char* message; } bad[] = {
         {"{", "plan: not JSON"},
         {"[]", "plan: a JSON list of steps"},
@@ -1149,6 +1158,15 @@ TEST_CASE("script reads bytecode; decode with entry reads one event") {
     CHECK(parsed->entry == 0x58u);
     CHECK(Why(R"({"verb": "script", "args": {"object": "0x1000#5:9", "function": "Owner:GetSpeed", "entry": "0x58"}})").starts_with("entry needs decode"));
     CHECK(Why(R"({"verb": "script", "args": {"object": "0x1000#5:9", "function": "F", "decode": true, "entry": "x"}})").starts_with("entry: "));
+    // A big decode narrows: an offset range (entry and to) and view.match.
+    parsed = Call(R"({"verb": "script", "args": {"object": "0x1000#5:9", "function": "F", "decode": true, "entry": "0x58", "to": "0x200", "view": {"match": "Damage"}}})");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->entry == 0x58u);
+    CHECK(parsed->to == 0x200u);
+    CHECK(parsed->match == "Damage");
+    CHECK(Why(R"({"verb": "script", "args": {"object": "0x1000#5:9", "function": "F", "to": 16}})").starts_with("to needs decode"));
+    CHECK(Why(R"({"verb": "script", "args": {"object": "0x1000#5:9", "function": "F", "decode": true, "entry": 32, "to": 16}})").starts_with("to is a bytecode offset past entry"));
+    CHECK(Why(R"({"verb": "script", "args": {"object": "0x1000#5:9", "function": "F", "view": {"match": "x"}}})").starts_with("view.match needs decode"));
 }
 
 TEST_CASE("refs takes a pooled name or its index") {

@@ -294,7 +294,7 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     CHECK_FALSE((*none)["digest"].contains("status"));
 }
 
-TEST_CASE("digest: nothing to narrow offers the same call with a budget it fits") {
+TEST_CASE("digest: no change that fits offers the same call with a budget, and names what narrows it") {
     Json properties = Json::array();
     for (int i = 0; i < 300; ++i) properties.push_back({{"property", "DoubleProperty Value_" + std::to_string(i)}, {"count", i}});
     Json record = {{"command", "script"}, {"ok", true}, {"result", {{"function", "F"}, {"properties", std::move(properties)}}}};
@@ -312,7 +312,8 @@ TEST_CASE("digest: nothing to narrow offers the same call with a budget it fits"
     CHECK(next["args"] == Json{{"object", "0x10#1:2"}, {"function", "F"}});
     REQUIRE(next["budget"].is_number_unsigned());
     CHECK(next["budget"].get<size_t>() >= chars);
-    CHECK_FALSE((*digest)["digest"].contains("narrow"));
+    // A decode narrows by text (view.match) or by offset range (to).
+    CHECK((*digest)["digest"]["narrow"] == Json::array({"to", "view.match"}));
 }
 
 TEST_CASE("digest: kept results are per target pid and agent owner") {

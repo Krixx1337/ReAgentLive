@@ -4,6 +4,7 @@
 // one NDJSON line per result, then a report line. The file is the
 // investigation's replay key: run it again to repeat it. Pure; tests cover it.
 #pragma once
+#include <algorithm>
 #include <cmath>
 #include <expected>
 #include <map>
@@ -25,7 +26,10 @@ struct Step {
     Json call;                      // {"verb", "args"} as the console takes it.
     std::optional<Json> expect;     // A subset of the envelope ({"ok": true, "result": {...}}).
     double every = 0, seconds = 0;  // repeat: every `every` seconds for `seconds`; 0: once.
-    size_t Runs() const { return every > 0 ? static_cast<size_t>(std::floor(seconds / every)) + 1 : 1; }
+    // Runs start at 0, every, 2 * every, ... while before `seconds`: every 1 for 5 is 5 runs.
+    size_t Runs() const {
+        return every > 0 ? std::max<size_t>(1, static_cast<size_t>(std::ceil(seconds / every - 1e-9))) : 1;
+    }
 };
 
 // The steps of a plan's text; why not, naming the step (step 3: ...).

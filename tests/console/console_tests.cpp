@@ -7,6 +7,7 @@
 #include "fake_engine.h"
 #include <chrono>
 #include <format>
+#include <limits>
 #include <map>
 #include <string_view>
 
@@ -733,6 +734,8 @@ TEST_CASE("run: a plan's steps as NDJSON lines, under the packs ceiling, with ex
         {{"verb", "status"}, {"expect", {{"result", {{"tool_packs", Json{"explore"}}}}}}},
         {{"verb", "status"}, {"expect", {{"result", {{"tool_packs", Json{"modify"}}}}}}},
         {{"verb", "modules"}, {"repeat", {{"every", 0.05}, {"for", 0.1}}}},
+        // A batch step: its envelope, every item in it, is the step's line.
+        {{"verb", "batch"}, {"args", {{"calls", Json::array({health, CallOf("modules")})}}}, {"expect", {{"ok", true}}}},
     });
     std::ofstream(planFile, std::ios::binary) << steps.dump();
     // No out: the lines come back in the result.
@@ -752,17 +755,23 @@ TEST_CASE("run: a plan's steps as NDJSON lines, under the packs ceiling, with ex
     CHECK(rows[3]["expect"] == "failed");
     CHECK(rows[3]["expect_failed"].get<std::string>().starts_with("result.tool_packs[0]: wanted \"modify\""));
     CHECK(rows[4]["run"] == 1);
-    CHECK(rows[6]["run"] == 3);
+    CHECK(rows[5]["run"] == 2);                                                   // every 0.05 for 0.1: two runs.
+    CHECK(rows[6]["command"] == "batch");
+    CHECK(rows[6]["ok"] == true);
+    CHECK(rows[6]["expect"] == "met");
+    REQUIRE(rows[6]["result"]["rows"].size() == 2);
+    CHECK(rows[6]["result"]["rows"][0]["command"] == "get");
+    CHECK(rows[6]["result"]["rows"][1]["command"] == "modules");
     const Json& report = result["report"];
-    CHECK(report["steps"] == 5);
+    CHECK(report["steps"] == 6);
     CHECK(report["calls"] == 7);
     CHECK(report["ok"] == 6);
     CHECK(report["failed"] == 1);
     CHECK(report["refused"] == Json{{"pack", 1}});
-    CHECK(report["expect_met"] == 2);
+    CHECK(report["expect_met"] == 3);
     CHECK(report["expect_failed"] == 1);
-    REQUIRE(report["timings"].size() == 5);
-    CHECK(report["timings"][4]["calls"] == 3);
+    REQUIRE(report["timings"].size() == 6);
+    CHECK(report["timings"][4]["calls"] == 2);
     CHECK(report["timings"][4]["ms"].get<double>() >= 0);
     CHECK_FALSE(report["console"].get<std::string>().empty());
     CHECK_FALSE(report["table_hash"].get<std::string>().empty());
@@ -779,7 +788,9 @@ TEST_CASE("run: a plan's steps as NDJSON lines, under the packs ceiling, with ex
     REQUIRE(lines.size() == 8);
     CHECK(lines[1].value("error", Json::object()).value("kind", "") != "pack");    // Every pack: the write is tried.
     CHECK(lines[7]["report"]["calls"] == 7);
-    CHECK(lines[7]["report"]["steps"] == 5);
+    CHECK(lines[7]["report"]["steps"] == 6);
+    CHECK(lines[6]["command"] == "batch");
+    CHECK(lines[6]["ok"] == true);
     // A bad plan is refused before any step runs; run is not allowed in a plan.
     std::ofstream(planFile, std::ios::binary) << R"([{"verb": "status"}, {"verb": "run", "args": {"plan": "x"}}])";
     const auto refused = Envelope(CallText("run", {{"plan", planFile}}));
@@ -1093,4 +1104,65 @@ TEST_CASE("disasm save adds layout rows for the classes its labelled functions n
     CHECK_FALSE(plain.contains("layouts"));
     std::filesystem::remove(file);
     std::filesystem::remove(labels);
+}
+
+TEST_CASE("a map of structs past 512 bytes decodes in get; one with no stride names its element types") {
+    TheFixture();
+    static const std::string seater = [] {
+        World& world = TheWorld();
+        Type& camera = world.AddType("SeatCamera", 0x300, true);
+        camera.fields = {MakeField("Fov", "FloatProperty", 0, 4)};
+        const auto key = MakeField("Key", "IntProperty", 0, 4);
+        const auto value = StructField("Value", 0, camera);
+        // A curve at its engine defaults: DefaultValue FLT_MAX (unset), an empty key-handle map.
+        Type& handles = world.AddType("KeyHandleMap", 0x60, true);
+        Type& curve = world.AddType("SeatCurve", 0x70, true);
+        curve.fields = {MakeField("DefaultValue", "FloatProperty", 0, 4), StructField("KeyHandlesToIndices", 8, handles),
+            MakeField("Gain", "FloatProperty", 0x68, 4)};
+        Type& type = world.AddType("Seater", 0x200, false, "Object");
+        type.fields = {MapField("Seats", 0x30, key, value, 0x310, 8), MapField("Refused", 0x80, key, value, 0, 0),
+            StructField("Curve", 0xd0, curve)};
+        const Object& object = world.Instance("Seater_0", type);
+        const Ref ref = object.ref;
+        uint8_t* curveAt = TheWorld().Bytes(world.objects[static_cast<size_t>(ref.index)]) + 0xd0;
+        const float unset = std::numeric_limits<float>::max(), gain = 1.5f;
+        memcpy(curveAt, &unset, 4);
+        SetSparse(curveAt + 8, {}, 0, 8);
+        memcpy(curveAt + 0x68, &gain, 4);
+        // Two seats: key 0 and 2, Fov 90 and 70, hash links after the value.
+        std::vector<uint8_t> slots(2 * 0x310);
+        for (int i = 0; i < 2; ++i) {
+            const int32_t seat = i * 2;
+            const float fov = i ? 70.0f : 90.0f;
+            const int32_t links[2] = {-1, 0};
+            memcpy(slots.data() + i * 0x310, &seat, 4);
+            memcpy(slots.data() + i * 0x310 + 8, &fov, 4);
+            memcpy(slots.data() + i * 0x310 + 0x308, links, 8);
+        }
+        SetSparse(TheWorld().Bytes(world.objects[static_cast<size_t>(ref.index)]) + 0x30, slots, 2, 0x310);
+        return Text(ref);
+    }();
+    const auto get = [](const char* path) {
+        const auto result = Result(CallText("get", {{"object", seater}, {"paths", PathsOf(path)}}));
+        REQUIRE(result["rows"].size() == 1);
+        return result["rows"][0]["value"];
+    };
+    const Json seats = get("Seats");
+    CHECK(seats["count"] == 2);
+    REQUIRE(seats["rows"].size() == 2);
+    CHECK(seats["rows"][1]["key"] == 2);
+    CHECK(seats["rows"][1]["value"]["Fov"] == 70.0);
+    const std::string why = get("Refused")["container_error"].get<std::string>();
+    CHECK(why.starts_with("the element layout of Refused (map IntProperty (4 bytes) -> SeatCamera (768 bytes)) is unknown"));
+    CHECK(why.find("re-inject") != std::string::npos);                     // A slot past 512 bytes: an older agent's refusal.
+    // nonzero: a curve at its defaults shows only what was set.
+    const Json curve = get("Curve");
+    CHECK(curve["KeyHandlesToIndices"] == Json{{"count", 0}});
+    CHECK(curve["DefaultValue"].get<double>() > 3e38);
+    const auto set = Result(CallText("get", {{"object", seater}, {"paths", PathsOf("Curve")}, {"view", {{"nonzero", true}}}}));
+    CHECK(set["rows"][0]["value"] == Json{{"Gain", 1.5}});
+    // entries carries 512-byte slots at most: refused with what to use instead.
+    const auto entries = Envelope(CallText("entries", {{"object", seater}, {"field", "Seats"}}));
+    CHECK(entries["error"]["kind"] == "validation");
+    CHECK(entries["error"]["message"].get<std::string>().find("get the field") != std::string::npos);
 }

@@ -1029,6 +1029,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
         line("s1", "batch", 40, "dddd"),
         line("s1", "read", 100, "eeeee"),
         line("s2", "describe", 9000, "f"),                    // Another session: not in s1's figures.
+        line("s1", "funcs", 150, "gggggg"),                   // No filter, but small: never unfiltered.
     };
     lines[3].ok = false;
     lines[3].refused = "schema";
@@ -1038,12 +1039,15 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     const auto json = Checked(stats);
     CHECK(json["session"] == "s1");
     CHECK_FALSE(json.contains("never_called"));
-    CHECK(stats.totals.calls == 5);                         // The batched read is inside the batch's call.
-    CHECK(stats.totals.out == 10640);
-    CHECK(stats.totals.outByCaller.at("tool") == 10640);
-    CHECK(stats.totals.in == 50);
+    CHECK(stats.totals.calls == 6);                         // The batched read is inside the batch's call.
+    CHECK(stats.totals.out == 10790);
+    CHECK(stats.totals.outByCaller.at("tool") == 10790);
+    CHECK(stats.totals.in == 60);
     CHECK(stats.totals.refused == 1);
-    REQUIRE(stats.rows.size() == 4);
+    REQUIRE(stats.rows.size() == 5);
+    const auto funcs = std::ranges::find(stats.rows, std::string("funcs"), &shape::StatsVerb::verb);
+    REQUIRE(funcs != stats.rows.end());
+    CHECK_FALSE(funcs->unfiltered.has_value());
     CHECK(stats.rows[0].verb == "get");
     CHECK(stats.rows[0].calls == 3);
     CHECK(stats.rows[0].out == 10300);
@@ -1075,7 +1079,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(none.rows.empty());
 
     // Calls per tool pack, a batch's items included.
-    CHECK(stats.totals.callsByPack == std::map<std::string, uint64_t>{{"explore", 6}});
+    CHECK(stats.totals.callsByPack == std::map<std::string, uint64_t>{{"explore", 7}});
     std::vector<UsageLine> mixed = {line("p", "disasm", 10, "1"), line("p", "write", 10, "2"),
                                     line("p", "disasm", 10, "3"), line("p", "nonsense", 10, "4"),
                                     line("p", "call", 10, "5")};

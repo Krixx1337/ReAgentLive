@@ -146,7 +146,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "str", objectOrDefault, {}, true, false, ref},
              {"field", "str", "the field, as Owner:Field where the name is ambiguous", {}, true},
              View("start")},
-            Of<shape::Entries>, build::Entries, "Names and object pointers are resolved."},
+            Of<shape::Entries>, build::Entries, "Names and object pointers are resolved. Elements and slots up to 512 "
+            "bytes; a bigger one is refused: get on the field decodes it."},
         {"rows", "ue", ToolPack::Explore, "a data table's rows decoded with its RowStruct, or a curve table's curves and their keys",
             {{"object", "str", objectOrDefault, {}, true, false, ref},
              {"at", "num", "a curve table: each row's value at this time"},
@@ -229,12 +230,16 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"script", "ue", ToolPack::Explore, "a Blueprint function's bytecode: the names, functions and properties it uses; decode: as statements",
             {{"object", "str", objectOrClass, {}, true, false, ref}, {"function", "str", function, {}, true},
              {"decode", "bool", "read the bytecode as statements with their offsets"},
-             {"entry", "int", "with decode: one uber-graph event, from this offset to its return, pop or goto"}},
+             {"entry", "int", "with decode: one uber-graph event, from this offset to its return, pop or goto"},
+             {"to", "int", "with decode: statements before this offset only; with entry, from entry to here, past returns"},
+             View("match")},
             Of<shape::Script>, build::Script,
             "Each entry is read right after its opcode and confirmed live. decode reads every expression instead (no "
             "game thread): statements, the lists from the decoded operands, properties by their readable name (raw: the "
             "reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it "
-            "(stopped). An uber graph adds events: each event's entry offset, from the calls that enter it."},
+            "(stopped). An uber graph adds events: each event's entry offset, from the calls that enter it. A big "
+            "decode narrows: view.match keeps the statements whose text or op contains it (filtered counts them), "
+            "entry and to an offset range; the lists then come from the statements kept."},
         {"enum", "ue", ToolPack::Explore, "an enum's names and values, in order",
             {{"enum", "str", "an enum object (a literal ref, \"0x...\"), or an enum by name", {}, true}},
             Of<shape::Enum>, build::Enum,

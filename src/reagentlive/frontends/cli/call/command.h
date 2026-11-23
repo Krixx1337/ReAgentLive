@@ -130,9 +130,10 @@ struct Command {
     // function, the milliseconds (args[0]) and the object filter (args[1]).
     uint64_t callsSlot = 0, callsAfter = 0;
     // script decode: the bytecode as statements; entry: from this offset
-    // to the event's end (an uber-graph entry).
+    // to the event's end (an uber-graph entry); to: statements before this
+    // offset only (with entry: from entry to it, past returns).
     bool decode = false;
-    std::optional<uint32_t> entry;
+    std::optional<uint32_t> entry, to;
 };
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).

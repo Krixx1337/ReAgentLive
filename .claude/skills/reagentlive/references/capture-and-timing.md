@@ -21,10 +21,13 @@
   holds the state mid-action.
 - **Getters or mixed sources, sampled over time:** a `run` plan with one
   `batch` step (a `call-pure` and the `read`s, one tick per sample) and
-  `repeat` (`{"every": 0.5, "for": 10}`), not a Python loop: the plan file
-  replays the measurement (`docs/commands/console.md#plans`). Run it from
-  the console `-c` or Python; MCP leaves `run` out. Repeated calls get at
-  most one sample per host tick and miss ticks.
+  `repeat` (`{"every": 0.5, "for": 10}`: 20 runs), not a Python loop: the
+  plan file replays the measurement (`docs/commands/console.md#plans`). Run
+  it from the console `-c` or Python; MCP leaves `run` out. Repeated calls
+  get at most one sample per host tick and miss ticks.
+- **Plan steps are sequential:** two steps never read the same moment.
+  Values that must agree (a position and the world it is in) go in one
+  `batch` step; its line carries every item's envelope.
 - **Data that lives about one tick** (replicated entries, events) slips
   past repeated calls: `watch-start` samples every tick by default, so a
   range on its container catches it. A C++ client probe in a scratch

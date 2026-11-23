@@ -391,6 +391,8 @@ void RunBatch(Session& session, const Command& command, std::string_view jsonCom
     std::vector<Json> results;
     std::vector<BatchItemTicks> ticks;
     uint64_t first = 0, last = 0;
+    // A plan's batch step: its envelope goes to the plan's capture, not stdout.
+    std::vector<Json>* outer = session.capture;
     {
         Client::Hold hold(session.client);
         session.capture = &results;
@@ -408,7 +410,7 @@ void RunBatch(Session& session, const Command& command, std::string_view jsonCom
                 ticks.back() = at;
             }
         }
-        session.capture = nullptr;
+        session.capture = outer;
         first = hold.FirstTick();
         last = hold.LastTick();
     }
@@ -462,8 +464,15 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
             Execute(session, ReadLine(step.call.dump()), false);
             const double ms = since(callBegan);
             session.capture = outer;
+            // A step that printed nothing is a console bug: its line says so, and the run's
+            // usage line counts it as refused, so stats shows it.
+            if (records.empty() && session.line && session.line->ok) {
+                session.line->ok = false;
+                session.line->refused = KindName(ErrorKind::Internal);
+            }
             Json envelope = records.empty() ? Json{{"command", step.verb}, {"ok", false},
-                {"error", {{"kind", KindName(ErrorKind::Internal)}, {"message", "no result"}}}} : std::move(records.back());
+                {"error", {{"kind", KindName(ErrorKind::Internal)}, {"message", "the step printed no result"}}}} :
+                std::move(records.back());
             Json line = {{"step", index + 1}};
             if (runs > 1) line["run"] = run + 1;
             line["at_ms"] = tenths(since(began));
@@ -669,6 +678,7 @@ void LoadSessionCache(Session& session, const std::filesystem::path& path, bool 
         session.usage.session = data->session;
     session.modules = std::move(data->modules);
     session.watchFile = std::move(data->watchFile);
+    session.searchText = data->searchText;
     for (auto& [base, layout] : data->layouts) session.layouts[base] = std::move(layout);
     LoadPackCache(session, data->packs);
 }
@@ -680,6 +690,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     data.session = session.usage.handoff;
     data.sessionCaller = session.usage.handoffCaller;
     data.watchFile = session.watchFile;
+    data.searchText = session.searchText;
     data.modules.assign(session.modules.begin(), session.modules.end());
     for (const auto& [base, layout] : session.layouts)
         if (std::ranges::any_of(session.modules, [base](const Module& m) { return m.base == base; }))

@@ -31,7 +31,8 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
    the workspace for the whole investigation. Never one database per
    function.
 3. **Per hop, one call:** `rl.fetch(addr, depth=1, decompile_dir=<dir>, grep=<regex>)`
-   (load `rl` as in `docs/commands/ida-loader.md#from-an-automated-session`).
+   (`import reagentlive_ida as rl` once the loader is installed; a repo copy
+   loads by path: `docs/commands/ida-loader.md#from-an-automated-session`).
    Read its summary, open only the files it points to; the next address
    comes from the pseudocode. `depth` 2 or 3 only when the callees
    matter; `skipped` says what the depth or caps left out. A `FetchError`

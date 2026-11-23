@@ -248,7 +248,10 @@ void RunScriptDecode(Session& session, const Command& command, std::string_view 
     if (!function) return CommandError(session, jsonCommand, function.error());
     auto bytes = ScriptBytes(client, function->address);
     if (!bytes) return CommandError(session, jsonCommand, bytes.error());
-    const auto decoded = kismet::Decode(*bytes, command.entry.value_or(0), command.entry.has_value());
+    // entry alone reads one event; with to, the range up to it, past returns.
+    auto decoded = kismet::Decode(*bytes, command.entry.value_or(0), command.entry.has_value() && !command.to);
+    if (command.to)
+        std::erase_if(decoded.statements, [&](const kismet::Expr& statement) { return statement.offset >= *command.to; });
 
     kismet::Operands operands;
     for (const auto& statement : decoded.statements) kismet::Collect(statement, operands);
@@ -261,9 +264,13 @@ void RunScriptDecode(Session& session, const Command& command, std::string_view 
     out.size = static_cast<uint32_t>(bytes->size());
     out.statements.emplace();
     for (const auto& statement : decoded.statements) {
-        out.statements->push_back({statement.offset, std::string(kismet::OpName(statement.op)), kismet::Render(statement, resolved->symbols)});
+        std::string op(kismet::OpName(statement.op)), rendered = kismet::Render(statement, resolved->symbols);
+        if (!command.match.empty() && !text::ContainsNoCase(rendered, command.match) && !text::ContainsNoCase(op, command.match))
+            continue;
+        out.statements->push_back({statement.offset, std::move(op), std::move(rendered)});
         Lists(statement, *resolved, out);
     }
+    if (!command.match.empty()) out.filtered = shape::Filtered{out.statements->size(), decoded.statements.size()};
     if (!decoded.stopped.empty()) out.stopped = decoded.stopped;
     if (function->name.starts_with("ExecuteUbergraph")) {
         auto entries = UbergraphEntries(session, object, *function);

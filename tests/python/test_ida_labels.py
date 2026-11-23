@@ -46,7 +46,10 @@ class ImportLabels(unittest.TestCase):
     def test_your_names_go_out_as_user_rows_added_or_updated(self):
         build = {'module': 'Game.exe', 'module_size': 4096, 'timestamp': 7, 'base': 0x140000000}
         rows = labels.user_rows([(0x6fa0aa0, 'Ricochet_Resolve'), (0x10, 'fn_10'), (0x20, 'sub_140000020'),
-                                 (0x30, 'stub_140000030'), (0x40, 'loc_40')], build)
+                                 (0x30, 'stub_140000030'), (0x40, 'loc_40'), (0x41, 'def_141B58BB9'),
+                                 (0x42, 'jpt_141B58BB9'), (0x43, '__alloca_probe'), (0x44, '??_7Actor@@6B@'),
+                                 (0x45, 'jumptable 0000000141B58BB9 case 3'), (0x46, 'unk_141B58BB9'),
+                                 (0x47, 'stru_14000F000'), (0x48, '$LN5'), (0x49, '')], build)
         self.assertEqual([(row['rva'], row['name'], row['kind']) for row in rows], [('0x6fa0aa0', 'Ricochet_Resolve', 'user')])
         renamed = ROW % ('user', 'OldName', '0x6fa0aa0')
         elsewhere = ROW % ('user', 'FromAnotherDatabase', '0x50')
@@ -71,22 +74,26 @@ class ImportLabels(unittest.TestCase):
         self.assertEqual(merged[0]['sig'], {'pattern': '48 8b c4'})  # ...the signature follows the address.
         self.assertEqual(merged[0]['ported_from'], 6)
 
-    def test_export_skips_library_names(self):
+    def test_export_skips_library_and_ida_names(self):
         base = 0x140000000
-        names = {base + 0x10: 'Ricochet_Resolve', base + 0x20: '__alloca_probe', base + 0x30: '_guard_check',
-                 base + 0x40: 'sub_140000040'}
+        names = {base + 0x10: 'Ricochet_Resolve', base + 0x20: 'memcpy_impl', base + 0x30: '_guard_check',
+                 base + 0x40: 'sub_140000040', base + 0x50: 'def_141B58BB9', base + 0x60: 'jpt_141B58BB9',
+                 base + 0x70: '__alloca_probe', base + 0x80: 'AutoNamed', base + 0x90: 'Rejected'}
         library_functions = {base + 0x20}      # A FLIRT match: its function carries FUNC_LIB.
         library_items = {base + 0x30}          # A library item outside a library function.
+        auto_names = {base + 0x80}             # IDA's own name, though flagged as set.
 
         class Function:
             def __init__(self, ea):
                 self.flags = 4 if ea in library_functions else 0
 
         fakes = {
-            'ida_bytes': types.SimpleNamespace(get_flags=lambda ea: ea, has_user_name=lambda flags: True),
+            'ida_bytes': types.SimpleNamespace(get_flags=lambda ea: ea, has_user_name=lambda flags: True,
+                                               has_auto_name=lambda flags: flags in auto_names),
             'ida_funcs': types.SimpleNamespace(FUNC_LIB=4, get_func=Function),
             'ida_kernwin': types.SimpleNamespace(),
             'ida_nalt': types.SimpleNamespace(is_libitem=lambda ea: ea in library_items),
+            'ida_name': types.SimpleNamespace(is_uname=lambda name: name != 'Rejected'),
             'idautils': types.SimpleNamespace(Names=lambda: sorted(names.items())),
         }
         build = {'module': 'Game.exe', 'module_size': 4096, 'timestamp': 7, 'base': base}

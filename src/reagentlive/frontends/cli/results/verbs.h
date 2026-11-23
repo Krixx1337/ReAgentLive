@@ -47,7 +47,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
             "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
             "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and "
-            "printed whole; never a refused call), repeated (the same input again in its session), refused (by "
+            "printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by "
             "error kind; one refused for its pack is not in calls_by_pack). A batch's "
             "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log."},
@@ -62,7 +62,10 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Run>, build::Run,
             "Each step runs as its own call under this console's --packs: a step of a pack outside them is a "
             "refused line, not a stop, so a plan with modify steps needs modify in --packs (and its approval). "
-            "repeat runs the step every `every` seconds for `for` seconds (up to 600 s, 1000 runs). A line is "
+            "Steps run one after another, so values from two steps are never from the same moment: for one "
+            "moment, make one batch step (its line holds every item's envelope). repeat runs the step at 0, "
+            "every, 2*every, ... seconds while before `for` (ceil(for / every) runs: every 1 for 5 is 5; up to "
+            "600 s, 1000 runs). A line is "
             "{step, run?, at_ms, ms, command, ok, result|error|digest}, plus expect (met or failed) and "
             "expect_failed (where the envelope departs) when the step has expect: a subset of the envelope, "
             "{\"ok\": true, \"result\": {...}}. The report (the result's, and out's last line as {report}) counts "

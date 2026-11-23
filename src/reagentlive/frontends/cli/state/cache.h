@@ -25,6 +25,13 @@ struct CachePack {
     std::vector<std::string> lines;
     bool operator==(const CachePack&) const = default;
 };
+// search text: the last job's pattern length and character step (1 or 2), so
+// search-job in a later run shows the text around its hits too.
+struct SearchText {
+    uint32_t job = 0, length = 0;
+    uint8_t step = 0;
+    bool operator==(const SearchText&) const = default;
+};
 struct CacheData {
     uint32_t owner = 0;
     std::string session;                                            // The usage log's; empty: none.
@@ -33,6 +40,7 @@ struct CacheData {
     std::vector<std::pair<uint64_t, image::Layout>> layouts;        // Module headers by module base.
     std::vector<CachePack> packs;
     std::string watchFile;                                          // watch-start with `file`.
+    SearchText searchText;                                          // The last search's, when it was text.
 };
 constexpr std::string_view CacheHeader = "reagentlive cache 11";
 constexpr size_t MaxCachedModules = 1024, MaxCachedPackLines = size_t{1} << 22;
@@ -54,6 +62,9 @@ inline std::string SaveCache(const CacheData& data) {
     out << CacheHeader << "\nowner\t" << data.owner << '\n';
     if (!data.session.empty()) out << "session\t" << data.session << '\t' << data.sessionCaller << '\n';
     if (!data.watchFile.empty()) out << "watch_file\t" << data.watchFile << '\n';
+    if (data.searchText.step)
+        out << "search_text\t" << data.searchText.job << '\t' << data.searchText.length << '\t'
+            << static_cast<int>(data.searchText.step) << '\n';
     for (const auto& module : data.modules)
         out << "module\t0x" << std::hex << module.base << std::dec << '\t' << module.size << '\t' << module.name << '\n';
     for (const auto& [base, layout] : data.layouts) {
@@ -100,6 +111,13 @@ inline std::optional<CacheData> LoadCache(std::string_view text) {
         }
         if (parts[0] == "watch_file" && parts.size() == 2 && !parts[1].empty()) {
             data.watchFile = parts[1];
+            continue;
+        }
+        if (parts[0] == "search_text" && parts.size() == 4) {
+            uint64_t job = 0, length = 0, step = 0;
+            if (!text::Number(parts[1], job) || job > UINT32_MAX || !text::Number(parts[2], length) || length > UINT32_MAX ||
+                !text::Number(parts[3], step) || (step != 1 && step != 2)) return std::nullopt;
+            data.searchText = {static_cast<uint32_t>(job), static_cast<uint32_t>(length), static_cast<uint8_t>(step)};
             continue;
         }
         if (parts[0] == "module" && parts.size() == 4) {

@@ -507,6 +507,7 @@ struct Script {
     std::optional<std::vector<ScriptStatement>> statements;
     std::optional<std::vector<ScriptEvent>> events;
     std::optional<std::string> stopped; // decode stopped early: why ("unknown 0xNN at +0xOFF").
+    std::optional<Filtered> filtered;   // view.match: statements kept of those decoded.
     template<class V> static void Describe(V& v) {
         v("ref", &Script::ref);
         v("function", &Script::function);
@@ -517,6 +518,7 @@ struct Script {
         v("statements", &Script::statements);
         v("events", &Script::events);
         v("stopped", &Script::stopped);
+        v("filtered", &Script::filtered);
     }
 };
 struct RefsRow {

@@ -272,6 +272,15 @@ Parsed Script(const Args& args, const ParseContext&) {
         if (entry >= ue::MaxScriptBytes) return Fail("entry is a bytecode offset");
         command->entry = static_cast<uint32_t>(entry);
     }
+    if (args.Has("to")) {
+        const uint64_t to = args.Int("to");
+        if (!command->decode) return Fail("to needs decode");
+        if (!to || to > ue::MaxScriptBytes || (command->entry && to <= *command->entry))
+            return Fail("to is a bytecode offset past entry");
+        command->to = static_cast<uint32_t>(to);
+    }
+    command->match = args.Str("match");
+    if (!command->match.empty() && !command->decode) return Fail("view.match needs decode: it keeps statements");
     return command;
 }
 

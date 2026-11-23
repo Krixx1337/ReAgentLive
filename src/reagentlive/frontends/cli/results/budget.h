@@ -27,7 +27,7 @@ constexpr size_t ToolBudget = 25000;
 inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
     "tick_accurate", "same_tick", "total", "next_cursor", "next", "filtered", "saved", "job", "state", "scanned"};
 // The verb args that narrow a result, as the digest names them.
-inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls"};
+inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls", "to"};
 
 // Characters per path of a result, as the console prints it. Array elements
 // fold into one path (`rows[].Price`), so a path's size is all its elements'.

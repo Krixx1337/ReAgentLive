@@ -128,7 +128,7 @@ Pack `explore`.
 
 Result: `{session?: str, sessions?: u64, since?: str, totals: {calls: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, ms: f64}, rows: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, ms: f64, batched?: u64, unfiltered?: u64, repeated?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64}], largest: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}]}`
 
-From the usage log beside the console; works with no target (then: the log's latest session). out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the output budget, and saved the characters their digests kept out (full size less the digest). Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and printed whole; never a refused call), repeated (the same input again in its session), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log.
+From the usage log beside the console; works with no target (then: the log's latest session). out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the output budget, and saved the characters their digests kept out (full size less the digest). Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and printed whole, past 2000 characters; never a refused call), repeated (the same input again in its session), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log.
 
 ```json
 {"args":{},"verb":"stats"}
@@ -165,7 +165,7 @@ Pack `explore`; blocks (left out of MCP).
 
 Result: `{file?: str, lines: u64, rows?: [value], report: RunReport}`
 
-Each step runs as its own call under this console's --packs: a step of a pack outside them is a refused line, not a stop, so a plan with modify steps needs modify in --packs (and its approval). repeat runs the step every `every` seconds for `for` seconds (up to 600 s, 1000 runs). A line is {step, run?, at_ms, ms, command, ok, result|error|digest}, plus expect (met or failed) and expect_failed (where the envelope departs) when the step has expect: a subset of the envelope, {"ok": true, "result": {...}}. The report (the result's, and out's last line as {report}) counts calls, ok, failed, refused by kind and expects, with each step's time and the console's and agent's builds. Up to 256 steps; run and quit are not allowed in a plan. A plan file is the replay key: run it again to repeat an investigation.
+Each step runs as its own call under this console's --packs: a step of a pack outside them is a refused line, not a stop, so a plan with modify steps needs modify in --packs (and its approval). Steps run one after another, so values from two steps are never from the same moment: for one moment, make one batch step (its line holds every item's envelope). repeat runs the step at 0, every, 2*every, ... seconds while before `for` (ceil(for / every) runs: every 1 for 5 is 5; up to 600 s, 1000 runs). A line is {step, run?, at_ms, ms, command, ok, result|error|digest}, plus expect (met or failed) and expect_failed (where the envelope departs) when the step has expect: a subset of the envelope, {"ok": true, "result": {...}}. The report (the result's, and out's last line as {report}) counts calls, ok, failed, refused by kind and expects, with each step's time and the console's and agent's builds. Up to 256 steps; run and quit are not allowed in a plan. A plan file is the replay key: run it again to repeat an investigation.
 
 ```json
 {"args":{"plan":"out.json"},"verb":"run"}
@@ -903,7 +903,7 @@ Pack `explore`.
 
 Result: `{ref: ref, field: str, kind: array\|set\|map, total: u64, rows: [{key?: value, value: value, key_object?: Object, value_object?: Object}], from: u32, next_cursor?: u32, truncated: bool, unnamed?: u32, tick_accurate?: bool}`
 
-Names and object pointers are resolved.
+Names and object pointers are resolved. Elements and slots up to 512 bytes; a bigger one is refused: get on the field decodes it.
 
 ```json
 {"args":{"field":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"entries"}
@@ -1093,10 +1093,13 @@ Pack `explore`.
 | `function` | `str` | yes |  | the function, as Owner:Function where the name is ambiguous |
 | `decode` | `bool` |  |  | read the bytecode as statements with their offsets |
 | `entry` | `int` |  |  | with decode: one uber-graph event, from this offset to its return, pop or goto |
+| `to` | `int` |  |  | with decode: statements before this offset only; with entry, from entry to here, past returns |
+| `view` | `obj` |  |  | how the result is shown: page, row limit, filters (the shared view keys) |
+| `view.match` | `str` |  |  | keep rows whose name contains the text, any case (the verb's notes say which name) |
 
-Result: `{ref: ref, function: str, size: u32, names: [{offset: hex, count: u32, index: i32, name: str}], functions: [{offset: hex, count: u32, ref: ref, function: str}], properties: [{offset: hex, count: u32, address: addr, property: str, raw?: str}], statements?: [{offset: hex, op: str, text: str}], events?: [{offset: hex, event: str}], stopped?: str}`
+Result: `{ref: ref, function: str, size: u32, names: [{offset: hex, count: u32, index: i32, name: str}], functions: [{offset: hex, count: u32, ref: ref, function: str}], properties: [{offset: hex, count: u32, address: addr, property: str, raw?: str}], statements?: [{offset: hex, op: str, text: str}], events?: [{offset: hex, event: str}], stopped?: str, filtered?: {shown: u64, total: u64}}`
 
-Each entry is read right after its opcode and confirmed live. decode reads every expression instead (no game thread): statements, the lists from the decoded operands, properties by their readable name (raw: the reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it (stopped). An uber graph adds events: each event's entry offset, from the calls that enter it.
+Each entry is read right after its opcode and confirmed live. decode reads every expression instead (no game thread): statements, the lists from the decoded operands, properties by their readable name (raw: the reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it (stopped). An uber graph adds events: each event's entry offset, from the calls that enter it. A big decode narrows: view.match keeps the statements whose text or op contains it (filtered counts them), entry and to an offset range; the lists then come from the statements kept.
 
 ```json
 {"args":{"function":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"script"}

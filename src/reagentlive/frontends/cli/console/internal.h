@@ -24,6 +24,7 @@
 #include "reagentlive/frontends/cli/code/signature.h"
 #include "reagentlive/frontends/cli/code/image.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
+#include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/core/client.h"
 
 namespace reagentlive::cli::detail {
@@ -92,8 +93,7 @@ struct Session {
     std::vector<Module> modules;            // Exe first.
     bool modulesListed = false;             // Listed by this run, not only loaded from the cache.
     bool sliceSearch = false;               // sig, xrefs: the host refused background search; scan in tick slices.
-    // search text: the last job's pattern, so search-job shows the text around its hits too.
-    struct { uint32_t job = 0, length = 0; uint8_t step = 0; } searchText;
+    SearchText searchText;                  // search text: the last job's, kept in the cache file too.
     // Header layouts by module base (exception directory, sections), for the
     // session and the cache file; lookups keep their sampled entries for this run.
     std::map<uint64_t, image::Layout> layouts;

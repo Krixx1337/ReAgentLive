@@ -546,7 +546,10 @@ TEST_CASE("map and set layouts are checked before use") {
     CHECK_FALSE(ue::ContainerLayoutValid({8, 12, 20, 24}, 8, 4));  // Links not adjacent.
     CHECK_FALSE(ue::ContainerLayoutValid({8, 12, 16, 18}, 8, 4));  // Stride too short.
     CHECK_FALSE(ue::ContainerLayoutValid({8, 12, 16, 0}, 8, 4));
-    CHECK_FALSE(ue::ContainerLayoutValid({8, 12, 16, 1024}, 8, 4)); // Past MaxArrayElementBytes.
+    // An int32 key and a 0x7b0-byte struct value at 16: a big slot is still a valid layout.
+    CHECK(ue::ContainerLayoutValid({16, 0x7c0, 0x7c4, 0x7d0}, 4, 0x7b0));
+    CHECK(ue::ContainerLayoutValid({8, 12, 16, 1024}, 8, 4));
+    CHECK_FALSE(ue::ContainerLayoutValid({8, 12, 16, static_cast<int32_t>(ue::MaxObjectBytes) + 4}, 8, 4)); // Past MaxObjectBytes.
     CHECK_FALSE(ue::ContainerLayoutValid({8, 12, 16, 20}, 0, 4));
 }
 

@@ -67,6 +67,7 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     data.modules = {{"Game.exe", 0x7ff600000000, 0x1000}, {"engine dll.dll", 0x7ffa00000000, 0x2000}};
     data.packs = {{"ue", {"class\tA\t0x10#1:1", "table\t1\t0", "field\tends\tin\ta\ttab\t"}}, {"other", {}}};
     data.watchFile = "C:\\caps\\aim run.jsonl";
+    data.searchText = {7, 5, 2};
     const auto text = SaveCache(data);
     const auto loaded = LoadCache(text);
     REQUIRE(loaded.has_value());
@@ -79,6 +80,8 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     CHECK(loaded->modules[1].size == 0x2000);
     CHECK(loaded->packs == data.packs); // Kept verbatim, trailing tabs included.
     CHECK(loaded->watchFile == data.watchFile);             // watch-start file, spaces kept.
+    CHECK(loaded->searchText == data.searchText);           // search-job in a later run shows the text too.
+    CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\nsearch_text\t1\t4\t3\nend\n").has_value());
     CHECK_FALSE(LoadCache(text.substr(0, text.size() - 4)).has_value()); // No end line.
     CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t0\nend\n").has_value());
     CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\nbogus\nend\n").has_value());

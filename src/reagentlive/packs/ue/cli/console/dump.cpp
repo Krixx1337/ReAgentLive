@@ -253,7 +253,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         ue::ContainerKind kind = ue::ContainerKind::Array;
         uint32_t stride = f.elementSize;
         if (IsContainer(f.type)) {
-            if (!f.stride || SetCount(fieldBytes) <= 0) continue;
+            // A slot past what a preview carries is left to get.
+            if (!f.stride || f.stride > ue::MaxArrayElementBytes || SetCount(fieldBytes) <= 0) continue;
             kind = f.type == "MapProperty" ? ue::ContainerKind::Map : ue::ContainerKind::Set;
             stride = f.stride;
         } else {
