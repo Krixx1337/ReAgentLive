@@ -1052,7 +1052,7 @@ def layouts(lines):
 
 
 def import_layouts(path):
-    """IDA: local types from a layout file (`layout-export`, `--closure` for the types fields name):
+    """IDA: local types from a layout file (`layout-export`, with `closure` for the types fields name):
     a packed struct per class or struct, an enum per enum (see declarations). Types of the
     same name are replaced. Returns the declarations' report plus 'failed': declarations IDA refused,
     each with its first 80 characters (those types are missing, the rest are in)."""

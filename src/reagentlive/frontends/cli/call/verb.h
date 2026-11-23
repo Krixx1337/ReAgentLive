@@ -11,6 +11,7 @@
 #include <expected>
 #include <iterator>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -236,12 +237,13 @@ inline Arg View(std::string_view keys, std::string_view limit = {}) {
 // checking shapes again (ranges and combinations stay the builder's).
 struct Args {
     Json values = Json::object();
+    // The row they were checked against (check.h CheckCall); null for args
+    // built by hand. With REAGENTLIVE_ARGS_CHECK (the test builds), reading a
+    // key the row lacks throws, so a missed rename or a typo fails a test
+    // instead of reading "absent".
+    const Verb* verb = nullptr;
 
-    const Json& At(std::string_view key) const {
-        static const Json none;
-        const auto found = values.find(key);
-        return found == values.end() ? none : *found;
-    }
+    const Json& At(std::string_view key) const;
     // Given; a bool only when true.
     bool Has(std::string_view key) const {
         const Json& value = At(key);
@@ -334,5 +336,15 @@ inline std::string KeyPath(const Verb& verb, std::string_view key) {
         if (std::ranges::find(arg.fields, key, &Arg::key) != arg.fields.end())
             return std::string(arg.key) + "." + std::string(key);
     return {};
+}
+
+inline const Json& Args::At(std::string_view key) const {
+#ifdef REAGENTLIVE_ARGS_CHECK
+    if (verb && KeyPath(*verb, key).empty())
+        throw std::logic_error(std::string(verb->name) + " reads arg '" + std::string(key) + "', which its row lacks");
+#endif
+    static const Json none;
+    const auto found = values.find(key);
+    return found == values.end() ? none : *found;
 }
 }

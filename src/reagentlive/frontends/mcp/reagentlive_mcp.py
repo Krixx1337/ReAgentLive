@@ -22,7 +22,7 @@ ticks as possible.
 A console per call, never one kept open: nothing holds the executable
 between calls, so a rebuilt console links and the next call runs it.
 Calls run one at a time (a second console would wait, then be refused as
-busy). Each start reads the table's hash (`help --hash`, no target
+busy). Each start reads the table's hash (`help` with `hash`, no target
 needed); when it changed, the table is read again before the call runs,
 and the client is told the tool list changed. With no target the console
 answers `help` and `stats` and refuses the rest as `startup`. Every

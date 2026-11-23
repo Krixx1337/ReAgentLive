@@ -58,5 +58,23 @@ class VerbNames(unittest.TestCase):
         self.assertEqual(problems('```\nfind PC_\n```'), [])          # Fenced text is not a code span.
 
 
+    def test_code_string_literals(self):
+        table = names.Table({'rows': [
+            {'verb': 'read', 'origin': 'core', 'args': [{'key': 'addr'}]},
+            {'verb': 'labels-export', 'origin': 'ue', 'args': []},
+            {'verb': 'mem-snap', 'origin': 'core', 'args': []}]})
+        cpp = ('// "export-labels" in a comment is not checked\n'
+               'Fail("addr: use " "export-labels first");\n'
+               'Note("{\\"verb\\": \\"read\\", \\"args\\": {\\"len\\": 4}}");\n'
+               'Ok("read-only, labels-export, ue_labels_export, read-batch"); Bad("ue_export_labels");\n')
+        self.assertEqual(names.check_code(table, cpp, 'x.cpp'), [
+            "x.cpp:2: no verb 'export-labels'",
+            "x.cpp:3: read has no arg 'len'",
+            "x.cpp:4: no such tool 'ue_export_labels'"])
+        py = '"""Run `labels-export` then `export-labels`."""\nx = f"{1} ue_labels_export"\n'
+        self.assertEqual(names.check_code(table, py, 'x.py'), ["x.py:1: no verb 'export-labels'"])
+        self.assertEqual(names.check_text(table, '`--session`', 'doc.md'), [])   # A console option.
+
+
 if __name__ == '__main__':
     unittest.main()

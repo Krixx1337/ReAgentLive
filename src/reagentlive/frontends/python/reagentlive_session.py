@@ -215,7 +215,7 @@ class Session:
     (the default: a script's output never reaches an agent's context) or
     'tool' (an agent reads every result, as through the MCP adapter).
     `table`: a `help` with `json` result already read from this console; the
-    session then asks only for its hash (`help --hash`) and reads the whole
+    session then asks only for its hash (`help` with `hash`) and reads the whole
     table again only when it changed. `console` is a path (relative to the
     current directory) or a name on PATH. `packs`: the tool packs the console
     runs (its --packs; explore always); None runs every pack.
@@ -319,7 +319,7 @@ class Session:
         return _wrap(result, kind, verb, self._named) if kind else result
 
     def call(self, verb, args=None, meta=False, timing=False, budget=None):
-        """One verb by name with named arguments (keys as `help <verb>` shows them); its strict result, or a
+        """One verb by name with named arguments (keys as `help` with `verb` shows them); its strict result, or a
         Digest when it was past the output budget.
 
         None arguments are left out (the console applies the default); bytes go as hex pairs. budget:

@@ -7,11 +7,17 @@ table that has host rows. The text grammar is gone, so a code span that starts w
 or flags (`find PC_`, `get --types`), a one-shot `-c` with no JSON, and a flag that spells a verb's arg
 (`--limit`) are stale forms; a span that runs a program (python, cmake, a console's own options) may use flags.
 
+Code names verbs too: in a C++ or Python file (.h, .cpp, .py) every string literal (adjacent C++ literals joined,
+comments left out) is checked as doc text, and also for a hyphenated word made only of verb words that is no verb
+(`export-labels` once the verb is `labels-export`) and an MCP tool name (`ue_find`) the table lacks. Refusal
+hints, notes and messages then cannot name a renamed verb or arg.
+
 Usage: check_verb_names.py --table <reagentlive-table or a console> [--root DIR] [FILE_OR_DIR ...]
-       (no paths: the repo's docs/, README.md and the skill). Exit 1 with one line per stale name.
-Run by ctest as reagentlive.verb-names; a host runs it on its own docs with its own console's table.
+       (no paths: the repo's docs/, README.md, the skill, src/ and tools/). Exit 1 with one line per stale name.
+Run by ctest as reagentlive.verb-names; a host runs it on its own docs and code with its own console's table.
 """
 import argparse
+import ast
 import json
 import os
 import re
@@ -31,6 +37,17 @@ PROGRAMS = ('python', 'py', 'cmake', 'ctest', 'git', 'pip', 'pwsh', 'powershell'
 # Session helpers that are not verbs, and console or tool options a span may name.
 SESSION_METHODS = {'call', 'batch', 'batch_results', 'watch', 'close', 'help', 'table', 'records', 'raw'}
 SKIP_DIRS = {'__pycache__', '.git', 'build', 'out', 'archive'}
+CODE_EXTENSIONS = ('.h', '.cpp', '.py')
+# C++ tokens: comments and char literals (skipped), raw strings and string literals.
+CPP_TOKEN = re.compile(r'//[^\n]*|/\*.*?\*/|' r"'(?:[^'\\\n]|\\.)*'|" r'R"([^(\s]*)\((.*?)\)\1"|'
+                       r'(?:u8|u|U|L)?"((?:[^"\\\n]|\\.)*)"', re.S)
+CPP_ESCAPE = re.compile(r'\\(.)')
+HYPHENATED = re.compile(r'(?<![\w./-])([a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?![\w/-])')
+# Hyphenated words made of verb words that name no verb on purpose: an agent op and a snapshot file's key.
+NOT_VERBS = {'read-batch', 'snap-bytes'}
+# The console's own options: a span may name them although an arg shares the word (usage's session).
+CONSOLE_OPTIONS = {'session', 'caller', 'packs', 'names', 'check', 'no-usage', 'context-limit'}
+TOOL_TOKEN = re.compile(r'(?<![\w.-])((?:ue|host)_[a-z][a-z0-9_]*)(?![\w-])')
 
 
 def table_of(path):
@@ -176,6 +193,54 @@ def check_text(table, text, name):
     return list(dict.fromkeys(problems))    # A call inside a batch is found twice.
 
 
+def cpp_literals(text):
+    """(text, line) per string literal; adjacent literals (one string split over lines) are one."""
+    out = []
+    end = None
+    for match in CPP_TOKEN.finditer(text):
+        token = match.group(0)
+        if token.startswith(('//', '/*', "'")):
+            continue
+        if match.group(3) is not None:
+            value = CPP_ESCAPE.sub(lambda e: {'n': '\n', 't': '\t'}.get(e.group(1), e.group(1)), match.group(3))
+        else:
+            value = match.group(2)
+        if out and end is not None and not text[end:match.start()].strip():
+            out[-1][0] += value
+        else:
+            out.append([value, text.count('\n', 0, match.start()) + 1])
+        end = match.end()
+    return [(value, line) for value, line in out]
+
+
+def py_literals(text):
+    """(text, line) per string constant, docstrings and f-string parts included."""
+    return [(node.value, node.lineno) for node in ast.walk(ast.parse(text))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+
+
+def check_literal(table, text, name):
+    """A code string: as doc text, plus verb-like hyphenated words and tool names the table lacks."""
+    problems = check_text(table, text, name)
+    words = {word for verb in table.rows for word in verb.split('-')}
+    for word in HYPHENATED.findall(text):
+        if word not in table.rows and word not in NOT_VERBS and all(part in words for part in word.split('-')):
+            problems.append(f'{name}: no verb {word!r}')
+    for tool in TOOL_TOKEN.findall(text):
+        origin, method = tool.split('_', 1)
+        if table.has_origin(origin) and not table.python_verb(origin, method) and tool not in table.result_keys:
+            problems.append(f'{name}: no such tool {tool!r}')
+    return problems
+
+
+def check_code(table, text, name):
+    literals = py_literals(text) if name.endswith('.py') else cpp_literals(text)
+    problems = []
+    for value, line in literals:
+        problems += check_literal(table, value, f'{name}:{line}')
+    return list(dict.fromkeys(problems))
+
+
 def code_spans(text):
     fenced = False
     for line in text.split('\n'):
@@ -206,6 +271,8 @@ def span_problems(table, span):
         out.append('one-shot -c without a JSON call')
     if not (first.endswith(('.py', '.exe', '.ps1')) or first.startswith('<') or first in PROGRAMS):
         for flag in FLAG.findall(span):
+            if flag in CONSOLE_OPTIONS:
+                continue
             if flag in table.keys or flag.replace('-', '_') in table.keys:
                 out.append(f'flag --{flag} (args are JSON keys)')
     return out
@@ -213,7 +280,7 @@ def span_problems(table, span):
 
 def default_paths(root):
     paths = [os.path.join(root, 'README.md'), os.path.join(root, 'docs'), os.path.join(root, 'examples'),
-             os.path.join(root, '.claude', 'skills', 'reagentlive')]
+             os.path.join(root, '.claude', 'skills', 'reagentlive'), os.path.join(root, 'src'), os.path.join(root, 'tools')]
     return [path for path in paths if os.path.exists(path)]
 
 
@@ -226,7 +293,8 @@ def files(paths, generated):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for name in sorted(names):
                 full = os.path.join(base, name)
-                if name.endswith('.md') and os.path.abspath(full) not in generated and not name.startswith('local-lessons'):
+                if ((name.endswith('.md') or name.endswith(CODE_EXTENSIONS)) and os.path.abspath(full) not in generated
+                        and not name.startswith('local-lessons')):
                     yield full
 
 
@@ -241,7 +309,8 @@ def main(argv=None):
     problems = []
     for path in files(args.paths or default_paths(args.root), generated):
         with open(path, encoding='utf-8') as file:
-            problems += check_text(table, file.read(), os.path.relpath(path, args.root))
+            text, name = file.read(), os.path.relpath(path, args.root)
+        problems += check_code(table, text, name) if path.endswith(CODE_EXTENSIONS) else check_text(table, text, name)
     for line in problems:
         print(line)
     print(f'{len(problems)} stale verb or arg names' if problems else 'every verb and arg name is in the table')

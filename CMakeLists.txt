@@ -244,9 +244,13 @@ if(REAGENTLIVE_BUILD_TESTS)
         tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp
         tests/cli/budget_tests.cpp tests/cli/kismet_tests.cpp)
     target_link_libraries(reagentlive-cli-tests PRIVATE reagentlive-cli reagentlive-doctest nlohmann_json::nlohmann_json Zydis)
+    # Args::At throws on a key the verb's row lacks (call/verb.h): in the test
+    # builds only, so a builder reading a renamed or misspelt key fails a test.
+    target_compile_definitions(reagentlive-cli-tests PRIVATE REAGENTLIVE_ARGS_CHECK)
     # The verb table without a console: what `help --json` prints, and the docs page generated from it.
     add_executable(reagentlive-table tests/table/main.cpp)
     target_link_libraries(reagentlive-table PRIVATE reagentlive-cli nlohmann_json::nlohmann_json Zydis)
+    target_compile_definitions(reagentlive-table PRIVATE REAGENTLIVE_ARGS_CHECK) # The docs' calls too.
     set_target_properties(reagentlive-table PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
     target_compile_options(reagentlive-table PRIVATE /W4 /WX /EHsc)
     add_test(NAME reagentlive.results-doc
@@ -273,6 +277,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     if(TARGET reagentlive-console AND reagentlive_pack_count EQUAL 1)
         add_executable(reagentlive-console-tests tests/console/main.cpp tests/console/console_tests.cpp)
         target_link_libraries(reagentlive-console-tests PRIVATE reagentlive-console reagentlive-core reagentlive-doctest)
+        target_compile_definitions(reagentlive-console-tests PRIVATE REAGENTLIVE_ARGS_CHECK)
         set_target_properties(reagentlive-console-tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
         target_compile_options(reagentlive-console-tests PRIVATE /W4 /WX /EHsc)
         doctest_discover_tests(reagentlive-console-tests TEST_PREFIX "reagentlive." PROPERTIES LABELS "reagentlive" TIMEOUT 60)

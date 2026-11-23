@@ -145,8 +145,9 @@ Parsed CallArgs(const Args& args, uint32_t flags) {
     command.request.flags = flags;
     command.dry = args.Has("dry");
     const bool typed = args.Has("params") || ((flags & ue::CallPure) && !args.Has("block"));
-    // fields, start, limit and nonzero pick from a typed call's outputs.
-    const bool rows = args.Has("fields") || args.Has("start") || args.Has("limit") || args.Has("nonzero");
+    // fields, start, limit and nonzero (call's view; call-pure has none) pick from a typed call's outputs.
+    const bool rows = !(flags & ue::CallPure) &&
+        (args.Has("fields") || args.Has("start") || args.Has("limit") || args.Has("nonzero"));
     command.limit = DefaultCallRows;
     if (args.Has("params") && args.Has("block")) return Fail("params: params makes a typed call, block a raw one; give one");
     if (rows && args.Has("block")) return Fail("block: fields, start, limit and nonzero need a typed call (params), not a raw block");
@@ -181,7 +182,7 @@ Parsed CensusOptions(const Args& args) {
 }
 
 // each and call-each: the class, the columns and the options both take.
-Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::string> columns) {
+Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::string> columns, bool call) {
     Command command;
     if (auto why = Outer(args, command); !why.empty()) return Fail(std::move(why));
     const auto className = args.Str(classKey);
@@ -192,7 +193,8 @@ Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::st
         command.seconds = static_cast<uint32_t>(seconds);
     }
     command.fields = std::move(columns);
-    if (args.Has("where")) {
+    // where and elements are each's alone: call-each's one column is the function's.
+    if (!call && args.Has("where")) {
         const Json& where = args.At("where");
         if (auto why = value::Path(where["field"], command.whereField, MaxGetDepth); !why.empty()) return Fail("where: " + why);
         command.match = where["contains"].get<std::string>();
@@ -203,7 +205,8 @@ Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::st
     if (limit > UINT32_MAX) return Fail("limit is a number (0: all)");
     command.limit = static_cast<uint32_t>(limit);
     command.nonzero = args.Has("nonzero");
-    if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
+    if (!call)
+        if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
     command.kind = Kind::Each;
     command.className = className;
     command.request.op = ue::op::Each;
@@ -620,14 +623,14 @@ Parsed Each(const Args& args, const ParseContext&) {
     for (const auto& path : columns)
         if (path.find(':') != std::string::npos)
             return Fail("paths: " + path + " is a function: call-each calls it on every instance");
-    return EachArgs(args, "cls", std::move(columns));
+    return EachArgs(args, "cls", std::move(columns), false);
 }
 
 // call-each: the one column a function with no inputs.
 Parsed EachCall(const Args& args, const ParseContext&) {
     std::string function = args.Str("function");
     if (function.empty() || function.size() >= MaxText) return Fail("function is 1.." + std::to_string(MaxText - 1) + " characters");
-    auto command = EachArgs(args, "cls", {function});
+    auto command = EachArgs(args, "cls", {function}, true);
     if (command) command->eachCall = true;
     return command;
 }

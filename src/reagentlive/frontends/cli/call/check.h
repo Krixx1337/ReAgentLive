@@ -237,6 +237,7 @@ inline std::expected<Args, Refusal> CheckCall(const Verb& verb, const Json& give
     using Out = std::expected<Args, Refusal>;
     if (!given.is_null() && !given.is_object()) return Out(std::unexpect, Refusal{"args is an object of named arguments", {}});
     Args args;
+    args.verb = &verb;
     if (given.is_object()) {
         for (const auto& [key, value] : given.items()) {
             const Arg* arg = FindArg(verb, key);

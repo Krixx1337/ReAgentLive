@@ -298,6 +298,52 @@ TEST_CASE("every row's example call passes the checks and builds") {
     }
 }
 
+TEST_CASE("a builder reads only the keys its row has (REAGENTLIVE_ARGS_CHECK)") {
+    // Args::At throws in this build when a builder reads a key its row lacks.
+    // Each row's example, then the example with each optional arg (an
+    // object's every key, an enum's every word), then with all of them: most
+    // builder branches run at least once.
+    const auto variants = [](const Verb& verb) {
+        std::vector<Json> out;
+        const Json base = ExampleCall(verb)["args"];
+        out.push_back(base);
+        Json all = base;
+        for (const auto& arg : verb.args) {
+            std::vector<Json> values;
+            if (arg.type == "obj") {
+                Json every = Json::object();
+                for (const auto& field : arg.fields) every[std::string(field.key)] = check::Example(field);
+                values.push_back(std::move(every));
+                for (const auto& field : arg.fields) values.push_back(Json{{std::string(field.key), check::Example(field)}});
+            } else if (arg::Enum(arg.type)) {
+                for (std::string_view rest = arg.type; !rest.empty();) {
+                    const size_t bar = rest.find('|');
+                    values.push_back(std::string(rest.substr(0, bar)));
+                    rest = bar == std::string_view::npos ? std::string_view{} : rest.substr(bar + 1);
+                }
+            } else {
+                values.push_back(check::Example(arg));
+            }
+            for (auto& value : values) {
+                Json one = base;
+                one[std::string(arg.key)] = value;
+                out.push_back(std::move(one));
+            }
+            all[std::string(arg.key)] = values.front();
+        }
+        out.push_back(std::move(all));
+        return out;
+    };
+    for (const auto& verb : AllVerbs()) {
+        if (!verb.build) continue;
+        for (const auto& given : variants(verb)) {
+            const auto args = CheckCall(verb, given);
+            if (!args) continue;
+            CHECK_NOTHROW_MESSAGE((void)Build(verb, *args, Loaded), verb.name << " " << given.dump());
+        }
+    }
+}
+
 TEST_CASE("ArgJson lists an arg's key, type, default, enum and help") {
     for (const auto& verb : AllVerbs())
         for (const auto& param : verb.args) {
