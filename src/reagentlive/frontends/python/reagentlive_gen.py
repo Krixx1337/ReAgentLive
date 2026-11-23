@@ -1,7 +1,7 @@
 """Typed Python functions for one ReAgentLive console, generated from its verb table.
 
     python reagentlive_gen.py --console <console.exe> -o my_console.py
-    python reagentlive_gen.py --table help.json -o my_console.py   # a saved `help --json` result
+    python reagentlive_gen.py --table help.json -o my_console.py   # a saved `help` with `json` result
 
 The module holds one method per verb (a host's verbs included), named by
 origin: core verbs on Console itself (`c.read`), a pack's or the host's
@@ -16,7 +16,7 @@ key what the console printed (an addr stays its hex text).
 The module carries the table's hash: Console(session) refuses a console
 whose table differs (StaleTableError), so a stale module never runs.
 
-This generator reads `help --json` and nothing else: it names no pack and
+This generator reads `help` with `json` and nothing else: it names no pack and
 no verb. Standard library only.
 """
 import argparse
@@ -63,16 +63,16 @@ def class_name(name):
 
 
 def table_of(console):
-    """`help --json` from a console, with no target needed."""
+    """`help` with `json` from a console, with no target needed."""
     call = json.dumps({'verb': 'help', 'args': {'json': True}}, separators=(',', ':'))
     run = subprocess.run([os.path.abspath(console), '-c', call], capture_output=True, text=True, check=False)
     for line in run.stdout.splitlines():
         if line.lstrip().startswith('{'):
             envelope = json.loads(line)
             if not envelope.get('ok'):
-                raise SystemExit(f'{console}: {envelope.get("error", {}).get("message", "help --json failed")}')
+                raise SystemExit(f'{console}: {envelope.get("error", {}).get("message", "help with json failed")}')
             return envelope['result']
-    raise SystemExit(f'{console}: no help --json result')
+    raise SystemExit(f'{console}: no help with json result')
 
 
 class Types:
@@ -208,8 +208,8 @@ def generate(table, source):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument('--console', help='the console executable (help --json needs no target)')
-    source.add_argument('--table', help='a file holding the help --json result (or its envelope)')
+    source.add_argument('--console', help='the console executable (help with json needs no target)')
+    source.add_argument('--table', help='a file holding the help with json result (or its envelope)')
     parser.add_argument('-o', '--output', required=True, help='the module to write')
     args = parser.parse_args(argv)
     if args.console:

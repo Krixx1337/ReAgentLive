@@ -22,7 +22,7 @@ typed result, a host's verbs included.
         items, same_tick = s.batch_results([('read', {'addr': '0x1000', 'len': 8}), ('modules', {})])
 
 Results are strict. At start the session reads the console's verb table
-(`help --json`) and wraps every result in a Record typed by its verb's row:
+(`help` with `json`) and wraps every result in a Record typed by its verb's row:
 a key the result type lacks raises ResultKeyError and names the valid keys,
 and an optional key that is absent gives None. So a key guessed wrong fails
 on the line that guessed it, never as a quiet None or a caught KeyError.
@@ -214,7 +214,7 @@ class Session:
     `caller` tells the console's usage log who reads the results: 'script'
     (the default: a script's output never reaches an agent's context) or
     'tool' (an agent reads every result, as through the MCP adapter).
-    `table`: a `help --json` result already read from this console; the
+    `table`: a `help` with `json` result already read from this console; the
     session then asks only for its hash (`help --hash`) and reads the whole
     table again only when it changed. `console` is a path (relative to the
     current directory) or a name on PATH. `packs`: the tool packs the console

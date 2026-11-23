@@ -18,7 +18,7 @@ constexpr size_t MinAnchor = 4;           // Fixed bytes in a row the anchor sea
 constexpr size_t MaxAnchorHits = 4096;    // More: the anchor is too common.
 constexpr size_t MaxShownHits = 16;
 constexpr size_t Extension = 64;          // Bytes read past each match, for diverges_at and resolve fields.
-constexpr size_t DefaultBytes = 64;       // sig --bytes.
+constexpr size_t DefaultBytes = 64;       // sig-bytes' default len.
 
 // Bytes with a mask: fixed[i] false is a wildcard (its byte is 0).
 struct Pattern {

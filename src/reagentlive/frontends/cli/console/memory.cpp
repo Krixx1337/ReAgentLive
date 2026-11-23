@@ -66,7 +66,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     if (thread != HostThread::Engine)
         result.tickNote = "this host does not tick on the engine's thread: a tick is a host tick (a frame), "
             "not a moment of the game, so values read in one tick need not line up";
-    // What watch-start --follow can follow.
+    // What watch-start's follow can follow.
     if (client.Supports(op::Watch))
         if (auto roots = client.WatchRoots(); roots) result.roots = std::move(*roots);
     result.packs = OfferedPacks(session);

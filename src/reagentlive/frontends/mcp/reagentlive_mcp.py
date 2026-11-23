@@ -3,7 +3,7 @@
     python reagentlive_mcp.py --console <console.exe> [--output-schemas compact|off]
                               [--packs explore,native] [--allow observe,modify] [-- <console args>]
 
-One tool per row of the console's `help --json`: a core verb by its name
+One tool per row of the console's `help` with `json`: a core verb by its name
 (`read`), a pack's or the host's prefixed by its origin (`ue_find`,
 `host_world`). Each tool's input schema is made here from its row's `args`
 (the argument types of call/verb.h), and a call goes to the console as a
@@ -34,7 +34,7 @@ schemas are `compact` by default (each result's top-level keys and their
 JSON types, from the row; the console checks every result against its
 whole type either way), `off` advertises none.
 
-Tools come in packs, the verb table's `pack` column (`help --json` lists
+Tools come in packs, the verb table's `pack` column (`help` with `json` lists
 them under `packs`): `--packs` names those served from the start (default:
 explore, always on), `--allow` those the agent may enable later through the
 `packs` tool (always served, read-only), which adds or removes a pack's
@@ -256,7 +256,7 @@ PACKS_TOOL = 'packs'
 
 
 def pack_names(table):
-    """The tool packs in table order (help --json `packs`)."""
+    """The tool packs in table order (help with json `packs`)."""
     packs = [pack['pack'] for pack in table.get('packs', [])]
     if not packs:
         raise ValueError('the console\'s table has no tool packs: rebuild the console')

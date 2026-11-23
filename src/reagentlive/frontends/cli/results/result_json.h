@@ -630,10 +630,10 @@ struct Status {
 // help: one row per verb, with where it comes from (`origin`: the core, a
 // pack or the host), `writes` on a verb that writes the target's memory or
 // calls into it and `blocks` on one that holds the console for seconds.
-// `help <verb>` adds the positionals and flags (each with its key, type and
-// default), the result in notation, the named types it uses and the notes;
-// `help --json` adds the result's type for programs, every named type once
-// and each origin's title.
+// help with `verb` adds its args (each with its key, type, default and
+// help), the result in notation, the named types it uses, the notes and an
+// example call; help with `json` adds the result's type for programs, every
+// named type once and each origin's title.
 // A verb's row as help prints it: args as call/check.h ArgJson gives them,
 // and one call the row accepts.
 struct HelpRow {

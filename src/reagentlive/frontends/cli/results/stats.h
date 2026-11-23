@@ -70,7 +70,7 @@ struct StatsCall {
         v("digest", &StatsCall::digest);
     }
 };
-// stats --sessions: one session of the log.
+// stats with sessions: one session of the log.
 struct StatsSession {
     std::string session, since, until;  // Its first and last call.
     std::vector<std::string> callers;
@@ -216,7 +216,7 @@ inline std::string LatestSession(std::span<const UsageLine> lines) {
 
 constexpr size_t StatsSessionRows = 30;
 
-// stats --sessions: totals over the whole log, and its newest sessions one row each.
+// stats with sessions: totals over the whole log, and its newest sessions one row each.
 inline shape::Stats MakeSessionList(std::span<const UsageLine> lines, std::span<const Verb> verbs) {
     auto stats = MakeStats(lines, std::nullopt, verbs);
     stats.rows.clear();
@@ -261,7 +261,7 @@ inline std::expected<shape::Stats, std::string> StatsFor(std::span<const UsageLi
     if (query.all) return MakeStats(lines, std::nullopt, verbs);
     if (!query.session.empty()) {
         if (std::ranges::none_of(lines, [&](const UsageLine& line) { return line.session == query.session; }))
-            return std::unexpected("no session '" + query.session + "' in the usage log (stats --sessions lists them)");
+            return std::unexpected("no session '" + query.session + "' in the usage log (stats with sessions lists them)");
         return MakeStats(lines, query.session, verbs);
     }
     return MakeStats(lines, current ? *current : LatestSession(lines), verbs);

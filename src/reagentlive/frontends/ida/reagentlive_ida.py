@@ -20,7 +20,7 @@ same folder. Then:
   by real code. Returns what it added, joined, cut and which stubs it
   replaced; raises SaveError instead of loading less than the file holds.
 - `import_labels(path)`: name a database from a labels file (the console's
-  `<console>.labels.jsonl`, export-labels, peek --label): a full database of
+  `<console>.labels.jsonl`, `export-labels`, `peek` with `label`): a full database of
   the build or a save database. Your own names stay; a label becomes a
   comment there.
 - `export_names(path)`: write the names you gave in this database into a
@@ -29,7 +29,7 @@ same folder. Then:
 - `decompile_to(targets, out_dir, grep=None)`: one `.c` file per function
   (addresses or names), a short summary each, the lines matching `grep`.
   `decompile_all()`: every function's pseudocode, one string.
-- `fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None)`:
+- `fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None, timeout=120)`:
   the console's save of each address (and its callees, `depth` levels),
   added to the open database, decompiled into `decompile_dir`: one call
   from an address to pseudocode.

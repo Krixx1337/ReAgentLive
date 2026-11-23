@@ -61,7 +61,7 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     std::vector<LabelRow> rows;
 
     // The file it rewrites (the console's own by default): names a person
-    // gave (user), globals peek --label confirmed and kinds not derived now
+    // gave (user), globals peek's label confirmed and kinds not derived now
     // stay, and so does every other build's line.
     const std::string path = command.file.empty() ? session.labels.string() : command.file;
     if (path.empty()) return JsonError(session, jsonCommand, ErrorKind::File, "no labels file: give one");

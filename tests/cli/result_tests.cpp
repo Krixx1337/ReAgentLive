@@ -1138,14 +1138,14 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     CHECK(list->rows.empty());
     CHECK_FALSE(json.contains("never_called"));
 
-    // session: that one, or a refusal naming stats --sessions.
+    // session: that one, or a refusal naming stats with sessions.
     const auto old = StatsFor(lines, AllVerbs(), {false, false, "old"}, std::string("new"));
     REQUIRE(old.has_value());
     CHECK(old->session == "old");
     CHECK(old->totals.calls == 1);
     const auto missing = StatsFor(lines, AllVerbs(), {false, false, "gone"}, std::nullopt);
     REQUIRE_FALSE(missing.has_value());
-    CHECK(missing.error().find("stats --sessions") != std::string::npos);
+    CHECK(missing.error().find("stats with sessions") != std::string::npos);
     // Neither: the current session, else the log's latest.
     CHECK(StatsFor(lines, AllVerbs(), {}, std::string("old"))->session == "old");
     CHECK(StatsFor(lines, AllVerbs(), {}, std::nullopt)->session == "new");
