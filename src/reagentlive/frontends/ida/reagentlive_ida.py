@@ -471,10 +471,14 @@ def export_names(path=None):
 
 def decompile_all():
     """Every function's pseudocode, each under its name, as one string."""
+    import ida_auto
     import ida_hexrays
     import ida_name
     import idautils
 
+    # Analysis still queued (right after a load or add_saved, or in a script that loads and decompiles at
+    # once) would leave frames and blocks half done: drain it first. Milliseconds on a save.
+    ida_auto.auto_wait()
     parts = []
     for ea in idautils.Functions():
         try:

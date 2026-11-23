@@ -128,6 +128,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **IDA's `decompile_all()` waits for analysis first:** right after a load
+  or `add_saved`, or in a script that loads and decompiles at once, queued
+  analysis could leave the pseudocode incomplete.
 - **No junk import names:** a DLL import with no name table is left
   unnamed in `disasm` and saves instead of read from resolved addresses.
 - **Decoy exception entries no longer break function bounds:** unwind data
