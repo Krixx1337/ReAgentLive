@@ -43,6 +43,8 @@ Parsed Vtable(const Args& args, const ParseContext& context);
 Parsed Rtti(const Args& args, const ParseContext& context);
 Parsed SigCheck(const Args& args, const ParseContext& context);
 Parsed SigFile(const Args& args, const ParseContext& context);
+Parsed LabelsSign(const Args& args, const ParseContext& context);
+Parsed LabelsPort(const Args& args, const ParseContext& context);
 Parsed SigBytes(const Args& args, const ParseContext& context);
 
 // Unreal pack (packs/ue/cli/syntax/parse_unreal.cpp).

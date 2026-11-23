@@ -159,6 +159,11 @@ void RunStats(Session& session, const Command& command, std::string_view jsonCom
 std::optional<std::string> RegionKind(Session& session, uint64_t address);
 // Reads through the agent: read-batch items, nullopt where unreadable.
 sig::ReadFn AgentRead(Session& session);
+// Anchor searches for sig's matcher over the whole image (worker thread when the host allows it).
+sig::SearchFn AgentSearch(Session& session);
+// labels-sign and labels-port: signatures on a labels file's names.
+void RunLabelsSign(Session& session, const Command& command, std::string_view jsonCommand);
+void RunLabelsPort(Session& session, const Command& command, std::string_view jsonCommand);
 // The exception-directory entry holding an address (any loaded module),
 // nullopt without one; an error when the table cannot be read.
 std::expected<std::optional<unwind::Function>, std::string> FunctionAt(Session& session, uint64_t address);
@@ -168,4 +173,38 @@ std::expected<const image::Layout*, std::string> LayoutOf(Session& session, cons
 bool InCode(Session& session, uint64_t address);
 // The module's PE timestamp (ties labels to one build); nullopt when its header is unreadable.
 std::optional<uint32_t> ImageTimestamp(Session& session, const Module& module);
+
+// One page of a scan on the agent's worker thread when the host allows it,
+// else in host-tick slices; a refusal for background is remembered.
+template<class Query, class Scan>
+Result<SearchResult> ScanPage(Session& session, Query query, Scan scan) {
+    const auto timeout = std::max(session.client.Timeout(), std::chrono::milliseconds(180000));
+    if (!session.sliceSearch) {
+        query.background = true;
+        auto found = scan(query, timeout);
+        if (found || found.error().kind != Error::Kind::Agent || found.error().status != Status::Refused ||
+            found.error().reason.find("background") == std::string::npos) return found;
+        session.sliceSearch = true;
+    }
+    query.background = false;
+    return scan(query, timeout);
+}
+
+// Every hit in [from, to) up to `cap`; true in the pair when the cap cut it.
+template<class Query, class Scan>
+Result<std::pair<std::vector<uint64_t>, bool>> ScanAll(Session& session, Query query, size_t cap, Scan scan) {
+    std::vector<uint64_t> hits;
+    while (true) {
+        query.maxHits = static_cast<uint32_t>(std::min<size_t>(MaxSearchHits, cap + 1 - hits.size()));
+        auto page = ScanPage(session, query, scan);
+        if (!page) return std::unexpected(page.error());
+        hits.insert(hits.end(), page->hits.begin(), page->hits.end());
+        if (hits.size() > cap) {
+            hits.resize(cap);
+            return std::pair(std::move(hits), true);
+        }
+        if (!page->resume || page->resume <= query.from) return std::pair(std::move(hits), false);
+        query.from = page->resume;
+    }
+}
 }

@@ -319,8 +319,9 @@ def user_rows(names, build):
 def merge_user_rows(lines, rows, build):
     """The labels file's lines with `rows` in: a user row of this build at an address `rows` names is
     replaced, every other line is kept (other databases' names, other builds, reflected names, globals).
-    Adds and updates only: a database never deletes names it does not hold."""
-    named = {row['rva'] for row in rows}
+    A replaced row's other fields (its signature, where it was ported from) stay: they follow the
+    address, not the name. Adds and updates only: a database never deletes names it does not hold."""
+    named = {row['rva']: dict(row) for row in rows}
     out = []
     for line in lines:
         if not line.strip():
@@ -329,11 +330,12 @@ def merge_user_rows(lines, rows, build):
             row = json.loads(line)
             if (row.get('kind') == 'user' and row.get('module_size') == build['module_size']
                     and row.get('timestamp') == build['timestamp'] and row.get('rva') in named):
+                named[row['rva']] = {**row, **named[row['rva']]}
                 continue
         except ValueError:
             continue  # Malformed: dropped.
         out.append(line.rstrip('\n'))
-    out.extend(json.dumps(row, sort_keys=True, separators=(',', ':')) for row in rows)
+    out.extend(json.dumps(named[row['rva']], sort_keys=True, separators=(',', ':')) for row in rows)
     return out
 
 

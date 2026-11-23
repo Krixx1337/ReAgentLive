@@ -105,8 +105,11 @@ No `function`, not `pointer`: likely chance bytes. Every table: a script.
 
 ## Making a signature
 
-You make the signature; ReAgentLive checks it against the live image
-(signatures: `docs/commands/fast-lane.md#signatures`).
+Two ways, never mixed up. A labels file's names: `labels-sign`, the mass
+signer; a name it lists `unsigned` gets yours (below) written into its
+row's `sig`, checked with `sig-file`; never extend the signer. Everything
+else (a host's runtime patterns): you make it below, and ReAgentLive checks
+it (`docs/commands/fast-lane.md#signatures`).
 
 1. Read the function in the static tool with bytes shown, at the RVA
    (`func` gives a reflected function's native entry).

@@ -27,6 +27,7 @@ const Module* SigModule(Session& session, const std::string& name) {
     if (!module && RefreshModules(session)) module = text::ModuleNamed(name, LoadedModules(session));
     return module;
 }
+}
 
 // Anchor pages: the whole image, resident or not (an untouched code page is
 // still part of what a host's scanner reads). On the agent's worker thread
@@ -59,8 +60,6 @@ sig::SearchFn AgentSearch(Session& session) {
         if (!found) return std::unexpected("search: " + found.error().message);
         return sig::SearchPage{std::move(found->hits), found->resume};
     };
-}
-
 }
 
 sig::ReadFn AgentRead(Session& session) {

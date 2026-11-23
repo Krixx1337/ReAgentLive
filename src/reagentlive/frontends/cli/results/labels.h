@@ -16,8 +16,14 @@ namespace reagentlive::cli {
 struct LabelRow {
     uint64_t rva;
     std::string name, kind;
+    Json extra = Json::object(); // Fields past the six a line must have (sig, ported_from), kept as they are.
     bool operator==(const LabelRow&) const = default;
 };
+
+// The six fields every labels line has; anything else is a row's extra.
+inline bool LabelField(std::string_view key) {
+    return key == "module" || key == "module_size" || key == "timestamp" || key == "rva" || key == "name" || key == "kind";
+}
 
 // Which row keeps an RVA that two rows share: a name a person gave in the
 // static tool (user), what the reader confirmed (peek --label), then
@@ -64,7 +70,10 @@ inline std::optional<LabelRow> ParseLabel(std::string_view line, const Module& m
     if (!text::Number(row["rva"].get<std::string>(), rva) || rva >= module.size) return std::nullopt;
     auto name = row["name"].get<std::string>();
     if (name.empty()) return std::nullopt;
-    return LabelRow{rva, std::move(name), row["kind"].get<std::string>()};
+    LabelRow out{rva, std::move(name), row["kind"].get<std::string>()};
+    for (const auto& [key, value] : row.items())
+        if (!LabelField(key)) out.extra[key] = value;
+    return out;
 }
 
 // What an export keeps of the file it rewrites: this build's rows whose

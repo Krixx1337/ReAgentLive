@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "reagentlive/frontends/cli/code/code_json.h"
+#include "reagentlive/frontends/cli/code/label_sign.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
 #include "reagentlive/frontends/cli/results/mem_json.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
@@ -158,6 +159,23 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"sig-bytes", "core", "live bytes (default 64, up to 96) in both pattern forms, address fields wildcarded",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}}, {},
             Of<shape::SigBytes>, parse::SigBytes},
+        {"labels-sign", "core", "a byte signature on each of this build's user and global names, so they survive a patch",
+            {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
+            {{"--module", Takes::One, "str", "name", "default: the exe"},
+             {"--again", Takes::Nothing, "bool", "", "sign rows that already have a signature too"}},
+            Of<shape::LabelsSign>, parse::LabelsSign,
+            "A function's signature starts at it, a global's at the first code that loads it (a reference signature); "
+            "each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's "
+            "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why. The "
+            "file is rewritten in place; other builds' lines stay as they are."},
+        {"labels-port", "core", "find other builds' signed names in the running build and add them to the file",
+            {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
+            {{"--module", Takes::One, "str", "name", "default: the exe"}},
+            Of<shape::LabelsPort>, parse::LabelsPort,
+            "Per name this build lacks, the newest signed row of another build is matched in the image (one shared "
+            "search per anchor). One match appends a row for this build with the same sig and ported_from (the old "
+            "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
+            "rows stay."},
         {"disasm", "core", "instructions decoded from live bytes: 1..64 (default 24, 512 bytes), or a whole function",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions (--function: up to 2048)", "24"}},
             {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},

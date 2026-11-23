@@ -556,7 +556,46 @@ result counts what was written: `total` rows of this build, of which
   as `user` rows of its build, adding or updating them; names it does not
   hold stay (a save database never wipes what another database named).
   The next save, import or export shows them: a finding named once stays
-  named, in saves and in the full database alike.
+  named, in saves and in the full database alike. A row's other fields
+  (`sig`, `ported_from`) stay when it is renamed: they follow the address.
+
+### Names that survive a patch
+
+A row may carry `sig`, a byte signature in `sig-check`'s terms:
+`{pattern, offset}` for a function (it lies `offset` bytes before the
+match, usually 0) or `{pattern, resolve}` for a global (a reference
+signature at code that loads it). With the row's `rva` as the expected
+address it is a `sig-file` line. `export-labels` and `export_names` keep it.
+
+`labels-sign [file] [--module M] [--again]` (default the host's names
+file, else the console's) signs this build's `user` and `global` rows that
+have none (`--again`: all of them). A function's pattern starts at it, a
+global's at the first code that loads it; each is the live bytes with
+address fields masked (as `sig-bytes` suggests), cut on whole instructions
+and grown from 16 bytes (to `unique_at_length` when `sig-check` knows it)
+until exactly one match lands on the row, up to 96. Derived rows are not
+signed: `export-labels` remakes them.
+
+A row's signature comes one of two ways:
+
+- **Mass signer:** `labels-sign`, the default after naming. Cheap (about
+  a second a row, no judgement) and the same bytes always give the same
+  signature. It is frozen as one fixed loop: no later starts, caller
+  signatures, ranking or looser masks, and struct offsets stay fixed.
+- **By hand:** a row it lists `unsigned` (with its `reason`), or a name
+  `labels-port` lists `missing` once found again. Make the signature as for
+  any other ([signatures](fast-lane.md#signatures)), write it into the
+  row's `sig` and check the file's signatures with `sig-file`. A failure
+  is signed by hand or left unsigned, never a reason to extend the loop.
+
+`labels-port [file] [--module M]`, after a patch: per name the running
+build lacks, the newest signed row of another build of the module is
+matched in the image (one shared search per anchor). One match appends a
+row for this build with the same `sig` and `ported_from` (the old
+timestamp); `missing` (no match: the code changed) and `ambiguous` (several)
+are listed, never written. Old rows stay, `present` counts names this build
+already has and `unsigned` names with no signature to port. Re-find the
+missing ones, name them, then `labels-sign` the new rows.
 
 ## Readable names
 

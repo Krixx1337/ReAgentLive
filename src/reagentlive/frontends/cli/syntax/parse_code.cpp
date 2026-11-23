@@ -156,6 +156,27 @@ Parsed SigFile(const Args& args, const ParseContext&) {
     return command;
 }
 
+// labels-sign [file] [--module M] [--again]: signatures on this build's user and global names.
+Parsed LabelsSign(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::LabelsSign;
+    command.request.op = op::Search;
+    command.file = args.At(0);
+    command.target = args.Value("--module");
+    command.all = args.Has("--again");
+    return command;
+}
+
+// labels-port [file] [--module M]: other builds' signed names, found in this one.
+Parsed LabelsPort(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::LabelsPort;
+    command.request.op = op::Search;
+    command.file = args.At(0);
+    command.target = args.Value("--module");
+    return command;
+}
+
 // sig-bytes <addr> [len]: live bytes to start a signature from.
 Parsed SigBytes(const Args& args, const ParseContext& context) {
     Command command;

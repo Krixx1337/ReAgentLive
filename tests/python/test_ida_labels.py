@@ -56,6 +56,16 @@ class ImportLabels(unittest.TestCase):
         self.assertEqual(len(lines), 4)                     # The malformed line is dropped.
         self.assertEqual(labels.merge_user_rows(lines, [], build), lines)   # Nothing of yours: nothing lost.
 
+    def test_a_rows_signature_survives_a_rename(self):
+        build = {'module': 'Game.exe', 'module_size': 4096, 'timestamp': 7, 'base': 0x140000000}
+        signed = ROW[:-1] % ('user', 'OldName', '0x10') + ',"sig":{"pattern":"48 8b c4"},"ported_from":6}'
+        rows = labels.user_rows([(0x10, 'NewName')], build)
+        merged = labels.load(labels.merge_user_rows([signed], rows, build))
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]['name'], 'NewName')     # The database's name wins...
+        self.assertEqual(merged[0]['sig'], {'pattern': '48 8b c4'})  # ...the signature follows the address.
+        self.assertEqual(merged[0]['ported_from'], 6)
+
     def test_a_users_name_stays_and_the_label_becomes_a_comment(self):
         rows = labels.load([ROW % ('exec', 'A::execB', '0x10'), ROW % ('vtable', 'vtbl_A', '0x20'),
                             ROW % ('global', 'FName_Tag.With Space', '0x30'), ROW % ('exec', 'Same', '0x40')])

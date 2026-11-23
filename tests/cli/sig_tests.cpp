@@ -4,6 +4,8 @@
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/code/signature.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
+#include "reagentlive/frontends/cli/code/label_sign.h"
+#include "reagentlive/frontends/cli/results/labels.h"
 #include "doctest.h"
 #include "verbs.h"
 #include <cstring>
@@ -439,4 +441,117 @@ TEST_CASE("sig-bytes suggests the same bytes with the warned fields masked") {
     }
     CHECK(sig::AddressFields(*sig::ParsePattern(json["suggested"]["pattern"].get<std::string>()), at,
                              std::span(&game, 1)).empty());
+}
+
+TEST_CASE("a labels row keeps fields past the six, so an export never drops a signature") {
+    const Module module{"Game.exe", 0x7ff600000000, 0x100000};
+    auto json = Checked(MakeLabel(module, 7, module.base + 0x20, "Ricochet_Resolve", "user"));
+    json["sig"] = Json{{"pattern", "48 8b c4"}};
+    json["ported_from"] = 6;
+    const std::vector<std::string> lines{json.dump()};
+    const auto kept = KeepLabels(lines, module, 7, [](std::string_view kind) { return kind == "exec"; });
+    REQUIRE(kept.rows.size() == 1);
+    CHECK(kept.rows[0].extra == Json{{"sig", {{"pattern", "48 8b c4"}}}, {"ported_from", 6}});
+    CHECK(MergeLabels({kept.rows[0], {0x20, "A::execB", "exec"}})[0].extra.contains("sig")); // The user row wins with it.
+}
+
+TEST_CASE("a label signature reads back as written, and a bad one is refused") {
+    const auto sig = ParseLabelSig(Json{{"pattern", "48 8d 0d ?? ?? ?? ?? e8 48 85 c9"}, {"resolve", "7,3,4"}});
+    REQUIRE(sig.has_value());
+    CHECK(sig->resolve == sig::Resolve{7, 3, 4});
+    CHECK(ParseLabelSig(LabelSigJson(*sig)).has_value());
+    CHECK(LabelSigJson(*sig) == Json{{"pattern", "48 8d 0d ?? ?? ?? ?? e8 48 85 c9"}, {"resolve", "7,3,4"}});
+    CHECK(LabelSigJson(LabelSig{*sig::ParsePattern("48 8b c4 55"), 0, std::nullopt}) == Json{{"pattern", "48 8b c4 55"}});
+    CHECK_FALSE(ParseLabelSig(Json{{"pattern", "?? ?? ??"}}).has_value());          // No anchor.
+    CHECK_FALSE(ParseLabelSig(Json{{"pattern", "48 8b c4 55"}, {"offset", 2}, {"resolve", "7,3"}}).has_value());
+    CHECK_FALSE(ParseLabelSig(Json("48 8b")).has_value());
+    CHECK(CutPattern(*sig::ParsePattern("48 8d 0d ?? ?? ?? ?? e8 48 85 c9"), 6).Size() == 3);  // Trailing wildcards dropped.
+}
+
+namespace {
+sig::CheckResult Matches(size_t count, bool resolves, std::optional<size_t> uniqueAt = std::nullopt) {
+    sig::CheckResult result;
+    for (size_t i = 0; i < count; ++i) result.matches.push_back({0x1000 + i * 0x100, {}, std::nullopt, std::nullopt});
+    result.resolves = resolves;
+    result.uniqueAtLength = uniqueAt;
+    return result;
+}
+}
+
+TEST_CASE("a signature grows until one match lands on the row, jumping to unique_at_length") {
+    const auto full = sig::FromBytes(std::vector<uint8_t>(96, 0x90));
+    std::vector<size_t> tried;
+    auto grown = GrowSignature(full, 0, {}, [&](const sig::Pattern& cut) -> std::expected<sig::CheckResult, std::string> {
+        tried.push_back(cut.Size());
+        if (cut.Size() < 32) return Matches(3, false, 41);   // Known divergence: jump straight there.
+        return cut.Size() >= 41 ? Matches(1, true) : Matches(2, false);
+    });
+    REQUIRE(grown.pattern.has_value());
+    CHECK(tried == std::vector<size_t>{16, 41});
+    CHECK(grown.pattern->Size() == 41);
+
+    tried.clear();
+    grown = GrowSignature(full, 0, {}, [&](const sig::Pattern& cut) -> std::expected<sig::CheckResult, std::string> {
+        tried.push_back(cut.Size());
+        if (cut.Size() < 48) return std::unexpected(std::string("the anchor has more than 4096 hits"));
+        return Matches(2, false);                            // Never separates.
+    });
+    CHECK_FALSE(grown.pattern.has_value());
+    CHECK(tried == std::vector<size_t>{16, 32, 48, 64, 80, 96});
+    CHECK(grown.reason == "not unique at 96 bytes (2 matches)");
+
+    grown = GrowSignature(full, 20, {}, [&](const sig::Pattern& cut) -> std::expected<sig::CheckResult, std::string> {
+        CHECK(cut.Size() == 20);                             // A global's site: at least its instruction.
+        return Matches(0, false);
+    });
+    CHECK(grown.reason == "no match where the row lies");   // More bytes cannot help.
+
+    const std::vector<size_t> ends{5, 12, 19, 26, 40, 50, 93};  // Whole instructions; the last one runs past 96.
+    tried.clear();
+    grown = GrowSignature(full, 0, ends, [&](const sig::Pattern& cut) -> std::expected<sig::CheckResult, std::string> {
+        tried.push_back(cut.Size());
+        if (cut.Size() < 41) return Matches(3, false, 41);
+        return Matches(2, false);
+    });
+    CHECK(tried == std::vector<size_t>{19, 50, 93});          // Each cut ends on an instruction, never past the last.
+    CHECK(grown.reason == "not unique at 93 bytes (2 matches)");
+}
+
+TEST_CASE("labels-port looks for each name this build lacks, from the newest signed row") {
+    const Module module{"Game.exe", 0x7ff600000000, 0x100000};
+    const Module old{"Game.exe", 0x7ff600000000, 0xf0000};
+    const auto row = [](const Module& m, uint32_t stamp, uint64_t rva, std::string_view name, std::string_view pattern) {
+        auto json = Checked(MakeLabel(m, stamp, m.base + rva, name, "user"));
+        if (!pattern.empty()) json["sig"] = Json{{"pattern", pattern}};
+        return json.dump();
+    };
+    const std::vector<std::string> lines{
+        row(old, 5, 0x10, "Moved", "48 8b c4 55"),
+        row(old, 6, 0x10, "Moved", "48 89 5c 24"),   // Newer build: its signature wins.
+        row(old, 6, 0x20, "Unsigned", ""),
+        row(old, 6, 0x30, "Here", "40 53 48 83"),
+        row(module, 7, 0x40, "Here", ""),            // Already named in this build.
+        row(Module{"Other.dll", 0, 0x1000}, 6, 0x10, "Elsewhere", "40 53 48 83")};
+    const auto plan = PlanPort(lines, module, 7);
+    REQUIRE(plan.candidates.size() == 1);
+    CHECK(plan.candidates[0].name == "Moved");
+    CHECK(plan.candidates[0].from == 6);
+    CHECK(sig::Text(plan.candidates[0].sig.pattern) == "48 89 5c 24");
+    CHECK(plan.present == std::vector<std::string>{"Here"});
+    CHECK(plan.unsignedNames == 1);
+
+    const LabelSig function{*sig::ParsePattern("48 89 5c 24"), 2, std::nullopt};
+    auto one = Matches(1, false);
+    one.matches[0].address = module.base + 0x502;
+    CHECK(PortResult(function, one, module).rva == 0x500);   // The function lies offset before its match.
+    CHECK(PortResult(function, Matches(2, false), module).status == "ambiguous");
+    CHECK(PortResult(function, Matches(0, false), module).status == "missing");
+    CHECK(PortResult(function, std::unexpected(std::string("search: timeout")), module).reason == "search: timeout");
+    LabelSig global = function;
+    global.offset = 0;
+    global.resolve = sig::Resolve{7, 3, 4};
+    one.matches[0].resolved = module.base + 0x9000;
+    CHECK(PortResult(global, one, module).rva == 0x9000);
+    one.matches[0].resolved = 0x10;
+    CHECK(PortResult(global, one, module).status == "missing"); // Resolves outside the module.
 }

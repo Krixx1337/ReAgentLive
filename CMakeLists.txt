@@ -116,7 +116,7 @@ set(reagentlive_cli_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/frontends/c
 set(reagentlive_syntax_sources "${reagentlive_cli_dir}/syntax/parse.cpp"
     "${reagentlive_cli_dir}/syntax/parse_memory.cpp" "${reagentlive_cli_dir}/syntax/parse_code.cpp")
 set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
-    "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp"
+    "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp" "${reagentlive_cli_dir}/console/label_sigs.cpp"
     "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp"
     "${reagentlive_cli_dir}/console/snapshot.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")

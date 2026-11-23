@@ -26,8 +26,9 @@
    only the new logic explains), then the evidence record.
 8. **Name it once.** A member: `label`. A native function: name it in the
    static tool, then `export_names` into the host's names file. A global:
-   `peek --label`. Later saves show those names: read a save's names before
-   working out a function again.
+   `peek --label`. Then `labels-sign`, so `labels-port` finds them after a
+   patch. Later saves show those names: read a save's names before working
+   out a function again.
 
 ## Pitfalls
 

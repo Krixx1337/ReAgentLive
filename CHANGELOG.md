@@ -27,6 +27,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Names that survive a patch:** `labels-sign` stores a byte signature on
+  each name people confirmed (functions and globals); after a patch
+  `labels-port` finds them in the new build and adds them to the file,
+  listing only what changed. `export-labels` and IDA's `export_names` keep
+  the signatures ([labels](docs/commands/unreal.md#names-that-survive-a-patch)).
 - **A host's names file:** `ConsoleConfig::labelsFile` holds names people
   confirm (`user` rows from IDA's `export_names`, `global` rows from
   `peek --label`, its default) apart from the derived names in

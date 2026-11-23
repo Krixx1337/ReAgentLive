@@ -649,6 +649,8 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::Disasm: RunDisasm(session, *parsed, jsonCommand); return false;
     case Kind::Xrefs: RunXrefs(session, *parsed, jsonCommand); return false;
     case Kind::Touches: RunTouches(session, *parsed, jsonCommand); return false;
+    case Kind::LabelsSign: RunLabelsSign(session, *parsed, jsonCommand); return false;
+    case Kind::LabelsPort: RunLabelsPort(session, *parsed, jsonCommand); return false;
     case Kind::Vtable: RunVtable(session, *parsed, jsonCommand); return false;
     case Kind::Rtti: RunRtti(session, *parsed, jsonCommand); return false;
     case Kind::MemSnap: RunMemSnap(session, *parsed, jsonCommand); return false;

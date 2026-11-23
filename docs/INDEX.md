@@ -93,6 +93,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |
 | `disasm`, `xrefs`, `touches` | T0 | [fast lane](commands/fast-lane.md) |
 | `sig-check`, `sig-file`, `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
+| `labels-sign`, `labels-port` | T0 | [labels](commands/unreal.md#names-that-survive-a-patch) |
 | `find`, `describe`, `name`, `name-find` | T1 | [Unreal pack](commands/unreal.md) |
 | `fields`, `entries`, `func`, `funcs`, `enum` | T2 | [Unreal pack](commands/unreal.md) |
 | `rows` | T2 | [Unreal pack](commands/unreal.md#rows) |

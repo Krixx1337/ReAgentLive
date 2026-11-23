@@ -142,6 +142,7 @@ one file:
 | `console/memory.cpp` | `status`, read decoding, `pin`, trials, `watch` (blocking and detached), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
 | `console/sig.cpp` | `sig-check`, `sig-file`, `sig-bytes`: byte signatures against the live image |
+| `console/label_sigs.cpp`, `code/label_sign.h` | `labels-sign`, `labels-port`: signatures on a labels file's names, grown and ported |
 | `console/native.cpp` | `vtable` and `region` (native objects) |
 | `console/pack.h`, `packs/ue/cli/console/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `packs/ue/cli/console/members.cpp`, `packs/ue/cli/state/native_names.h` | native members: `label`, the native file and its checks |

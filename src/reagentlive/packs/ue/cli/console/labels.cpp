@@ -201,8 +201,11 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         for (const auto& line : kept.otherBuilds) out << line << '\n';
-        for (const auto& row : rows)
-            out << ToJson(MakeLabel(*module, *timestamp, module->base + row.rva, row.name, row.kind)).dump() << '\n';
+        for (const auto& row : rows) {
+            auto line = ToJson(MakeLabel(*module, *timestamp, module->base + row.rva, row.name, row.kind));
+            for (const auto& [key, value] : row.extra.items()) line[key] = value; // A signature stays with its row.
+            out << line.dump() << '\n';
+        }
         if (!out) return JsonError(session, jsonCommand, "file", "cannot write " + path);
     }
     std::error_code error;
