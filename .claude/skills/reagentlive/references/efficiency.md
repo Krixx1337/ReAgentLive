@@ -9,7 +9,7 @@ console (`docs/commands/console.md#usage-log-and-stats`).
   needs in one `batch` or one `get` with several paths.
 - `each` scans once: ask for every column in one call.
 - A loop, sweep or comparison over many results: `each` (or
-  `call-pure --each` for a getter) when it is one class (one tick, one
+  `call-each` for a getter) when it is one class (one tick, one
   call); else one Python script that prints a summary, not N tool calls.
 - Enable a pack once, when the task first needs it; leave the rest off.
 - A bare class name costs one table scan the first time per agent; a
@@ -17,10 +17,13 @@ console (`docs/commands/console.md#usage-log-and-stats`).
 
 ## Smaller output
 
-- Filter `get` instead of reading every field, or name the paths (its filters: `help get`).
+- Filter `get` instead of reading every field (`view.match`,
+  `view.nonzero`), or name the `paths`
+  (`{"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "view": {"nonzero": true}}}`).
 - Never `each`, `find` or `census` a whole class unfiltered: narrow by
-  class, value, owner (one asset's subobjects) or a limit (`help <verb>`).
-- Read only the keys you need; `help <verb>` lists them.
+  class, value, owner (one asset's subobjects) or `view.limit` (`help`
+  with `verb`).
+- Read only the keys you need; `help` with `verb` lists them.
 
 ## Digests
 
@@ -34,9 +37,9 @@ console (`docs/commands/console.md#usage-log-and-stats`).
 ## Measure the session
 
 - `stats` (also with no target) ranks this session's verbs by output and
-  marks wasteful calls (unfiltered, repeated, refused; `help stats`). Check
+  marks wasteful calls (unfiltered, repeated, refused; `help` on `stats`). Check
   it before a long step and act on the marks.
 - End the final report with its totals (context cost and what digests
   saved) and the two or three costliest habits.
 - `stats` also reads across sessions: patterns, verbs nobody calls, this
-  session against earlier ones (`help stats`).
+  session against earlier ones (`stats` with `sessions` or `all`).

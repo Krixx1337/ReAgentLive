@@ -117,7 +117,7 @@ inline std::string ResultsMarkdown(const Json& table) {
     };
     std::string out =
         "# Result shapes\n\n"
-        "<!-- Generated from `help --json` (tests/table: `reagentlive-table --write docs/commands/results.md`). "
+        "<!-- Generated from `help` with `json` (tests/table: `reagentlive-table --write docs/commands/results.md`). "
         "Do not edit: change the verb's row or its result struct. -->\n\n"
         "What each verb takes and the keys of its `result`, as the console itself reports them:\n"
         "`help` lists the verbs, `help` with `verb` shows one (args, result, notes, an example call) and\n"
@@ -147,8 +147,8 @@ inline std::string ResultsMarkdown(const Json& table) {
         "- A key that does not apply is omitted; results hold no nulls outside game values.\n"
         "- An arg may add optional keys and never changes a key's type.\n"
         "- **Writes or calls.** marks a verb that writes the target's memory or calls into it; every other verb\n"
-        "  only reads (`help --json` carries it as `writes`).\n"
-        "- **Pack** is the workflow a verb serves (`help --json` lists them under `packs`): `explore`, `native`,\n"
+        "  only reads (`help` with `json` carries it as `writes`).\n"
+        "- **Pack** is the workflow a verb serves (`help` with `json` lists them under `packs`): `explore`, `native`,\n"
         "  `observe` or `modify`. A console's `--packs` and the MCP adapter's packs pick by it; every verb marked\n"
         "  writes or calls is in `modify`.\n";
     std::string origin;
@@ -163,7 +163,7 @@ inline std::string ResultsMarkdown(const Json& table) {
             (row.value("writes", false) ? " **Writes or calls.**" : "") +
             " | `" + cell(row.at("result").get<std::string>()) + "` |\n";
     }
-    out += "\n## Named types\n\nTypes that several results share, as `help --json` lists them under `types`.\n\n"
+    out += "\n## Named types\n\nTypes that several results share, as `help` with `json` lists them under `types`.\n\n"
            "| Type | Definition |\n|---|---|\n";
     for (const auto& [name, named] : table.value("types", Json::object()).items())
         out += "| `" + name + "` | `" + cell(named.at("notation").get<std::string>()) + "` |\n";

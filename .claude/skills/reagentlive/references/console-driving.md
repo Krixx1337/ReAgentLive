@@ -6,11 +6,13 @@ the cache file: console (`docs/commands/console.md#one-shot-use`).
 
 ## Console lines
 
-- One-shot: `<console> -c 'find X; get $1'`; exit code 1 on any error.
-  Use it for independent commands you read by eye; a chain where one
-  step's output feeds the next goes to Python.
-- PowerShell: single-quote `-c` so `$1` needs no backtick
-  (`& $console -c 'find X; get $1'`); in double quotes write `` `$1 ``.
+- One-shot: `<console> -c '{"verb": "find", "args": {"cls": "Pawn", "view": {"limit": 5}}}'`
+  (or a JSON list of calls, or `-c @calls.jsonl`, one call per line); exit
+  code 1 on any error. Use it for independent calls you read by eye; no
+  `$N`: a chain where one step's output feeds the next goes to Python.
+- PowerShell: single-quote the JSON (`& $console -c '{"verb": "status"}'`);
+  Windows PowerShell 5 strips the inner `"` from native arguments: write
+  the calls to a file and pass `-c @<file>` there.
 - PowerShell `@(@(a,b))` flattens a single pair; write `@(,@(a,b))`.
 - PowerShell names are case-insensitive: `$early` overwrites an
   `[int]$Early` parameter; give every variable a distinct name.
@@ -18,9 +20,9 @@ the cache file: console (`docs/commands/console.md#one-shot-use`).
   capture countdowns. Keep them apart, parse stdout per line
   (`ConvertFrom-Json`, `json.loads`).
 - If you must parse raw lines: read only `result`, check `ok` first, take
-  key names from `help <verb>`, never from memory.
-- Stateful automation without Python: keep stdin open, one line in, one
-  JSON response out; `$N` lasts until EOF or `quit`.
+  key names from `help` with `verb`, never from memory.
+- Stateful automation without Python: keep stdin open, one JSON call in,
+  one JSON response out, until EOF or `{"verb": "quit"}`.
 
 ## Python scripts
 
@@ -44,8 +46,9 @@ with Session(r'<console exe>') as s:
 - Look the keys up before writing the script: `s.help('<verb>')`.
 - Never wrap result access in `try`/`except` or a default: a check that
   cannot run must fail, not pass.
-- Page with the console's cursor: follow `next_cursor` with `start`, or the
-  verb's limit flag. A list a verb can cut says so (`help <verb>`): check
+- Page with the console's cursor: pass `next_cursor` back as `view.start`
+  (`view={'start': cursor}`), or raise `view.limit`. A list a verb can cut
+  says so (`s.help('<verb>')`): check
   it before treating the list as complete.
 - Stop after three identical refusals and fix the call; a loop that retries
   the same refusal only spends output.

@@ -1,6 +1,6 @@
 # Fast lane
 
-*Home of:* code questions from live bytes: `disasm` (and saves for a static tool), `xrefs`, `touches`, `search text` and the signature commands. Why the lane is built this way: [design](../design.md#fast-lane).
+*Home of:* code questions from live bytes: `disasm` (and saves for a static tool), `xrefs`, `touches`, `search` with `type` `text` and the signature commands. Why the lane is built this way: [design](../design.md#fast-lane).
 
 **TL;DR:** Ask about one address and get an answer from the code as it is
 loaded right now, in well under a second, with no disassembler database:
@@ -16,12 +16,14 @@ program ([design](../design.md#fast-lane)). The lane: `peek` (what a global
 holds), `func` (a reflected function's native entry), `disasm`, `xrefs`,
 `touches` and `sig-check`.
 
-```text
-disasm <addr> [count] [--function [--resume] [--save F [--callees] [--labels L]]] [--follow]
-xrefs <addr> [--module M] [--all]
-touches <addr> <offset> [offset ...] [--range N] [--reads]
-search text <text|"quoted text"> [--wide] [search options]
+```json
+{"verb": "disasm", "args": {"addr": "0x140001000", "function": true}}
+{"verb": "xrefs", "args": {"addr": "0x140001000", "all": true}}
+{"verb": "touches", "args": {"addr": "0x140001000", "offsets": ["0x3e0", "0x3e4"], "reads": true}}
+{"verb": "search", "args": {"type": "text", "value": "Fatal error: %s"}}
 ```
+
+Every arg, its type and default: the [reference](reference.md#disasm).
 
 ## Function bounds
 
@@ -50,10 +52,11 @@ one-byte decoys at a fixed stride that would cut it into slivers.
 from `addr`, which must be an instruction boundary
 (the decoder is Zydis, in the console only). Reads of up to 4 KB; when part
 of one is unreadable, up to the page end and on from there.
-- `--function` lists the whole function holding `addr`, from its start to
+- `function` lists the whole function holding `addr`, from its start to
   its end: up to 2,048 instructions (`count` lowers it) and 16 KB. A cap
-  that cuts it gives `next`; `disasm <next> --function --resume` lists on
-  from there (`--resume` starts at `addr`, not at the function's start).
+  that cuts it gives `next`; the same call with `next` as `addr` and
+  `"resume": true` lists on from there (`resume` starts at `addr`, not at
+  the function's start).
   An entry whose start does not decode (a packed image may begin one a
   few bytes early) is listed from `addr` instead, still bounded by it.
   An entry (or chunk) shorter than its first instruction, a one-byte
@@ -64,9 +67,9 @@ of one is unreadable, up to the page end and on from there.
   16 KB ahead (farther ones are tail calls). `function` is then absent and
   `addr` is the start you gave; an early return before a branch target
   the walk has not seen yet can end it short.
-- `--follow`: at an unconditional direct jump the listing continues at the
+- `follow`: at an unconditional direct jump the listing continues at the
   target, at most 3 times inside the same limits, listed in `followed`.
-  With `--function` each target's own entry bounds it. Calls, conditional
+  With `function` each target's own entry bounds it. Calls, conditional
   jumps and indirect jumps are never followed.
 - Per instruction (`rows`): `address`, `rva`, `bytes`, `text`; `target`
   (with `target_rva`, and `target_module` when it lies in another module) for a relative call, jump or branch
@@ -85,14 +88,13 @@ of one is unreadable, up to the page end and on from there.
   anything else (a packed mask, a 16-byte vector) as `value_hex`. A
   writable target is a global that changes: `peek` it. Import slots get
   `import` instead.
-- Rows are compact: the listing names its `module` once. `--meta` (a line
-  ending in it, or `"meta": true` in a JSON call) adds each row's `module`,
-  every `target_module` and `fields`; the generated tools do not pass it.
-  Under `--function` rows are more compact still: no `bytes`, and `rva`
-  only on the first row (targets keep `target_rva`); `--meta` brings back
-  full rows. For masks to build a signature from, `sig-bytes` gives the
+- Rows are compact: the listing names its `module` once. `"meta": true`
+  on the call adds each row's `module`, every `target_module` and
+  `fields`; the generated tools do not pass it. Under `function` rows are
+  more compact still: no `bytes`, and `rva` only on the first row (targets
+  keep `target_rva`); `meta` brings back full rows. For masks to build a signature from, `sig-bytes` gives the
   same fields.
-- `strings` (with `--function`): each distinct string the rows reference,
+- `strings` (with `function`): each distinct string the rows reference,
   once, with `at`: the rows using it, in order. Only strings the code
   points at directly: text built at run time, reached through a pointer
   table, or held as names in a name pool is not seen.
@@ -105,9 +107,15 @@ of one is unreadable, up to the page end and on from there.
 
 ### Saving a function for a static tool
 
-`disasm <addr> --function --save <file>` also writes the listed function
+`disasm` with `function` and `save` also writes the listed function
 for a static tool, so it decompiles that one function without analysing
-the whole image. The result names the file in `saved` and counts its
+the whole image:
+
+```json
+{"verb": "disasm", "args": {"addr": "0x140001000", "function": true, "save": {"file": "fn.jsonl", "callees": true}}}
+```
+
+The result names the file in `saved` and counts its
 instructions in `saved_rows`; it leaves out `rows` and `strings`, which
 the file holds. A function's **chunks** (continuations the exception
 directory lists apart, reached by a jump from the function or following
@@ -125,7 +133,7 @@ a table after the jump starts) and listed in `tables` (`jump`, `table`,
 then `capped: true`; targets of the function still unsaved are listed in
 `jumpouts_left`.
 
-- **`--callees`** also saves each function it calls directly or reaches by
+- **`save.callees`** also saves each function it calls directly or reaches by
   a tail jump (a direct `jmp` out of the function and its chunks), one
   level deep, each once, up to 16 functions or 256 KB of code, each listed from
   the call target (an entry that begins elsewhere only bounds its end): calls between
@@ -133,18 +141,18 @@ then `capped: true`; targets of the function still unsaved are listed in
   same database. The result lists each saved function in `functions` and
   the call targets past the cap in `skipped`.
 - **Names** come from the console's labels file when it exists, or
-  `--labels <file>` ([labels](unreal.md#labels-for-a-static-tool)): names
-  you gave in IDA (`user`), the globals `peek --label` confirmed, exec
+  `save.labels` ([labels](unreal.md#labels-for-a-static-tool)): names
+  you gave in IDA (`user`), the globals `peek` with `label` confirmed, exec
   thunks and interface implementations; the highest-ranked row per address.
 - **No partial saves.** A walk (no exception entry) from more than 32
   bytes past the last return, unconditional jump or padding in its
-  unlisted piece adds `piece`, the piece holding the address, and `--save`
+  unlisted piece adds `piece`, the piece holding the address, and `save`
   then refuses: the file would hold only the rest of a function. A start
   lies right after one of those or behind a few junk bytes (a function
   after a tail jump shares its piece with the code before it); a call
   site lies far past one. Save from the function's start (junk bytes may lead the
-  piece: `disasm` its first bytes), or pass `--resume` to save from the
-  address anyway. A listing with no rows is never saved: `--save` refuses
+  piece: `disasm` its first bytes), or pass `resume` to save from the
+  address anyway. A listing with no rows is never saved: `save` refuses
   it (`start`), naming why it stopped.
 
 JSON lines:
@@ -214,7 +222,7 @@ left without bytes.
   rl.add_saved('<next save>')   # grow the database; returns the summary
   rl.export_names('<console>.labels.jsonl')   # names you gave, for later saves
   rl.decompile_to(['0x<addr>', '<name>'], '<dir>', grep=r'this->\w+')   # .c files + summary
-  rl.import_layouts('<file>')   # layout-export --closure → local types
+  rl.import_layouts('<file>')   # layout-export with closure → local types
   rl.apply_this('<console>.labels.jsonl')   # Class *this on Class_Method functions
   ```
 
@@ -235,7 +243,7 @@ and adds `error`; a target that names no function comes back as `{target,
 error}`. Read the summary first and open only the files it points to.
 
 `import_layouts(<file>)` turns a `layout-export` file
-([layouts in bulk](unreal.md#layouts-in-bulk); `--closure` brings the types
+([layouts in bulk](unreal.md#layouts-in-bulk); `closure` brings the types
 the fields name) into local types, replacing types of the same name. Each
 class or struct becomes a packed struct of its size with every field at its
 reflected offset: its `super` is the base class when the file holds it,
@@ -265,7 +273,7 @@ the return type stay as IDA has them. It returns `typed` (a count) and
 ## xrefs
 
 `xrefs` lists what points at `addr` in one module: the one holding it,
-or `--module` (a DLL that calls into the exe). Two scans, each on the
+or `module` (a DLL that calls into the exe). Two scans, each on the
 agent's worker thread when the host allows background search, else in
 tick slices, resident pages only:
 - **Relative:** the `xrefs` agent op finds every 4-byte field that, read as
@@ -280,11 +288,11 @@ tick slices, resident pages only:
   an 8-bit and `C7` with a 32-bit or, after `66`, a 16-bit immediate), or
   `rip` for any other opcode. A relative hit with none of those in front,
   or with the wrong immediate for its opcode, is `unknown`, most likely
-  chance bytes: counted, listed only with `--all`.
+  chance bytes: counted, listed only with `all`.
 - Each row: `kind`, `field` (where the offset sits), `instruction` for
   `call`, `jmp`, `jcc`, `lea`, `load` and `store`, whose length before the
   field is fixed (none for `rip`: a linear decoder cannot walk backwards;
-  `disasm --function` shows it in place), `module` and `rva` of the
+  `disasm` with `function` shows it in place), `module` and `rva` of the
   instruction (else the field), and `function` for that address. Where
   no entry holds a code row, `function` is the piece of unlisted code
   holding it and the row carries `unlisted`: cut as `touches` cuts such
@@ -303,7 +311,7 @@ name: a block of state inside a `Pad_` array, a native field between
 reflected ones. Give an address next to that code (a reflected function's
 `exec` from `func`: native code of one class sits together) and up to 8
 offsets that should appear together.
-- Every exception-directory entry starting within `--range` bytes of the
+- Every exception-directory entry starting within `range` bytes of the
   address (default 0x80000, at most 0x400000, each side) is decoded whole;
   the code is read once, 4 KB per held request (1 MB, 5,858 functions
   took 0.5 s live).
@@ -312,7 +320,7 @@ offsets that should appear together.
   return and around int3 padding. Its rows carry `unlisted: true`, with the
   piece's bounds as `function`; `scanned.unlisted` counts the pieces. A
   piece can start mid-instruction and hold more than one function: confirm
-  it with `disasm --function` at a use.
+  it with `disasm` and `function` at a use.
 - A use is a memory operand `[reg + disp]` whose displacement is an asked
   offset; `[rsp + disp]` (stack slots) and `[rip + disp]` (globals) are
   never members. `write` is set when the operand is written.
@@ -321,24 +329,26 @@ offsets that should appear together.
   then by uses: the setup that writes most of a block comes first, its
   readers after. At most 24 rows of 12 uses (`total` counts all of each);
   `capped` when more functions matched.
-- `--reads` looks for the code that consumes a block: rows rank by the
+- `reads` looks for the code that consumes a block: rows rank by the
   distinct offsets read (`distinct`), and a row that reads none, or writes
   every offset it reads (a struct copy, a constructor), is left out.
 - Unrelated classes share small offsets: ask for several that only one
-  layout has together, and confirm the top row with `disasm --function` or
+  layout has together, and confirm the top row with `disasm` and `function` or
   a decompiler before naming anything.
 
 ## search text
 
-`search text` turns the text into bytes for the exact `search`, so the
-first hop of a chain is one command. Quote a string to take it exactly:
-`search text "Fatal error: %s" --module game.exe`. Inside the quotes,
-spaces, `;` and `--` are text, `\"` is a quote and `\\` a backslash;
-any other backslash is literal, so paths need no doubling. Unquoted words
-are joined by single spaces up to the first option.
+`search` with `type` `text` turns the text into bytes for the exact
+search, so the first hop of a chain is one call. The `value` string is
+taken exactly: spaces, `;` and `--` are text, and only JSON's own escapes
+apply (a backslash in a path is written `\\`).
+
+```json
+{"verb": "search", "args": {"type": "text", "value": "Fatal error: %s", "scope": {"module": "game.exe"}}}
+```
 
 Each row carries `text`: the printable string the hit lies in (ASCII, or
-UTF-16 with `--wide`), up to 96 characters each side of the match with
+UTF-16 with `type` `wtext`), up to 96 characters each side of the match with
 `...` where it was cut, read back in batches after the search. A hit that
 is not inside text gets none. `xrefs` the string's start, not the hit,
 when the match is inside a longer string.
@@ -350,12 +360,12 @@ walking references one address at a time:
 
 | Hop | Command |
 |---|---|
-| A source-path or assert string → the function using it | `search text`, then `xrefs` |
+| A source-path or assert string → the function using it | `search` (`type` `text`), then `xrefs` |
 | The function → the table slot holding it | `xrefs` (`pointer`) |
 | The table → the constructor or destructor installing it | `xrefs` |
 | The constructor → the global it stores the object in | `disasm` |
 | The global → the functions returning it | `xrefs` (`lea`, `load`) |
-| A stub that only jumps → the real body | `disasm --follow` |
+| A stub that only jumps → the real body | `disasm` with `follow` |
 
 Running that chain over every table is a script over the Python client, or
 the static tool's job, not a command.
@@ -366,16 +376,18 @@ Console only, on the `read`, `search` and `read-batch` ops. The agent or user ma
 a byte signature; ReAgentLive checks it against the live image, which is what a
 host's scanner reads, and says what to change when it fails.
 
-```text
-sig-check <pattern> [--module M] [--expect <addr>] [--offset N | --resolve next,field[,size]]
-sig-check --file <patterns>
-sig-bytes <addr> [len]
+```json
+{"verb": "sig-check", "args": {"pattern": "48 8b 05 ?? ?? ?? ?? 48 85 c0", "expect": {"module": "game.exe", "rva": "0x1a2b3c"}}}
+{"verb": "sig-check", "args": {"file": "patterns.jsonl"}}
+{"verb": "sig-bytes", "args": {"addr": "0x140001000", "len": 32}}
 ```
+
+Every arg: the [reference](reference.md#sig-check).
 
 - **Pattern**, up to 96 bytes, in either form so it pastes into or out of a
   host's table: text (`48 8b ?? ?? 89`, `?` or `??` per wildcard) or a
   source-style list (`0x48, 0x8B, -1, -1, 0x89`; a comma selects it).
-- **Module:** `--module` names any loaded module (one loaded since the list
+- **Module:** `module` names any loaded module (one loaded since the list
   was read is found by one re-read). Without it, the exe: a pattern carries
   no address to say which image it is for.
 - **Matching:** the longest run of fixed bytes (at least 4; the first 64 of
@@ -388,13 +400,14 @@ sig-bytes <addr> [len]
   stricter than "one match in code", and safe whichever sections a scanner
   reads. No match is a result, not an error. `total` counts the matches;
   `rows` shows the first of them.
-- **`--expect`** (any address form: `game.exe+0x1a2b3c`) adds `resolves`:
-  whether the only match is that address. `--offset N` is for a signature
-  that starts N bytes inside the function: the match must be `expect + N`.
+- **`expect`** (any address form: `{"module": "game.exe", "rva": "0x1a2b3c"}`)
+  adds `resolves`: whether the only match is that address. `offset` N is
+  for a signature that starts N bytes inside the function: the match must
+  be `expect + N`.
 
 Feedback, each pointing at the next correction:
 
-- **`mismatches`** (with `--expect`, when no match lies there): each fixed
+- **`mismatches`** (with `expect`, when no match lies there): each fixed
   byte that differs from the live bytes at `expect + offset` (`offset`,
   `wanted`, `found`); `mismatch_error` in its place when those bytes are
   unreadable. A slipped byte count or a typo shows at once.
@@ -408,25 +421,25 @@ Feedback, each pointing at the next correction:
   disp32 after a ModRM byte selecting `[rip + disp32]` behind an opcode the
   heuristic knows (`rip`, immediate accounted for), or a fixed 8-byte value
   (`absolute`), each flagged only when, read that way at the match (or at
-  `--expect` without one), it points inside a loaded module (`target`,
+  `expect` without one), it points inside a loaded module (`target`,
   `target_module`, `target_rva`). They match today and break on the next
-  build. Warnings, never refusals. With `--expect` (and no `--resolve`)
+  build. Warnings, never refusals. With `expect` (and no `resolve`)
   the match starts at an instruction boundary the reader gave, so the
   console decodes the live bytes there and reports exactly the address
   fields of whole instructions (a relative target, a `[rip + disp32]`, a
   64-bit immediate), with `decoded`: how many pattern bytes the decoder
   read. Past where decoding stops (bytes that do not decode, or the pattern
   ending inside an instruction) the byte patterns above apply, and they
-  apply alone without `--expect`.
-- **`--resolve next,field[,size]`** (size 1, 2 or 4, default 4) checks a
+  apply alone without `expect`.
+- **`resolve`** (`"next,field[,size]"`, size 1, 2 or 4, default 4) checks a
   reference signature: `target = match + next + signed value at match +
-  field`; each row gets `resolved`, and `--expect` is the target, so
+  field`; each row gets `resolved`, and `expect` is the target, so
   `resolves` proves a signature at a caller or at code that loads a global
   end to end. The field may lie in the 64 bytes read past the pattern.
-  `--offset` does not combine with it.
+  `offset` does not combine with it.
 
-`sig-check --file <patterns>` checks a JSON-lines file, one signature per
-line (it takes no pattern or other flag): `pattern` (text, or an array of bytes with `-1`), optional `module`,
+`sig-check` with `file` checks a JSON-lines file, one signature per
+line (it takes no `pattern` or other key): `pattern` (text, or an array of bytes with `-1`), optional `module`,
 `rva` (number or `0x` string: the expect inside that module), `offset`,
 `resolve` (`"7,3"` or `[7, 3, 4]`); blank and `#` lines are skipped. Each
 line gets its own row in `lines` (`line`, `ok`, then `result` or `error`);
@@ -435,7 +448,7 @@ anchor searches are shared between lines with the same module and anchor
 that is unique and, when it has an `rva`, resolves. So the agent tries
 several candidates in one call, and a host checks every signature it ships.
 
-`sig-bytes <addr> [len]` (default 64, up to 96: a longer `len` is cut to
+`sig-bytes` (`len` default 64, up to 96: a longer `len` is cut to
 96 and the result says `capped: true`) prints the live bytes in
 both forms with `module` and `rva`, and `suggested`: the same bytes with
 the address fields wildcarded, each listed with where it points. `addr` is
@@ -445,5 +458,5 @@ signature with no static tool: `disasm` shows where instructions end, so
 end the pattern on a boundary. `func` gives a reflected function's native
 entry to start from.
 
-Python: `s.sig_check(pattern, module=None, expect=None, offset=0,
-resolve=None)`, `s.sig_check(file=path)`, `s.sig_bytes(address, length=64)`.
+Python: `c.sig_check(pattern='48 8b ?? 89', module='game.exe')`,
+`c.sig_check(file='patterns.jsonl')`, `c.sig_bytes(addr='0x140001000', len=64)`.

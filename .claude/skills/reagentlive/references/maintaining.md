@@ -5,15 +5,15 @@
 - **Skill = how to use it well:** method, order, judgement, approvals,
   pitfalls. **Docs = what it is and how it works:** verb semantics, guards,
   protocol, hosting, design.
-- Never restate a verb's argument list, what a flag takes or does, result
-  keys or behaviour here: link `help <verb>` or its docs page. A verb
-  named with a flag as a worked example (`find --cls`) is allowed; the
-  agent confirms it with `help <verb>` before relying on it. A result key
-  is not: say what to check and route to `help <verb>`. One home per fact; the registry is
+- Never restate a verb's argument list, what an arg takes or does, result
+  keys or behaviour here: link `help` with `verb` or its docs page. A
+  worked example call naming an arg (`{"verb": "find", "args": {"cls": "Pawn"}}`)
+  is allowed; the agent confirms it with `help` before relying on it. A
+  result key is not: say what to check and route to `help`. One home per fact; the registry is
   the "where each fact goes" map in contributing (`docs/contributing.md`).
 - The skill carries only the minimum an agent needs before its first
   command (the operational status rule, approval rules) and what no build
-  changes; anything that changes with a build is `help <verb>`'s, every
+  changes; anything that changes with a build is `help`'s, every
   other fact is a docs path.
 - Repo files outside the skill (`docs/`, `src/`, `examples/`) are inline
   code paths, anchors kept (`docs/tiers.md#the-ladder`), never URLs:
@@ -24,9 +24,12 @@
   and evidence rules (SKILL.md), which interface for which task and the
   verb-to-tool mapping (`interfaces.md`), method, pitfalls and
   per-question advice (the other references).
-- Name verbs as the console writes them (`find`, `game-thread on`). MCP-only
-  or Python-only syntax appears only in `interfaces.md` and
-  `console-driving.md`. Pass refs as `<ref>`, never `$N`, elsewhere.
+- A verb in prose stands alone (`find`), an arg by its key or path (`cls`,
+  `view.limit`), never as `--flag`. Examples are JSON calls on one line,
+  `{"verb": ..., "args": {...}}`, checked by the `reagentlive.verb-names`
+  test. MCP-only or Python-only syntax appears only in `interfaces.md` and
+  `console-driving.md`. Refs: a literal-looking ref (`0x1f2e3d4c50#123:4`)
+  or `<ref>`, never `$N`.
 - Agent-only style: triggers, rules, steps, checks. No summaries,
   motivation or beginner explanations.
 
@@ -65,11 +68,11 @@
 
 ## When ReAgentLive hits a limit
 
-- Add the missing verb or flag instead of working around it twice
-  (`find --cls` and `find --live` came from real investigations):
+- Add the missing verb or arg instead of working around it twice
+  (`find`'s `cls` and `live` came from real investigations):
   engine- and game-agnostic, tested, documented, and the backlog
   (ideas: `docs/ideas.md`) re-ranked with the evidence.
-- Code written twice goes into the console (a verb or a flag, so the
+- Code written twice goes into the console (a verb or an arg, so the
   generated functions and tools get it) with a test, not into the skill.
 - Editing the C++: `near` and `far` are Windows macros, bad variable
   names; CRLF files need byte-level edits.

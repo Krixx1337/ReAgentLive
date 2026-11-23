@@ -43,7 +43,7 @@ in the running game:
 | 2 | `ue_get` | your health: **87.5 / 100** |
 | 3 | `ue_each` | every soldier's health, read in the same tick |
 | 4 | `touches` | the one damage function that writes it |
-| 5 | `write --undo` | your health held at 1000 for 30 s, then restored *(asks you first)* |
+| 5 | `write` with `undo` | your health held at 1000 for 30 s, then restored *(asks you first)* |
 
 > **Agent:** Health is a float at `HealthComp+0x1A8`, written by one damage
 > function at `Game.exe+0x9A3F10`. Every soldier uses it. I held yours at
@@ -83,7 +83,7 @@ as `module` + `rva` (module and offset), ready for IDA or Ghidra.
 | Your target | Start from | Tier |
 |---|---|---|
 | Any Windows x64 process | [`examples/own_thread`](examples/own_thread/README.md) | T0 |
-| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 after `game-thread on` |
+| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
 | A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
 
 ## Ways to drive it

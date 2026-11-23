@@ -7,8 +7,9 @@ without an SDK (`docs/commands/unreal.md#without-an-sdk`).
 
 ## Try the verbs first
 
-- Run `get Vector --types`, `enum ENetRole` and `funcs` on any object. If they
-  answer, the stock layout holds: nothing below is needed.
+- Run `{"verb": "get", "args": {"object": "Vector", "mode": "types"}}`,
+  `{"verb": "enum", "args": {"enum": "ENetRole"}}` and `funcs` on any object.
+  If they answer, the stock layout holds: nothing below is needed.
 - A refusal names the failed group check ("field: Vector members are not
   X, Y, Z"): start at that group (step 2) and find its offsets live.
 - Record them as a profile (`ProfileJson`: `{"groups": {group: {member:
@@ -57,8 +58,9 @@ ProcessEvent slot and the engine version come from live `vtable`,
   object table and name pool (before the first command: `docs/commands/unreal.md#before-the-first-command`).
 - Note the module and both globals' RVAs (label them in the static tool if
   one is in use).
-- `find Class`, `find Struct`, `find Field`, `find Object`: the core
-  classes every recipe starts from. `describe` each.
+- `find` with `text` `Class`, `Struct`, `Field` and `Object`
+  (`{"verb": "find", "args": {"text": "Class"}}`): the core classes every
+  recipe starts from. `describe` each.
 
 ## 1. Engine version and variants
 

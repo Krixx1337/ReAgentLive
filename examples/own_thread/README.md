@@ -37,7 +37,7 @@ full path):
 ```powershell
 $dll = (Resolve-Path build\own-thread\reagentlive-own-thread.dll).Path
 Start-Process python -ArgumentList '-c', "`"import ctypes,time; ctypes.WinDLL(r'$dll'); time.sleep(60)`"" -WindowStyle Hidden
-build\own-thread\reagentlive.exe -c "status; modules; region base+0x1000"
+build\own-thread\reagentlive.exe -c '[{"verb": "status"}, {"verb": "modules"}, {"verb": "read", "args": {"addr": {"module": "python.exe", "rva": "0x1000"}, "len": 16}}]'
 ```
 
 With no pid the console finds the one process that has the agent; with

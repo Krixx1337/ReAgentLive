@@ -23,7 +23,7 @@ are under `src/reagentlive/`.
 | Know what a command takes and returns | `help` with `verb` in the console, the [verb reference](commands/reference.md), or [result shapes](commands/results.md) |
 | Have an AI agent set it all up, or update it | [for AI agents](#for-ai-agents) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
-| Any UE5 game, no dump (T1-T2; T3 after `game-thread on`) | [Unreal example](../examples/unreal/README.md) |
+| Any UE5 game, no dump (T1-T2; T3 once `game-thread` is on) | [Unreal example](../examples/unreal/README.md) |
 | Put the agent into a process, or host it in a mod (T4) | [hosting](hosting.md) |
 | Write a client or change the wire format | [clients](client.md), [protocol](protocol.md) |
 | Keep a mod's logic or a tool outside the game, with a lean DLL inside | [outside programs](outside-programs.md) |
@@ -56,10 +56,10 @@ the README's paste prompts send an agent there.
 | [agents/update.md](agents/update.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write` (and timed writes, `writes`), `search`, captures (`watch-start`), typed layouts |
-| [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
-| [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`--rtti`), pointer chains, regions, strings |
+| [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search` for text, `sig-check` |
+| [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`rtti`), pointer chains, regions, strings |
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `get`, labels, readable names, native members |
-| [commands/capture.md](commands/capture.md) | which command for which question about change; `get --snap`, timing an action |
+| [commands/capture.md](commands/capture.md) | which command for which question about change; `get` snapshots, timing an action |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
 | [commands/reference.md](commands/reference.md) | every verb in full (args with their help, result, notes, an example call), the general notes, the shared `view` keys and the error kinds, generated from the verb table |
 | [hosting.md](hosting.md) | Unreal and own-thread examples, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
@@ -67,7 +67,7 @@ the README's paste prompts send an agent there.
 | [outside-programs.md](outside-programs.md) | the core as a lean in-process proxy for an outside program: what it gives, limits, what fits |
 | [protocol.md](protocol.md) | shared section, exchange and hold, handshake, ops, statuses, limits |
 | [design.md](design.md) | principles, decisions, rejected alternatives, not now |
-| [tool-interface.md](tool-interface.md) | the self-describing console and the tool interface: verb table, `help --json`, generated functions, MCP tools, their decisions |
+| [tool-interface.md](tool-interface.md) | the self-describing console and the tool interface: verb table, `help` with `json`, generated functions, MCP tools, their decisions |
 | [contributing.md](contributing.md) | layers, adding a command, source layout, tests, code rules, where each doc fact goes |
 | [ideas.md](ideas.md) | backlog with triggers; what is out |
 | [positioning.md](positioning.md) | the pitch, role among other tools, low footprint, safety model, what it is not |
@@ -84,18 +84,18 @@ offers (`packs`). **T3** commands also need the game thread
 | Command | Needs | Page |
 |---|---|---|
 | `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
-| `write --hold`, `writes` | T0 | [memory](commands/memory.md#timed-writes) |
+| `write` with `hold`, `writes` | T0 | [memory](commands/memory.md#timed-writes) |
 | `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
-| `write --undo` | T0; the owner check needs T1 | [memory](commands/memory.md#timed-writes) |
-| `search`, `search-job` | T0 | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
-| `read --type "<layout>"` | T0 | [memory](commands/memory.md#typed-layouts) |
-| `read --type cstr\|wstr`, `<addr>->off`, `vtable`, `vtable --rtti` | T0 | [native objects](commands/native-objects.md) |
+| `write` with `undo` | T0; the owner check needs T1 | [memory](commands/memory.md#timed-writes) |
+| `search`, `search-job` | T0 | [memory](commands/memory.md#search) (text: [fast lane](commands/fast-lane.md#search-text)) |
+| `read` with a layout `type` | T0 | [memory](commands/memory.md#typed-layouts) |
+| `read` with `type` `cstr\|wstr`, pointer chains, `vtable`, its `rtti` | T0 | [native objects](commands/native-objects.md) |
 | `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |
 | `disasm`, `xrefs`, `touches` | T0 | [fast lane](commands/fast-lane.md) |
-| `sig-check`, `sig-check --file`, `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
+| `sig-check` (one `pattern` or a `file`), `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
 | `labels-sign`, `labels-port` | T0 | [labels](commands/unreal.md#names-that-survive-a-patch) |
 | `find`, `describe`, `name`, `name-find` | T1 | [Unreal pack](commands/unreal.md) |
-| `get --types`, `entries`, `func`, `funcs`, `enum` | T2 (`func`'s `params`: T3) | [Unreal pack](commands/unreal.md) |
+| `get` with `mode` `types`, `entries`, `func`, `funcs`, `enum` | T2 (`func`'s `params`: T3) | [Unreal pack](commands/unreal.md) |
 | `rows` | T2 | [Unreal pack](commands/unreal.md#rows) |
 | `call`, `call-pure`, `release`, `script`, `refs`, `trace` | T3 | [Unreal pack](commands/unreal.md) |
 | `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal pack](commands/unreal.md) |
@@ -103,14 +103,14 @@ offers (`packs`). **T3** commands also need the game thread
 | `layout-export`, `layout-check` | T2 | [Unreal pack](commands/unreal.md#layouts-in-bulk) |
 | `export-assets` | T2 | [Unreal pack](commands/unreal.md#assets-to-files) |
 | `each` | T3 | [Unreal pack](commands/unreal.md#each) |
-| `census`, `census --diff` | T1 | [Unreal pack](commands/unreal.md#census) |
-| `get` (every field, `--match`, `--nonzero`, `--own`) | T2 | [Unreal pack](commands/unreal.md#get), paths: [console](commands/console.md#fewer-round-trips) |
-| `export-labels` | T3 (native exec thunks); other `--kinds` T2 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
-| `peek --label` | T0 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
+| `census`, its `diff` | T1 | [Unreal pack](commands/unreal.md#census) |
+| `get` (every field, `view.match`, `view.nonzero`, `own`) | T2 | [Unreal pack](commands/unreal.md#get), paths: [console](commands/console.md#fewer-round-trips) |
+| `export-labels` | T3 (native exec thunks); other `kinds` T2 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
+| `peek` with `label` | T0 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `label` | T2 | [Unreal pack](commands/unreal.md#native-members) |
-| `get --snap`, `get --changed` | T2 | [capture](commands/capture.md) |
-| `get <obj> <path>...`, `--meta` | T2 | [console](commands/console.md#fewer-round-trips) |
-| `batch`, `--timing` | T0 | [console](commands/console.md#fewer-round-trips) |
+| `get` with `mode` `snap` or `changed` | T2 | [capture](commands/capture.md) |
+| `get` with `paths`, `meta` | T2 | [console](commands/console.md#fewer-round-trips) |
+| `batch`, `timing` | T0 | [console](commands/console.md#fewer-round-trips) |
 | `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
 | `stats`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-stats) |
 
@@ -139,13 +139,13 @@ offers (`packs`). **T3** commands also need the game thread
 | Tick | one host call of `Tick`; on the engine's thread, one moment of the game |
 | Held request | a request that says more follow, so the agent runs the next in the same tick ([protocol](protocol.md#exchange)) |
 | `same_tick` | whether a `batch` or `get` ran in one tick ([console](commands/console.md#fewer-round-trips)) |
-| Ref, `$N` | an object address with its table slot and serial, so a replaced object is detected; `$N` is result N of the last command that lists refs ([console](commands/console.md#addresses-and-refs)) |
+| Ref | an object address with its table slot and serial, `0x<address>#<index>:<serial>`, so a replaced object is detected; pass the literal ref a result printed ([console](commands/console.md#addresses-and-refs)) |
 | `module` + `rva` | an address as module and offset, stable across launches; the bridge to static tools |
 | Fast lane | one-address code questions answered from live bytes, no database ([fast lane](commands/fast-lane.md)) |
-| Pin | bytes rewritten every tick until it expires: `write --hold` ([memory](commands/memory.md#timed-writes)) |
+| Pin | bytes rewritten every tick until it expires: `write` with `hold` ([memory](commands/memory.md#timed-writes)) |
 | Trial | one guarded write that restores itself on expiry or clear ([memory](commands/memory.md)) |
-| Root | an object the host can always find again, for `watch-start --follow` |
+| Root | an object the host can always find again, for `watch-start` with `follow` |
 | Verb table | one row per console verb: its arguments (key, type, default) and result type; `help`, parsing, JSON calls, the results page, strict Python results, the generated functions and the MCP tools read it ([design](tool-interface.md#self-describing-console)) |
-| JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the typed line is shorthand for it ([console](commands/console.md#json-calls)) |
+| JSON call | a console input line `{verb, args}` with arguments named by the row's keys; the console's only input form ([console](commands/console.md#json-calls)) |
 | Cache file | `%TEMP%\reagentlive-<pid>.cache`: state kept between console runs ([console](commands/console.md#fewer-round-trips)) |
 | Usage log | `<console>.usage.jsonl`: one line of facts per console call, read by `stats` ([console](commands/console.md#usage-log-and-stats)) |

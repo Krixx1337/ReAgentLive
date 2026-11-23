@@ -304,7 +304,7 @@ client asks for the next page from the count it has. `FieldsPageWriter` and
 refuses a page whose offsets or ref numbers fall outside it. The layout hash
 includes both struct sizes, so a console and agent from different revisions
 refuse each other. For a single struct field or an array of structs, a
-record carries the struct object's ref and name; `get --types` on that ref lists
+record carries the struct object's ref and name; `get` with `mode` `types` on that ref lists
 its members.
 
 For a map or set, a record carries the key (a set's element) in the

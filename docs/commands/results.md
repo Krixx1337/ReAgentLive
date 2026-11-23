@@ -1,6 +1,6 @@
 # Result shapes
 
-<!-- Generated from `help --json` (tests/table: `reagentlive-table --write docs/commands/results.md`). Do not edit: change the verb's row or its result struct. -->
+<!-- Generated from `help` with `json` (tests/table: `reagentlive-table --write docs/commands/results.md`). Do not edit: change the verb's row or its result struct. -->
 
 What each verb takes and the keys of its `result`, as the console itself reports them:
 `help` lists the verbs, `help` with `verb` shows one (args, result, notes, an example call) and
@@ -35,8 +35,8 @@ one, `[]` a list, `{...}` an object's keys (`view` is the shared output-shaping 
 - A key that does not apply is omitted; results hold no nulls outside game values.
 - An arg may add optional keys and never changes a key's type.
 - **Writes or calls.** marks a verb that writes the target's memory or calls into it; every other verb
-  only reads (`help --json` carries it as `writes`).
-- **Pack** is the workflow a verb serves (`help --json` lists them under `packs`): `explore`, `native`,
+  only reads (`help` with `json` carries it as `writes`).
+- **Pack** is the workflow a verb serves (`help` with `json` lists them under `packs`): `explore`, `native`,
   `observe` or `modify`. A console's `--packs` and the MCP adapter's packs pick by it; every verb marked
   writes or calls is in `modify`.
 
@@ -106,7 +106,7 @@ one, `[]` a list, `{...}` an object's keys (`view` is the shared output-shaping 
 
 ## Named types
 
-Types that several results share, as `help --json` lists them under `types`.
+Types that several results share, as `help` with `json` lists them under `types`.
 
 | Type | Definition |
 |---|---|

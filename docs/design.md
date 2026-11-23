@@ -32,7 +32,7 @@ Current behaviour lives in the [command pages](INDEX.md#commands),
   recording is a write the host approves. Taken because "what did the game
   pass to this function" has no read-only route, a watch sees only state,
   and the swap touches nothing the engine does not itself rewrite. The
-  second is the host helper `reagentlive::ue-draw`: on `game-thread on` it
+  second is the host helper `reagentlive::ue-draw`: when `game-thread` arms it, it
   writes one pointer in the game viewport object, pointing it at a private
   copy of its interface vtable
   ([decision](#a-game-thread-tick-through-the-viewports-draw)). Code, the
@@ -41,7 +41,7 @@ Current behaviour lives in the [command pages](INDEX.md#commands),
   verb that writes the target or calls into it carries `writes` and sits
   in the `modify` [tool pack](tool-interface.md#tool-packs); the mark is
   exact per verb, so a read-only verb has no argument form that writes or
-  calls (`each` reads; its getter form is `call-pure --each`). The
+  calls (`each` reads; its getter form is the verb `call-each`). The
   console's `--packs` is the ceiling: a verb past it is refused (kind
   `pack`), `batch` items included, whichever frontend sent it. The MCP
   adapter and the Python session pass their ceiling on, so one check
@@ -112,8 +112,8 @@ on live samples), where time and context went for no gain.
 - **Compact values by default.** A struct prints as `{Name: value}`; full
   member metadata made up most of nearly every command's output and was
   flattened by hand per call. One rule for every struct, vectors included:
-  a shorter special case for vectors was rejected. `--meta` restores the
-  layout; `get --types` keeps it, being the layout mode.
+  a shorter special case for vectors was rejected. `meta` restores the
+  layout; `get` with `mode` `types` keeps it, being the layout mode.
 - **Calls explain themselves.** An outputs-only call gets a zeroed block;
   refusals name the parameter and the reason in terms of it. A message that
   reads as true of the input it refuses ("parameters are plain outputs:
@@ -127,7 +127,7 @@ on live samples), where time and context went for no gain.
 - **Census pages slice the stored census.** A rescan per page would shift
   rows between pages as counts change; the last census (with samples) and
   the one before it are kept in the session and cache file instead, so the
-  pages of one filter join. `--limit 0` stays for all rows at once.
+  pages of one filter join. A `view.limit` of 0 stays for all rows at once.
 - **`get` reads its values after resolving every path.** Reading each value
   as its path resolved put console work (field table pages, pointer hops)
   between held requests; past the agent's short wait for the next request,
@@ -143,10 +143,10 @@ on live samples), where time and context went for no gain.
   `<console>.native.txt`. Reflected names follow their field across patches;
   native offsets do not, so each line carries the main image's PE
   timestamp and shows `stale` under another one. Typed layouts share one
-  syntax with `read --type`, so a decoded layout pastes into `label`.
+  syntax with `read`'s `type`, so a decoded layout pastes into `label`.
 - **A capture that does not hold the console**, without a second channel:
-  the capture belongs to the agent instance (`watch-start`, `-read`,
-  `--stop`), bounded by the existing buffer, so a long capture and other
+  the capture belongs to the agent instance (`watch-start`, `watch-read`,
+  `watch-stop`), bounded by the existing buffer, so a long capture and other
   questions overlap. Following a replaced object asks the host: the core
   knows no names, a host offers roots through one optional callback.
 
@@ -154,8 +154,9 @@ From one autonomous read-only agent session through the MCP tools only,
 where every question was answered and the cost was output and turns:
 
 - **Wrong-looking answers first, then output, then turns.** A one-hop chain
-  (`X->0`) answered the bytes at `X` with `hops: []`: right by the rule
-  that the last `->off` only adds, and read as a followed pointer. It is
+  (offset 0 after an address) answered the bytes at that address with
+  `hops: []`: right by the rule that the last offset only adds, and read as
+  a followed pointer. It is
   refused with the form that follows one. A misspelt JSON key (`class_`)
   was reported as a left-out argument; unknown keys are now checked first
   and named with the verb's own. Refusals state their limit's number.
@@ -185,7 +186,7 @@ where every question was answered and the cost was output and turns:
 - **Not built:** a tolerance search (narrowing by change over one range is
   [`mem-diff`](commands/memory.md#mem-snap-and-mem-diff); the rest is a
   memory scanner's) and a mark on pooled instances
-  (game knowledge, a host's verb). A bool's `--nonzero` already tested its
+  (game knowledge, a host's verb). A bool's `view.nonzero` already tested its
   bit; readable names already worked in `get` paths.
 
 ## Usage log
@@ -213,26 +214,26 @@ whoever improves the tool or a skill across sessions.
   ends on any other verb (kind `startup`), so a client starts it again.
 - **Marks, not advice.** `unfiltered`, `repeated` and `refused` state what
   happened; the skill says what to do. `unfiltered` uses a fixed list of
-  filter flags (`--match`, `--nonzero`, `--own`, `--changed`, `--cls`,
-  `--limit`) rather than a mark on each flag's row: the same names mean
-  the same thing on every verb, and a row mark would change `help --json`
+  filter keys (`view`'s `match`, `nonzero` and `limit`, `own`, `cls`)
+  rather than a mark on each key's row: the same names mean
+  the same thing on every verb, and a row mark would change `help`'s `json`
   and every generated module for no caller's gain.
 - **A batch's commands get their own lines**, under their own verbs, and
   the batch one for its wrapper alone, so per-verb figures stay true and
   totals count nothing twice.
-- **The caller's own calls are not recorded:** `help --json` (every
+- **The caller's own calls are not recorded:** `help` with `json` (every
   session client reads the table at start) and `quit`.
 
 | Rejected | Why |
 |---|---|
-| Recording in the MCP adapter | misses scripts and the text line, and a second log would be wanted for them |
+| Recording in the MCP adapter | misses scripts and shell calls, and a second log would be wanted for them |
 | A stats service or a database | the console keeps state in files; there is no daemon ([round trips](#round-trips)) |
 | Storing arguments or results | size, and the target's data in a file that outlives the session |
 | A warning inside a large result | more output to cure output; the agent asks `stats` when it wants to know |
 | Counting tokens | depends on the model; characters rank the same verbs |
-| Advice in the result ("use `--match`") | a rule wrong for one call misleads; the marks state what happened |
+| Advice in the result ("use `view.match`") | a rule wrong for one call misleads; the marks state what happened |
 | Per-session files | all-time figures would read many files; one file with a session on each line gives both |
-| A `caller` key on each JSON call (to leave out a client's table read) | another key on every call for one line; leaving `help --json` out covers it |
+| A `caller` key on each JSON call (to leave out a client's table read) | another key on every call for one line; leaving `help` with `json` out covers it |
 
 ## Place among other tools
 
@@ -259,11 +260,11 @@ borrowed:
 
 | Need | Borrow from | Not built here because |
 |---|---|---|
-| What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch-start` for the tick a value changes on, `write --undo` or `--hold` to tell a value recomputed every tick from one set once, and `func --script` or `refs` for Blueprint readers |
+| What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch-start` for the tick a value changes on, `write` with `undo` or `hold` to tell a value recomputed every tick from one set once, and `script` or `refs` for Blueprint readers |
 | Narrowing scans over the whole process, pointer scans | a memory scanner | large, and needs no tick or identity. A bounded one over one range (`mem-snap`, `mem-diff`, up to 1 MiB) is built: an AI agent cannot drive the scanner's window, and the range is usually an object it already found |
 | Tracing native code, direct C++ calls, code hooks | a dynamic instrumentation tool | code patches in the target; the core writes none. Reflected calls are covered by the call recorder (`calls-start`), one `UFunction` pointer |
 | What is at one address, what points at it, what uses a member offset, whether a signature holds there | nothing: the [fast lane](#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |
-| Decompiling, types, whole-program call graphs | a static analysis tool, fed by fast-lane saves (`--save --callees`) | it has the decompiler and the types; ReAgentLive hands it the live functions it needs in seconds |
+| Decompiling, types, whole-program call graphs | a static analysis tool, fed by fast-lane saves (`disasm`'s `save` with `callees`) | it has the decompiler and the types; ReAgentLive hands it the live functions it needs in seconds |
 
 - **Be a good neighbour, not a rival.** Hand addresses over in a form other
   tools take (`module` and `rva`) and accept them back; that is ReAgentLive's
@@ -302,7 +303,7 @@ trials against a host.
 
 ```text
      Python scripts        MCP tools           (one console per call)
-            └──── JSON calls, help --json ───┐
+            └──── JSON calls, verb table ────┐
      a shell's -c, JSON calls ───────────────┤
                                      console (frontends/cli): the command layer
                                              │ typed C++ calls, std::expected results
@@ -353,7 +354,7 @@ sits on the console.
 | **CLI** | JSON calls only (one per line, from stdin, `-c` or `-c @<file>`), typed values, hex dump | exists, on the client API; one [verb table](tool-interface.md#self-describing-console) describes every command and its args ([JSON-only contract](tool-interface.md#json-only-contract)) |
 | **GUI** (later) | ImGui desktop window on the console's JSON calls | tables, watch panels |
 | **Python** | `frontends/python/reagentlive_session.py`: starts the console and exchanges one JSON call per command; `reagentlive_gen.py` generates typed functions per console | exists; no logic of its own, so every command lands in the console first; results are strict against the console's table |
-| **Static-tool side** | `frontends/ida/reagentlive_ida.py`: loads `disasm --save` files, imports the console's labels file and exports the names you gave back into it | exists; reads and writes files, never talks to the agent: the shared labels file is the link, the agent driving both tools is the bridge |
+| **Static-tool side** | `frontends/ida/reagentlive_ida.py`: loads files `disasm`'s `save` wrote, imports the console's labels file and exports the names you gave back into it | exists; reads and writes files, never talks to the agent: the shared labels file is the link, the agent driving both tools is the bridge |
 | **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per row of the console's table | exists; on the console's JSON calls ([tool interface](tool-interface.md#tool-interface)) |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
 
@@ -366,7 +367,7 @@ made from it.
 
 ## Self-describing console and tool interface
 
-The verb table, `help --json`, the generated Python functions and the MCP
+The verb table, `help` with `json`, the generated Python functions and the MCP
 tools, with their decisions and rejected alternatives:
 [tool interface](tool-interface.md).
 
@@ -445,14 +446,14 @@ tools, with their decisions and rejected alternatives:
   a field within one build.
 - **Static-tool names: borrow mappings where they exist** (seen live: the
   SDK generator's mappings named 17,652 exec functions and 21,613 types;
-  `export-labels --kinds interface,global` then named 213 more, the
+  `export-labels` with `kinds` interface and global then named 213 more, the
   generator's own static-FName naming having failed on an unanalysed
   database). Not checked: whether a full export after the mappings would
   comment rather than rename the generator's names; the docs say not to run
   one. A host whose SDK
   generator writes IDA mappings (Dumper-7) imports those first for exec
-  thunks, vtables, types and engine globals; `export-labels --kinds
-  interface,global` then adds only what needs the running process. ReAgentLive
+  thunks, vtables, types and engine globals; `export-labels` with `kinds`
+  interface and global then adds only what needs the running process. ReAgentLive
   never requires or reads those mappings, and keeps every kind so it can
   name a database alone. Rejected: dropping the `exec` and `vtable` kinds
   (another tool would become a requirement).
@@ -471,7 +472,7 @@ tools, with their decisions and rejected alternatives:
   everything (a C++ exception or a debug break belongs to the engine) and
   no guard (one wrong block ended the process and the investigation).
 - **`call-pure` is a read the agent checks.** A const or blueprint-pure
-  function whose outputs own nothing is what `call-pure --each` calls on every instance,
+  function whose outputs own nothing is what `call-each` calls on every instance,
   and the skill already called such getters without approval; the verb
   makes the claim checkable (`CallPure`, refused before calling) and gives
   it a read-only tool. The flag is the engine's convention, not a proof,
@@ -485,9 +486,9 @@ tools, with their decisions and rejected alternatives:
   fix). `FindExact` stops at the first match. Rejected for now: a
   name-to-class index built by one scan (thousands of pages for the
   classes of a large game; the exact find makes a miss the only full scan).
-- **A class index for `find --cls` and `each`.** Measured live on a table
+- **A class index for `find` by `cls` and `each`.** Measured live on a table
   of about 410 000 objects at 55 ticks per second and a 4 ms scan budget:
-  `find --cls` took 4.4 s and `find <text>` 0.7 s, both in the agent (two
+  `find` by `cls` took 4.4 s and `find` by `text` 0.7 s, both in the agent (two
   round trips). The class walk cost about six times the name walk per
   object: each distinct class's parent chain was checked with a
   `VirtualQuery` per step. Now the agent keeps per slot the object last
@@ -503,11 +504,11 @@ tools, with their decisions and rejected alternatives:
   space ran for minutes, timed out and lost its work, holding the
   console's one request slot meanwhile. Now the agent keeps one job,
   scanned on the worker or between requests, and the console polls it up
-  to `--wait`; the default range is the main module. Rejected: a `--job`
-  flag beside the blocking form (two result shapes for one verb); a job
+  to `wait`; the default range is the main module. Rejected: a job
+  option beside the blocking form (two result shapes for one verb); a job
   kept in the console (gone when a one-shot console exits, and the
   agent's slot still busy); separate status and stop verbs (one
-  `search-job` with `--stop`). The console's own scans (`xrefs`, `sig`,
+  `search-job` with `stop`). The console's own scans (`xrefs`, `sig-check`,
   `labels-sign`) stay blocking: they cover one module and need every page.
 - **Known debt: the interface stub pattern decodes bytes in the agent.**
   `func` on an interface function matches one stub shape
@@ -555,7 +556,7 @@ without an SDK (serials are not known).
 ### A game-thread tick through the viewport's Draw
 
 **Decision.** `reagentlive::ue-draw` gives a host that ticks off the game
-thread a tick on it, with no per-build address: on `game-thread on` it
+thread a tick on it, with no per-build address: when `game-thread` arms it, it
 finds the first live `GameViewportClient` with `FirstLiveInstance`, copies
 the vtable of its Draw interface (`ViewportInterfaceOffset`, entry
 `ViewportDrawIndex` in `engine_layout.h`, confirmed per game before the
@@ -599,12 +600,12 @@ a time, since its own thread and Draw both tick the agent.
   whether a caller is the better place) that an agent does from the static
   tool's disassembly without a generator. What it cannot know alone is the
   result in the image the host really scans, DLLs with no database
-  included, so `sig --check` is a strict checker whose feedback names the
+  included, so `sig-check` is a strict checker whose feedback names the
   next correction: `mismatches` at the expected address, `diverges_at` per
   extra hit, `warnings` for unmasked addresses (a few byte patterns, not a
-  decoder), `--resolve` for reference signatures, `--file` for many at
-  once, and `sig --bytes` as a start without a static tool. With a boundary
-  the reader gives (`--expect`, `--bytes`) the warnings and masks come from
+  decoder), `resolve` for reference signatures, `file` for many at
+  once, and `sig-bytes` as a start without a static tool. With a boundary
+  the reader gives (`expect`, `sig-bytes`) the warnings and masks come from
   the console's decoder, and the byte patterns only past where decoding
   stops. It runs in the
   console on the exact `search` (anchor) and `read-batch` (mask compare);
@@ -625,8 +626,8 @@ a time, since its own thread and Draw both tick the agent.
   signatures, and the only ones it makes come from that loop. Rejected:
   anything that makes its signatures better (later starts, caller
   fallbacks, ranking, looser masks, a generator's tiers), and a way to store
-  a hand-made one (`--pattern`; the row is one JSON line and `sig-check
-  --file` checks it). A name the loop cannot sign is signed by hand or left
+  a hand-made one (a pattern option; the row is one JSON line and
+  `sig-check` with `file` checks it). A name the loop cannot sign is signed by hand or left
   unsigned; a failure is never a reason to extend the loop.
 - **Rejected:** call graphs, decompiling, types and naming in ReAgentLive (the
   static tool has the whole image); symbol loading; ReAgentLive talking to the
@@ -642,11 +643,11 @@ database:
 
 | Question | Command |
 |---|---|
-| What are the instructions here, or the whole function? | `disasm` (`--function`) |
+| What are the instructions here, or the whole function? | `disasm` (`function`) |
 | What points here? | `xrefs` |
 | Which code near here uses these member offsets? | `touches` |
 | Is this pattern unique, and does it land here? | `sig-check` |
-| Decompile this function and what it calls | `disasm --function --save --callees`, then the static tool |
+| Decompile this function and what it calls | `disasm` with `function` and `save` (`callees`), then the static tool |
 
 - **The fence is invasiveness, not size.** Anything that reads live bytes
   and hands its result on is in scope, however much analysis it does:
@@ -659,12 +660,12 @@ database:
   read so far matched the file the static tool shows. That still holds; the
   reason is analysis time on large and packed images, not live code
   differing from the file.
-- **A whole function and its constants** (`disasm --function`): decoded
+- **A whole function and its constants** (`disasm` with `function`): decoded
   linearly to its entry's end, with the values its read-only loads read
   and the strings it points at. Reading every instruction by hand cost more
   calls than any other step in a live session.
-- **Saves for the static tool** (`--save`): the bytes and constants of a
-  function, its chunks (chained entries, switch targets) and, with `--callees`, every function it
+- **Saves for the static tool** (`save`): the bytes and constants of a
+  function, its chunks (chained entries, switch targets) and, with `callees`, every function it
   calls, named from a labels file; a small IDA loader builds one database
   from them and `add_saved` grows it. The decompiler is borrowed: a
   database of the whole image takes hours, a save seconds. Measured on a
@@ -689,8 +690,8 @@ database:
   Kinds, bounds, pieces, saves and `sig` feedback are console work.
 - **Not built, no case yet:** structured operands, struct recovery from
   offsets, and walking backwards from an unrecognised reference to its
-  instruction start (unreliable on x86 without analysis; `disasm
-  --function` shows it in place). **Out for good:** hooking a function to
+  instruction start (unreliable on x86 without analysis; `disasm`
+  with `function` shows it in place). **Out for good:** hooking a function to
   log its callers (a code hook; `xrefs` gives the static callers, and
   `calls-start` records reflected calls through a pointer swap).
 
@@ -706,10 +707,10 @@ answers what a native object is from live bytes, without a type system.
   by the same header reader as the fast lane's function bounds, and cached.
   A table is never inferred from neighbouring bytes.
 - **Pointer chains are a client library call**, so an outside program
-  follows `X->a->b` the same way the console does; the console only reads
+  follows a chain of offsets the same way the console does; the console only reads
   the `{"base", "chain"}` value. Writes, pins and trials refuse chains: a write goes where the
   caller read, never through pointers that may have moved since.
-- **Strings** (`--type cstr|wstr`) escape what they cannot print, so a dump
+- **Strings** (`read`'s `type` `cstr` or `wstr`) escape what they cannot print, so a dump
   never hides a byte.
 - **`region` is a core op** because only the target can ask Windows about
   its own memory; the agent passes `VirtualQuery`'s numbers through and the
@@ -725,17 +726,17 @@ answers what a native object is from live bytes, without a type system.
   hooks, native tracing and breakpoints (the call recorder swaps a
   `UFunction` pointer, never code); calling by symbol name (shipping images have
   none); floating-point arguments and callbacks until a case needs them.
-- **`vtable --rtti`: class names where the image has them.** Declined while the
+- **`vtable`'s `rtti`: class names where the image has them.** Declined while the
   one host checked (an engine game) had none for its game classes; built
   because a target with no engine pack is the case native objects exist
   for, and most native programs and libraries are built with type
   information. It is a one-address answer from bytes (locator, descriptor,
   hierarchy), console only, and refuses instead of guessing when the slot
-  before the table holds no locator. A flag on `vtable`, not a verb: the
+  before the table holds no locator. An arg of `vtable`, not a verb: the
   same input and the same question. Not used to label `peek` rows: one more
-  read per row for what one `vtable --rtti` answers.
+  read per row for what one `vtable` with `rtti` answers.
 - **Rejected:** a struct or type system in ReAgentLive (layouts come from
-  the engine pack, the host's SDK or the static tool; `read --type`
+  the engine pack, the host's SDK or the static tool; `read`'s `type`
   covers ad hoc ones).
 
 ## Source layout

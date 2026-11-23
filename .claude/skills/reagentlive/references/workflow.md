@@ -4,7 +4,7 @@
 
 1. **Question first.** Write the runtime question ("which field drops when
    I fire?") and what would answer it. Read what the project's docs record.
-2. **Locate.** `find --cls <Class>` lists instances; add name text to
+2. **Locate.** `{"verb": "find", "args": {"cls": "Pawn"}}` lists instances; add `text` to
    narrow. Name text matches anywhere, so short text floods the page: use a
    distinctive suffix or a class.
 3. **Navigate.** `get` an owner object and follow the printed refs instead
@@ -12,7 +12,7 @@
 4. **Decode.** Names print as text; `name` resolves a leftover `#N`.
    Readable names for obfuscated fields are hints: trust offsets, sizes and
    types.
-5. **Observe change.** `get --snap`, the user acts, `get --changed`; or a
+5. **Observe change.** `get` with `mode` `snap`, the user acts, `mode` `changed`; or a
    capture for sequences. Pick the object that owns the data: no changed
    rows usually means the wrong object (position lives on a scene
    component, not the pawn). An action that resets at once (a jump): the
@@ -26,7 +26,7 @@
    only the new logic explains), then the evidence record.
 8. **Name it once.** A member: `label`. A native function: name it in the
    static tool, then `export_names` into the host's names file. A global:
-   `peek --label`. Then `labels-sign`, so `labels-port` finds them after a
+   `peek` with `label`. Then `labels-sign`, so `labels-port` finds them after a
    patch. Later saves show those names: read a save's names before working
    out a function again.
 

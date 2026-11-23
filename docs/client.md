@@ -6,15 +6,15 @@
 default), the console (a person at a shell, quick checks), Python (loops
 and comparisons over many results) and the C++ client (your own tools).
 Every one speaks the same verbs with the same argument names, so what
-`help <verb>` shows holds everywhere. Only the console's typed lines take
-`$N`; the rest pass the literal `ref` a result printed.
+`help` with `verb` shows holds everywhere, and every one passes the
+literal `ref` a result printed.
 
 ## Which one
 
 | Interface | Use it for | Start here |
 |---|---|---|
 | **MCP tools** | an AI agent: one typed tool per verb, arguments checked before they are sent, writes marked so the client asks | [MCP tools](#mcp-tools) |
-| **Console** | a person at a shell, a quick check, no MCP registered | type `help`, then `<console> -c "find X; get $1"` ([console](commands/console.md)) |
+| **Console** | a person at a shell, a quick check, no MCP registered | `<console> -c '{"verb": "find", "args": {"text": "X"}}'` ([console](commands/console.md)) |
 | **Python** (generated functions, `Session`) | loops, sweeps, comparisons, long captures: logic that should not be twenty tool calls | [generated functions](#generated-python-functions) |
 | **C++ client** | your own tool or outside program, linking the library | [C++ client](#c-client) |
 | IDA label import (a helper) | bringing the console's labels into an IDA database | [helpers](#helpers) |
@@ -31,10 +31,11 @@ revision; the layout check refuses a mismatched pair
 
 Each host ships a console executable (the examples': `reagentlive.exe`,
 `reagentlive-ue.exe`). It is the one frontend that owns behaviour; every
-other interface calls it or the same requests. How to drive it (typed
-lines, JSON calls, `$N` and refs, budgets, `batch`, the cache file,
+other interface calls it or the same requests. How to drive it (JSON
+calls, addresses and refs, budgets, `batch`, the cache file,
 one-shot runs, arguments, the usage log): [console](commands/console.md).
-What each verb takes and returns: `help <verb>` and
+What each verb takes and returns: `help` with `verb`, the
+[verb reference](commands/reference.md) and
 [result shapes](commands/results.md).
 
 A console attaches to one section name, which its host chose: the
@@ -73,7 +74,7 @@ auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 ## Generated Python functions
 
 `frontends/python/reagentlive_gen.py` writes a module for one console from
-its `help --json` (no target needed), a host's verbs included:
+its `help` with `json` (no target needed), a host's verbs included:
 
 ```
 python src/reagentlive/frontends/python/reagentlive_gen.py --console <console.exe> -o <scratch>/my_console.py
@@ -89,17 +90,17 @@ from reagentlive_session import Session
 from my_console import Console
 with Session(r'path\to\console.exe') as s:
     c = Console(s)
-    pawn = c.ue.find('Pawn', cls='Pawn')['rows'][0]['ref']
-    c.ue.get(pawn, ['Health', 'Controller.PlayerState'])
-    c.read(0x7ff600001000, 16, type='u32')
+    pawn = c.ue.find(cls='Pawn', view={'limit': 1})['rows'][0]['ref']
+    c.ue.get(pawn, paths=[['Health'], ['Controller', 'PlayerState']])
+    c.read('0x7ff600001000', len=16, type='u32')
 ```
 
 - **One method per verb, named by origin:** core verbs on `Console`
   (`c.read`, `c.sig_check`), a pack's and the host's under their origin
-  (`c.ue.find`, `c.host.world`). Positionals in order, flags as
-  keyword-only arguments, named by the console's keys (the table refuses
-  a Python keyword: `cls`, `start`, `type`). A positional that takes several values takes
-  a list, except bytes, patterns and text, which are one string (or
+  (`c.ue.find`, `c.host.world`). Required arguments first (by
+  position or name), the others keyword-only, named by the console's keys
+  (the table refuses a Python keyword: `cls`, `start`, `type`). An
+  argument that takes several values takes a list, an object a dict, except bytes, patterns and text, which are one string (or
   `bytes`). Each docstring is the verb's usage, arguments and notes.
 - **Every verb but `quit`:** a host's blocking ones are there too and
   hold the script for their duration, unlike MCP, which leaves them out.
@@ -114,7 +115,7 @@ with Session(r'path\to\console.exe') as s:
   (below), key for key what the console printed; an `addr` stays its hex
   text.
 - **Literal refs:** calls go as JSON, which takes the `ref` a result
-  printed and refuses `$N` ([JSON calls](commands/console.md#json-calls)).
+  printed ([JSON calls](commands/console.md#json-calls)).
 - **A stale module does not run:** it carries the table hash, and
   `Console(s)` raises `StaleTableError` when the console's differs.
   Generate it again after a build that changes any row.
@@ -126,14 +127,14 @@ through its stateful stdin mode, standard library only. The generated
 module calls through it; scripts use it for the rest.
 
 - **Results are strict.** At start the session reads the console's verb
-  table (`help --json`) and wraps every result in a `Record` typed by its
+  table (`help` with `json`) and wraps every result in a `Record` typed by its
   verb's row. A key the result type lacks raises `ResultKeyError` naming
   the valid keys; an optional key that is absent gives `None`; nested
   objects, named types and list rows are strict too. A key guessed wrong
   fails on the line that guessed it, never as a quiet `None` or a caught
   `KeyError`. `record.raw` is the plain dict.
 - `s.call(verb, args)` sends one JSON call with arguments named as
-  `help <verb>` shows them (None and False left out, bytes as hex) and
+  `help` with `verb` shows them (None and False left out, bytes as hex) and
   returns the strict result. `s.help('<verb>')` shows a verb's arguments
   and result keys; `s.send(line)` is the raw exchange (the envelope as
   plain dicts).
@@ -142,15 +143,15 @@ module calls through it; scripts use it for the rest.
   result or a `ReAgentLiveError`) and the module's `samples(result)` (a
   watch's rows with values as bytes). Nothing else in the session names a
   verb. Paging, filtering and retrying are the console's: follow
-  `next_cursor` with `start`, or use the verb's limit flag
-  (`census --limit 0`).
+  `next_cursor` with `view.start`, or use the verb's `view.limit`
+  (0 for every row on `census`).
 - `s.table_hash` is the console's `table_hash`.
 - `Session(console, args, caller='script')` starts the console with
   `--caller`: its [usage log](commands/console.md#usage-log-and-stats)
   counts a script's output apart from an agent's context. Pass
   `caller='tool'` when an agent reads every result. `table=` takes a
-  `help --json` result read before: the session then asks only for the
-  hash (`help --hash`) and reads the table again only when it changed.
+  `help` with `json` result read before: the session then asks only for the
+  hash (`help` with `hash`) and reads the table again only when it changed.
 - `Session(console, packs=['explore', 'native', 'observe'])` runs the
   console with that [`--packs`](commands/console.md#one-shot-use)
   ceiling: the generated module keeps every verb, and a call outside the
@@ -160,7 +161,7 @@ module calls through it; scripts use it for the rest.
   console's own waits still apply (2 s for a busy agent, then `busy`).
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
   value into bytes, `f32`/`u64`/... decode those bytes, and `pack` goes
-  the other way: `f32(unhex(c.read(a, 4)['hex']))`.
+  the other way: `f32(unhex(c.read(a, len=4)['hex']))`.
 
 Errors raise `ReAgentLiveError` with the console's error object. Use it
 instead of hand-written session loops or parsing console JSON. Separate
@@ -180,7 +181,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
   host's with its origin (`ue_find`, `host_world`); `-` becomes `_`
-  (`sig_check`). The adapter reads the console's `help --json` (no target
+  (`sig_check`). The adapter reads the console's `help` with `json` (no target
   needed) and makes each tool from its row: the argument schema from the
   row's arguments (named by the row's keys, so a call goes on as the
   console's JSON call), the result schema from its result's top-level
@@ -227,7 +228,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   on, and none marked as writing: a write, call or `game-thread` inside it
   is refused, so it goes as its own tool and is approved.
 - **State in arguments:** tools take the literal refs results carry and
-  the ids of pins, trials and captures; `$N` is refused.
+  the ids of timed writes and captures.
 - **A console per call:** each tool call starts the console and ends it,
   one call at a time. Another client on the same agent (a script, a second
   server) makes the console wait up to 2 s, then refuse as `busy`.
@@ -236,7 +237,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   new build. With no target the console answers `help` and `stats` and
   refuses the rest as `startup`.
 - **A rebuilt console's tools:** each start reads the table's hash
-  (`help --hash`). When it changed, the adapter reads the new table before
+  (`help` with `hash`). When it changed, the adapter reads the new table before
   the call runs and tells the client the list changed. A client that asks
   again gets the new list with no reconnect; one that ignores the notice
   keeps working for verbs whose arguments and result did not change, and
@@ -245,7 +246,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   tool returns the console's `digest` and a text naming the call to make
   next, or the file holding the result of a call that must not run again
   ([output budgets](commands/console.md#fewer-round-trips)).
-- **Usage:** every console runs with `--caller tool` and one `--session`
+- **Usage:** every console runs with `--caller tool` and one session id
   per server, so `stats` counts every tool result as context and groups
   the server's calls. Each result goes to the client twice, as text and
   as structured content.
@@ -260,7 +261,8 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 - The server's instructions mark text read from the target (names,
   strings, chat) as untrusted data: in a multiplayer game other people
   write much of it, so an agent must never act on it as an instruction.
-- `--name` sets the server name clients show (default `reagentlive`).
+- The name option (in the usage above) sets the server name clients
+  show (default `reagentlive`).
 - Needs the MCP Python SDK 2 (`pip install --upgrade "mcp>=2"`; its low-level
   server). A rebuilt console's new tool list reaches a 2026-07-28 client on its
   `subscriptions/listen` stream and an older one as a plain notification. Check a
@@ -272,7 +274,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 Not interfaces: they never drive the agent.
 
 - **IDA side** (`frontends/ida/reagentlive_ida.py`, one file in IDA's
-  loaders folder): loads what `disasm --save` wrote, so IDA decompiles it
+  loaders folder): loads what `disasm`'s `save` wrote, so IDA decompiles it
   without the whole image
   ([saving a function](commands/fast-lane.md#saving-a-function-for-a-static-tool)),
   and carries names both ways: `import_labels` brings in the console's

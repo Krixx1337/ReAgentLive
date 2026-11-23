@@ -1,6 +1,6 @@
 # Tool interface for scripts and agents
 
-*Home of:* the decisions behind the self-describing console and the tool interface (the verb table, `help --json`, JSON calls, the generated Python functions, the MCP adapter), with their rejected alternatives and measurements.
+*Home of:* the decisions behind the self-describing console and the tool interface (the verb table, `help` with `json`, JSON calls, the generated Python functions, the MCP adapter), with their rejected alternatives and measurements.
 
 **TL;DR:** Why the console describes itself and why scripts and AI agents
 call it the way they do. One verb table in the console is the source of
@@ -25,13 +25,13 @@ the console.
 - **The console executable is the source of truth.** One C++ verb table
   (`call/verb.h`; rows in `results/verbs.h` and `packs/ue/cli/results/verbs_ue.h`)
   describes each command's args and result type. The checks of a call,
-  its refusals, `help`, `help` of one verb, `help --json`, the generated
+  its refusals, `help`, `help` of one verb, `help` with `json`, the generated
   [result shapes](commands/results.md) page and the Python client's
   strictness all read it. Each shape used to be written five times
   (builder, key pins in a test, the docs row, a Python docstring, the
   skill) and agreed only because they were edited together.
-- **One verb, one result type.** A flag may add optional keys and never
-  changes a key's type (`census --diff` adds `before`; `read --type` with a
+- **One verb, one result type.** An arg may add optional keys and never
+  changes a key's type (`census`'s `diff` adds `before`; `read`'s `type` with a
   layout fills `layout`, not `values`); a mode that would change one stays a
   verb of its own (`sig-bytes`, `watch-start`). One name for a result's list
   (`rows`), one paging convention (`from`, `next_cursor`), `capped` for a
@@ -55,12 +55,12 @@ the console.
 - **`status` carries a hash of the table,** so a cached script or skill
   can tell it is stale. It describes the console build; agent
   compatibility stays the layout hash's job
-  ([protocol](protocol.md#handshake)). `help --json` carries it too and
+  ([protocol](protocol.md#handshake)). `help` with `json` carries it too and
   answers with no target running, so tools can read the table before a
   game does.
-- **Not `describe --json`:** `describe` is the Unreal pack's object lookup,
+- **Not a `json` arg on `describe`:** `describe` is the Unreal pack's object lookup,
   and one verb with two meanings is what the first decision removes.
-- **Strict Python results.** The session reads `help --json` at start and
+- **Strict Python results.** The session reads `help` with `json` at start and
   wraps each result; an unknown key raises and names the valid ones, an
   absent optional key gives `None`. The typed functions generated on top
   ([tool interface](#tool-interface)) return these same records.
@@ -88,19 +88,19 @@ the console.
   It is a second axis beside `origin`, which stays the code owner and the
   tool-name prefix. A verb marked `writes` is in `modify`; the other three
   hold none (a test checks every argument form of their verbs). `help`
-  lists the rows grouped by pack, `help --json` names the packs and their
+  lists the rows grouped by pack, `help` with `json` names the packs and their
   jobs under `packs`. What the packs are for: [tool packs](#tool-packs).
 - **Named types.** A struct several results share names itself
-  (`TypeName`): `help --json` lists it once under `types`, rows refer to it
-  (`{"named": "Chain"}`), and `help <verb>` prints the name and its
+  (`TypeName`): `help` with `json` lists it once under `types`, rows refer to it
+  (`{"named": "Chain"}`), and `help` with `verb` prints the name and its
   definition. A pack's names carry its prefix (`ue.Name`), so the core
   never lists a pack's shapes. `Object` (ref, name, class) is the core's,
   filled by a pack: `peek` is core and its object rows are typed without
   naming the pack.
 - **A pack gives its own title.** Each origin (`core`, a pack, `host`)
-  comes with a title in `help --json`; the generated results page takes
+  comes with a title in `help` with `json`; the generated results page takes
   its headings from there, so no core file spells a pack's id.
-- **Mixed verbs stay on the side of their state.** `write --undo` is the
+- **Mixed verbs stay on the side of their state.** `write`'s `undo` is the
   core's (the write, the undo, the guard); its owner check is borrowed
   from the pack through `console/pack.h`, and without a pack it is
   refused ([source layout](design.md#source-layout)).
@@ -113,7 +113,7 @@ Rejected:
 | `TypedDict` in place of strict records at run time | fails only under a type checker; `.get()` on a wrong key stays silent. The generated functions annotate with them and return records |
 | Every optional key present as `null` | a fixed shape, paid for in output on every call |
 | A separate frontend for AI agents | the console is that frontend; a second one splits the contract |
-| `--select <key>` on every command | deferred until a shell caller needs the strict layer's error where a JSON filter prints null |
+| An option selecting one result key on every command | deferred until a shell caller needs the strict layer's error where a JSON filter prints null |
 
 Open: how far `value` can be typed (a tagged shape for FNames, structs and
 containers, or documented rules as today).
@@ -125,7 +125,7 @@ command line or a script by hand: hand-written input is where guesses
 enter. The [self-describing console](#self-describing-console) made those
 guesses fail loudly; this removes the writing. Use: [clients](client.md).
 
-Every fact flows one way: the console's table, then `help --json`, then
+Every fact flows one way: the console's table, then `help` with `json`, then
 the generated Python functions and, beside them, the MCP tools. No layer
 defines what the table did not.
 
@@ -140,7 +140,7 @@ defines what the table did not.
   on. A call takes the `ref` a result carries, and the ids of timed
   writes and captures.
 - **Typed Python functions, generated per console** (`reagentlive_gen.py`)
-  from its `help --json`, so a host's verbs are included. One method per
+  from its `help` with `json`, so a host's verbs are included. One method per
   verb, required args first (by position or name), the others by name
   only, typed from the row; results
   annotated with `TypedDict`s of the console's keys, so a type checker
@@ -153,7 +153,7 @@ defines what the table did not.
   a core verb's name.
 - **MCP tools from the rows** (`frontends/mcp/reagentlive_mcp.py`, the
   only file that needs the dependency): the adapter reads the console's
-  `help --json` and makes each tool from its row: the input schema from
+  `help` with `json` and makes each tool from its row: the input schema from
   its args, the output schema from its result's
   top-level keys, the description from its summary, example call and notes,
   `readOnlyHint` or `destructiveHint` from `writes`. A call goes to the
@@ -183,7 +183,7 @@ defines what the table did not.
 - **Same shape as the console.** A function returns the console's result
   key for key; an `addr` stays its hex text. A helper that converts says
   so in its name. **Behaviour lives in the console:** paging to the end,
-  filtering and retrying are verbs, flags and cursors, so the shell,
+  filtering and retrying are verbs, args and cursors, so the shell,
   scripts and tools all have them; the Python paging helpers went.
 - **A console per tool call, never one kept open.** A kept console locked
   the executable (a rebuild failed to link) and kept running the old build;
@@ -191,7 +191,7 @@ defines what the table did not.
   client reconnected. Now each call starts a console and ends it: nothing
   holds the executable, and the next call runs the new build. JSON calls
   carry no session state; what runs share (class refs, field tables,
-  census baselines, the last `get --snap`) is in the cache file. Calls hold a
+  census baselines, the last `get` snap) is in the cache file. Calls hold a
   lock, since a second console would wait and then be refused as busy
   ([round trips](design.md#round-trips)). Measured with the
   own-thread host: about 17 ms a call against 2.4 ms on a kept console,
@@ -199,7 +199,7 @@ defines what the table did not.
   adds under 1 ms. Not yet measured: a pack-heavy `get` with the game's
   cache loaded.
 - **A changed table is the adapter's at once.** Each start reads only the
-  hash (`help --hash`, no target needed; `status` would need one) and the
+  hash (`help` with `hash`, no target needed; `status` would need one) and the
   full table when it changed. The call that saw the change is checked
   against its verb's new row before it runs, the tool list is read from
   the new table, and the adapter tells the client the list changed. A
@@ -210,7 +210,7 @@ defines what the table did not.
   module still refuses a session from another table, which keeps scripts
   honest.
 - **One usage-log session per server:** the adapter passes the same
-  `--session` to every console it starts.
+  session id to every console it starts (a console option).
 
 | Rejected for the adapter | Why |
 |---|---|
@@ -265,7 +265,7 @@ later replaced. So:
 - **Compact result schemas by default:** each result's top-level keys and
   JSON types, widened, never narrowed, so a console result always
   validates. The strictness that matters stays where it was: the console
-  checks every result against its full type, and `help <verb>` and the
+  checks every result against its full type, and `help` with `verb` and the
   Python records keep the full shape. `off` is an adapter flag.
 - **Tool packs** pick the rest ([below](#tool-packs)).
 
@@ -275,7 +275,7 @@ later replaced. So:
 | A hot set plus a `discover` tool (tools loaded on request) | a second way to reach a tool, and no gain once an agent needs the cold tools; revisit if the compact list is still too large for a client |
 | Hiding tools by what the live host offers | the list is known before a target runs ([source layout](design.md#source-layout)) |
 
-**Confirmed calls:** `call --dry` resolves and builds the block and calls
+**Confirmed calls:** `call` with `dry` resolves and builds the block and calls
 nothing, so an approval request shows exactly what will be sent. A dry run
 the client must repeat with a token waits until the marks and the
 client's own prompt are not enough.
@@ -290,7 +290,7 @@ path. So JSON is the only input.
 
 - **An `args` schema per row** (`call/verb.h` `Arg`): key, type, help,
   default, required, list, and an example value where the type's own would
-  be refused. `help --json` lists it per row as `args` (an enum as `str`
+  be refused. `help` with `json` lists it per row as `args` (an enum as `str`
   with `enum`) with an `example` call; the MCP input schemas and the
   Python signatures come from it. There are no positionals: every arg is
   named.
@@ -323,7 +323,9 @@ path. So JSON is the only input.
   [result shapes](commands/results.md), and hand-written pages keep
   rationale, workflows and gotchas. `check_verb_names.py` (ctest
   `reagentlive.verb-names`) fails on a doc that names a verb or arg the
-  table lacks; a host runs it on its own docs. Error kinds and their
+  table lacks, or still writes a call in the removed text grammar (a verb
+  followed by words or flags, `-c` without JSON); a host runs it on its
+  own docs. Error kinds and their
   message templates are one catalogue (`ErrorKinds`, `call/refusals.h`):
   a handler names an `ErrorKind`, never a string.
 - **Plan files for scripted runs** (`call/plan.h`): `run` executes a JSON
@@ -369,7 +371,7 @@ pack, sized so a normal question stays inside the default ones:
 | `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure`, `call-each` |
 | `modify` | change the target or call into it | `write`, `writes`, `call`, `release`, the call recorder, `game-thread` |
 
-`help --json` is the list's source (each row's `pack`); membership is a
+`help` with `json` is the list's source (each row's `pack`); membership is a
 one-line change in the row.
 
 - **Exact marks first.** A verb's mark is per verb, so risk must be too:

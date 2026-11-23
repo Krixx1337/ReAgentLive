@@ -103,7 +103,7 @@ A change across several files or layers:
   command or a pack, tests, code rules, docs rules.
 - [design](docs/design.md): why it is built this way, what was rejected.
 - [protocol](docs/protocol.md): the wire format, ops, statuses, limits.
-- [tool interface](docs/tool-interface.md): the verb table, `help --json`,
+- [tool interface](docs/tool-interface.md): the verb table, `help` with `json`,
   generated functions and MCP tools.
 
 ## Collaboration note

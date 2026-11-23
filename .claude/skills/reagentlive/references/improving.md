@@ -60,8 +60,9 @@ Run it only when the task ran 10 or more calls, or any mark or refusal
 appeared. Otherwise delete the scratch file, if any, and stop. Budget: one
 `stats` call and at most 10 lines of review.
 
-1. `stats` for the session (`stats --session <id>` when the session has
-   ended, e.g. after an MCP restart); copy its marks into Friction.
+1. `stats` for the session (`{"verb": "stats", "args": {"session": "<id>"}}`
+   when the session has ended, e.g. after an MCP restart); copy its marks
+   into Friction.
 2. Turn Friction and Wrong turns into candidates. Apply the rubric to each;
    drop any that fails one question:
    - Would it have saved a step, a refusal or an approval round?
@@ -74,7 +75,7 @@ appeared. Otherwise delete the scratch file, if any, and stop. Budget: one
 |---|---|---|
 | skill method or pitfall | a local lesson | an edit to the tracked skill |
 | docs wrong or missing | an issue text for the user | the docs fix |
-| missing verb or flag, console bug | an issue text for the user | the fix with tests, or a `docs/ideas.md` entry |
+| missing verb or arg, console bug | an issue text for the user | the fix with tests, or a `docs/ideas.md` entry |
 | one host's console | a proposed text for the host notes; the user applies it | the host notes (ask) |
 | a fact about the game | a proposed finding; the user records it | the project's findings (ask) |
 | none of these | drop | drop |

@@ -65,7 +65,8 @@ the last member ≤ `Size`.
 - `FStructProperty.Struct`: `TwoVectors`' members point to the `Vector`
   struct object.
 - `FObjectProperty.PropertyClass`: `Controller.Pawn` → class `Pawn`,
-  `Controller.PlayerState` → `PlayerState` (`get Controller --types`
+  `Controller.PlayerState` → `PlayerState`
+  (`{"verb": "get", "args": {"object": "Controller", "mode": "types"}}`
   shows it as `subtype`).
 - `FEnumProperty.Enum` (after its underlying property) and
   `FByteProperty.Enum`: `Pawn.AutoPossessPlayer` → `EAutoReceiveInput`,
@@ -116,7 +117,7 @@ Check on any data table: a sparse array of `{FName, uint8*}` pairs.
 every row's curve pointer holds its keys `TArray` at `FSimpleCurve.Keys`
 (8-byte keys: time, value; `InterpMode` byte at `FSimpleCurve.InterpMode`)
 or `FRichCurve.Keys` (0x1C-byte keys: mode bytes, time at +4, value at
-+8), counts small and times ascending. `rows <table>` then reads both.
++8), counts small and times ascending. `rows` then reads both.
 
 ## interface (static, then live)
 

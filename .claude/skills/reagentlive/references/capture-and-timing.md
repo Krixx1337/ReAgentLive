@@ -5,16 +5,19 @@
 - **Memory or a reflected field, seconds to minutes:** `watch-start`, then
   `watch-read` while it runs and `watch-stop` to end it. It returns at
   once; the agent keeps sampling while you work, and every interface has
-  it. Minutes-long sampling and following a respawn: `help watch-start`
+  it. Minutes-long sampling and following a respawn: `help` on `watch-start`
   (capture that does not hold the console: `docs/commands/memory.md#a-capture-that-does-not-hold-the-console`).
-  Named fields: `<ref>.<Field>` ranges. Every sample to a file: `--file`.
+  Named fields: `{"object": "<ref>", "field": ["Health"]}` ranges. Every
+  sample to a file: `file`.
   A script that should wait: the Python session's `watch(seconds, ranges)`.
-- **Named fields before and after:** `get <ref> --snap`, the user acts,
-  `get <ref> --changed`.
-- **A short action that resets at once (a jump, a shot):** `--snap` then
-  `--changed` misses it once the state is back. Capture across it:
-  `watch-start 5s <ref>.<Field>` on the owning component (movement, not
-  the pawn), tell the user to act now, then `watch-read`. Else `get --snap` at rest and `get --changed` while the user
+- **Named fields before and after:** `get` with `mode` `snap`, the user
+  acts, `get` with `mode` `changed`:
+  `{"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "mode": "changed"}}`.
+- **A short action that resets at once (a jump, a shot):** `snap` then
+  `changed` misses it once the state is back. Capture across it:
+  `{"verb": "watch-start", "args": {"duration": 5, "ranges": [{"object": "0x1f2e3d4c50#123:4", "field": ["Velocity"]}]}}`
+  on the owning component (movement, not the pawn), tell the user to act
+  now, then `watch-read`. Else `snap` at rest and `changed` while the user
   holds the state mid-action.
 - **Getters or mixed sources:** one `batch` (a `call-pure` and the `read`s)
   per sample keeps a getter and raw reads in one tick; loop it from Python.
@@ -25,7 +28,8 @@
 
 ## What the game passed to a function
 
-- `calls-start <target> <Owner:Function> 10s` records each call with its
+- `{"verb": "calls-start", "args": {"owner": "0x1f2e3d4c50#123:4", "function": "Owner:Function", "duration": 10}}`
+  records each call with its
   parameters (approval: it swaps one `UFunction` pointer). Use it when the
   question is an event ("did the hit register, for how much, on which
   bone?"); a watch only sees state afterwards.
@@ -61,10 +65,11 @@
 - "Still moving after X ms": comparing the last change time flags every
   double (low bits jitter). Compare the value at X ms with the value before
   the action and the final value instead.
-- Watch a reflected value by its path (`watch-start 30s <ref>.Health`), not
+- Watch a reflected value by its path (a `{"object": "<ref>", "field": ["Health"]}`
+  range), not
   by an address and a guessed type: Blueprint floats are doubles, and an
   `f32` read returns the low half (0 for whole numbers) for the whole
   capture.
 - Results are the changes with their times: read the transitions. Ask for
-  every sample (`help watch`) only when the sample spacing itself is the
+  every sample (`all`; `help` on `watch-read`) only when the sample spacing itself is the
   question.

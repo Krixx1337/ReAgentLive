@@ -51,7 +51,7 @@ game?" Then use that row's values in every later step:
 | Target | Example | `<build>` | `<console>` | `<dll>` | Starts at |
 |---|---|---|---|---|---|
 | Any x64 process | [`examples/own_thread`](../../examples/own_thread/README.md) | `build\own-thread` | `reagentlive.exe` | `reagentlive-own-thread.dll` | T0 |
-| A UE5 game (no dump, no mod needed) | [`examples/unreal`](../../examples/unreal/README.md) | `build\unreal` | `reagentlive-ue.exe` | `reagentlive-unreal.dll` | T1-T2; T3 after `game-thread on` |
+| A UE5 game (no dump, no mod needed) | [`examples/unreal`](../../examples/unreal/README.md) | `build\unreal` | `reagentlive-ue.exe` | `reagentlive-unreal.dll` | T1-T2; T3 once `game-thread` is on |
 
 What each tier can do: [tiers](../tiers.md).
 
@@ -240,11 +240,14 @@ status. Any x64 process:
 ```powershell
 Start-Process python -ArgumentList '-c', '"import ctypes,time; ctypes.WinDLL(r''<dir>\<build>\<dll>''); time.sleep(20)"' -WindowStyle Hidden
 Start-Sleep 2
-& "<dir>\<build>\<console>" -c "status"
+& "<dir>\<build>\<console>" -c '{"verb": "status"}'
 ```
 
-For the Unreal example, run `-c "status; help game-thread; game-thread"`
-instead (`game-thread` with no argument only reads the mode).
+For the Unreal example, run
+`<console> -c '[{"verb": "status"}, {"verb": "help", "args": {"verb": "game-thread"}}]'`
+instead (both only read). Windows PowerShell before 7.3 strips the inner
+quotes: there, write the calls to a file, one per line, and pass
+`-c @<file>`.
 
 No pid: the console finds the one process with its agent (the pid
 `Start-Process` returns can be a launcher's, such as the Microsoft Store
@@ -253,16 +256,17 @@ Python's, which has already exited). The Python process ends by itself.
 | Example | Pass when |
 |---|---|
 | own-thread | `status` has `"ok":true`, `"ticking":true`, `"host_thread":"own"`, `"packs":[]` and a `commit` equal to `git -C <dir> rev-parse --short=12 HEAD` |
-| Unreal | the same with `"packs":["ue"]`; `help game-thread` answers `ok` (the console has the verb) and `game-thread` answers `"mode":"off"` (the DLL has the Draw tick; `unsupported` means the wrong DLL) |
+| Unreal | the same with `"packs":["ue"]` and `"game_thread"` holding `"mode":"off"` (the DLL has the Draw tick; no `game_thread` means the wrong DLL); `help` for `game-thread` answers `ok` (the console has the verb) |
 
 Do not run Unreal commands such as `find` in the Python process: there is
-no engine, so they are refused. Never run `game-thread on` as a check. If
+no engine, so they are refused. Never send `game-thread` as a check: it arms the tick. If
 a check fails, report the output; do not work around it.
 
 In the real target, `status` tells you the tier
 ([how to read it](../tiers.md#read-your-tier-from-status)). In a UE5 game,
-`game-thread` (no argument) reports the tick's mode; `game-thread on`
-moves the agent onto the game thread for engine calls, and needs the
+`status` reports the tick's mode as `game_thread`;
+`{"verb": "game-thread", "args": {"action": "on"}}` moves the agent onto
+the game thread for engine calls, and needs the
 user's approval first.
 
 ## 8. (Optional) Get an injector

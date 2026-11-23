@@ -3,7 +3,9 @@
 A doc names a verb or an arg when it writes a call: a JSON call ({"verb": ..., "args": {...}}, a plan step, a
 batch's calls), a Python session call (c.read(...), c.ue.find(..., view=...), session.call('verb', {...})), an MCP
 tool name (ue_find) or a key by its path (view.limit). Host verbs (c.host.*, host_*) are checked only against a
-table that has host rows.
+table that has host rows. The text grammar is gone, so a code span that starts with a verb and goes on in words
+or flags (`find PC_`, `get --types`), a one-shot `-c` with no JSON, and a flag that spells a verb's arg
+(`--limit`) are stale forms; a span that runs a program (python, cmake, a console's own options) may use flags.
 
 Usage: check_verb_names.py --table <reagentlive-table or a console> [--root DIR] [FILE_OR_DIR ...]
        (no paths: the repo's docs/, README.md and the skill). Exit 1 with one line per stale name.
@@ -22,6 +24,10 @@ PY_CALL = re.compile(r'\b(?:c|console|self\.c|x\.c)\.(?:(ue|host)\.)?([a-z][a-z0
 SESSION_CALL = re.compile(r"""\.call\(\s*['"]([a-z][a-z0-9-]*)['"]""")
 TOOL_NAME = re.compile(r'^(ue|host)_([a-z][a-z0-9_]*)$')
 KEY_PATH = re.compile(r'^(view|scope|save|undo)\.([a-z_]+)$')
+FLAG = re.compile(r'(?<![\w-])--([a-z][a-z0-9-]*)')
+ONE_SHOT = re.compile(r"""(?<![\w-])-c\s+["']?(?![\s"']*[{\[@])""")
+# A span that runs one of these takes its own flags.
+PROGRAMS = ('python', 'py', 'cmake', 'ctest', 'git', 'pip', 'pwsh', 'powershell', 'reagentlive-table', 'ninja', 'cl')
 # Session helpers that are not verbs, and console or tool options a span may name.
 SESSION_METHODS = {'call', 'batch', 'batch_results', 'watch', 'close', 'help', 'table', 'records', 'raw'}
 SKIP_DIRS = {'__pycache__', '.git', 'build', 'out', 'archive'}
@@ -186,11 +192,23 @@ def span_problems(table, span):
     path = KEY_PATH.match(span)
     if path and path.group(2) not in table.keys:
         out.append('no such key')
+    words = span.split()
+    if not words:
+        return out
+    if len(words) > 1 and words[0] in table.rows and not words[1].startswith(('{', '(', '=', ':', '|', ',', ')')):
+        out.append('text grammar (a call is JSON)')
+    first = words[0].lower()
+    if ONE_SHOT.search(span) and first not in PROGRAMS:
+        out.append('one-shot -c without a JSON call')
+    if not (first.endswith(('.py', '.exe', '.ps1')) or first.startswith('<') or first in PROGRAMS):
+        for flag in FLAG.findall(span):
+            if flag in table.keys or flag.replace('-', '_') in table.keys:
+                out.append(f'flag --{flag} (args are JSON keys)')
     return out
 
 
 def default_paths(root):
-    paths = [os.path.join(root, 'README.md'), os.path.join(root, 'docs'),
+    paths = [os.path.join(root, 'README.md'), os.path.join(root, 'docs'), os.path.join(root, 'examples'),
              os.path.join(root, '.claude', 'skills', 'reagentlive')]
     return [path for path in paths if os.path.exists(path)]
 
@@ -204,7 +222,7 @@ def files(paths, generated):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for name in sorted(names):
                 full = os.path.join(base, name)
-                if name.endswith('.md') and os.path.normpath(full) not in generated and not name.startswith('local-lessons'):
+                if name.endswith('.md') and os.path.abspath(full) not in generated and not name.startswith('local-lessons'):
                     yield full
 
 
@@ -215,7 +233,7 @@ def main(argv=None):
     parser.add_argument('paths', nargs='*')
     args = parser.parse_args(argv)
     table = Table(table_of(args.table))
-    generated = {os.path.normpath(os.path.join(args.root, 'docs', 'commands', page)) for page in ('results.md', 'reference.md')}
+    generated = {os.path.abspath(os.path.join(args.root, 'docs', 'commands', page)) for page in ('results.md', 'reference.md')}
     problems = []
     for path in files(args.paths or default_paths(args.root), generated):
         with open(path, encoding='utf-8') as file:

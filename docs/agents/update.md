@@ -45,10 +45,10 @@ git -C <dir> status --short
 git -C <dir> branch --show-current
 ```
 
-- `status --short` prints a tracked file (local changes): stop, show the
+- `git status --short` prints a tracked file (local changes): stop, show the
   user the list and ask what to do with them (a `dev` mode clone may hold
   work in progress).
-- `branch --show-current` prints nothing (a detached HEAD, such as a
+- `git branch --show-current` prints nothing (a detached HEAD, such as a
   checked-out tag) or a branch other than `main`: tell the user, and ask
   before `git -C <dir> switch main`. A pull on a detached HEAD fails, and
   on another branch it would not match the log below.
@@ -178,7 +178,7 @@ With a target running the new DLL (or the throwaway Python process from
 [agent setup](setup.md#7-verify), same commands and pass checks):
 
 ```powershell
-& "<dir>\<build>\<console>" -c "status"
+& "<dir>\<build>\<console>" -c '{"verb": "status"}'
 ```
 
 | Check | Pass when |

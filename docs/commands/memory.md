@@ -9,21 +9,22 @@ expire. Writes change the running game: they are separate commands
 marked `writes`, so a client asks before running them.
 
 Core commands: they work in any host, with or without an engine pack.
-Wire details: [protocol](../protocol.md). Each command's flags and result
-keys: `help <verb>` or [result shapes](results.md).
+Wire details: [protocol](../protocol.md). Each command's args and result
+keys: the [reference](reference.md), `help` with `verb`, or
+[result shapes](results.md).
 
 | Command | Guard |
 |---|---|
-| `read <addr> [len] [--type T]` | 1..4096 bytes; the whole range must pass the host's `readable` check. `--type i8\|u8\|i16\|u16\|i32\|u32\|i64\|u64\|f32\|f64\|ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. `--type "<layout>"`: a block of mixed types (below). `--type cstr\|wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
-| `peek <addr> [count] [--label [file]] [--name <name>]` | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address (`region`) and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `--label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to the file (default: the console's labels file); `--name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
-| `write <addr> <hex> [--expect <hex>]` | 1..256 bytes; committed, writable pages; page protection is never changed. `--expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
+| `read` (`addr`, `len`, `type`) | 1..4096 bytes; the whole range must pass the host's `readable` check. `type` `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`, `f64` or `ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. A layout string as `type`: a block of mixed types (below). `type` `cstr` or `wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
+| `peek` (`addr`, `count`, `label`, `file`, `name`) | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address (`region`) and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to `file` (default: the console's labels file); `name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
+| `write` (`addr`, `data`, `expect`) | 1..256 bytes; committed, writable pages; page protection is never changed. `expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
-| `search <type> <value> [--start A] [--to A] [--module M] [--align N] [--writable] [--heap] [--paged] [--wait N] [--max N]` / `search-job <id> [--stop]` | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
-| `mem-snap <addr> <len>` / `mem-diff <test> <type> [--keep] [--limit N]` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
-| `write <addr> <hex> --hold [duration] [--expect <hex>]` | a pin: up to 8 of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests ([timed writes](#timed-writes)) |
-| `write <addr> <hex> --undo <duration> --owner <ref> --expect <hex> [--object <addr>]` | a trial: up to 8 of 1..64 bytes, 1 ms..60 s. One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear them (`writes clear`) before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so `--undo` needs a host with the Unreal pack; the agent does not check classes |
-| `writes [clear [undo:N\|hold:N]]` | every timed write as a row (`id`, `mode`, `state`, time left): an `--undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `--hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one or all, restoring active `--undo` ones, and returns the rows it ended |
-| `watch-start <duration> <addr\|offset>:<len>\|<object>.<Field>... [--every <duration>] [--follow <root>] [--file <path>]` / `watch-read [--all]` / `watch-stop [--all]` | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, sampled at the start of every host tick into a 4 MB agent buffer for up to 30 s, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
+| `search` (`type`, `value`, `scope`, `align`, `wait`, `max`) / `search-job` (`job`, `stop`) | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
+| `mem-snap` (`addr`, `len`) / `mem-diff` (`test`, `type`, `keep`, `view.limit`) | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
+| `write` with `hold` (seconds) and optional `expect` | a pin: up to 8 of 1..64 bytes, each 1 ms..60 s; written at the start of every host tick, before requests ([timed writes](#timed-writes)) |
+| `write` with `undo` (`after`, `owner`, `object`) and `expect` | a trial: up to 8 of 1..64 bytes, 1 ms..60 s. One write when memory holds `expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear them (`{"verb": "writes", "args": {"clear": true}}`) before stopping it. Checked at the start of every host tick: a changed owner identity or `undo.object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `undo.object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so `undo` needs a host with the Unreal pack; the agent does not check classes |
+| `writes` (`clear`, `id`) | every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one (`id`: `undo:N` or `hold:N`) or all, restoring active `undo` ones, and returns the rows it ended |
+| `watch-start` (`duration`, `ranges`, `every`, `follow`, `file`) / `watch-read` (`all`) / `watch-stop` (`all`) | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, sampled at the start of every host tick into a 4 MB agent buffer for up to 30 s, returning at once; with `every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
 
 ## Faults
 
@@ -40,12 +41,15 @@ it no verb of its own.
 
 ## Typed layouts
 
-`read <addr> --type "u8 phase, pad 3, f32 duration, f32
-elapsed, f64[3] start"` decodes a block that reflection does not describe:
+```json
+{"verb": "read", "args": {"addr": "0x1000", "type": "u8 phase, pad 3, f32 duration, f32 elapsed, f64[3] start"}}
+```
+
+decodes a block that reflection does not describe:
 fields in memory order, comma-separated, each a type from the list above
 with an optional `[n]` count and an optional name (letters, digits, `_`, a
 trailing `?` for an unconfirmed one), or `pad n` for a gap. The read length
-is the layout's size; an explicit length that differs is refused, as are an
+is the layout's size; an explicit `len` that differs is refused, as are an
 unknown type, a bad count or name and a name used twice (the message names
 the field). `layout` is `{name: value}` (keys print sorted), `[n]` fields as
 lists, unnamed fields by offset (`"+0x8"`); `hex` stays. Nothing is saved:
@@ -55,93 +59,107 @@ into `label` unchanged.
 
 ## search
 
-`search` finds addresses holding a value: `hex` bytes (up to 64), `u32`,
-`i32`, `u64`, `ptr` (also `$N` and module addresses), `f32`, `f64`, or
-`text` (the string's bytes with no terminator, so any string holding it
-matches; quoted text is taken exactly, see
-[search text](fast-lane.md#search-text); `--wide` for UTF-16, up to 32
-characters). Typed
-values align to their size unless `--align` says otherwise; hex aligns to 1.
-Aligned 4- and 8-byte values compare whole words; other patterns jump
-between first-byte candidates.
+`search` finds addresses holding a value: `type` `hex` (bytes, up to 64),
+`u32`, `i32`, `u64`, `ptr` (a number or `"0x..."`), `f32`, `f64`, `text`
+(the string's bytes with no terminator, so any string holding it matches;
+the `value` string is taken exactly, see
+[search text](fast-lane.md#search-text)) or `wtext` (the same as UTF-16, up
+to 32 characters). Typed values align to their size unless `align` says
+otherwise; hex aligns to 1. Aligned 4- and 8-byte values compare whole
+words; other patterns jump between first-byte candidates.
 
-**Range.** The main module (the process exe) unless the call says
-otherwise: `--module <name>` for another module, `--start`/`--to` for an
-address range (`--start` alone ends with the module it lies in, or the top
-of memory outside modules), `--heap` or `--writable` for all memory.
+```json
+{"verb": "search", "args": {"type": "f32", "value": 100, "scope": {"heap": true}, "max": 16}}
+```
+
+**Range.** The main module (the process exe) unless `scope` says
+otherwise: `scope.module` for another module, `scope.start`/`scope.to` for
+an address range (`scope.start` alone ends with the module it lies in, or
+the top of memory outside modules), `scope.heap` or `scope.writable` for
+all memory.
 
 **A job.** Every search is a job the agent runs while other requests do:
 on its worker thread when the host allows it (`Host::backgroundSearch`)
 and the worker is idle, else in 2 ms slices at the start of every host
-tick. The console starts it and polls it for up to `--wait` seconds
+tick. The console starts it and polls it for up to `wait` seconds
 (default 10, 0 answers at once), so a long scan never holds the console or
 the agent's request slot. The answer is the job's state: `rows` (hits so
 far: `address`, with `module` and `rva` inside a module), `job`, `state`
 (`running`, `done` or `stopped`), `from` and `to` (the range), `scanned`
 (the share of the range's addresses behind the cursor; address space is
 sparse, so for wide ranges it is a rough guide) and `next_cursor`.
-`search-job <id>` answers the same for a running or finished job,
-`search-job <id> --stop` ends it first. One job at a time: a new search
-stops the last one, and only the last answers. The job stops once it has
-`--max` hits; then, and after a stop, `next_cursor` is the address to pass
-as `--start` (with the same range options) to go on, absent once the range
-is done.
+`{"verb": "search-job", "args": {"job": 16}}` answers the same for a
+running or finished job; with `"stop": true` it ends it first. One job at
+a time: a new search stops the last one, and only the last answers. The
+job stops once it has `max` hits; then, and after a stop, `next_cursor` is
+the address to pass as `scope.start` (with the same range options) to go
+on, absent once the range is done.
 
-Filters: `--writable` skips read-only and code pages; `--heap` keeps
-process-private memory (heaps, stacks) and skips images and file mappings;
-`--module <name>` limits the range to one loaded module. Write-combined and
-uncached pages (GPU and device mappings) are always skipped. Pages outside
-the working set are skipped unless `--paged`: reading them makes the OS fault
-each page in, or create it for memory that was committed but never touched,
-which stalled the host for tens of milliseconds per slice. The agent skips
-its own request, job and section buffers, and any other view of its section
-(an agent injected earlier into the same process maps one too). An earlier
-agent's own request buffer can still hold old patterns. A match that spans two
-regions or reaches a skipped page is missed. Use it to find where a native
-struct lives (search its vtable pointer with `--heap`) or which copies of a
-value exist.
+Filters: `scope.writable` skips read-only and code pages; `scope.heap`
+keeps process-private memory (heaps, stacks) and skips images and file
+mappings; `scope.module` limits the range to one loaded module.
+Write-combined and uncached pages (GPU and device mappings) are always
+skipped. Pages outside the working set are skipped unless `scope.paged`:
+reading them makes the OS fault each page in, or create it for memory that
+was committed but never touched, which stalled the host for tens of
+milliseconds per slice. The agent skips its own request, job and section
+buffers, and any other view of its section (an agent injected earlier into
+the same process maps one too). An earlier agent's own request buffer can
+still hold old patterns. A match that spans two regions or reaches a
+skipped page is missed. Use it to find where a native struct lives (search
+its vtable pointer with `scope.heap`) or which copies of a value exist.
 
 ## mem-snap and mem-diff
 
-`get --changed` compares reflected fields; these compare raw bytes, for
-state no reflection names (a native block, a struct found by `search`, an
-object with no engine pack). `mem-snap` keeps the range
+`get` with `mode` `changed` compares reflected fields; these compare raw
+bytes, for state no reflection names (a native block, a struct found by
+`search`, an object with no engine pack). `mem-snap` keeps the range
 (`%TEMP%\reagentlive-<pid>.memsnap`, tied to the agent instance like the
 cache file; a new snap replaces it). `mem-diff` reads the range again and
 tests every `type`-sized element from the snap's start: `changed` and
 `unchanged` compare bytes, `increased` and `decreased` compare numbers
 (NaN never passes). It answers `compared`, `matched` and the first
-`--limit` rows (default 64, at most 256; `capped` when cut) of `address`,
-`before` and `after`.
+`view.limit` rows (default 64, at most 256; `capped` when cut) of
+`address`, `before` and `after`.
 
-`--keep` narrows: only the matches stay as candidates, the bytes just read
+`keep` narrows: only the matches stay as candidates, the bytes just read
 become the baseline, and later diffs compare the candidates alone (`kept`).
 A diff with another type than the candidates were narrowed under is
 refused. So "which value fell when I got hit?" is a snap of the owner's
-native range, `mem-diff unchanged f32 --keep` while nothing happens,
-`mem-diff decreased f32 --keep` after the hit, repeated until a few rows
-remain. Each diff is one read of the range, not one tick: values may be
-torn across 4 KB requests, so confirm a candidate with `watch-start`. This is a
-bounded narrowing scan over one range the agent names, not a memory
-scanner: no whole-process scan, no tolerance, no pointer scan
-([design](../design.md#place-among-other-tools)).
+native range, then while nothing happens
+
+```json
+{"verb": "mem-diff", "args": {"test": "unchanged", "type": "f32", "keep": true}}
+```
+
+and after the hit the same with `"test": "decreased"`, repeated until a
+few rows remain. Each diff is one read of the range, not one tick: values
+may be torn across 4 KB requests, so confirm a candidate with
+`watch-start`. This is a bounded narrowing scan over one range the agent
+names, not a memory scanner: no whole-process scan, no tolerance, no
+pointer scan ([design](../design.md#place-among-other-tools)).
 
 ## Timed writes
 
-`write --undo <duration>` writes once and the agent restores the original
-bytes when the time is up (a trial, above). `write --hold` freezes memory: the
-agent writes the same bytes every tick until the pin
-expires (its duration, default 10 s) or stops. A target given relative to an object (`$N+0x3E4`, a literal
-ref plus offset) is guarded on that object's identity (Unreal: object-table
-index and class, read when the pin starts), so the pin stops for good when the
-object is freed or replaced instead of writing into reused memory. `--expect`
-makes the first write conditional. A value the game recomputes from scratch
-within each frame still reads the game's value for that frame; integrated
-state (a timer, an eased value) stays pinned.
+`write` with `undo` writes once and the agent restores the original bytes
+when `undo.after` is up (a trial, above). `write` with `hold` freezes
+memory: the agent writes the same bytes every tick until the pin expires
+(its `hold` seconds) or stops. A target given relative to an object
+(`{"base": "0x1f2e3d4c50#123:4", "offset": "0x3E4"}`, a literal ref plus
+offset) is guarded on that object's identity (Unreal: object-table index
+and class, read when the pin starts), so the pin stops for good when the
+object is freed or replaced instead of writing into reused memory.
+`expect` makes the first write conditional. A value the game recomputes
+from scratch within each frame still reads the game's value for that
+frame; integrated state (a timer, an eased value) stays pinned.
+
+```json
+{"verb": "write", "args": {"addr": {"base": "0x1f2e3d4c50#123:4", "offset": "0x3E4"}, "data": "00 00 c8 42", "hold": 5}}
+```
 
 ## watch
 
-`watch-start` samples ranges every host tick (or `--every`) inside the
+`watch-start` samples ranges every host tick (or `every`) inside the
 agent and returns at once; `watch-read` prints the `rows` so far and
 `watch-stop` ends the capture and prints them: each with `tick` (agent
 heartbeat), `us` (since start) and `values` (one per range, null while
@@ -153,32 +171,38 @@ rows so far stay. `stopped` says why a capture ended: `deadline`,
 caller that wants to block (a script waiting out the capture) starts,
 waits and stops: the Python session's `watch(seconds, ranges)` does that.
 
+```json
+{"verb": "watch-start", "args": {"duration": 5, "ranges": [{"addr": "0x9000", "len": 16}]}}
+```
+
 ### Typed ranges
 
-A range may name its type in the [read --type](#typed-layouts) element
-vocabulary in place of a length: `0x9000:f64`, `$1+0x40:i32[2]`. Its
-samples come back as numbers (a list for `[n]`), its `ranges` entry carries
-`type`, and the result adds `summary`: for each value (each element of an
-`[n]` range) `first`, `last`, `least`, `greatest`, the `samples` that held a
-number, `changes`, how many of those differ from the one before, and
-`per_second`, the change from first to last over the time between them
-(absent with one sample). The console keeps the type in the
+A range may name its type in the [read type](#typed-layouts) element
+vocabulary in place of a length: `{"addr": "0x9000", "type": "f64"}`,
+`{"addr": {"base": "0x1f2e3d4c50#123:4", "offset": "0x40"}, "type": "i32", "count": 2}`.
+Its samples come back as numbers (a list with `count`), its `ranges` entry
+carries `type`, and the result adds `summary`: for each value (each
+element of a counted range) `first`, `last`, `least`, `greatest`, the
+`samples` that held a number, `changes`, how many of those differ from the
+one before, and `per_second`, the change from first to last over the time
+between them (absent with one sample). The console keeps the type in the
 agent's copy of the spec (`WatchRange::note`, [protocol](../protocol.md)),
 so `watch-read` and `watch-stop` from any later run decode the capture
-too. The arithmetic lives in the console, so a typed line, a script and a
-tool all get it.
+too. The arithmetic lives in the console, so a call, a script and a tool
+all get it.
 
 ### Watching a reflected field
 
 With an engine pack, a range may be a field path instead of an address:
-`$1.Health`, `0x...#5:2.RootComponent.RelativeLocation`, the paths `get`
-takes. The console resolves it before the start through the same path
-walk as `get` (object pointers and structs followed then, not per sample),
-takes the place and size from reflection and the type from the property:
-a Blueprint float is a `DoubleProperty`, so it is watched as `f64`; a
-struct of one scalar type laid end to end (a vector) as that type with a
-count; anything else as raw bytes. The range is guarded on the object that
-holds the field. Not with `--follow`, whose ranges are offsets from the root.
+`{"object": "0x1f2e3d4c50#123:4", "field": ["RootComponent", "RelativeLocation"]}`,
+the paths `get` takes. The console resolves it before the start through
+the same path walk as `get` (object pointers and structs followed then,
+not per sample), takes the place and size from reflection and the type
+from the property: a Blueprint float is a `DoubleProperty`, so it is
+watched as `f64`; a struct of one scalar type laid end to end (a vector)
+as that type with a count; anything else as raw bytes. The range is
+guarded on the object that holds the field. Not with `follow`, whose
+ranges are offsets from the root.
 
 ### Rows: the changes, not every sample
 
@@ -189,35 +213,35 @@ still for 30 s is a handful of rows. `lost` and `resumed` rows, and the row
 after a gap, always stay. `samples` is how many there were. Past 200 rows
 (a value that changes every tick) the middle is dropped, half the rows kept
 from each end, and `dropped` counts it. The summary is computed from every
-sample first. `--all` returns every sample.
+sample first. `all` returns every sample.
 
 ### A capture that does not hold the console
 
-`watch-start` returns at
-once; durations take `ms`, `s` (the default) or `m`, and `--every 10s`
-samples on that interval instead of every tick (a slow capture over
-minutes). The capture belongs to the agent instance: it survives the
-console exiting, `watch-read` from any later run returns the rows so far
-(with `running`, `stopped`, `capacity`, `ms`, `interval_ms`, `root`,
-`ranges`), `watch-stop` ends it and returns them. A new start replaces it;
-a newer agent taking over ends it. Reflected paths are resolved once, at
-the start ([above](#watching-a-reflected-field)).
-No file is written inside the target. `--file <path>` keeps every sample
-on the console's side: the start writes the ranges as the file's first
-line (JSON), and each `watch-read` and `watch-stop` rewrites it with every
-sample so far, one JSON line each (as `--all` prints them), and adds
+`watch-start` returns at once; `duration` and `every` are seconds, and
+`"every": 10` samples on that interval instead of every tick (a slow
+capture over minutes). The capture belongs to the agent instance: it
+survives the console exiting, `watch-read` from any later run returns the
+rows so far (with `running`, `stopped`, `capacity`, `ms`, `interval_ms`,
+`root`, `ranges`), `watch-stop` ends it and returns them. A new start
+replaces it; a newer agent taking over ends it. Reflected paths are
+resolved once, at the start ([above](#watching-a-reflected-field)).
+No file is written inside the target. `file` keeps every sample on the
+console's side: the start writes the ranges as the file's first line
+(JSON), and each `watch-read` and `watch-stop` rewrites it with every
+sample so far, one JSON line each (as `all` prints them), and adds
 `file`. The path persists for the agent instance in the cache file, so a
-later run's read writes it too; a start without `--file` drops it.
+later run's read writes it too; a start without `file` drops it.
 
 ### Following a replaced object
 
 A capture tied to an object ends when the
-game replaces it (a respawn). `--follow <root>` follows one the host can
-always find again: the host offers named roots (`status` lists them as
-`roots`), the ranges are offsets from the root (`+0x538:16`), and each
-sample first checks the root's identity; when it fails the agent asks the
-host for the current one and continues on it. Rows carry `lost` (one row,
-when the root went away and no new one existed; nothing is sampled until it
-returns) and `resumed` with the new object's `root` address; `gaps` lists
-each (`from_us`, `to_us`, absent while still lost), never filled. A host
-without roots refuses `--follow`, as does an unknown name.
+game replaces it (a respawn). `follow` names a root the host can always
+find again: the host offers named roots (`status` lists them as `roots`),
+the ranges are offsets from the root (`{"offset": "0x538", "len": 16}`),
+and each sample first checks the root's identity; when it fails the agent
+asks the host for the current one and continues on it. Rows carry `lost`
+(one row, when the root went away and no new one existed; nothing is
+sampled until it returns) and `resumed` with the new object's `root`
+address; `gaps` lists each (`from_us`, `to_us`, absent while still lost),
+never filled. A host without roots refuses `follow`, as does an unknown
+name.

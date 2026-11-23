@@ -45,7 +45,7 @@ JSON mode instead of linking the client, as the Python client does.
   the game.
 - **Engine calls need the game thread.** A host ticking elsewhere offers
   memory commands and, if it opts in, object reads; calls only after
-  `game-thread on` moves its tick there ([host thread](hosting.md#host-thread)).
+  `game-thread` (`on`) moves its tick there ([host thread](hosting.md#host-thread)).
 - **Same build.** Host and program are built from one revision; the layout
   check refuses a mismatched pair ([handshake](protocol.md#handshake)).
 

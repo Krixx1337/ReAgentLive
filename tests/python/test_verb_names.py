@@ -40,6 +40,17 @@ class VerbNames(unittest.TestCase):
         self.assertEqual(problems('`ue_fields`'), ['doc.md: no such tool: `ue_fields`'])
         self.assertEqual(problems('`view.max`'), ['doc.md: no such key: `view.max`'])
 
+    def test_text_grammar_and_flags_are_stale(self):
+        self.assertEqual(problems('`find PC_` `read 0x10 --len 4`'), [
+            'doc.md: text grammar (a call is JSON): `find PC_`',
+            'doc.md: text grammar (a call is JSON): `read 0x10 --len 4`',
+            'doc.md: flag --len (args are JSON keys): `read 0x10 --len 4`'])
+        self.assertEqual(problems('`--limit`'), ['doc.md: flag --limit (args are JSON keys): `--limit`'])
+        self.assertEqual(problems("`<console> -c 'find X'`"), ["doc.md: one-shot -c without a JSON call: `<console> -c 'find X'`"])
+        # A verb alone, a JSON one-shot, a program's own flags and a console option are fine.
+        self.assertEqual(problems("`find` `<console> -c '{\"verb\": \"read\", \"args\": {\"addr\": \"0x1\"}}'` `python x.py --limit 3` `--packs`"), [])
+        self.assertEqual(problems('```\nfind PC_\n```'), [])          # Fenced text is not a code span.
+
 
 if __name__ == '__main__':
     unittest.main()

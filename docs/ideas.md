@@ -18,14 +18,14 @@ when an investigation needs a larger read budget across ticks.
 
 ### 2 · Class-wide snapshot and compare
 
-`each` reads up to 16 fields across a class, `call-pure --each` one getter. Whole-object
+`each` reads up to 16 fields across a class, `call-each` one getter. Whole-object
 snapshots across instances (every reflected field) remain open.
 
 ### 17 · `call-native` (caution)
 
-Call a native function by address: `call-native <addr> [arg ...]`, or
-`<object> --slot N [--offset M]` for a virtual call (the object, or the
-interface part at `object + M`, as the first argument). Build it on the
+Call a native function by address with its arguments, or an object's
+vtable slot N (with an optional offset M) for a virtual call (the object,
+or the interface part at `object + M`, as the first argument). Build it on the
 first of two triggers, recorded here first: a live investigation needs a
 call a read cannot replace, or an outside program is used on a game with no
 engine pack, where it is the only way to call anything. It is the one
@@ -38,31 +38,31 @@ ticks, after a dry run.
   thread safe for engine calls. Approval stays the host's rule.
 - Only a target inside a loaded module on an executable page; up to 6
   integer or pointer arguments (every address form), `@out:N` for a zeroed
-  buffer of up to 256 bytes returned afterwards; `--returns
-  u64|ptr|f32|f64`. No floating-point arguments or callbacks.
-- `--dry` resolves everything and calls nothing: target with `module` and
+  buffer of up to 256 bytes returned afterwards; a return type
+  (`u64`, `ptr`, `f32` or `f64`). No floating-point arguments or callbacks.
+- `dry` resolves everything and calls nothing: target with `module` and
   `rva`, the arguments, and the first instructions (`disasm`): the text for
   the approval request.
 - An access fault is caught and answered as `access faulted` with the
   address, saying the target may be left in a bad state; nothing else is
   caught. Arguments travel in `data`; an older agent answers `unsupported`.
 - Tests (loopback, calling the test program): integer and float returns,
-  six arguments in order, `@out`, slot calls with and without `--offset`,
+  six arguments in order, `@out`, slot calls with and without an offset,
   heap and non-executable targets refused, no opt-in refused, a faulting
-  function reported, `--dry` calling nothing. Live check (approved): an
-  interface getter through `--offset` with `--returns f32` gives the value
+  function reported, `dry` calling nothing. Live check (approved): an
+  interface getter through an offset with an `f32` return gives the value
   already recorded for the field it reads.
-- When it ships: the `reagentlive` skill gains it (always `--dry` first,
+- When it ships: the `reagentlive` skill gains it (always `dry` first,
   ask with its output, read a plain field instead of calling its getter),
   and each host's docs say whether it enables it.
 
-### 19 · Checks for native members (`label --verify`)
+### 19 · Checks for native members (`label` verify)
 
 Waits for the first game patch that moves a labelled offset. Native lines
 already go `stale` under another image timestamp; this makes re-confirming
-one command, as `layout-check` already does for reflected fields. An optional check per line (`--check finite`, `--check range
-a..b`, or `--check equals <Owner:Getter>`, a pure getter returning the same
-value); `label --verify <Class>` runs them on a live instance and, when all
+one command, as `layout-check` already does for reflected fields. An optional check per line (finite, in a range `a..b`, or
+equal to `Owner:Getter`, a pure getter returning the same value); a verify
+form of `label`, given a class, runs them on a live instance and, when all
 pass, rewrites the timestamp. Tests: a check passing and one failing.
 
 ### 20 · Example client
@@ -125,29 +125,29 @@ when a second session needs a short-lived value behind a getter.
 
 Native members such as a curve table's row map are a `TMap` with no
 reflected property, so `entries` cannot page them and a session walked the
-sparse array with `peek`. Shape: `entries <addr> --set <stride>` or
-`--map <key>:<value>`, reusing the existing layout checks
+sparse array with `peek`. Shape: `entries` on an address with a set's stride
+or a map's key and value types, reusing the existing layout checks
 (`ContainerLayoutValid`) on caller-given sizes. Pull forward with #22 when
 a container is the question again.
 
-### 26 · Longer `search text`
+### 26 · Longer `search` text
 
-`search text` takes at most 32 UTF-16 characters, which refused a whole
+`search` with `type` `text` or `wtext` takes at most 32 UTF-16 characters, which refused a whole
 console-variable name; a prefix worked. Raise the limit or name the
 workaround in the refusal when the request block allows it.
 
 ### 27 · Triggered capture
 
 A timed capture can expire before the user does the step it is for.
-Shape: `watch-start --when <range> changes`, with a short ring buffer of
+Shape: a trigger on `watch-start` (start when a range changes), with a short ring buffer of
 rows from before the trigger, and stop reasons that name the limit to
 raise. Pull forward when a capture misses its moment again.
 
 ### 28 · Function facts in one call
 
 Bounds, callers, callees, strings, imports and the member offsets one
-function uses, in one console verb built from existing pieces (`disasm
---function`, `xrefs`, `touches`). Inside the [fast-lane](design.md#fast-lane)
+function uses, in one console verb built from existing pieces (`disasm`
+with `function`, `xrefs`, `touches`). Inside the [fast-lane](design.md#fast-lane)
 fence: facts about one address, no summary of what it does. Pull forward
 when sessions keep making four to six calls for one function.
 
@@ -173,7 +173,7 @@ when a patch moves many hand-made signatures at once.
 calls and hand arithmetic in one session (two root locations, the net
 role, the class default object's `bAlwaysRelevant` and
 `NetCullDistanceSquared`). Shape: an Unreal pack verb returning world
-location, distance from `--from` (default the host's `pawn` root), `Role`
+location, distance from a `from` object (default the host's `pawn` root), `Role`
 and `RemoteRole`, relevance and cull distance in metres; location from the
 root component's fields, no engine call. Pull forward when a second
 investigation asks the same.
@@ -193,7 +193,7 @@ first engine whose groups fail where the skill found the offsets.
 
 ### 34 · `offset-find`: which offsets hold known values
 
-`offset-find <object>... --<type> <value>...`: which offsets in each
+`offset-find`, given objects and typed values: which offsets in each
 object hold the given values, and which agree across all of them. Core,
 plain guarded reads, game-agnostic: a dumper's offset finder as one verb.
 Pull forward when finding a layout group by hand (the skill's new-game
@@ -211,7 +211,7 @@ idea 33, which needs the layout source in `status` anyway.
 
 ## Done
 
-- **36 · `game-thread status` as a read:** `status` carries the mode as
+- **36 · The `game-thread` state as a read:** `status` carries the mode as
   `game_thread`; `game-thread` only arms and removes the tick.
 - **18 · Best-effort pack reads off the engine's thread:** shipped behind
   the host opt-in `Context::offThreadReads`, on in `examples/unreal` and
@@ -245,9 +245,9 @@ keeps refusals, approvals and output shapes documented; scripts stay
 outside, in the Python client.
 Also "what is the camera looking at": it only means something while a
 person points the camera, so it cannot be checked without one; `census`,
-`find --cls` and the host's roots are the way in.
+`find` by `cls` and the host's roots are the way in.
 Also a census that marks which instances are new: it needs per-instance state
-in the agent for a question `census --diff` plus `find --cls` answers.
+in the agent for a question `census`'s `diff` plus `find` by `cls` answers.
 Also showing a function's first instructions inside `touches`: `disasm` on
 the row is one more command, and the result stays small.
 Also saved, named layouts or a type system: `label` names members one by

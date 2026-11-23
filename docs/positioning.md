@@ -107,7 +107,7 @@ calls its tick; that something is the host, and it can be small.
 | An internal mod | the mod itself | the mod already runs on the game's thread; ReAgentLive reuses its thread and object checks |
 | An external tool or mod | a small DLL its author writes, that only ticks the core | the external tool keeps working from outside and uses the core for what needs the inside |
 | No mod at all, any process | the own-thread example host, unchanged ([try it](hosting.md#own-thread-example)) | memory commands and the fast lane; no engine access, not tick-accurate |
-| No mod at all, a UE5 game | the Unreal example host, unchanged ([try it](hosting.md#unreal-example)) | objects and fields by name with no dump; engine calls after `game-thread on` |
+| No mod at all, a UE5 game | the Unreal example host, unchanged ([try it](hosting.md#unreal-example)) | objects and fields by name with no dump; engine calls once `game-thread` is on |
 
 What each setup reaches is the [tier ladder](tiers.md). What the host's
 thread allows decides what works:
@@ -116,7 +116,7 @@ thread allows decides what works:
   are safe from any thread the host ticks on.
 - **Object lookups and reads** answer from another thread when the host
   opts in; **engine calls** need the game thread, which a host has by
-  ticking there or gets with `game-thread on`
+  ticking there or gets with `game-thread` (`on`)
   ([which commands](commands/unreal.md#off-the-engines-thread)).
 
 The internal mod and both example setups exist today. ReAgentLive ships
@@ -147,7 +147,7 @@ way:
   Two swaps are opt-in, both a pointer in heap data: the call recorder
   replaces a `UFunction`'s native pointer while a recording runs, and the
   host helper `reagentlive::ue-draw` points the game viewport object at a
-  private copy of its interface table on `game-thread on`.
+  private copy of its interface table when `game-thread` arms it.
 - **No threads of its own.** It runs on a thread the host already has.
   Each example host adds exactly one, its tick; background search adds a
   worker only when the host allows it.

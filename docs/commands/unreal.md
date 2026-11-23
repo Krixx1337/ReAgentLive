@@ -6,39 +6,40 @@
 calls the game's own functions in any UE5 game, with or without a dump.
 Lookups and reads work from any thread the host ticks on; calls and
 everything that runs engine code need the game thread ([the list](#off-the-engines-thread)),
-which the host gives by ticking there or after `game-thread on`. Without a
+which the host gives by ticking there or after `game-thread` with `action` `on`. Without a
 dump, each part of the engine layout is checked on objects every UE5 game
 has before its commands run, so a non-stock engine refuses instead of
 guessing. Where this sits in the ladder: [tiers](../tiers.md).
 
 Every op works without an SDK ([without an SDK](#without-an-sdk)); a host's
-SDK, when it has one, only supplies the layout. Each command's flags and
-result keys: `help <verb>` or [result shapes](results.md).
+SDK, when it has one, only supplies the layout. Each verb's args and an
+example call: the [reference](reference.md) (or `help` with `verb`); result
+keys: [result shapes](results.md).
 
 | Command | Guard |
 |---|---|
-| `find [text] [--cls C] [--live] [--start N] [--limit N]` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `C` (case-insensitive; `--cls Character` includes vendors); `--live` skips class default and archetype objects as `census` does (`FindLive`); pages of 24 from the object-table slot `N` and the next page's cursor (`--limit N`, 1..1000: the console asks for pages until N rows or the end, and the cursor goes on after the last row kept); at most 1 ms of scanning per tick (`Progress::Continue`; the host may allow more, `Context::scanMicroseconds`, up to 50 ms). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. **Class index:** with `--cls` (and in `each`) the agent visits only the slots its class index names: per slot, the object last seen and its class. Every query first compares each slot's pointer with the kept one and reads only changed slots, then works out which classes match the name (kept per name); the whole index is rebuilt once a minute (a new object at a freed object's address in the same slot is the one change a pass misses until then). A candidate still gets every check below, so a stale entry can only hide an object, never add one. Text alone walks the whole table: add `--cls` when the class is known. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region, the last eight regions kept per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
-| `call <object> <[Class:]Function> [hex]` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns. **Faults:** `ProcessEvent` runs under a fault guard; an access fault inside the engine answers `access faulted` ("call faulted: the target may be in a bad state", `detail` = the object) instead of ending the process, and a fresh kept block is dropped. Nothing else is caught, and a fault can leave engine state half-changed: treat the session as suspect afterwards. **`--dry`** (console only) resolves the function and builds the block, raw or typed, and calls nothing: `mode: dry`, `hex` is the block that would be sent, with `exec` and `pure` (const or blueprint-pure). Show it when asking for approval |
-| `call-pure <object> <[Class:]Function> [hex\|Name=value]` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill's approval rules say which to call freely (not the first call on a new host or in a new game, the known-answer call, since a wrong engine layout can crash the game) |
-| `release <object> <[Class:]Function> [hex]` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
-| `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection; then reads its reflected parameters (`params`: name, type, offset, direction, flags) and the call block's size (`block_size`). The parameters need the game thread: off it, `params_error` says so and the rest stands. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (`EngineLayout::interfaces` in `packs/ue/engine_layout.h`, `{UClass*, int32 PointerOffset}` entries, read live). An SDK does not describe it, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
-| `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, then those declared on each native interface the class (or a parent) implements, each interface once, marked `via: "interface"`, with a case-insensitive substring filter and a next-page cursor. Interface rows use the same plausibility check as `func`; an implausible interfaces array lists none. An interface row is never callable on the object (`call` refuses it); use `func Interface:Function` for its implementation |
-| Field table (`get --types`, and under every `get`) | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
-| Object range read | used by `get` (every field, `--snap`); checks the thread ([off-thread](#off-the-engines-thread)) and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
-| `describe <address\|$N>` | checks the thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
-| `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the thread. Each index must be where a pool entry starts: its block is walked from the first entry (one walk per block per request), so an index inside an entry (one stride into a long name, say) returns empty rather than its text read as a header; an undecodable index returns empty too |
+| `find` | objects whose full name (`Base_N`) contains `text` (case-insensitive) and/or whose class or a parent class is named `cls` (case-insensitive; `cls` `Character` includes vendors); `live` skips class default and archetype objects as `census` does (`FindLive`); pages of 24 from the object-table slot `view.start` and the next page's cursor (`view.limit`, 1..1000: the console asks for pages until N rows or the end, and the cursor goes on after the last row kept); at most 1 ms of scanning per tick (`Progress::Continue`; the host may allow more, `Context::scanMicroseconds`, up to 50 ms). The first page scans the whole table and counts the total; a later page starts scanning at its cursor and stops once full, so paging a broad class is linear, not quadratic. **Class index:** with `cls` (and in `each`) the agent visits only the slots its class index names: per slot, the object last seen and its class. Every query first compares each slot's pointer with the kept one and reads only changed slots, then works out which classes match the name (kept per name); the whole index is rebuilt once a minute (a new object at a freed object's address in the same slot is the one change a pass misses until then). A candidate still gets every check below, so a stale entry can only hide an object, never add one. `text` alone walks the whole table: add `cls` when the class is known. While scanning, an object only needs a readable header (one `VirtualQuery` per allocator region, the last eight regions kept per tick) and a matching table index; only matches get the host's full `Context::object` check. Decoded base names are cached by FName index for the process (the name pool never changes an entry), so repeated finds skip almost all name decoding |
+| `call` | object resolved by `Ref` (a stale ref is `not found`; an address-only ref is identified first); function searched up the class chain, optionally restricted to the declaring class; parameter block must equal the function's size exactly (`bad request`, `detail` = expected size); the console sends a zeroed block of that size when none is given and the call fills every parameter (the return value, out parameters not passed by reference), and otherwise names the input it needs; refused off the game thread; called with `ProcessEvent` and the function's own flags; returns the block after the call. **Owned results:** when the return value or a non-const out parameter is not plain data (as `each` defines it: weak handles, strings, arrays), the agent keeps the block per function (up to 8) and the next call starts from its outputs, so the engine releases the old values on assignment; inputs, const references included, always come from the request. `kept` reports it. A full table refuses a new function (`release` one); entries are never evicted, because they still own references. With `kept`, the console adds `kept_reason`, naming the output and what it owns. **Faults:** `ProcessEvent` runs under a fault guard; an access fault inside the engine answers `access faulted` ("call faulted: the target may be in a bad state", `detail` = the object) instead of ending the process, and a fresh kept block is dropped. Nothing else is caught, and a fault can leave engine state half-changed: treat the session as suspect afterwards. **`dry`** (console only) resolves the function and builds the block, raw or typed, and calls nothing: `mode: dry`, `hex` is the block that would be sent, with `exec` and `pure` (const or blueprint-pure). Show it when asking for approval |
+| `call-pure` | as `call`, with the agent's pure check first (flag `CallPure`): the function must be const or blueprint-pure and no output may own memory (nothing is kept), otherwise it is refused before calling ("not a const or pure function: use call", "an output owns memory: use call"). Unlike `call`, its row is not `writes`, so its tool is read-only. Pure is the engine's flag, not a proof: a pure function can still change state; the skill's approval rules say which to call freely (not the first call on a new host or in a new game, the known-answer call, since a wrong engine layout can crash the game) |
+| `release` | one more call with zeroed inputs (or the given block) that drops the function's kept block, so the engine releases what it held; `not found` when nothing is kept |
+| `func` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection; then reads its reflected parameters (`params`: name, type, offset, direction, flags) and the call block's size (`block_size`). The parameters need the game thread: off it, `params_error` says so and the rest stands. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (`EngineLayout::interfaces` in `packs/ue/engine_layout.h`, `{UClass*, int32 PointerOffset}` entries, read live). An SDK does not describe it, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
+| `funcs` | lists owner-qualified function names on the class chain, derived class first, then those declared on each native interface the class (or a parent) implements, each interface once, marked `via: "interface"`, with a case-insensitive substring filter (`view.match`) and a next-page cursor. Interface rows use the same plausibility check as `func`; an implausible interfaces array lists none. An interface row is never callable on the object (`call` refuses it); use `func` with `Interface:Function` for its implementation |
+| Field table (`get` with `mode` `types`, and under every `get`) | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
+| Object range read | used by `get` (every field, `mode` `snap`); checks the thread ([off-thread](#off-the-engines-thread)) and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
+| `describe` | checks the thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
+| `name` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the thread. Each index must be where a pool entry starts: its block is walked from the first entry (one walk per block per request), so an index inside an entry (one stride into a long name, say) returns empty rather than its text read as a header; an undecodable index returns empty too |
 | Array preview | used by `get` with no paths; resolves the instance, reads the array header and a bounded prefix of its backing storage on the same tick |
-| `census [--cls C] [--outer O]` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `C`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
-| `name-find <text> [--start N]` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)). Where entries carry a kind byte, kinds 1 and 2 are obfuscated: their text is always 22 characters, zero-padded, while the header keeps the original name's length, so each entry takes the longer of the two; a kind-2 entry shows its 22 characters, a kind-1 entry the header's length of them |
-| `each <Class> <Path>...`, `call-pure <Class> <[Owner:]Function> --each` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). `each` only reads: a function column is refused (`Owner:Function` while parsing, a bare name once resolved) and named to `call-pure --each`, the call form, so the `writes` mark is exact per verb. A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
-| `script <object\|class> <[Owner:]Function>` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>`, `EngineLayout::script`) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). For control flow and every operand, `--decode` |
-| `script <object\|class> <[Owner:]Function> --decode [--entry <offset>]` | reads the bytecode through plain memory reads and decodes it in the console, so it needs no game thread: every expression, recursively, as one statement per top-level expression with its offset and opcode (`Speed = Vehicle.GetSpeedKPH()`, `if !(A > B) goto +0x58`, `return ReturnValue`). Properties print by their readable name from the names file where it has one (the property list's `raw` keeps the reflected name), functions as `Owner.Function`, `KismetMathLibrary` operators of two arguments as infix (`A * B`), implicit casts as `double(x)` / `float(x)`. The names, functions and properties lists then come from the decoded operands, not the anchored scan. The opcode values and operand sizes are UE5's `Script.h` and `ScriptCore.cpp`: an 8-byte property or object pointer, a 12-byte script name, 4-byte jump and skip offsets, double-precision vector and rotator constants. An opcode the decoder does not list stops it with `stopped` (`unknown 0xNN at +0xOFF`); nothing is guessed. On an uber graph (`ExecuteUbergraph_*`), `events` lists where each event enters it, from the class's functions that call it with an integer constant; `--entry <offset>` decodes one event from there to its first return, pop, goto or end |
-| `entries <object> <[Owner:]Field> [--start N]` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `--start` takes the printed `next_cursor`. Sets and maps need the layout `get --types` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
-| `rows <object> [--match T] [--fields a,b.c] [--at t] [--start N] [--limit N] [--nonzero]` | console only, over object and range reads: a data table's rows, or a curve table's curves ([rows](#rows)) |
-| `trace <start> <end> [--channel C] [--simple] [--ignore A]` | console only, no agent op of its own: `KismetSystemLibrary.LineTraceSingle` through `call` on `Default__KismetSystemLibrary`, its hit decoded by the pure `GameplayStatics.BreakHitResult` (`call-pure`). Both signatures are checked by parameter type and order before anything is written; a mismatch is refused. Parameters are matched by position, never by name (games obfuscate names). `BreakHitResult` has 18 outputs in UE5 and 16 in UE4 (no `BoneName`, `ElementIndex`); both are mapped. `bone` is `HitBoneName`, the bone hit. Ends are a point `x,y,z` in cm, an object's location (`GetCameraLocation`, `K2_GetComponentLocation` or `K2_GetActorLocation`, the first the object has; a camera manager is also an actor, whose own location is not the view point, all through `call-pure`) or `object@Socket` (`SceneComponent.GetSocketLocation`, the name looked up as text). The trace runs in `--ignore`'s world with `bIgnoreSelf` (that actor and its components are skipped), else in an end object's world, skipping nothing; two points need `--ignore`. Complex collision unless `--simple`; `--channel` is the trace type query (0 visibility, 1 camera in a stock project). No debug drawing. The row is not `writes`: a line trace changes no state |
-| `game-thread <on\|off>` | the host's game-thread tick through the game viewport's Draw (`reagentlive::ue-draw`, `packs/ue/host_draw.h`), for a host that ticks elsewhere. `on` arms it; the host installs on its next tick once the pack has located the engine: the first live `GameViewportClient` (found with `FirstLiveInstance`) has its Draw interface (`ViewportInterfaceOffset` in `engine_layout.h`) pointed at a private copy of its vtable with the Draw entry (`ViewportDrawIndex`) swapped: one pointer written in the viewport object, the game's code and tables untouched. The hook forwards every call, then ticks the agent only for that viewport on the process's first thread; `status` then says `host_thread: engine` and the [game-thread commands](#off-the-engines-thread) work. A table outside the game's image, or the Draw entry not in its code, is refused (`conflict`). `off` puts the viewport's table back if it still holds the copy. Modes: `off`, `waiting` (armed, not installed yet), `conflict`, `on`, `stopped`; also the game thread, the viewport, its table and the game's Draw (module, RVA). `status` reads the same answer as `game_thread`, with no prompt. How an agent confirms Draw per game: the skill's [game-thread page](../../.claude/skills/reagentlive/references/unreal/game-thread.md). Marked `writes`. Agents whose host does not link `reagentlive::ue-draw` answer unsupported. Host side: [hosting](../hosting.md#game-thread-tick) |
-| `enum <object\|Enum>` | an enum's names and values in its order, named in one `name` request. The agent reads `UEnum::Names` as the SDK has it (pairs of FName and int64) or, as UE 5.6 and later keep them, as two arrays (FNames and int64 values, bit 0 of each pointer a dynamic-allocation tag, at `Names - 8` and `Names`) and an int32 count at `Names + 8`; a layout counts only when every name decodes, else the enum is refused. A Blueprint enum's names are its stored `NewEnumeratorN`, not its display names. Byte and enum properties print numbers; this says what they mean. An enum by name is an exact find under `Enum` (user-defined enums included) |
-| `refs <name\|#index>` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). Text must match a pooled name exactly (the console resolves it through `name-find`) |
+| `census` | one table scan (1 ms per tick) counting live instances per exact class, optionally only classes under `cls`; class default and archetype objects are skipped. Each row carries the class ref, its name, the count and up to three sample refs; most instances first. The console reads every page (later pages come from the agent's cached result) and pages its own rows ([census](#census-changes)) |
+| `name-find` | walks the engine's name pool (base names, including gameplay tags and row names no object carries) for a case-insensitive substring; 64 matches per page with the next comparison index as cursor. The pool and its entry layout are the ones located before the first command ([below](#before-the-first-command)). Where entries carry a kind byte, kinds 1 and 2 are obfuscated: their text is always 22 characters, zero-padded, while the header keeps the original name's length, so each entry takes the longer of the two; a kind-2 entry shows its 22 characters, a kind-1 entry the header's length of them |
+| `each`, `call-each` | lists the live instances of the class or a subclass (the scan spans ticks; up to 1024, then `capped`), then reads one span (up to 64 bytes) or calls one function for every instance in a single tick on the game thread; the console turns several columns into passes ([each](#each)). `each` only reads: a function column is refused (`Owner:Function` while parsing, a bare name once resolved) and named to `call-each`, the call form, so the `writes` mark is exact per verb. A call needs a const or blueprint-pure function whose parameters are all plain outputs or the return value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor` on the property or, where it lacks one, on every member of its struct: a gameplay tag is plain, a tag container is not); anything else is refused and stays with `call`, the message naming the parameter and why (an input, or what keeps it from being plain data: "`ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an array)"). Instances gone since the scan are skipped. A repeat with the reuse flag skips the scan |
+| `script` | reads the function's bytecode (`UStruct::Script`, a `TArray<uint8>`, `EngineLayout::script`) and scans it anchored: a value counts only right after its opcode byte. Names follow `EX_NameConst` (0x21, a 12-byte script name), functions follow `EX_FinalFunction` (0x1C), `EX_LocalFinalFunction` (0x46) or `EX_CallMath` (0x68), and properties follow `EX_LocalVariable` (0x00), `EX_InstanceVariable` (0x01) or `EX_LocalOutVariable` (0x48). Every entry is confirmed before it is listed: a name must decode, a function must be a live UFunction in the object table, and a property pointer's field class name must end in `Property`. Repeats are folded into `count`. The opcodes are UE5's public `Script.h` values (the SDK has no `EExprToken`); each was seen live before a value of its kind. A native function has no bytecode (`not found`). For control flow and every operand, `decode` |
+| `script` with `decode` | reads the bytecode through plain memory reads and decodes it in the console, so it needs no game thread: every expression, recursively, as one statement per top-level expression with its offset and opcode (`Speed = Vehicle.GetSpeedKPH()`, `if !(A > B) goto +0x58`, `return ReturnValue`). Properties print by their readable name from the names file where it has one (the property list's `raw` keeps the reflected name), functions as `Owner.Function`, `KismetMathLibrary` operators of two arguments as infix (`A * B`), implicit casts as `double(x)` / `float(x)`. The names, functions and properties lists then come from the decoded operands, not the anchored scan. The opcode values and operand sizes are UE5's `Script.h` and `ScriptCore.cpp`: an 8-byte property or object pointer, a 12-byte script name, 4-byte jump and skip offsets, double-precision vector and rotator constants. An opcode the decoder does not list stops it with `stopped` (`unknown 0xNN at +0xOFF`); nothing is guessed. On an uber graph (`ExecuteUbergraph_*`), `events` lists where each event enters it, from the class's functions that call it with an integer constant; `entry` (an offset) decodes one event from there to its first return, pop, goto or end |
+| `entries` | one page of a reflected `TArray`, `TSet` or `TMap` field on a live instance, header and elements read in the same tick. Arrays page by index; sets and maps by slot, skipping free slots, so `view.start` takes the printed `next_cursor`. Sets and maps need the layout `get` with `mode` `types` reports (`stride`): the header is checked first (slot count against capacity, one allocation bit per slot, the free count against the bits) and a failed check is refused with its reason. Keys and values use the field formatter (structs expanded, FNames resolved in one lookup, object pointers named in one describe-many) |
+| `rows` | console only, over object and range reads: a data table's rows, or a curve table's curves ([rows](#rows)) |
+| `trace` | console only, no agent op of its own: `KismetSystemLibrary.LineTraceSingle` through `call` on `Default__KismetSystemLibrary`, its hit decoded by the pure `GameplayStatics.BreakHitResult` (`call-pure`). Both signatures are checked by parameter type and order before anything is written; a mismatch is refused. Parameters are matched by position, never by name (games obfuscate names). `BreakHitResult` has 18 outputs in UE5 and 16 in UE4 (no `BoneName`, `ElementIndex`); both are mapped. `bone` is `HitBoneName`, the bone hit. Ends are a point `[x, y, z]` in cm, an object's location (`GetCameraLocation`, `K2_GetComponentLocation` or `K2_GetActorLocation`, the first the object has; a camera manager is also an actor, whose own location is not the view point, all through `call-pure`) or `{"object": <ref>, "socket": "Name"}` (`SceneComponent.GetSocketLocation`, the name looked up as text). The trace runs in `ignore`'s world with `bIgnoreSelf` (that actor and its components are skipped), else in an end object's world, skipping nothing; two points need `ignore`. Complex collision unless `simple`; `channel` is the trace type query (0 visibility, 1 camera in a stock project). No debug drawing. The row is not `writes`: a line trace changes no state |
+| `game-thread` | the host's game-thread tick through the game viewport's Draw (`reagentlive::ue-draw`, `packs/ue/host_draw.h`), for a host that ticks elsewhere. `on` arms it; the host installs on its next tick once the pack has located the engine: the first live `GameViewportClient` (found with `FirstLiveInstance`) has its Draw interface (`ViewportInterfaceOffset` in `engine_layout.h`) pointed at a private copy of its vtable with the Draw entry (`ViewportDrawIndex`) swapped: one pointer written in the viewport object, the game's code and tables untouched. The hook forwards every call, then ticks the agent only for that viewport on the process's first thread; `status` then says `host_thread: engine` and the [game-thread commands](#off-the-engines-thread) work. A table outside the game's image, or the Draw entry not in its code, is refused (`conflict`). `off` puts the viewport's table back if it still holds the copy. Modes: `off`, `waiting` (armed, not installed yet), `conflict`, `on`, `stopped`; also the game thread, the viewport, its table and the game's Draw (module, RVA). `status` reads the same answer as `game_thread`, with no prompt. How an agent confirms Draw per game: the skill's [game-thread page](../../.claude/skills/reagentlive/references/unreal/game-thread.md). Marked `writes`. Agents whose host does not link `reagentlive::ue-draw` answer unsupported. Host side: [hosting](../hosting.md#game-thread-tick) |
+| `enum` | an enum's names and values in its order, named in one `name` request. The agent reads `UEnum::Names` as the SDK has it (pairs of FName and int64) or, as UE 5.6 and later keep them, as two arrays (FNames and int64 values, bit 0 of each pointer a dynamic-allocation tag, at `Names - 8` and `Names`) and an int32 count at `Names + 8`; a layout counts only when every name decodes, else the enum is refused. A Blueprint enum's names are its stored `NewEnumeratorN`, not its display names. Byte and enum properties print numbers; this says what they mean. An enum by name is an exact find under `Enum` (user-defined enums included) |
+| `refs` | scans every function's bytecode for `EX_NameConst` with that comparison index, 1 ms per tick like `census`; later pages come from the cached result; up to 512 functions (`capped`). `name` must match a pooled name exactly (the console resolves it through `name-find`) |
 
 - **Object identity:** an object-table slot plus its serial. Serial 0 means
   not assigned yet and agrees with a later serial for the same slot and
@@ -50,13 +51,13 @@ result keys: `help <verb>` or [result shapes](results.md).
   without it is refused by every handler (`host gave no engine-thread
   check`), never treated as being on the right thread; one returning false
   is refused as `not on the game thread`.
-- **Faults inside engine calls** (`call`, `call-pure`, `each` with a
-  function): an access fault is caught and answered `access faulted`; the
+- **Faults inside engine calls** (`call`, `call-pure`, `call-each`):
+  an access fault is caught and answered `access faulted`; the
   engine may be left in a bad state. Other exceptions are not caught.
 - **Globals:** every command first needs the object table and name pool
   located and checked ([below](#before-the-first-command)); until then it
   is refused with `pack off: <reason>`.
-- **`get --types` rows:** offset (hex, as SDK dumps print it), size (element size × array dimension), property
+- **`get` rows with `mode` `types`:** offset (hex, as SDK dumps print it), size (element size × array dimension), property
   type, name and declaring class. Games may obfuscate property names; offsets,
   sizes and types stay real. Single TArray fields include the reflected element
   type and stride when available. Single struct fields and arrays of structs
@@ -126,7 +127,7 @@ passes; otherwise they are refused with the check that failed (e.g.
 | typed | every bool on `Actor` (bytes at the bool base), its struct and array properties | fields, params, call |
 | function | `KismetMathLibrary:Add_IntInt`: native, parameters 12 bytes, return at 8, exec in code | func, funcs, exec entries, call |
 | enum | `ENetRole` decodes to 5 names, `ROLE_None` first | enum |
-| call | `UObject`'s vtable slot tests `FunctionFlags` against `FUNC_Native` | call, call-pure (`--each` too), the recorder |
+| call | `UObject`'s vtable slot tests `FunctionFlags` against `FUNC_Native` | call, call-pure, call-each, the recorder |
 
 `FFrame` offsets (the recorder) and the set, map, interface, data table
 and curve table layouts are not checked up front: the recorder needs the
@@ -149,7 +150,7 @@ The table, header and two struct offsets come from the engine, checked like the 
   off with `table: no layout fits`.
 - **`UStruct::SuperStruct`:** the first pointer field after the header of
   the class of classes whose chain reads `Struct`, `Field`, `Object`, then
-  null. Unknown, `find --cls` and `census --cls` match the exact class only.
+  null. Unknown, `find` and `census` with `cls` match the exact class only.
 - **`UStruct::Size`:** the int32 after `SuperStruct` that holds the header
   size in `Object` and one pointer more in `Field`. Unknown,
   `describe` reports no class size.
@@ -171,12 +172,12 @@ pages link here. A host that ticks elsewhere (its own thread, as
 
 | Answer off the game thread (with `offThreadReads`) | Need the game thread |
 |---|---|
-| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `get` in every mode, array previews), `entries`, `enum`, `func` (its metadata), `funcs`, `script --decode` | `call`, `call-pure` (`--each` too), `release`, `func`'s `params`, `each`, `script`, `refs`, `exec entries` (and `export-labels`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `trace` and text values |
+| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `get` in every mode, array previews), `entries`, `enum`, `func` (its metadata), `funcs`, `script` with `decode` | `call`, `call-pure`, `call-each`, `release`, `func`'s `params`, `each`, `script`, `refs`, `exec entries` (and `export-labels`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `trace` and text values |
 
 Commands that need the game thread are refused off it with `not on the
 game thread`. A host gets onto the game thread by ticking there (an SDK
 host on the engine's own tick) or, with `reagentlive::ue-draw`, by
-`game-thread on`, after which `status` says `host_thread: engine`.
+`game-thread` with `action` `on`, after which `status` says `host_thread: engine`.
 Locating the globals runs on either thread. Without `offThreadReads`, a
 host off the game thread gets no pack command at all.
 
@@ -191,33 +192,40 @@ host off the game thread gets no pack command at all.
 
 ## Named calls
 
-Named calls take the exact reflected parameter names `func` prints under `params`.
-Supported inputs:
+A typed call's `params` names its inputs by the exact reflected parameter
+names `func` prints under `params`:
 
-- FNames as text (`Name=Head`: the pooled name, compared without case,
+```json
+{"verb": "call", "args": {"object": "0x1f2e3d4c50#123:4", "function": "SetTarget", "params": {"Bone": "Head", "Location": {"X": 1, "Y": 2, "Z": 3}}}}
+```
+
+Supported values:
+
+- FNames as text (`"Head"`: the pooled name, compared without case,
   instance 0, looked up once per session through `name-find`) or as
-  `#index[:number]` (the console checks the index). A name the pool lacks
+  `"#index[:number]"` (the console checks the index). A name the pool lacks
   is refused with its text: "no pooled name is 'X' (parameter P)";
 - a struct whose only member is a name (a gameplay tag) as the name alone:
-  `ResourceTag=Some.Tag.Name`, also inside a struct
-  (`Entry=(Count=2, Tag=Some.Tag.Name)`); `(TagName=...)` works too;
-- bools as `true`/`false`/`1`/`0` (a bitfield bool sets only its bit);
-- signed and unsigned integers of every width, decimal or `0x` hex,
-  range-checked; bytes and enums as unsigned integers;
-- floats and doubles in decimal or exponent form, finite only;
-- plain structs as `(Member=value, ...)` or `(value, ...)` in member order,
-  nesting up to four levels: `Location=(X=1,Y=2,Z=3)`. Members left out
-  stay zero;
-- object and class pointers as `$N`, a literal ref or an address (the
-  object is described first, so a gone one is refused), or `None`.
+  `"ResourceTag": "Some.Tag.Name"`, also inside a struct
+  (`"Entry": {"Count": 2, "Tag": "Some.Tag.Name"}`); `{"TagName": ...}`
+  works too;
+- bools as `true`/`false` (or `1`/`0`; a bitfield bool sets only its bit);
+- signed and unsigned integers of every width, as numbers or `"0x..."`
+  text, range-checked; bytes and enums as unsigned integers;
+- floats and doubles as numbers, finite only;
+- plain structs as an object by member name or a list in member order,
+  nesting up to four levels: `{"X": 1, "Y": 2, "Z": 3}` or `[1, 2, 3]`.
+  Members left out stay zero;
+- object and class pointers as a literal ref or an address (the object is
+  described first, so a gone one is refused), or `null` for None.
 
-Use `--typed` for a call with no inputs. Inputs must be plain single
+`params` `{}` makes a typed call with no inputs. Inputs must be plain single
 values; outputs may own memory (an array, a string): they start zeroed, as
 a raw call with no block sends them, and the agent keeps the block. A const reference (`const FVector&`) is an input: the engine also
 marks it `OutParm`, so the agent passes its `ConstParm` and the console
 counts it as an input, not an output. Other references are refused.
 Return and out values are formatted by name, structs member by member,
-FNames resolved. Host approval rules still apply. Use the raw hex form for
+FNames resolved. Host approval rules still apply. Use a raw `block` for
 other input layouts (strings, arrays, weak pointers).
 
 **Returned arrays** (the return value or an out parameter) come as rows:
@@ -226,23 +234,24 @@ the engine's memory and decoded with its reflected struct, nested arrays
 included (up to 256 elements each, 3 deep, then `truncated`), tag
 containers as lists of tags. The agent
 keeps the block that owns the array ([owned results](#unreal-pack)), so
-the memory stays valid until the next call of that function. `--limit N`
-rows per page (default 100, 0 for all), `--start N` from a page's
-`next_cursor`, and `--fields a,b.c` keeps only those members, a path
-going into structs and the elements of nested arrays
-(`--fields ItemTag,Variations.Price`); a path naming no member is refused
-with the members there; a path into a map goes through `key` or `value`
-(`--fields Damage.value`). `--nonzero` leaves out the zero members inside
+the memory stays valid until the next call of that function. A `view`
+pages them: `view.limit` rows per page (default 100, 0 for all),
+`view.start` from a page's `next_cursor`, and `view.fields` keeps only
+those members, a path going into structs and the elements of nested arrays
+(`[["ItemTag"], ["Variations", "Price"]]`); a path naming no member is
+refused with the members there; a path into a map goes through `key` or
+`value` (`[["Damage", "value"]]`). `view.nonzero` leaves out the zero members inside
 the outputs (0, false, empty, `None`; elements stay, so a list keeps its
 positions, and one emptied by the filter prints `{"zeroed": N}`), as it
-does inside `get`, `each` and `rows` values. Any of the
-four makes the call typed. They are `call` flags only: an array owns
-memory, so `call-pure` refuses it.
+does inside `get`, `each` and `rows` values. A view makes the call
+typed. Only `call` takes one: an array owns memory, so `call-pure`
+refuses it.
 
 ## Call recorder
 
-`calls-start <object|Class> <[Owner:]Function> <duration> [--object R] [--dry]`
-records a reflected function's calls; `calls-read` returns them so far,
+`calls-start` records a reflected function's calls (`owner` an object or
+a class, `function`, `duration`, with `object` and `dry` optional;
+[reference](reference.md#calls-start)); `calls-read` returns them so far,
 `calls-stop` ends it early. A host offers it by listing the three ops; the
 start is a write the host approves.
 
@@ -252,7 +261,7 @@ start is a write the host approves.
   `calls-stop`; host stop) the original goes back only if the pointer
   still holds the thunk. Otherwise something else swapped it since: it is
   left alone (`state: replaced`) and the thunk keeps forwarding, which is
-  safe because the host's image stays loaded. `--dry` shows the pointer
+  safe because the host's image stays loaded. `dry` shows the pointer
   and thunk without writing. A stopped slot is reused only a second after
   its restore, oldest first: a caller that loaded the thunk just before
   the restore can still enter it, and must find the old original there.
@@ -275,7 +284,7 @@ start is a write the host approves.
 - **Bounds:** 8 recordings at once, 256 rows each (older ones are dropped
   and counted), parameter blocks up to 1 KiB. Rows carry the sequence,
   milliseconds since the start, thread id and the calling object (named
-  while it lives). `--object` keeps only calls on one object.
+  while it lives). `object` keeps only calls on one object.
 - **Values** decode through the shared reader, as a copy (as `get`'s
   `before`): FNames and objects are named, but strings, arrays, sets and
   maps print their headers, since the caller may have freed that memory
@@ -287,24 +296,25 @@ start is a write the host approves.
 
 ## Class names
 
-`get --types`, `func` and `funcs` also take a bare class or
-struct name (`get Character --types`). The console finds the object of
+`get` with `mode` `types`, `func` and `funcs` also take a bare class or
+struct name (`{"verb": "get", "args": {"object": "Character", "mode": "types"}}`). The console finds the object of
 that exact name under `Struct` once per agent instance and reuses its ref
 through the cache file. Names up to 127 characters: the agent compares the
 whole name, and the reply's name (cut at 63) is compared that far. A name
 starting with `Default__` is that default object (an exact find, any
-class), so `get Default__Character` reads the object. `get` (without
-`--types`), `rows`, `entries`, `call` and `call-pure` take a `Default__`
-name in place of an object (`get Default__GameSettings Scale`), never a
-bare class name: `get Character` is refused with that hint. The lookup is an exact `find` (`FindExact`): the
+class), so `object` `Default__Character` reads the object. `get` (in
+other modes), `rows`, `entries`, `call` and `call-pure` take a `Default__`
+name in place of an object
+(`{"verb": "get", "args": {"object": "Default__GameSettings", "paths": [["Scale"]]}}`),
+never a bare class name: `get` on `Character` is refused with that hint. The lookup is an exact `find` (`FindExact`): the
 agent stops at the first match instead of scanning and counting the whole
 table, so a class costs the slots up to it; only a name that is no class
 costs a full scan.
 
 ## Layouts in bulk
 
-`layout-export <file> <Name>... [--closure [depth]]` (up to 256 classes,
-structs or enums) writes JSON lines, each with a `kind`, for
+`layout-export` (`file`, up to 256 `classes`: classes, structs or enums,
+`closure`) writes JSON lines, each with a `kind`, for
 `layout-check` and for a static tool's types (the IDA loader's
 `import_layouts`):
 
@@ -322,12 +332,11 @@ structs or enums) writes JSON lines, each with a `kind`, for
 - `enum`: `name`, `size` (the bytes a field gives it, when one does) and
   `values`, `[[name, value], ...]` in the engine's order, names as stored.
 
-Types come in the order found, enums last. `--closure` also exports what
-the named types' fields reference, up to `depth` steps (default 1, at
-most 8; 1024 types, then `capped`), each with its super chain, and every
+Types come in the order found, enums last. `closure` also exports what
+the named types' fields reference, up to that many steps (1..8; 1024 types, then `capped`), each with its super chain, and every
 enum a written field names; a type past the depth stays a name in its
 field lines. Names that are no class, struct or enum come back in
-`missing`. `layout-check <file>` reads the field lines (written by
+`missing`. `layout-check` reads the field lines of its `file` (written by
 `layout-export`, by hand, or by a tool from an SDK; lines with no `kind`
 are field lines; `size` and `type` are optional; `class`, `struct` and
 `enum` lines are skipped) and answers only what the live layout does not hold: rows of
@@ -335,42 +344,42 @@ are field lines; `size` and `type` are optional; `class`, `struct` and
 `type`, checked in that order), `expected` and `found`, at most 200
 (`capped`), with `ok` when every line holds. Each class costs one lookup
 and one field table, both cached for the agent instance, so re-checking a
-mod's offsets after a game patch is one command, not one `get --types` per
-class.
+mod's offsets after a game patch is one command, not one `get` with `mode`
+`types` per class.
 
 ## Assets to files
 
-`export-assets <dir> --cls <Class>... [--match <text>]` writes the live
-instances of up to 16 classes (and their subclasses; no `Default__` or
-archetype objects), optionally only those whose name contains `text`, one
+`export-assets` writes the live instances of up to 16 classes (`cls`,
+and their subclasses; no `Default__` or archetype objects) into `dir`,
+optionally only those whose name contains `view.match`, one
 JSON file per object, so asset data can be read, searched and compared
 between builds offline instead of live again:
 
 - The file is `<dir>/<Class>/<name>.json` (characters Windows refuses
   become `_`; a second object of the same name gets `~2`), holding `ref`,
-  `name`, `class`, `get` (the result of `get <ref> --nonzero`) and, for a
-  data or curve table, `rows` (the result of `rows <ref> --limit 0`). A
+  `name`, `class`, `get` (`get`'s result with `view.nonzero`) and, for a
+  data or curve table, `rows` (`rows`' result with `view.limit` 0). A
   table is an object with a `RowStruct` field, or whose class or the class
   asked for names `CurveTable`. A read that failed is `{error}` in its
   place, and the object counts in `failed`.
 - `<dir>/index.json` lists every object (`name`, `class`, `ref`, `file`,
   `table_rows`, `error`); the result carries `exported`, `tables`,
   `failed`, the first 100 rows and `omitted`. At most 2000 objects per
-  call, then `capped`: narrow with `--match` or fewer classes.
+  call, then `capped`: narrow with `view.match` or fewer classes.
 - Each object costs the reads of its `get` and `rows`, run as batch items
   run (no output budget per item); the files are replaced on every call.
 
 ## each
 
-`each <Class> <path>...` is a table: `columns` once, then `rows` of
+`each` is a table: `columns` once, then `rows` of
 `{ref, name, values}`, one value per column in the order asked; `name` is
 the instance's object name, described for the rows shown (after
-`--where` and `--limit`) in a few requests. The same shape
+`where` and `view.limit`) in a few requests. The same shape
 for one column, so the verb keeps one result type.
 
 - **Columns.** Up to 16 field paths, as `get` takes them (`Owner:Field` or
   a readable name, struct members, object, class and weak object
-  pointers). `call-pure <Class> <Function> --each` is the same table with
+  pointers). `call-each` is the same table with
   one function as its only column (a call per instance: calls are the slow
   case and their outputs do not fit beside fields); it answers `mode:
   call`, `each` always `mode: field`. A function named to `each` is
@@ -387,23 +396,23 @@ for one column, so the verb keeps one result type.
 - **Cost.** Listing the instances dominates, and a column adds none. The
   listing goes through the class index (see `find` above): after the
   first, a pass over the table's changed slots, not a walk of every object.
-- **`--seconds N`** (one field or function) repeats every 100 ms on the
+- **`seconds`** (one field or function) repeats every 100 ms on the
   cached instance list and prints each changed row to stderr as it
   happens.
-- **`--where Field~text`** keeps the instances whose field's value
-  contains `text`, any case: a string, an FName's or a text's string, else
+- **`where`** (`{"field": ["Name"], "contains": "text"}`) keeps the
+  instances whose field's value contains the text, any case: a string, an FName's or a text's string, else
   the value's JSON. The field is read as one more column and shown only
   when it is one; `matched` counts the instances kept. Not with
-  `--seconds` or a function column.
+  `seconds`.
 - **`Outer`, `Name` and `Class`** name the instance itself, as columns and
-  in `--where`, when no field takes the name: one describe-many of the
+  in `where`, when no field takes the name: one describe-many of the
   instances, then one of their distinct outers. `Outer` is `{name, ref}`.
-  They match text: `--where Class~Body` is a substring of the class's own
-  name, while `--cls` takes a class and its subclasses.
+  They match text: `where` on `["Class"]` containing `Body` is a substring
+  of the class's own name, while `cls` takes a class and its subclasses.
 - **Containers.** An array, set or map column reads its header in the pass
-  and its elements per instance after it (8 shown, `--elements N` up to
+  and its elements per instance after it (8 shown, `view.elements` up to
   256), so `same_tick` is false; a set or map is not held to the 64 bytes.
-- **`--limit N`** caps the rows shown (default 100, 0 for all); `omitted`
+- **`view.limit`** caps the rows shown (default 100, 0 for all); `omitted`
   counts the rest. Unfiltered output over a whole class is large: locate
   the object first, or filter.
 
@@ -415,48 +424,56 @@ object:
 
 | Filter | Keeps |
 |---|---|
-| `--cls C` | instances of `C` or a subclass |
-| `--outer O` | objects with `O` up their outer chain (at most 16 steps). `O` is an object when it parses as one (a literal ref, an address, `$N`), checked like any object argument (a gone one is refused as not found, never a filter by whatever reuses its address), else text an outer's name contains, any case (no match is no rows) |
-| `--live` (`find`) | no class default or archetype objects (`each` and `census` skip them always) |
+| `cls` | instances of the class or a subclass |
+| `outer` | objects with that object up their outer chain (at most 16 steps). It is an object when it parses as one (a literal ref, an address), checked like any object argument (a gone one is refused as not found, never a filter by whatever reuses its address), else text an outer's name contains, any case (no match is no rows) |
+| `live` (`find`) | no class default or archetype objects (`each` and `census` skip them always) |
 
-`get --match T` (with `--types` or without) keeps the fields whose name
-or readable label contains `T`, any case.
+`get`'s `view.match` (in `types` mode or not) keeps the fields whose name
+or readable label contains the text, any case.
 
 `find` and `describe` rows name each object's `outer` (`{name, ref}`): a
 function's or property's class, a subobject's owner; a package has none.
 
 ## census
 
-`--match T` keeps rows whose class name contains `T` (case-insensitive), as `get
---match` does for fields; the scan, `classes` and `instances` stay the
-whole census, and `--limit` applies after the filter.
+`view.match` keeps rows whose class name contains the text
+(case-insensitive), as `get`'s does for fields; the scan, `classes` and
+`instances` stay the whole census, and `view.limit` applies after the
+filter.
 
 <a id="census-changes"></a>**Pages and changes.** A result shows `from`, `total`
-(rows after `--match`) and, while more rows remain, `next_cursor` with a
-`hint` (`--start <cursor> for more, --limit 0 for all`). `--start N` is a
-later page of the last census with the same `--cls` (and the same `--diff`):
+(rows after `view.match`) and, while more rows remain, `next_cursor` with a
+`hint` (`start <cursor> for more, limit 0 for all`). `view.start` is a
+later page of the last census with the same `cls` (and the same `diff`):
 the stored rows, sliced, with no new scan and
 `ms` 0, so the pages of one filter join without gaps; refused when there
-is none. A census without `--start` scans again. Every census becomes the
-baseline for its `--cls` filter, in the session and the cache file
-(which keeps the census before it too, for later pages of `census --diff`).
+is none. A census without `view.start` scans again. Every census becomes
+the baseline for its `cls` filter, in the session and the cache file
+(which keeps the census before it too, for later pages of a `diff`).
 
-`census --diff [--cls C]` runs a new census and prints only the classes whose count
+`census` with `diff` (and `cls`) runs a new census and prints only the classes whose count
 differs from that baseline, largest change first: each row's `count` is the
 count now and `before` the count then, and the result's `before` holds the
 baseline's `classes` and `instances`; then the new census is the baseline.
-So: `census --cls C`, the action, `census --diff --cls C`. It is refused when there is no
-baseline for that filter (none taken, another agent instance, or another
-`--cls`). `--match` and `--limit` apply to the changed rows. Classes
+So, around the action:
+
+```json
+{"verb": "census", "args": {"cls": "Actor"}}
+{"verb": "census", "args": {"cls": "Actor", "diff": true}}
+```
+
+It is refused when there is no baseline for that filter (none taken,
+another agent instance, or another `cls`). `view.match` and `view.limit`
+apply to the changed rows. Classes
 match by ref. Samples are any live instances, not the new ones: for a
 class absent before they are necessarily new, otherwise follow up with
-`find --cls`; a class now gone has none.
+`find` with `cls`; a class now gone has none.
 
 - A census scans across several ticks, so it is not one moment in time,
   and an object that lives a tick or two can fall between two censuses.
-  For those, `watch-start` a container or use `each --seconds`.
+  For those, `watch-start` a container or use `each` with `seconds`.
 - A broad filter shows unrelated churn (effects, audio, UI). Narrow
-  `--cls` to a base class instead.
+  `cls` to a base class instead.
 
 ## func
 
@@ -468,14 +485,16 @@ generated wrapper, so follow it separately when locating native game logic.
 
 ## get
 
-One reader of reflected fields, three modes; one row type
-(`help get`):
+One reader of reflected fields, in modes; one row type
+([reference](reference.md#get)). Every field with its value, named paths
+through pointers and structs, the layout with no values, and a baseline
+then what changed:
 
-```text
-get <object> [--match T] [--nonzero] [--own] [--elements N]   every field with its value
-get <object> <Field[.Field...]>... [--nonzero] [--elements N] named paths, through pointers and structs
-get <object|Class|Struct> --types [--match T] [--own]         the layout, no values
-get <ref> --snap [file]   /   get <ref> --changed [file]      baseline, then what changed
+```json
+{"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "view": {"nonzero": true}}}
+{"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "paths": [["Info", "Owner"], ["Health"]]}}
+{"verb": "get", "args": {"object": "Character", "mode": "types", "view": {"match": "Move"}}}
+{"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "mode": "snap"}}
 ```
 
 Paths are [described with the round trips](console.md#fewer-round-trips);
@@ -484,13 +503,13 @@ rest of this section is every field.
 
 - **A row is its name, offset and value**: the readable name where one was
   recovered, with the reflected one beside it as `raw`; `before` with
-  `--changed`, `object` for a named pointer, `preview` for a container,
+  `mode` `changed`, `object` for a named pointer, `preview` for a container,
   `truncated` only when true. The layout (owner, type, size, bool mask)
-  comes as `meta` with `--meta`; `--types` is the layout mode.
-- `--own` keeps the fields the object's own class declares (an instance's
+  comes as `meta` with `meta` true; `mode` `types` is the layout mode.
+- `own` keeps the fields the object's own class declares (an instance's
   class is looked up; a class target is its own). An instance's class name
   arrives cut at 47 characters, so owners are compared that far.
-- The object is read in `read object` chunks, each checked to be the same
+- The object is read in object-read chunks, each checked to be the same
   object: one freed or replaced mid-read fails the command instead of
   printing mixed bytes.
 - It is the field table plus `read`s of the object (4 KB per tick, up to 64 KB),
@@ -504,9 +523,9 @@ rest of this section is every field.
   fields, expanded structs and array previews. Resolved names include the
   Unreal instance suffix where present. Unresolved names keep their index and
   number. Compact values read arrays, sets and maps nested inside structs
-  (8 elements, `--elements N` up to 256, 3 deep), show a tag container as
+  (8 elements, `view.elements` up to 256, 3 deep), show a tag container as
   its tags and name pointers ([compact values](console.md#fewer-round-trips));
-  with `--meta` they show their headers. An `FString` is its text (UTF-16
+  with `meta` they show their headers. An `FString` is its text (UTF-16
   read and printed as UTF-8, up to 4096 characters). A soft object or class
   pointer is `{path, object}`: the asset path, and the loaded object named
   or null. An instanced struct (`FInstancedStruct`) is `{struct, value}`:
@@ -515,15 +534,15 @@ rest of this section is every field.
   it: a top-level pointer field or element stays an address in `value` and
   is named beside it (`object`, a map's `key_object` and `value_object`);
   pointers inside values are named in place. Up to 112 distinct pointers
-  are named per call, the rest counted in `unnamed`. `get` appends
-  reusable `$N` refs without renumbering existing refs; `describe` makes its
-  object `$1`. The next successful `find` replaces the list.
-- `before` (`--changed`) decodes the snapshot's bytes the same way, as a
+  are named per call, the rest counted in `unnamed`. Named objects carry
+  their literal ref (`0x<address>#<index>:<serial>`) to pass to the next
+  call.
+- `before` (`mode` `changed`) decodes the snapshot's bytes the same way, as a
   copy: names and objects are looked up, but nothing the snapshot points
   into is read (arrays, sets, maps and strings print their headers) and no
   text goes to the engine, because that memory may be freed since.
 - Arrays, sets and maps with a known layout get a preview beside their
-  header: the count and the first eight elements (`--elements N` for more),
+  header: the count and the first eight elements (`view.elements` for more),
   a map's as `key` and `value`, read as pages of `entries` (an agent without
   it: an array's 8-element preview), up to 16 containers per call. The
   agent reads a page's header and elements on the same tick, so short-lived
@@ -534,14 +553,14 @@ rest of this section is every field.
   -81104}`). Nested structs expand up to
   three levels and 16 members per struct; deeper levels, unknown structs and
   members outside the value's bytes fall back to hex. Struct layouts are
-  cached for the console session. `get --changed` and struct array elements
+  cached for the console session. `mode` `changed` and struct array elements
   use the same expansion.
 
 ## Text values
 
 `get`, `each` and decoded rows (returned arrays, `rows`) show a
 `TextProperty` as its display string, at any depth: `"Assault Rifle"`.
-With `--meta` (top-level only) it says how:
+With `meta` (top-level only) it says how:
 `{"text": "Assault Rifle", "via": "KismetTextLibrary.Conv_TextToString"}`.
 An `FText` holds a pointer to engine-private text data whose layout
 changes between engine builds, and a localized text keeps no inline
@@ -555,10 +574,10 @@ bytes with `text_error` saying why.
 
 ## rows
 
-`rows <data table>` lists a `DataTable`'s rows: `{name, address, value}`
+`rows` on a data table lists a `DataTable`'s rows: `{name, address, value}`
 per row, `value` decoded with the table's `RowStruct` as returned arrays
-are ([named calls](#named-calls)), with the same `--fields`, `--start` and
-`--limit`; `--match` keeps row names containing text, any case, and
+are ([named calls](#named-calls)), with the same `view.fields`, `view.start` and
+`view.limit`; `view.match` keeps row names containing text, any case, and
 `total` counts what it kept. `RowStruct` is found by its name, its
 readable name, or, where names are obfuscated, as the one object field
 the `DataTable` class declares. `RowMap` is unreflected (`get` shows only
@@ -569,19 +588,19 @@ slot, the free count against the bits) before trusting it; a table whose
 header fails is refused with "RowMap is not the stock UE5 ...". Row
 names keep their instance suffix (`Row_2`).
 
-`rows <curve table>` reads a `CurveTable` (or a subclass) instead: no
+`rows` on a curve table reads a `CurveTable` (or a subclass) instead: no
 `RowStruct`, so the console checks the class and reads the unreflected
 `RowMap` (`TMap<FName, FRealCurve*>`) and `CurveTableMode` at the
 offsets of the layout profile's `curvetable` group. The result says
 `curve: simple|rich`; each row carries `keys`, `[t, v]` per key for a
 simple curve (with its one `interp` mode on the row) and
 `[t, v, interp, arrive, leave]` for a rich one (`weighted: true` when its
-tangents are weighted). `--at <t>` adds each row's `value` at time `t`,
+tangents are weighted). `at` adds each row's `value` at that time,
 evaluated as the engine does: the end key's value outside the keys,
 otherwise the earlier key's mode (constant holds, linear blends, cubic is
 the Bezier of the two keys' values and tangents; weighted tangents are
-evaluated unweighted). `--fields` and `--nonzero` apply to data tables
-only, `--at` to curve tables only. An object that is neither is refused
+evaluated unweighted). `view.fields` and `view.nonzero` apply to data
+tables only, `at` to curve tables only. An object that is neither is refused
 with "neither a data table ... nor a curve table ...".
 
 ## Labels for a static tool
@@ -591,20 +610,19 @@ both ways. JSON lines `{module, module_size, timestamp, rva, name, kind}`;
 one file holds several builds (image size and PE timestamp tell them
 apart, and each command uses only the running build's rows). Per address
 the highest rank wins: `user` (a name a person gave in the static tool),
-`global` (`peek --label`), `exec`, `interface`, then the rest.
+`global` (`peek` with `label`), `exec`, `interface`, then the rest.
 
 - **Derived names:** `<console>.labels.jsonl` beside the console, where
   `export-labels` writes by default: tens of thousands of rows, rebuilt in
   seconds, so it stays local.
 - **Names people confirm:** the host's names file
   (`ConsoleConfig::labelsFile`, absolute or relative to the console), where
-  `peek --label` writes by default and the static tool's `export_names`
+  `peek` with `label` writes by default and the static tool's `export_names`
   should write: a host keeps it under version control, so names survive a
   clean build and are shared. Without one, the console's file holds both.
-- `disasm --save` reads both files (or `--labels <file>` alone).
+- `disasm` with `save` reads both files (or `save.labels` alone).
 
-`export-labels [file] [--module M]
-[--kinds exec,vtable,interface,global]` (default the console's file, the
+`export-labels` (`file`, `module`, `kinds`: default the console's file, the
 exe and every kind; a kind not asked for costs no requests) merges into the
 file: every native function's exec thunk (`Class::execName`, `exec`), each
 class default object's vtable (`vtbl_Class`, named after a native class
@@ -615,7 +633,7 @@ past that). It keeps `user` and `global` rows, this build's rows of kinds
 not derived now and every other build's lines (`other_builds`). No blind
 scan of globals. Another tool's IDA mappings (Dumper-7's) are optional:
 imported first, they name exec thunks, vtables and types, and
-`--kinds interface,global` adds only what needs the running process. The
+`kinds` `["interface", "global"]` adds only what needs the running process. The
 result counts what was written: `total` rows of this build, of which
 `globals`, `user`, `exec`, `vtables` and `interfaces`.
 
@@ -646,11 +664,11 @@ A row may carry `sig`, a byte signature in `sig-check`'s terms:
 `{pattern, offset}` for a function (it lies `offset` bytes before the
 match, usually 0) or `{pattern, resolve}` for a global (a reference
 signature at code that loads it). With the row's `rva` as the expected
-address it is a `sig-check --file` line. `export-labels` and `export_names` keep it.
+address it is a line of a `sig-check` `file`. `export-labels` and `export_names` keep it.
 
-`labels-sign [file] [--module M] [--again]` (default the host's names
+`labels-sign` (`file`, `module`, `again`; default the host's names
 file, else the console's) signs this build's `user` and `global` rows that
-have none (`--again`: all of them). A function's pattern starts at it, a
+have none (`again`: all of them). A function's pattern starts at it, a
 global's at the first code that loads it; each is the live bytes with
 address fields masked (as `sig-bytes` suggests), cut on whole instructions
 and grown from 16 bytes (to `unique_at_length` when `sig-check` knows it)
@@ -658,7 +676,7 @@ until exactly one match lands on the row, up to 96. Derived rows are not
 signed: `export-labels` remakes them. A row it cannot sign gets
 `sig_failed` (`timestamp`: the build tried, `reason`), and later calls on
 that build skip it and count it in `failed_before`, so a repeated call
-searches only for new rows; `--again` tries it too. Signing the row drops
+searches only for new rows; `again` tries it too. Signing the row drops
 the mark; `labels-port` never copies it.
 
 A row's signature comes one of two ways:
@@ -671,10 +689,10 @@ A row's signature comes one of two ways:
   `sig_failed`), or a name `labels-port` lists `missing` once found again.
   Make the signature as for any other ([signatures](fast-lane.md#signatures)),
   write it into the row's `sig` (removing `sig_failed`) and check the
-  file's signatures with `sig-check --file`. A failure is signed by hand or left
+  file's signatures with `sig-check` and its `file`. A failure is signed by hand or left
   unsigned, never a reason to extend the loop.
 
-`labels-port [file] [--module M]`, after a patch: per name the running
+`labels-port` (`file`, `module`), after a patch: per name the running
 build lacks, the newest signed row of another build of the module is
 matched in the image (one shared search per anchor). One match appends a
 row for this build with the same `sig` and `ported_from` (the old
@@ -688,7 +706,7 @@ missing ones, name them, then `labels-sign` the new rows.
 Games may obfuscate reflected property names. A host can supply a names file
 (format in `frontends/cli/state/names.h`: owner, offset, size, bool mask, name), loaded
 from `ConsoleConfig::namesFile` beside the console or `--names <file>`.
-A `get` row (every field or `--types`) is then named `ControlRotation`
+A `get` row (every field or `mode` `types`) is then named `ControlRotation`
 with `raw` `_qkzvxwmpltrnhdbgf`; struct members show the readable name alone. Paths (`get`, `each`, `watch-start`) and `Owner:Field` accept
 either name. A size or bit mismatch keeps the raw name, so a stale file never
 labels a moved field. Snapshot files keep raw names.
@@ -703,8 +721,9 @@ field's type and count, name, the main image's PE timestamp), loaded with
 the names file. The host generates the names file and would wipe appended
 lines on its next regeneration, so nothing writes into it.
 
-- **`label <object|Class> <offset> <type>[n] <Name>`** appends one line
-  (`label $1 0x538 f64[3] Start`), so naming a member is one command.
+- **`label`** appends one line
+  (`{"verb": "label", "args": {"object": "0x1f2e3d4c50#123:4", "offset": "0x538", "type": "f64[3]", "name": "Start"}}`),
+  so naming a member is one call.
   It is filed under the class that declares the reflected field before the
   offset, or under `Class` when that class declares one of the fields.
   Refused when it overlaps a reflected field or ends past the class size
@@ -712,10 +731,10 @@ lines on its next regeneration, so nothing writes into it.
   an earlier one; a trailing `?` marks an unconfirmed name. The result is
   the member as the file now holds it.
 - **`get`** shows the members of every class whose fields it lists as
-  rows marked `native: true` (with `--types`, `type` as written, `f64[3]`),
-  decoded by that type; its filters and `--changed` apply,
+  rows marked `native: true` (with `mode` `types`, `type` as written, `f64[3]`),
+  decoded by that type; its filters and `mode` `changed` apply,
   and `get` takes the name as the last step of a path on the object
-  (`get $1 Start`). Rows sort by offset. A line that overlaps a reflected
+  (`paths` `[["Start"]]`). Rows sort by offset. A line that overlaps a reflected
   field or lies outside the class size is not shown: `native_refused`
   lists it with its `line` and `reason` (`get` fails with the same).
 - **Stale.** Patches move native offsets, and reflected names follow their

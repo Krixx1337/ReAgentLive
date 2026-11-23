@@ -21,8 +21,8 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 | Core client | typed C++ API: attach, read, write, modules, search, xrefs, region, pointer chains, supported ops, raw `Send` | `core/client.*` | protocol |
 | Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls, every one with no SDK (`ue-base`, layouts through `engine_layout.h`); the opt-in game-thread tick for hosts (`host_draw.*`, `ue-draw`) | `packs/ue/` | core; only `reagentlive::ue` also the host's `SDK/` headers (`engine_layout_sdk.h`, `agent_ue_globals.cpp`) |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |
-| Python, MCP, IDA | session client, the generator of typed functions, the MCP adapter (tools from the table's rows); label importer | `frontends/python/`, `frontends/mcp/`, `frontends/ida/` | the console's JSON calls and `help --json` (MCP: the MCP Python SDK), its label file |
-| Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch-start --follow` | the host's code ([hosting](hosting.md)) | core, packs |
+| Python, MCP, IDA | session client, the generator of typed functions, the MCP adapter (tools from the table's rows); label importer | `frontends/python/`, `frontends/mcp/`, `frontends/ida/` | the console's JSON calls and `help` with `json` (MCP: the MCP Python SDK), its label file |
+| Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch-start`'s `follow` | the host's code ([hosting](hosting.md)) | core, packs |
 
 Dependencies point one way: host → pack → core. Frontends use the client API,
 never the section directly. ReAgentLive never includes host code.
@@ -102,7 +102,7 @@ console reaches the pack only through `console/pack.h`, which
 `packs/ue/cli/console/pack.cpp` implements (and `console/no_pack.cpp`, empty, for a
 console built without the pack): the pack's state for a run, its cache
 block, its rows of the verb table and `status` line, which commands are its own, and what core
-commands borrow (object guards, the `write --undo` owner check, `watch-start`'s field ranges,
+commands borrow (object guards, the owner check of `write`'s `undo`, `watch-start`'s field ranges,
 `peek`'s objects and names). `packs/ue/cli/console/internal_ue.h` is for
 `packs/ue/cli/console/` only. Why seams and not a pack interface:
 [design](design.md#source-layout).
@@ -150,23 +150,23 @@ one file:
 | `console/console.cpp` | the call reader (JSON calls from `-c`, a file and stdin), `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole`, its busy wait and its no-target mode |
 | `console/output.cpp` | JSON records, the check of a result against its row, errors and refusals, `timing`, output budgets (the digest, the kept-results file), batch capture, each line's output size for the usage log |
 | `results/budget.h` | output budgets: the size profile of a result, the narrower call and the digest |
-| `console/memory.cpp` | `status`, read decoding, timed writes (`write --undo`, `--hold`, `writes`), captures (`watch-start`, `--file`), `peek` |
+| `console/memory.cpp` | `status`, read decoding, timed writes (`write`'s `undo` and `hold`, `writes`), captures (`watch-start`, its `file`), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
-| `console/sig.cpp` | `sig-check` (one pattern or `--file`), `sig-bytes`: byte signatures against the live image |
+| `console/sig.cpp` | `sig-check` (one `pattern` or a `file`), `sig-bytes`: byte signatures against the live image |
 | `console/label_sigs.cpp`, `code/label_sign.h` | `labels-sign`, `labels-port`: signatures on a labels file's names, grown and ported |
-| `console/native.cpp` | `vtable` (and `--rtti`) and the region `read` and `peek` report (native objects) |
+| `console/native.cpp` | `vtable` (and its `rtti`) and the region `read` and `peek` report (native objects) |
 | `console/pack.h`, `packs/ue/cli/console/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `packs/ue/cli/console/members.cpp`, `packs/ue/cli/state/native_names.h` | native members: `label`, the native file and its checks |
 | `call/layout.h`, `values/layout_json.h` | typed layouts (`read`'s `type` as a layout, native member types) |
 | `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `get` with no paths and `--types` |
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
 | `packs/ue/cli/console/export.cpp` | `export-assets`: each object's `get` and table rows run as batch items, one file each |
-| `packs/ue/cli/console/capture.cpp` | snapshots (`get --snap`, `--changed` files) |
+| `packs/ue/cli/console/capture.cpp` | snapshots (`get`'s `mode` `snap` and `changed`, their `file`) |
 | `packs/ue/cli/console/calls.cpp` | `func` (with its signature), typed calls |
-| `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each` values) and `--fields`; `rows` |
+| `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each` values) and `view.fields`; `rows` |
 | `packs/ue/cli/console/text.cpp` | text values through the engine's converter |
 | `packs/ue/cli/console/query.cpp` | class lookup, `each`, `get`, `entries` |
-| `packs/ue/cli/console/script.cpp`, `packs/ue/cli/values/kismet.h` | `script --decode`: the bytecode read and its operands named; the Kismet decoder and printer (pure, tested) |
+| `packs/ue/cli/console/script.cpp`, `packs/ue/cli/values/kismet.h` | `script`'s `decode`: the bytecode read and its operands named; the Kismet decoder and printer (pure, tested) |
 | `packs/ue/cli/state/cache_ue.h`, `packs/ue/cli/values/format_ue.h`, `packs/ue/cli/values/json_output.h`, `packs/ue/cli/results/` | the pack's cache block, property values as text and JSON, its result builders |
 | `call/command.h`, `call/values.h` | the built `Command` and its limits; numbers, refs, bytes and the typed JSON values (addresses, chains, paths) |
 | `call/build.cpp` | `Build` and `BuildCall` (declared in `build.h`): help, status, quit, stats, `batch`, then the areas below |
@@ -180,7 +180,7 @@ one file:
 | `agent_ue_scan.cpp` | the cached scans: `each`, `exec-entries` |
 | `agent_ue_script.cpp` | Blueprint bytecode: `script`, `refs` |
 | `agent_ue_calls.cpp` | the call recorder: `calls-start`, `calls-read`, `calls-stop` |
-| `agent_ue_index.cpp`, `class_index.h` | the class index `find --cls` and `each` walk; the index itself (pure, tested) |
+| `agent_ue_index.cpp`, `class_index.h` | the class index `find`'s `cls` and `each` walk; the index itself (pure, tested) |
 | `engine_layout.h`, `engine_layout_sdk.h` | the one home of engine offsets (`StockUE5`, the profile groups), and the layout an SDK describes (`offsetof`) |
 | `globals.h`, `name_pool.h` | finding the object table and name pool; walking the pool's entry blocks (pure, tested) |
 | `host_draw.h`, `host_draw.cpp` | `reagentlive::ue-draw`: the game-thread tick through the viewport's Draw and the `game-thread` op |
@@ -223,16 +223,16 @@ A host that adds reagentlive with `add_subdirectory` sets
 | Suite | Covers |
 |---|---|
 | `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters, the background worker and search jobs, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
-| `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get` (paths, and every field with values and previews), `each` and `entries` must print the same JSON, with and without `--nonzero` and `--meta`; status keys (`unnamed`, digested or not) and stale object arguments (positional and `--outer`) must agree. Add a case here when a verb gains a value or an object argument |
+| `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get` (paths, and every field with values and previews), `each` and `entries` must print the same JSON, with and without `view.nonzero` and `meta`; status keys (`unnamed`, digested or not) and stale object arguments (`object` and `outer`) must agree. Add a case here when a verb gains a value or an object argument |
 | `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, its args schema, schema refusals and their examples, help), the builders and typed values, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
-| `reagentlive.results-doc`, `reagentlive.reference-doc` (`tests/table/`) | [result shapes](commands/results.md) and the [verb reference](commands/reference.md) are what the table generates; `reagentlive-table` also prints `help --json` without a console |
-| `reagentlive.verb-names`, `reagentlive.verb-names-check` (`tests/python/`) | every verb and arg the docs and the skill name (JSON calls, plan steps, Python calls, MCP tool names, key paths such as `view.limit`) is in the table (`check_verb_names.py`; a host runs it on its own docs with its console), and the checker's own cases |
+| `reagentlive.results-doc`, `reagentlive.reference-doc` (`tests/table/`) | [result shapes](commands/results.md) and the [verb reference](commands/reference.md) are what the table generates; `reagentlive-table` also prints `help` with `json` without a console |
+| `reagentlive.verb-names`, `reagentlive.verb-names-check` (`tests/python/`) | every verb and arg the docs and the skill name (JSON calls, plan steps, Python calls, MCP tool names, key paths such as `view.limit`) is in the table and no code span still writes the removed text grammar (`check_verb_names.py`; a host runs it on its own docs with its console), and the checker's own cases |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the class index, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |
 | `reagentlive.python-session`, `reagentlive.python-mcp`, `reagentlive.ida-labels` (`tests/python/`) | the session client and a module generated from the real table, against a scripted fake console (`fake_console.py`) that serves it (strict results, a method per verb, JSON calls, canned replies checked against their types); the MCP tools made from that table, through an in-memory client (skipped without the MCP SDK); and the IDA label importer |
 | `reagentlive-example-tests` (`tests/example/`) | the own-thread host DLL loaded into the test process: attach by pid, `own` thread kind, reads, expected-bytes writes, a pin that expires, no engine pack; with the Unreal pack, the Unreal example's DLL the same way (`unreal_tests.cpp`, no engine: the `ue` pack listed, `game-thread` answering) |
 | `reagentlive.consumer` (`tests/consumer/`) | host projects built in their own tree: an agent-only host (no downloads with the console off, nothing past `src/` reachable through the include path) and an Unreal host with no SDK (`host_ue_base.cpp`: `ue-base` builds with no `SDK/` on the path) |
 | `reagentlive.engine-layout` (`tests/python/`) | engine offsets defined only in their homes (`engine_layout.h`, `engine_layout_sdk.h`, `globals.h`, `name_pool.h`) |
-| `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help --json` has every core row and no other, each the same as in the full table, and the module generated from it no pack verb |
+| `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help` with `json` has every core row and no other, each the same as in the full table, and the module generated from it no pack verb |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
 | `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, INDEX lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, `AGENTS.md` stays within its own, and no host or game name appears in the library |
 
@@ -296,11 +296,11 @@ Check this table before adding a fact; if it has a home, link there.
 | What the agent does next at each tier (climb, approvals) | the skill's `SKILL.md` | docs |
 | What each interface offers (MCP tools, console, Python, C++ client) and its API | [client.md](client.md) | README: one line each |
 | Which interface to pick for a task; verb → MCP tool → Python function | the skill's `references/interfaces.md` | docs |
-| A verb's name, pack, arguments, notes, example, result keys | the verb table in code (`help <verb>`); [commands/reference.md](commands/reference.md) and [commands/results.md](commands/results.md) are generated from it, never edited | everything else |
+| A verb's name, pack, arguments, notes, example, result keys | the verb table in code (`help` with `verb`); [commands/reference.md](commands/reference.md) and [commands/results.md](commands/results.md) are generated from it, never edited | everything else |
 | Error kinds and their message templates | `ErrorKinds` in `call/refusals.h` (listed in [the reference](commands/reference.md#error-kinds)) | handlers (they name an `ErrorKind`) |
 | A verb's behaviour and guards | its page under `commands/` | skill (links only) |
 | Which Unreal commands need the game thread | [commands/unreal.md](commands/unreal.md#off-the-engines-thread) | everywhere else (links) |
-| Console mechanics: lines, refs, `$N`, budgets, cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
+| Console mechanics: calls, refs, budgets, cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
 | Approval rules, evidence rules | the skill's `SKILL.md` | docs (links) |
 | Investigation method, pitfalls, per-question advice | the skill's `references/` | docs |
 | Hosting, CMake targets, the examples' internals, the host API | [hosting.md](hosting.md) | README (links) |

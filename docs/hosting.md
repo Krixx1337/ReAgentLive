@@ -17,7 +17,7 @@ Code rules the library keeps for injected images:
 The same shape for any UE5 game with no dump: `examples/unreal/host.cpp`
 ticks the whole Unreal pack on its own thread (`reagentlive::ue-base`, the
 stock UE5 layout checked on known objects, `Context::offThreadReads` on)
-and links `reagentlive::ue-draw`, so `game-thread on` moves the tick to the
+and links `reagentlive::ue-draw`, so `game-thread` with `action` `on` moves the tick to the
 game viewport's Draw, where the game-thread commands work
 ([game-thread tick](#game-thread-tick)). Its console is
 `reagentlive-ue.exe`, section `Local\reagentlive-ue-<pid>` (the generic
@@ -40,7 +40,7 @@ console `reagentlive.exe` (`examples/own_thread/console.cpp`). Its
 cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/own-thread
 # Load reagentlive-own-thread.dll into the target with any DLL loader, then:
-reagentlive -c "status; modules; read <module>+0x1000 16"
+reagentlive -c '[{"verb": "status"}, {"verb": "modules"}, {"verb": "read", "args": {"addr": {"module": "target.exe", "rva": "0x1000"}, "len": 16}}]'
 ```
 
 - With no pid, the console attaches to the one process that has the
@@ -89,7 +89,7 @@ A host is whatever code inside the target calls `Tick`. It provides:
   lets lookups and reads run off the game thread
   ([which commands](commands/unreal.md#off-the-engines-thread)).
   `Context::scanMicroseconds` (default 1000, at most 50 000) is how long
-  each tick an object-table scan (`find --cls`, `census`, `each`, `refs`,
+  each tick an object-table scan (`find` by `cls`, `census`, `each`, `refs`,
   label export) may run: more is fewer ticks per scan and a longer stall
   in each. A host that ticks at 100 Hz and can spare 4 ms finishes a
   370 000-object scan about four times sooner.
@@ -103,7 +103,7 @@ A host is whatever code inside the target calls `Tick`. It provides:
   [game-thread tick](#game-thread-tick).
 - **Optional:** a log callback ([logging](#logging)), hold budgets
   ([protocol](protocol.md#exchange)), `Host::backgroundSearch`, and named
-  roots for `watch-start --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).
+  roots for `watch-start`'s `follow` ([memory commands](commands/memory.md#following-a-replaced-object)).
 
 ## Using it in your project
 
@@ -226,7 +226,7 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   use, kept for the process); without it a job scans in slices of each
   host tick. The two opt-in swaps are the call recorder (a
   host that lists its ops) and `reagentlive::ue-draw` (a host that links it,
-  on `game-thread on`); neither writes code or the game's tables.
+  when `game-thread` arms it); neither writes code or the game's tables.
 - **Held requests** make the agent spin briefly on the host's thread for the
   client's next request and run it in the same tick, bounded by the host's
   budgets ([protocol](protocol.md#exchange)).
@@ -250,7 +250,7 @@ refuses to open without it). `status` prints it as `host_thread`:
 | `borrowed` (a thread the game runs for something else, such as the frame present) or `own` | yes | reads with `Context::offThreadReads`, else refused; calls refused ([which](commands/unreal.md#off-the-engines-thread)) | the same host tick, nothing more |
 
 A host off the game thread that links `reagentlive::ue-draw` moves its
-tick onto the game thread with `game-thread on` and states `engine` for
+tick onto the game thread when `game-thread` arms it and states `engine` for
 those Draw ticks ([game-thread tick](#game-thread-tick)).
 
 Off the engine's thread, `status` adds `tick_note` saying so once, and the
@@ -275,7 +275,7 @@ The host API, as `examples/unreal/host.cpp` uses it:
 | Call | When | Does |
 |---|---|---|
 | `Configure(tick, log)` | once, before `Poll` | the host's tick (run from Draw on the game thread, at most once per frame) and where state changes are logged (may be null) |
-| `Arm()` | the host wants it without the command | arms the install, as `game-thread on` does; clears a refused install so it is tried again |
+| `Arm()` | the host wants it without the command | arms the install, as `game-thread` with `on` does; clears a refused install so it is tried again |
 | `Poll()` | every host tick, before the agent ticks, on the host's thread | installs once armed and the viewport is found (the pack must have located the object table: any Unreal command does); cheap otherwise |
 | `Live()` | every host tick | a Draw tick ran in the last 500 ms: skip the host's own tick |
 | `OnGameThread()` | inside the Draw tick | the host's `Context::gameThread` for that tick (with `HostThread::Engine`) |
@@ -326,8 +326,8 @@ mismatch is an `internal` error). Why rows:
 
 `ConsoleConfig::namesFile` names readable field names (names.h format)
 beside the console. `ConsoleConfig::labelsFile` is where names people
-confirm go, in labels format: `peek --label` writes there by default and a
-static tool's `export_names` should; `disasm --save` reads it with the
+confirm go, in labels format: `peek` with `label` writes there by default and a
+static tool's `export_names` should; `disasm`'s `save` reads it with the
 console's derived `<console>.labels.jsonl`. Give a path under version
 control (absolute, or relative to the console exe) so names survive a clean
 build and travel with the project; leave it empty to keep everything in the

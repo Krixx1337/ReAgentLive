@@ -13,10 +13,10 @@ refused, not guessed.
 
 ```text
 T4 SDK host       layout from the dump, real serials, no first-command scan, host verbs   (a mod's own host)
-T3 Game thread    call, call-pure, params, each, script, refs, the call recorder          (+ game-thread on, or an engine host)
-T2 Reflection     fields, dump, get, entries, enum, func, funcs                           (+ the stock layout groups pass)
+T3 Game thread    call, call-pure, func's params, each, script, refs, the call recorder   (+ game-thread on, or an engine host)
+T2 Reflection     get (values, types), entries, enum, func, funcs                         (+ the stock layout groups pass)
 T1 Unreal located find, describe, census, name, name-find, object reads                   (+ object table and name pool found)
-T0 Core           read, write (--undo, --hold), search, xrefs, disasm, sig-*, vtable, watch    (any x64 process)
+T0 Core           read, write (undo, hold), search, xrefs, disasm, sig-*, vtable, watch   (any x64 process)
 ```
 
 Each rung keeps everything below it. Which Unreal commands answer off the
@@ -27,8 +27,8 @@ game thread and which need it is stated once, in
 |---|---|---|---|---|
 | **T0 Core** | memory reads and guarded writes, search, the [fast lane](commands/fast-lane.md) (disassembly, references, signatures), [native objects](commands/native-objects.md) (vtables, RTTI, pointer chains), pins, trials, watches | the DLL loaded into any Windows x64 process | nothing, once loaded | [`examples/own_thread`](../examples/own_thread/README.md) |
 | **T1 Unreal located** | objects by name: `find`, `describe`, `census`, `name`, `name-find`, reads of an object's bytes | the Unreal pack, and its first command locating the engine's object table and name pool ([before the first command](commands/unreal.md#before-the-first-command)) | not a UE5 game, or the globals not found: `pack off: <reason>` | [`examples/unreal`](../examples/unreal/README.md) |
-| **T2 Reflection** | fields and values by name: `get` (`--types` for the layout), `entries`, `enum`, `func`, `funcs` | the engine layout: each layout group checked on objects every UE5 game has ([without an SDK](commands/unreal.md#without-an-sdk)) | a non-stock engine: the failing group's commands are refused with the check that failed; T1 and T0 still work | [`examples/unreal`](../examples/unreal/README.md) |
-| **T3 Game thread** | the game's own functions: `call`, `call-pure`, `release`, `func`'s `params`, `each`, `script`, `refs`, `trace`, the [call recorder](commands/unreal.md#call-recorder) ([full list](commands/unreal.md#off-the-engines-thread)); `same_tick` means one moment of the game | the agent ticking on the game thread: `game-thread on` in the Unreal example, or a host that ticks there | `game-thread` answers `conflict` (the viewport's Draw is not where it expects), or unsupported in a host without `reagentlive::ue-draw` | [`examples/unreal`](../examples/unreal/README.md) after `game-thread on`; a mod's own host |
+| **T2 Reflection** | fields and values by name: `get` (`mode` `types` for the layout), `entries`, `enum`, `func`, `funcs` | the engine layout: each layout group checked on objects every UE5 game has ([without an SDK](commands/unreal.md#without-an-sdk)) | a non-stock engine: the failing group's commands are refused with the check that failed; T1 and T0 still work | [`examples/unreal`](../examples/unreal/README.md) |
+| **T3 Game thread** | the game's own functions: `call`, `call-pure`, `release`, `func`'s `params`, `each`, `script`, `refs`, `trace`, the [call recorder](commands/unreal.md#call-recorder) ([full list](commands/unreal.md#off-the-engines-thread)); `same_tick` means one moment of the game | the agent ticking on the game thread: `game-thread` with `on` in the Unreal example, or a host that ticks there | `game-thread` answers `conflict` (the viewport's Draw is not where it expects), or unsupported in a host without `reagentlive::ue-draw` | [`examples/unreal`](../examples/unreal/README.md) once `game-thread` is on; a mod's own host |
 | **T4 SDK host** | the layout from the game's SDK dump (every group trusted), refs with real serials, the globals' addresses given so the first command does not scan, host verbs of the mod's own | a mod built with `reagentlive::ue` and its SDK, ticking on the game thread | a game patch until the SDK is dumped again | a mod's own host ([hosting](hosting.md)) |
 
 An AI agent can build either example for you: [agent setup](agents/setup.md).
@@ -45,8 +45,8 @@ engine offsets checked together. More in the [glossary](INDEX.md#glossary).
 | What you see | Tier |
 |---|---|
 | `packs: []` | **T0** |
-| `packs: ["ue"]`, `host_thread: own` or `borrowed` | **T1**; **T2** once `get Vector --types` answers |
-| `packs: ["ue"]`, `host_thread: engine` | **T3** (after `game-thread on`, or an engine host) |
+| `packs: ["ue"]`, `host_thread: own` or `borrowed` | **T1**; **T2** once `{"verb": "get", "args": {"object": "Vector", "mode": "types"}}` answers |
+| `packs: ["ue"]`, `host_thread: engine` | **T3** (once `game-thread` is on, or an engine host) |
 | T3, and refs carry real serials (`0x...#<index>:<serial>`, not `:0`) | **T4** (an SDK host; without an SDK every serial is 0) |
 
 The first Unreal command decides T1
@@ -62,7 +62,7 @@ The ladder mixes two separate questions:
   with the Unreal pack and a host that opts in (the Unreal example does), objects
   and fields; values read across ticks need not line up. On the game thread (`engine`), engine calls work and a
   `batch` reads one moment of the game. The Unreal example moves from one
-  to the other with `game-thread on` and back with `game-thread off`.
+  to the other with `game-thread` `on` and back with `off`.
   Details: [host thread](hosting.md#host-thread).
 - **Where the layout comes from.** Without an SDK, the stock UE5 layout,
   each group checked on known objects before its commands run (T1-T3).

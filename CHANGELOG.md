@@ -124,8 +124,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **A generated verb reference:** [docs/commands/reference.md](docs/commands/reference.md)
   lists every verb with its args and their help, result, notes and an
   example call, the shared `view` keys and every error kind with its
-  message shape. A host can check its own docs' calls against its table
-  with `tests/python/check_verb_names.py --table <console>`.
+  message shape. Every example in the docs and the skill is a JSON call; a
+  host can check its own docs against its table (unknown verbs or args,
+  leftover text-grammar forms) with `tests/python/check_verb_names.py
+  --table <console>`.
 
 - **Plan files:** `{"verb": "run", "args": {"plan": "plan.json", "out":
   "lines.jsonl"}}` runs a list of steps (`{verb, args, expect?, repeat?:
