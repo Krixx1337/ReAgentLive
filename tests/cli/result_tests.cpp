@@ -250,8 +250,8 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     same("watch 1500ms 0x10:4 0x20:1 --then call 0x10#1:1 Fn 01",
         {{"duration", 1.5}, {"ranges", {"0x10:4", "0x20:1"}}, {"then", "call 0x10#1:1 Fn 01"}});
     same("watch-start 10s 0x10:4", {{"duration", 10}, {"ranges", "0x10:4"}});
-    same("dump 0x10#1:1 --changed", {{"object", "0x10#1:1"}, {"changed", true}});
-    same("dump 0x10#1:1 --changed f.snap --nonzero", {{"object", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
+    same("get 0x10#1:1 --changed", {{"object", "0x10#1:1"}, {"changed", true}});
+    same("get 0x10#1:1 --changed f.snap --nonzero", {{"object", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
     same("get 0x10#1:1 A.B C", {{"object", "0x10#1:1"}, {"paths", {"A.B", "C"}}});
     same("name 5 6", {{"indices", {5, 6}}});
     same("census --cls Actor --start 100", {{"cls", "Actor"}, {"start", 100}});
@@ -596,9 +596,9 @@ TEST_CASE("each groups its columns' spans into passes of at most 64 bytes") {
     CHECK(json["same_tick"] == false);
 }
 
-TEST_CASE("compact rows: dump is name, offset and value; get is value and address") {
-    shape::Dump dump;
-    shape::DumpRow row;
+TEST_CASE("get rows: every field is name, offset and value; a path is path, value and address") {
+    shape::Get dump;
+    shape::GetRow row;
     row.name = "MaxHealth";
     row.raw = "_aaabcd";
     row.offset = 308;
@@ -617,22 +617,24 @@ TEST_CASE("compact rows: dump is name, offset and value; get is value and addres
     shape::Get get;
     get.ref = RefId{"0x10#1:1"};
     shape::GetRow value;
+    value.path = "A.B";
     value.value = 1.5;
     value.address = Addr(0x18);
     get.rows.push_back(value);
     shape::GetRow failed;
+    failed.path = "C";
     failed.error = "no field C";
     get.rows.push_back(failed);
     const auto got = Checked(get);
-    CHECK(got["rows"][0] == Json{{"value", 1.5}, {"address", "0x18"}});
-    CHECK(got["rows"][1] == Json{{"error", "no field C"}});    // A failed path keeps its place.
+    CHECK(got["rows"][0] == Json{{"path", "A.B"}, {"value", 1.5}, {"address", "0x18"}});
+    CHECK(got["rows"][1] == Json{{"path", "C"}, {"error", "no field C"}});    // A failed path keeps its place.
 }
 
-TEST_CASE("fields, func and params results") {
-    const std::vector<ue::Field> fields{Field("Health", 0x100, 4, "FloatProperty")};
-    const auto table = Checked(MakeFields(Pawn, fields, [](const ue::Field&) { return std::string("Health"); }));
-    CHECK(table["rows"][0] == Json{{"name", "Health"}, {"owner", "Pawn"}, {"type", "FloatProperty"}, {"offset", "0x100"},
-        {"size", 4}, {"label", "Health"}});
+TEST_CASE("get --types, func and its signature") {
+    const std::vector<ue::Field> fields{Field("_aaabcd", 0x100, 4, "FloatProperty")};
+    const auto table = Checked(MakeTypes(Pawn, fields, [](const ue::Field&) { return std::string_view("Health"); }));
+    CHECK(table["rows"][0] == Json{{"name", "Health"}, {"raw", "_aaabcd"}, {"owner", "Pawn"}, {"type", "FloatProperty"},
+        {"offset", "0x100"}, {"size", 4}});
     CHECK(table["capped"] == false);
 
     const ue::FunctionInfo function{0x2000, 0x7ff600001000, 0x400, true, "Pawn", "GetSpeed"};
@@ -1019,9 +1021,9 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
         return usage;
     };
     std::vector<UsageLine> lines = {
-        line("s1", "dump", 5000, "a"),                        // No filter: unfiltered.
-        line("s1", "dump", 300, "bb", {"--match"}),
-        line("s1", "dump", 5000, "a"),                        // The same input again: repeated, unfiltered.
+        line("s1", "get", 5000, "a"),                        // No filter: unfiltered.
+        line("s1", "get", 300, "bb", {"--match"}),
+        line("s1", "get", 5000, "a"),                        // The same input again: repeated, unfiltered.
         line("s1", "find", 200, "ccc"),
         line("s1", "batch", 40, "dddd"),
         line("s1", "read", 100, "eeeee"),
@@ -1041,7 +1043,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(stats.totals.in == 50);
     CHECK(stats.totals.refused == 1);
     REQUIRE(stats.rows.size() == 4);
-    CHECK(stats.rows[0].verb == "dump");
+    CHECK(stats.rows[0].verb == "get");
     CHECK(stats.rows[0].calls == 3);
     CHECK(stats.rows[0].out == 10300);
     CHECK(stats.rows[0].largest == 5000);
@@ -1056,16 +1058,16 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(read->batched == 1u);
     CHECK_FALSE(read->unfiltered.has_value());              // read has no filter flags.
     REQUIRE(stats.largest.size() == 5);
-    CHECK(stats.largest[0].verb == "dump");
+    CHECK(stats.largest[0].verb == "get");
     CHECK(stats.largest[0].out == 5000);
 
     const auto all = MakeStats(lines, std::nullopt, AllVerbs());
     Checked(all);
     CHECK(all.sessions == 2u);
     CHECK(all.since == "2026-01-02T03:04:01Z");
-    CHECK(all.rows[0].verb == "dump");                      // 10300 over describe's 9000.
+    CHECK(all.rows[0].verb == "get");                      // 10300 over describe's 9000.
     CHECK(std::ranges::find(*all.neverCalled, "census") != all.neverCalled->end());
-    CHECK(std::ranges::find(*all.neverCalled, "dump") == all.neverCalled->end());
+    CHECK(std::ranges::find(*all.neverCalled, "get") == all.neverCalled->end());
 
     const auto none = MakeStats({}, std::string(), AllVerbs());
     CHECK_FALSE(Checked(none).contains("session"));
@@ -1088,7 +1090,7 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
         line("old", "find", 300, "1", "shell"),
         line("new", "census", 500, "2"),                     // Digested: 430000 stood behind it.
         line("new", "census", 20000, "3"),                   // Its next, printed whole.
-        line("new", "dump", 400, "4"),                       // Digested and unfiltered: no mark.
+        line("new", "get", 400, "4"),                       // Digested and unfiltered: no mark.
     };
     lines[1].digest = 430000;
     lines[3].digest = 22000;
@@ -1102,7 +1104,7 @@ TEST_CASE("stats counts digests and what they kept out, and lists and picks sess
     CHECK(census->digested == 1u);
     CHECK(census->saved == 429500u);
     CHECK_FALSE(census->unfiltered.has_value());              // The digested one is not marked; the rerun had --limit.
-    const auto dump = std::ranges::find(stats.rows, std::string("dump"), &shape::StatsVerb::verb);
+    const auto dump = std::ranges::find(stats.rows, std::string("get"), &shape::StatsVerb::verb);
     CHECK_FALSE(dump->unfiltered.has_value());
     const auto big = std::ranges::find(stats.largest, uint64_t{500}, &shape::StatsCall::out);
     REQUIRE(big != stats.largest.end());

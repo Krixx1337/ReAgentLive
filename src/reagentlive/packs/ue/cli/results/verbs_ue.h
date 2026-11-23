@@ -101,25 +101,11 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "object", One, "ref", object}, {"function", "[Class:]Function", One, "str", function},
              {"params", "hex params", Any, "bytes", "the parameter block as hex pairs (default: zeroed)"}},
             {}, Of<shape::Call>, parse::Release, {}, {}, true},
-        {"fields", "ue", "reflected properties by offset; a class or struct lists its own",
-            {{"object", "object|Class", One, "str", objectOrClass}},
-            {fieldMatch},
-            Of<shape::Fields>, parse::Fields},
-        {"dump", "ue", "fields with their current values",
-            {{"object", "object|Class", One, "str", objectOrClass}},
-            {fieldMatch,
-             {"--nonzero", Takes::Nothing, "bool", "", "non-zero fields, without the zero members inside their values"},
-             {"--own", Takes::Nothing, "bool", "", "only the fields the object's own class declares, none it inherits"},
-             {"--changed", Takes::Maybe, "path", "file", "changed since snap (or a snapshot file); adds before"},
-             elements},
-            Of<shape::Dump>, parse::Dump,
-            "Use on instances, Default__ objects included. Check truncated on the result and its rows before "
-            "treating values as complete. A dump can span several ticks."},
         {"label", "ue", "name an unreflected member in <console>.native.txt",
             {{"object", "object|Class", One, "str", objectOrClass}, {"offset", "offset", One, "int", "the member's offset in the object"},
              {"type", "type[n]", One, "str", "its type, with a count for an array: f64[3]"},
              {"name", "Name", One, "str", "the member's name (a trailing ? marks it unconfirmed)"}},
-            {}, Of<shape::NativeLabel>, parse::Label, "fields, dump and get then show it (native; stale after a patch)."},
+            {}, Of<shape::NativeLabel>, parse::Label, "get then shows it (native; stale after a patch)."},
         {"export-labels", "ue", "names for a static-analysis tool (JSON lines, one build)",
             {{"file", "file", Optional, "path", "the labels file (default: the console's, <console>.labels.jsonl)"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"},
@@ -154,11 +140,25 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "RowMap is unreflected: read as the stock UE5 TMap<FName, uint8*> right after RowStruct, its slot "
             "count checked against its allocation bits (refused when they disagree). Nested arrays up to 256 "
             "elements, 3 deep; names resolved. total counts the rows --match kept."},
-        {"get", "ue", "named fields, following object pointers and structs (up to 16 paths)",
-            {{"object", "object", One, "ref", objectOrDefault}, {"paths", "Field[.Field...]", Some, "str", "a field path, per value"}},
-            {nonzero,
-             elements}, Of<shape::Get>, parse::Get,
-            "Owner:Field where a name is ambiguous. The values are read back to back; same_tick says whether in one tick."},
+        {"get", "ue", "an object's fields with their values, or named paths through pointers and structs; --types: the layout",
+            {{"object", "object|Class", One, "str", "an object ($N, a literal ref, an address, a Default__ name), or with --types a class or struct by name"},
+             {"paths", "Field[.Field...]", Any, "str", "a field path per value (up to 16); none: every field"}},
+            {fieldMatch,
+             {"--nonzero", Takes::Nothing, "bool", "", "non-zero fields, without the zero members inside their values"},
+             {"--own", Takes::Nothing, "bool", "", "only the fields the object's own class declares, none it inherits"},
+             {"--types", Takes::Nothing, "bool", "", "offsets, types and sizes, no values (a class or struct: its own fields)"},
+             elements,
+             {"--snap", Takes::Maybe, "path", "file", "keep the object's bytes as the baseline for --changed (a file: across runs)"},
+             {"--changed", Takes::Maybe, "path", "file", "only fields changed since --snap (or a snapshot file); adds before"}},
+            Of<shape::Get>, parse::Get,
+            "No paths: every field, compact (name, offset, value; raw beside a recovered name, object for a pointer, "
+            "preview for a container); check truncated on the result and its rows before treating values as "
+            "complete. Paths: one row per path in order (path, value, address, holder when a pointer led there), "
+            "Owner:Field where a name is ambiguous; read back to back, same_tick says whether in one tick; a bad "
+            "path fails its row with error naming the closest fields. --types: the layout (owner, type, offset, "
+            "size and the container's parts), no values. --snap answers only snap {size, path} and keeps the "
+            "baseline; --changed then lists the fields that differ, with before. --match, --own, --snap and "
+            "--changed take no paths (there --nonzero only trims values); --types reads no values."},
         {"trace", "ue", "the first thing a line hits: actor, component, physical material, distance (read-only)",
             {{"start", "x,y,z|object[@Socket]", One, "str",
               "the start: a world point in cm, an object's location (actor, component, camera manager), or a socket on a mesh component"},
@@ -221,9 +221,6 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "object|Class", One, "str", objectOrClass}, {"text", "text", Optional, "str", "keep function names containing it"}},
             {cursor}, Of<shape::Funcs>, parse::Funcs,
             "A row with via \"interface\" is declared only on that native interface: call refuses it on the object; func shows the implementation to call instead."},
-        {"snap", "ue", "save a baseline for dump --changed (file: across runs)",
-            {{"object", "ref", One, "ref", "an object ref: $N or 0x<address>#<index>:<serial>"}, {"file", "file", Optional, "path", path}},
-            {}, Of<shape::Snap>, parse::Snap},
         {"record", "ue", "sample 1..8 named fields for 1..10 seconds into a new file, after a countdown",
             {{"object", "ref", One, "ref", "an object ref: $N or 0x<address>#<index>:<serial>"},
              {"seconds", "seconds", One, "int", "how long, 1..10"}, {"file", "file", One, "path", path},
@@ -237,7 +234,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
 inline const std::vector<std::string>& UnrealNotes() {
     static const std::vector<std::string> notes = {
         "Unreal pack verbs are refused when the host does not offer the pack (status lists the packs).",
-        "Refs: $N from the last command that lists refs (find, census, each, describe; dump, get and entries add the objects they name), or the printed literal 0x<address>#<index>:<serial> (works across runs).",
+        "Refs: $N from the last command that lists refs (find, census, each, describe; get and entries add the objects they name), or the printed literal 0x<address>#<index>:<serial> (works across runs).",
         "A bare class or struct name works where object|Class is shown; the first lookup scans the table.",
         "Struct values print as {Name: value}; --meta at the end of a line adds their member layout.",
     };

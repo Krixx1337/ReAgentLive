@@ -185,12 +185,12 @@ defines what the table did not.
   client reconnected. Now each call starts a console and ends it: nothing
   holds the executable, and the next call runs the new build. JSON calls
   carry no session state; what runs share (class refs, field tables,
-  census baselines, the last `snap`) is in the cache file. Calls hold a
+  census baselines, the last `get --snap`) is in the cache file. Calls hold a
   lock, since a second console would wait and then be refused as busy
   ([round trips](design.md#round-trips)). Measured with the
   own-thread host: about 17 ms a call against 2.4 ms on a kept console,
   most of it the table read that a hash read replaced; a 530 KB cache file
-  adds under 1 ms. Not yet measured: a pack-heavy `dump` with the game's
+  adds under 1 ms. Not yet measured: a pack-heavy `get` with the game's
   cache loaded.
 - **A changed table is the adapter's at once.** Each start reads only the
   hash (`help --hash`, no target needed; `status` would need one) and the

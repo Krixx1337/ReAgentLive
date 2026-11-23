@@ -6,11 +6,11 @@ the cache file: console (`docs/commands/console.md#one-shot-use`).
 
 ## Console lines
 
-- One-shot: `<console> -c 'find X; dump $1'`; exit code 1 on any error.
+- One-shot: `<console> -c 'find X; get $1'`; exit code 1 on any error.
   Use it for independent commands you read by eye; a chain where one
   step's output feeds the next goes to Python.
 - PowerShell: single-quote `-c` so `$1` needs no backtick
-  (`& $console -c 'find X; dump $1'`); in double quotes write `` `$1 ``.
+  (`& $console -c 'find X; get $1'`); in double quotes write `` `$1 ``.
 - PowerShell `@(@(a,b))` flattens a single pair; write `@(,@(a,b))`.
 - PowerShell names are case-insensitive: `$early` overwrites an
   `[int]$Early` parameter; give every variable a distinct name.

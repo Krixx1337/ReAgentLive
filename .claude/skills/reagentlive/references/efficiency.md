@@ -16,7 +16,7 @@ console (`docs/commands/console.md#usage-log-and-stats`).
 
 ## Smaller output
 
-- Filter `dump` instead of reading all of it (its filters: `help dump`).
+- Filter `get` instead of reading every field, or name the paths (its filters: `help get`).
 - Never `each`, `find` or `census` a whole class unfiltered: narrow by
   class, value, owner (one asset's subobjects) or a limit (`help <verb>`).
 - Read only the keys you need; `help <verb>` lists them.

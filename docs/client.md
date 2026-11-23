@@ -14,7 +14,7 @@ Every one speaks the same verbs with the same argument names, so what
 | Interface | Use it for | Start here |
 |---|---|---|
 | **MCP tools** | an AI agent: one typed tool per verb, arguments checked before they are sent, writes marked so the client asks | [MCP tools](#mcp-tools) |
-| **Console** | a person at a shell, a quick check, no MCP registered, replaying a capture | type `help`, then `<console> -c "find X; dump $1"` ([console](commands/console.md)) |
+| **Console** | a person at a shell, a quick check, no MCP registered, replaying a capture | type `help`, then `<console> -c "find X; get $1"` ([console](commands/console.md)) |
 | **Python** (generated functions, `Session`) | loops, sweeps, comparisons, long captures: logic that should not be twenty tool calls | [generated functions](#generated-python-functions) |
 | **C++ client** | your own tool or outside program, linking the library | [C++ client](#c-client) |
 | IDA label import (a helper) | bringing the console's labels into an IDA database | [helpers](#helpers) |
@@ -65,7 +65,7 @@ auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 - Pointer chains: `Client::ResolveChain` ([native objects](commands/native-objects.md#pointer-chains)).
 - A ready-made console: `reagentlive::cli::RunConsole({prefix, exeName, layout}, argc, argv)`
   ([host verbs](hosting.md#host-verbs) for commands of your own).
-- Commands that exist only in the console (`dump`, `get`, `batch`,
+- Commands that exist only in the console (`get`, `batch`,
   `entries`, the cache, output budgets) are reached through its JSON calls,
   as the Python client does ([design](design.md#frontends)). So is
   `game-thread`, which has no typed wrapper.

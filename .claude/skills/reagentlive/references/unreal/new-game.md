@@ -7,7 +7,7 @@ without an SDK (`docs/commands/unreal.md#without-an-sdk`).
 
 ## Try the verbs first
 
-- Run `fields Vector`, `enum ENetRole` and `funcs` on any object. If they
+- Run `get Vector --types`, `enum ENetRole` and `funcs` on any object. If they
   answer, the stock layout holds: nothing below is needed.
 - A refusal names the failed group check ("field: Vector members are not
   X, Y, Z"): start at that group (step 2) and find its offsets live.

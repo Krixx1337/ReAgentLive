@@ -256,7 +256,7 @@ which covers native members past the last reflected field.
 
 Describe many takes 1..28 refs of any of those forms in `data` (`length` =
 16 per ref) and returns one `FindEntry` per ref in order, zeroed for a ref
-that is gone or not an object; `detail` counts the ones found. `dump` uses it
+that is gone or not an object; `detail` counts the ones found. `get` uses it
 for its field pointers and again for its array elements.
 
 `entries` takes the object ref, `args[1]` = the field offset in the low 32
@@ -304,7 +304,7 @@ client asks for the next page from the count it has. `FieldsPageWriter` and
 refuses a page whose offsets or ref numbers fall outside it. The layout hash
 includes both struct sizes, so a console and agent from different revisions
 refuse each other. For a single struct field or an array of structs, a
-record carries the struct object's ref and name; `fields` on that ref lists
+record carries the struct object's ref and name; `get --types` on that ref lists
 its members.
 
 For a map or set, a record carries the key (a set's element) in the

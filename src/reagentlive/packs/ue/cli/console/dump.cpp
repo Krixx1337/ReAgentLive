@@ -1,4 +1,4 @@
-// reagentlive CLI console: Field tables, struct layouts, fields and dump.
+// reagentlive CLI console: field tables, struct layouts, and get with no paths (every field, or --types).
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -109,18 +109,37 @@ std::optional<Json> SparseValue(std::span<const uint8_t> bytes) {
 }
 }
 
-void PrintFields(Session& session, const Ref& object, bool instance, std::string_view match, std::string_view jsonCommand) {
+// --own: the class whose fields are kept: the named class, else the instance's.
+Result<std::string> OwnClass(Session& session, const Ref& object, const Command& command) {
+    if (!command.className.empty()) return command.className;
+    auto described = ue::Describe(session.client, object);
+    if (!described) return std::unexpected(described.error());
+    return described->className;
+}
+
+void PrintTypes(Session& session, const Ref& object, const Command& command, std::string_view jsonCommand) {
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, jsonCommand, fields.error());
     const auto sorted = SortedByOffset(std::move(*fields));
-    auto result = MakeFields(object, sorted, [&](const ue::Field& field) { return session.names.Display(field); });
-    const auto native = NativeMembers(session, object, sorted, instance);
-    for (const auto& check : native.shown) result.rows.push_back(MakeNativeFieldRow(*check.member, check.stale));
+    std::string ownClass;
+    if (command.own) {
+        auto own = OwnClass(session, object, command);
+        if (!own) return CommandError(session, jsonCommand, own.error());
+        ownClass = std::move(*own);
+    }
+    auto result = MakeTypes(object, sorted, [&](const ue::Field& field) {
+        return session.names.Find(field.owner, field.offset, field.size, field.boolMask);
+    });
+    const auto native = NativeMembers(session, object, sorted, command.className.empty());
+    for (const auto& check : native.shown) result.rows.push_back(MakeNativeTypeRow(*check.member, check.stale));
     SortRowsByOffset(result.rows);
-    if (!match.empty())
-        std::erase_if(result.rows, [&](const shape::FieldRow& row) {
-            return !text::ContainsNoCase(row.field.name, match) && !text::ContainsNoCase(row.label, match);
-        });
+    const size_t total = result.rows.size();
+    std::erase_if(result.rows, [&](const shape::GetRow& row) {
+        if (command.own && !ue::SameWireName(row.owner.value_or(""), ownClass, ue::FindClassBytes)) return true;
+        return !command.match.empty() && !text::ContainsNoCase(row.name.value_or(""), command.match) &&
+            !text::ContainsNoCase(row.raw.value_or(""), command.match);
+    });
+    if (!command.match.empty() || command.own) result.filtered = shape::Filtered{result.rows.size(), total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
     return Emit(session, jsonCommand, std::move(result));
 }
@@ -177,26 +196,22 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     const Snapshot* baseline = nullptr;
     if (command.changed) {
         if (!command.file.empty() && !(loaded = LoadSnapshot(command.file)))
-            return JsonError(session, "dump", "snapshot", "cannot read snapshot file " + command.file);
+            return JsonError(session, "get", "snapshot", "cannot read snapshot file " + command.file);
         baseline = loaded ? &*loaded : sessionBaseline ? &*sessionBaseline : nullptr;
-        if (!baseline) return JsonError(session, "dump", "snapshot", "--changed needs a snap first (or a snapshot file)");
-        if (baseline->object != object) return JsonError(session, "dump", "snapshot", "the snapshot is of another object ref");
+        if (!baseline) return JsonError(session, "get", "snapshot", "--changed needs get --snap first (or a snapshot file)");
+        if (baseline->object != object) return JsonError(session, "get", "snapshot", "the snapshot is of another object ref");
     }
     auto fields = ObjectFields(session, object);
-    if (!fields) return CommandError(session, "dump", fields.error());
+    if (!fields) return CommandError(session, "get", fields.error());
     const auto sorted = SortedByOffset(std::move(*fields));
     if (baseline && sorted != baseline->fields)
-        return JsonError(session, "dump", "snapshot", "reflected field layout changed; take a new snapshot");
+        return JsonError(session, "get", "snapshot", "reflected field layout changed; take a new snapshot");
     // --own: the class that declares the kept fields; an instance's is looked up.
     std::string ownClass;
     if (command.own) {
-        if (!command.className.empty()) {
-            ownClass = command.className;
-        } else {
-            auto described = ue::Describe(client, object);
-            if (!described) return CommandError(session, "dump", described.error());
-            ownClass = described->className;
-        }
+        auto own = OwnClass(session, object, command);
+        if (!own) return CommandError(session, "get", own.error());
+        ownClass = std::move(*own);
     }
     // Native members past the last reflected field widen the read.
     const auto native = NativeMembers(session, object, sorted, command.className.empty());
@@ -204,7 +219,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     for (const auto& check : native.shown)
         end = std::max(end, std::min<size_t>(size_t{check.member->field.offset} + check.member->field.Size(), MaxDumpBytes));
     auto bytes = ReadObjectBytes(client, object, end);
-    if (!bytes) return CommandError(session, "dump", bytes.error());
+    if (!bytes) return CommandError(session, "get", bytes.error());
     std::vector<bool> keep(sorted.size(), true);
     size_t shown = 0;
     for (size_t i = 0; i < sorted.size(); ++i) {
@@ -300,7 +315,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
 
     const auto modules = LoadedModules(session);
     // A compact row's name: the readable one where it was recovered, the reflected one beside it as raw.
-    const auto placed = [&](shape::DumpRow& row, const ue::Field& field) {
+    const auto placed = [&](shape::GetRow& row, const ue::Field& field) {
         const auto readable = session.names.Find(field.owner, field.offset, field.size, field.boolMask);
         row.name = readable.empty() ? field.name : std::string(readable);
         if (!readable.empty() && readable != field.name) row.raw = field.name;
@@ -312,7 +327,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         RememberRef(refs, found->ref);
         return MakeObject(*found);
     };
-    shape::Dump result;
+    shape::Get result;
     result.ref = ReusableRef(object);
     result.capped = sorted.size() >= ue::MaxFieldStart;
     bool truncated = false;
@@ -322,7 +337,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         const auto& field = sorted[i];
         const auto data = FieldBytes(*bytes, field);
         bool partial = false;
-        shape::DumpRow row;
+        shape::GetRow row;
         placed(row, field);
         const auto sparse = !session.meta && IsContainer(field.type) ? SparseValue(data) : std::nullopt;
         row.value = sparse ? *sparse : value(field, data, partial);
@@ -384,7 +399,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         }
         if (!keepRow) continue;
         ++shown;
-        shape::DumpRow row;
+        shape::GetRow row;
         row.name = field.name;
         row.offset = field.offset;
         if (session.meta) row.meta = MakeFieldInfo(*check.member);
@@ -402,13 +417,14 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     SortRowsByOffset(result.rows);
     // --nonzero also leaves out the zero members inside the values it keeps, as get and each do.
     if (command.nonzero)
-        for (auto& row : result.rows) KeepNonZero(row.value);
+        for (auto& row : result.rows)
+            if (row.value) KeepNonZero(*row.value);
     const size_t total = sorted.size() + native.shown.size();
     result.truncated = truncated;
     if (const uint32_t unnamed = live.Unnamed() + held.Unnamed()) result.unnamed = unnamed;
     if (!command.match.empty() || command.nonzero || command.changed || command.own) result.filtered = shape::Filtered{shown, total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
     if (!TickAccurate(session)) result.tickAccurate = false;
-    return Emit(session, "dump", std::move(result));
+    return Emit(session, "get", std::move(result));
 }
 }

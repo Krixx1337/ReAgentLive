@@ -53,7 +53,7 @@ struct Funcs {
     }
 };
 
-// A reflected field's layout, as fields, dump and params list it.
+// A reflected field's layout, as get --types, get --meta and func's params list it.
 struct FieldInfo {
     static constexpr std::string_view TypeName = "ue.FieldInfo";
     std::string name, owner, type;
@@ -85,20 +85,6 @@ struct FieldInfo {
         v("stride", &FieldInfo::stride);
     }
 };
-// A fields row: the layout, the readable name beside an obfuscated one, and
-// for a member from the native file `native` (`stale` when it was labelled
-// under another build of the main image).
-struct FieldRow {
-    FieldInfo field;
-    std::string label;
-    std::optional<bool> native, stale;
-    template<class V> static void Describe(V& v) {
-        v.flat("", &FieldRow::field);
-        v("label", &FieldRow::label);
-        v("native", &FieldRow::native);
-        v("stale", &FieldRow::stale);
-    }
-};
 struct NativeRefused {
     uint64_t line = 0;
     std::string name, owner;
@@ -112,19 +98,6 @@ struct NativeRefused {
         v("reason", &NativeRefused::reason);
     }
 };
-struct Fields {
-    RefId ref;
-    std::vector<FieldRow> rows;
-    bool capped = false;
-    std::optional<std::vector<NativeRefused>> nativeRefused;
-    template<class V> static void Describe(V& v) {
-        v("ref", &Fields::ref);
-        v("rows", &Fields::rows);
-        v("capped", &Fields::capped);
-        v("native_refused", &Fields::nativeRefused);
-    }
-};
-
 // One previewed element: an array's or set's `value`, a map's `key` and
 // `value`, each with the object a pointer names.
 struct PreviewElement {
@@ -147,38 +120,75 @@ struct Preview {
         v("elements", &Preview::elements);
     }
 };
-// A dump row, compact: the name (the readable one where it was recovered,
-// with the reflected one as `raw` beside it), the offset and the value;
-// `before` with --changed, the object a pointer names and the first elements
-// of a container. The layout (owner, type, size, bool mask) is `meta`, with
-// --meta; `fields` is the layout command.
-struct DumpRow {
-    std::string name;
-    std::optional<std::string> raw;
-    HexNum offset;
+// get's row, one type for its three modes:
+// - every field (no paths): name (the readable one where recovered, `raw`
+//   the reflected one beside it), offset, value; `before` with --changed,
+//   `object` for a pointer, `preview` for a container; the layout is `meta`
+//   with --meta.
+// - paths: `path` as asked, value, `address` (with module and rva), `holder`
+//   when a pointer led there; `type` and `hex` with --meta; a failed path
+//   keeps its place with `error`.
+// - --types: name, raw, owner, type, offset, size and the container's parts; no value.
+// `native` marks a member from the native file (`stale`: labelled under
+// another build); `truncated` only when true.
+struct GetRow {
+    std::optional<std::string> path, name, raw, owner, type;
+    std::optional<HexNum> offset;
+    std::optional<uint32_t> size;
+    std::optional<std::string> structName;
+    std::optional<uint32_t> boolMask;
+    std::optional<std::string> elementType;
+    std::optional<uint32_t> elementSize;
+    std::optional<std::string> valueType;
+    std::optional<uint32_t> valueSize;
+    std::optional<HexNum> valueOffset;
+    std::optional<std::string> valueStruct;
+    std::optional<uint32_t> stride;
     std::optional<bool> native, stale;
-    Json value;
-    std::optional<Json> before;
+    std::optional<Json> value, before;
     std::optional<bool> truncated;
+    std::optional<Addr> address;
+    Location where;
+    std::optional<RefId> holder;
     Location valueWhere;
     std::optional<Object> object;
     std::optional<Preview> preview;
     std::optional<std::string> previewError;
     std::optional<FieldInfo> meta;
+    std::optional<HexBytes> hex;
+    std::optional<std::string> error;
     template<class V> static void Describe(V& v) {
-        v("name", &DumpRow::name);
-        v("raw", &DumpRow::raw);
-        v("offset", &DumpRow::offset);
-        v("native", &DumpRow::native);
-        v("stale", &DumpRow::stale);
-        v("value", &DumpRow::value);
-        v("before", &DumpRow::before);
-        v("truncated", &DumpRow::truncated);
-        v.flat("value_", &DumpRow::valueWhere);
-        v("object", &DumpRow::object);
-        v("preview", &DumpRow::preview);
-        v("preview_error", &DumpRow::previewError);
-        v("meta", &DumpRow::meta);
+        v("path", &GetRow::path);
+        v("name", &GetRow::name);
+        v("raw", &GetRow::raw);
+        v("owner", &GetRow::owner);
+        v("type", &GetRow::type);
+        v("offset", &GetRow::offset);
+        v("size", &GetRow::size);
+        v("struct", &GetRow::structName);
+        v("bool_mask", &GetRow::boolMask);
+        v("element_type", &GetRow::elementType);
+        v("element_size", &GetRow::elementSize);
+        v("value_type", &GetRow::valueType);
+        v("value_size", &GetRow::valueSize);
+        v("value_offset", &GetRow::valueOffset);
+        v("value_struct", &GetRow::valueStruct);
+        v("stride", &GetRow::stride);
+        v("native", &GetRow::native);
+        v("stale", &GetRow::stale);
+        v("value", &GetRow::value);
+        v("before", &GetRow::before);
+        v("truncated", &GetRow::truncated);
+        v("address", &GetRow::address);
+        v.flat("", &GetRow::where);
+        v("holder", &GetRow::holder);
+        v.flat("value_", &GetRow::valueWhere);
+        v("object", &GetRow::object);
+        v("preview", &GetRow::preview);
+        v("preview_error", &GetRow::previewError);
+        v("meta", &GetRow::meta);
+        v("hex", &GetRow::hex);
+        v("error", &GetRow::error);
     }
 };
 struct Filtered {
@@ -188,23 +198,37 @@ struct Filtered {
         v("total", &Filtered::total);
     }
 };
-struct Dump {
+struct SnapInfo {
+    uint64_t size = 0;
+    std::optional<std::string> path;
+    template<class V> static void Describe(V& v) {
+        v("size", &SnapInfo::size);
+        v("path", &SnapInfo::path);
+    }
+};
+// get: `same_tick` (paths) covers the value reads, not the lookups before
+// them; `truncated` and `capped` (every field, --types) say whether the rows
+// are complete; `snap` answers --snap.
+struct Get {
     RefId ref;
-    std::vector<DumpRow> rows;
-    bool truncated = false, capped = false;
+    std::vector<GetRow> rows;
+    std::optional<bool> sameTick, truncated, capped;
     std::optional<Filtered> filtered;
     std::optional<std::vector<NativeRefused>> nativeRefused;
+    std::optional<SnapInfo> snap;
     std::optional<bool> tickAccurate;
     std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
-        v("ref", &Dump::ref);
-        v("rows", &Dump::rows);
-        v("truncated", &Dump::truncated);
-        v("capped", &Dump::capped);
-        v("filtered", &Dump::filtered);
-        v("native_refused", &Dump::nativeRefused);
-        v("tick_accurate", &Dump::tickAccurate);
-        v("unnamed", &Dump::unnamed);
+        v("ref", &Get::ref);
+        v("rows", &Get::rows);
+        v("same_tick", &Get::sameTick);
+        v("truncated", &Get::truncated);
+        v("capped", &Get::capped);
+        v("filtered", &Get::filtered);
+        v("native_refused", &Get::nativeRefused);
+        v("snap", &Get::snap);
+        v("tick_accurate", &Get::tickAccurate);
+        v("unnamed", &Get::unnamed);
     }
 };
 
@@ -628,49 +652,6 @@ struct NativeLabel {
     }
 };
 
-// get: one row per path, in the order asked; a failed path keeps its place
-// with `error` in place of the value. `object` is the holder of the last
-// field, given only when the path crossed a pointer to reach it. `truncated`
-// only when true; `type` and `hex` with --meta.
-struct GetRow {
-    std::optional<Json> value;
-    std::optional<Addr> address;
-    Location where;
-    std::optional<RefId> object;
-    std::optional<bool> truncated, native, stale;
-    Location valueWhere;
-    std::optional<std::string> type;
-    std::optional<HexBytes> hex;
-    std::optional<std::string> error;
-    template<class V> static void Describe(V& v) {
-        v("value", &GetRow::value);
-        v("address", &GetRow::address);
-        v.flat("", &GetRow::where);
-        v("object", &GetRow::object);
-        v("truncated", &GetRow::truncated);
-        v("native", &GetRow::native);
-        v("stale", &GetRow::stale);
-        v.flat("value_", &GetRow::valueWhere);
-        v("type", &GetRow::type);
-        v("hex", &GetRow::hex);
-        v("error", &GetRow::error);
-    }
-};
-// `same_tick` covers the value reads, not the lookups before them.
-struct Get {
-    RefId ref;
-    std::vector<GetRow> rows;
-    bool sameTick = false;
-    std::optional<bool> tickAccurate;
-    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
-    template<class V> static void Describe(V& v) {
-        v("ref", &Get::ref);
-        v("rows", &Get::rows);
-        v("same_tick", &Get::sameTick);
-        v("tick_accurate", &Get::tickAccurate);
-        v("unnamed", &Get::unnamed);
-    }
-};
 // trace: the first blocking hit on the line, decoded by the engine
 // (GameplayStatics.BreakHitResult). Absent fields: nothing was hit, or the hit has none.
 struct Trace {
@@ -776,16 +757,6 @@ struct Calls {
         v("rows", &Calls::rows);
         v("next_cursor", &Calls::nextCursor);
         v("unnamed", &Calls::unnamed);
-    }
-};
-struct Snap {
-    RefId ref;
-    uint64_t size = 0;
-    std::optional<std::string> path;
-    template<class V> static void Describe(V& v) {
-        v("ref", &Snap::ref);
-        v("size", &Snap::size);
-        v("path", &Snap::path);
     }
 };
 struct Record {
@@ -948,29 +919,49 @@ inline shape::FieldInfo MakeFieldInfo(const NativeMember& member) {
     return info;
 }
 
-inline shape::FieldRow MakeNativeFieldRow(const NativeMember& member, bool stale) {
-    shape::FieldRow row{MakeFieldInfo(member), member.field.name, true, {}};
+// get --types: a row from a field's layout; `readable` is the recovered
+// name, shown as name with the reflected one as raw.
+inline shape::GetRow MakeTypeRow(const shape::FieldInfo& info, std::string_view readable) {
+    shape::GetRow row;
+    row.name = readable.empty() ? info.name : std::string(readable);
+    if (!readable.empty() && readable != info.name) row.raw = info.name;
+    row.owner = info.owner;
+    row.type = info.type;
+    row.offset = info.offset;
+    row.size = info.size;
+    row.structName = info.structName;
+    row.boolMask = info.boolMask;
+    row.elementType = info.elementType;
+    row.elementSize = info.elementSize;
+    row.valueType = info.valueType;
+    row.valueSize = info.valueSize;
+    row.valueOffset = info.valueOffset;
+    row.valueStruct = info.valueStruct;
+    row.stride = info.stride;
+    return row;
+}
+
+inline shape::GetRow MakeNativeTypeRow(const NativeMember& member, bool stale) {
+    auto row = MakeTypeRow(MakeFieldInfo(member), {});
+    row.native = true;
     if (stale) row.stale = true;
     return row;
 }
 
-// `label(field)` is the readable name shown beside an obfuscated one.
+// get --types: `label(field)` is the readable name shown beside an obfuscated one.
 template<class LabelOf>
-shape::Fields MakeFields(const Ref& ref, std::span<const ue::Field> sorted, const LabelOf& label) {
-    shape::Fields out;
+shape::Get MakeTypes(const Ref& ref, std::span<const ue::Field> sorted, const LabelOf& label) {
+    shape::Get out;
     out.ref = ReusableRef(ref);
-    for (const auto& field : sorted) out.rows.push_back({MakeFieldInfo(field), label(field), {}, {}});
+    for (const auto& field : sorted) out.rows.push_back(MakeTypeRow(MakeFieldInfo(field), label(field)));
     out.capped = sorted.size() >= ue::MaxFieldStart;
     return out;
 }
 
 // Field rows (reflected and native) in offset order.
-template<class Row> void SortRowsByOffset(std::vector<Row>& rows) {
-    const auto offset = [](const Row& row) {
-        if constexpr (requires { row.field.offset; }) return row.field.offset;
-        else return row.offset;
-    };
-    std::stable_sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) { return offset(a) < offset(b); });
+inline void SortRowsByOffset(std::vector<shape::GetRow>& rows) {
+    const auto offset = [](const shape::GetRow& row) { return row.offset ? row.offset->value : 0; };
+    std::stable_sort(rows.begin(), rows.end(), [&](const auto& a, const auto& b) { return offset(a) < offset(b); });
 }
 
 inline std::vector<shape::NativeRefused> MakeNativeRefused(std::span<const NativeCheck> refused) {

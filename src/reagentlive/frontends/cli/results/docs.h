@@ -83,7 +83,7 @@ inline std::string ResultsMarkdown(const Json& table) {
         "A `value` holds what the game's data is. Addresses are hex strings, null for a null pointer.\n"
         "An FName is its text (`Name_N` for an instance, `#index` when the pool has none), and a struct\n"
         "holding only a name (a gameplay tag) is that name; `--meta` gives `index`, `number` and `name`.\n"
-        "Structs expand to `{Name: value}` (`members` with `--meta`). Arrays and strings show their header, and `dump` adds a `preview` for top-level\n"
+        "Structs expand to `{Name: value}` (`members` with `--meta`). Arrays and strings show their header, and `get` with no paths adds a `preview` for top-level\n"
         "containers. Unsupported layouts give a bounded `hex` prefix. A non-finite float is\n"
         "`{\"non_finite\": \"nan\"}`. Check `truncated` on the result and its rows before treating values as\n"
         "complete.\n";

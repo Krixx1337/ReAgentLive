@@ -410,18 +410,21 @@ TEST_CASE("pin and watch parse targets, guards and durations") {
     CHECK_FALSE(Parse("watch 2 0x9000:4 --then read 0x1", refs).has_value());
 }
 
-TEST_CASE("fields takes one object as a ref or raw address") {
-    auto parsed = Parse("fields $2", TwoRefs);
+TEST_CASE("get --types takes one object as a ref or raw address, or a class") {
+    auto parsed = Parse("get $2 --types", TwoRefs);
     REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::Remote);
     CHECK(parsed->request.op == ue::op::Fields);
     CHECK(ue::GetRef(parsed->request) == Ref{0x2000, 7, 0});
     CHECK(parsed->request.length == 0); // First page.
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    parsed = Parse("fields 0x4000", NoRefs);
+    parsed = Parse("get 0x4000 --types", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(ue::GetRef(parsed->request).index == -1);
-    CHECK_FALSE(Parse("fields", NoRefs).has_value());
-    CHECK_FALSE(Parse("fields $1 extra", TwoRefs).has_value());
+    CHECK(Parse("get Character --types --own --match aim", NoRefs)->className == "Character");
+    CHECK_FALSE(Parse("get --types", NoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 Health --types", TwoRefs).has_value());   // --types takes no paths.
+    for (const char* gone : {"fields $1", "dump $1", "snap $1"}) CHECK_FALSE(Parse(gone, TwoRefs).has_value());
 }
 
 TEST_CASE("local commands do not build a request") {
@@ -444,13 +447,16 @@ TEST_CASE("local commands do not build a request") {
     CHECK_FALSE(Parse("frobnicate", NoRefs).has_value());
 }
 
-TEST_CASE("dump parses like fields and is marked for values") {
-    const auto parsed = Parse("dump $1", TwoRefs);
+TEST_CASE("get with no paths reads every field") {
+    const auto parsed = Parse("get $1", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Dump);
     CHECK(parsed->request.op == ue::op::Fields);
     CHECK(ue::GetRef(parsed->request) == Ref{0x1000, 5, 9});
-    CHECK_FALSE(Parse("dump", NoRefs).has_value());
+    CHECK_FALSE(Parse("get", NoRefs).has_value());
+    // A class by name has no values: --types, or its Default__ object.
+    CHECK(Parse("get Character", NoRefs).error().contains("Default__Character"));
+    CHECK(Parse("get Default__Character", NoRefs)->kind == Kind::Dump);
 }
 
 TEST_CASE("capture commands preserve the ref and bound the recording") {
@@ -461,8 +467,8 @@ TEST_CASE("capture commands preserve the ref and bound the recording") {
     CHECK(record->request.length == 4);
     CHECK(record->file == "burst.tsv");
     CHECK(record->fields == std::vector<std::string>{"Ammo", "Weapon:State"});
-    CHECK_FALSE(Parse("snap 0x1000", TwoRefs).has_value());
-    CHECK_FALSE(Parse("snap $1 a.snap extra", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get 0x1000 --snap", TwoRefs).has_value());     // A baseline needs a ref.
+    CHECK_FALSE(Parse("get $1 a.snap extra --snap", TwoRefs).has_value());
     CHECK_FALSE(Parse("record $1 11 burst.tsv Ammo", TwoRefs).has_value());
     CHECK_FALSE(Parse("record $1 4 burst.tsv", TwoRefs).has_value());
 }
@@ -558,6 +564,7 @@ TEST_CASE("--nonzero: get, each, rows and a typed call") {
     CHECK(Parse("rows Default__Table --limit 5", TwoRefs)->className == "Default__Table");
     CHECK(Parse("entries Default__Settings Map", TwoRefs)->className == "Default__Settings");
     CHECK_FALSE(Parse("get PhysicsSettings PhysicalSurfaces", TwoRefs));   // A class is not an object.
+    CHECK(Parse("get PhysicsSettings PhysicalSurfaces", TwoRefs).error().contains("--types"));
     CHECK_FALSE(Parse("get $1 Health", TwoRefs)->nonzero);
     CHECK(Parse("each Pawn Health --nonzero", TwoRefs)->nonzero);
     CHECK(Parse("rows $1 --nonzero --limit 0", TwoRefs)->nonzero);
@@ -569,13 +576,13 @@ TEST_CASE("literal refs round-trip and work wherever $N does") {
     Ref parsed{};
     CHECK(text::LiteralRef(RefText(ref), parsed));
     CHECK(parsed == ref);
-    const auto dump = Parse("dump 0x1b3eec26700#185680:9", NoRefs);
-    REQUIRE(dump.has_value());
-    CHECK(ue::GetRef(dump->request) == ref);
+    const auto all = Parse("get 0x1b3eec26700#185680:9", NoRefs);
+    REQUIRE(all.has_value());
+    CHECK(ue::GetRef(all->request) == ref);
     const auto read = Parse("read 0x1b3eec26700#185680:9+0x330 24", NoRefs);
     REQUIRE(read.has_value());
     CHECK(read->request.address == 0x1b3eec26700 + 0x330);
-    const auto snap = Parse("snap 0x1b3eec26700#185680:9", NoRefs);
+    const auto snap = Parse("get 0x1b3eec26700#185680:9 --snap", NoRefs);
     REQUIRE(snap.has_value());
     CHECK(ue::GetRef(snap->request) == ref);
     CHECK_FALSE(text::LiteralRef("0x1000#-1:0", parsed));
@@ -584,23 +591,27 @@ TEST_CASE("literal refs round-trip and work wherever $N does") {
     CHECK_FALSE(text::LiteralRef("0x1000#5", parsed));
 }
 
-TEST_CASE("snap takes an optional file; dump --changed reads it; diff is gone") {
-    const auto snap = Parse("snap $1 ctrl.snap", TwoRefs);
+TEST_CASE("get --snap takes an optional file; get --changed reads it") {
+    const auto snap = Parse("get $1 --snap ctrl.snap", TwoRefs);
     REQUIRE(snap.has_value());
     CHECK(snap->kind == Kind::Snap);
     CHECK(snap->file == "ctrl.snap");
-    const auto bare = Parse("snap $1", TwoRefs);
+    const auto bare = Parse("get $1 --snap", TwoRefs);
     REQUIRE(bare.has_value());
     CHECK(bare->file.empty());
-    const auto changed = Parse("dump $1 --changed ctrl.snap", TwoRefs);
+    const auto changed = Parse("get $1 --changed ctrl.snap", TwoRefs);
     REQUIRE(changed.has_value());
+    CHECK(changed->kind == Kind::Dump);
     CHECK(changed->changed);
     CHECK(changed->file == "ctrl.snap");
+    CHECK_FALSE(Parse("get $1 --snap --changed", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 --snap --nonzero", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 Health --changed", TwoRefs).has_value());
     CHECK_FALSE(Parse("diff $1", TwoRefs).has_value());
 }
 
 TEST_CASE("one-shot commands split on semicolons and newlines") {
-    CHECK(SplitCommands("find PC_; dump $1") == std::vector<std::string>{"find PC_", "dump $1"});
+    CHECK(SplitCommands("find PC_; get $1") == std::vector<std::string>{"find PC_", "get $1"});
     CHECK(SplitCommands(" status \n\n;; quit ") == std::vector<std::string>{"status", "quit"});
     CHECK(SplitCommands("").empty());
     CHECK(SplitCommands("find X; batch { read $1 4; get $1 Health }; status") ==
@@ -663,10 +674,10 @@ TEST_CASE("--outer takes an object or an outer's name, on find, each and census"
     CHECK(byName->outerRef.address == 0);
     CHECK(Parse("find --outer PA_Pawn", NoRefs).has_value());             // An outer alone is a filter.
     CHECK_FALSE(Parse("find --outer " + std::string(64, 'x'), NoRefs).has_value());
-    // --elements: 1..256 on get, each and dump.
+    // --elements: 1..256 on get (paths or every field) and each.
     CHECK(Parse("get $1 Map --elements 16", TwoRefs)->elements == 16);
     CHECK(Parse("each Pawn Map --elements 256", NoRefs)->elements == 256);
-    CHECK(Parse("dump $1 --elements 3", TwoRefs)->elements == 3);
+    CHECK(Parse("get $1 --elements 3", TwoRefs)->elements == 3);
     CHECK_FALSE(Parse("get $1 Map --elements 0", TwoRefs).has_value());
     CHECK_FALSE(Parse("each Pawn Map --elements 257", NoRefs).has_value());
 }
@@ -706,7 +717,7 @@ TEST_CASE("read-batch is no verb: batch and the session cover it") {
 }
 
 TEST_CASE("object commands take a bare class name for the console to resolve") {
-    for (const char* line : {"fields Character", "dump BP_Door_C", "funcs Character Jump",
+    for (const char* line : {"get Character --types", "get BP_Door_C --types", "funcs Character Jump",
                              "func Character CanJump"}) {
         const auto parsed = Parse(line, NoRefs);
         REQUIRE(parsed.has_value());
@@ -717,10 +728,10 @@ TEST_CASE("object commands take a bare class name for the console to resolve") {
     REQUIRE(func.has_value());
     CHECK(func->className == "Character");
     CHECK(func->request.op == ue::op::Function);
-    CHECK(Parse("fields $1", TwoRefs)->className.empty());
+    CHECK(Parse("get $1 --types", TwoRefs)->className.empty());
     CHECK_FALSE(Parse("func Character CanJump extra", NoRefs).has_value());
-    CHECK_FALSE(Parse("fields 12abc", NoRefs).has_value());
-    CHECK_FALSE(Parse("fields Some-Thing", NoRefs).has_value());
+    CHECK_FALSE(Parse("get 12abc --types", NoRefs).has_value());
+    CHECK_FALSE(Parse("get Some-Thing --types", NoRefs).has_value());
     CHECK_FALSE(Parse("func Character :Bad", NoRefs).has_value());
 }
 
@@ -885,28 +896,29 @@ TEST_CASE("get takes an object and dotted field paths") {
     CHECK(parsed->kind == Kind::Get);
     CHECK(ue::GetRef(parsed->request) == TwoRefs[0]);
     CHECK(parsed->fields == std::vector<std::string>{"Mesh.AnimInstance.AimAlpha", "Owner:Health"});
-    CHECK_FALSE(Parse("get $1", TwoRefs).has_value());
+    CHECK(Parse("get $1", TwoRefs)->kind == Kind::Dump);            // No paths: every field.
     CHECK_FALSE(Parse("get $1 A..B", TwoRefs).has_value());
     CHECK_FALSE(Parse("get $1 .A", TwoRefs).has_value());
     CHECK_FALSE(Parse("get $1 A.B.C.D.E.F.G.H.I", TwoRefs).has_value());
     CHECK_FALSE(Parse("get $3 A", TwoRefs).has_value());
 }
 
-TEST_CASE("dump filters parse; fields takes none") {
-    auto parsed = Parse("dump $1 --match aim --nonzero --changed before.snap", TwoRefs);
+TEST_CASE("get filters parse; --types reads no values") {
+    auto parsed = Parse("get $1 --match aim --nonzero --changed before.snap", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Dump);
     CHECK(parsed->match == "aim");
     CHECK(parsed->nonzero);
     CHECK(parsed->changed);
     CHECK(parsed->file == "before.snap");
-    parsed = Parse("dump $1 --changed --nonzero", TwoRefs);
+    parsed = Parse("get $1 --changed --nonzero", TwoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->changed);
     CHECK(parsed->file.empty());
-    CHECK_FALSE(Parse("dump $1 --match", TwoRefs).has_value());
-    CHECK_FALSE(Parse("dump $1 --bogus", TwoRefs).has_value());
-    CHECK_FALSE(Parse("fields $1 --nonzero", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 --match", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 --bogus", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 --types --nonzero", TwoRefs).has_value());
+    CHECK_FALSE(Parse("get $1 Health --match aim", TwoRefs).has_value());
 }
 
 TEST_CASE("read --type takes a layout whose size is the read length") {

@@ -151,7 +151,7 @@ TEST_CASE("narrow: --fields keeps the members that fit, whole where they can, --
     CHECK(budget::detail::Pick(small, 1, sum) == std::vector<std::string>{"Box.A"});
 }
 
-TEST_CASE("narrow: --limit for a list without --fields; --nonzero, then --own, for dump") {
+TEST_CASE("narrow: --limit for a list without --fields; --nonzero, then --own, for get") {
     Json rows = Json::array();
     for (int i = 0; i < 500; ++i) rows.push_back({{"ref", "0x10#1:2"}, {"values", Json::array({std::string(80, 'v')})}});
     const budget::Profile each(Json{{"class", "Pawn"}, {"rows", rows}});
@@ -161,11 +161,11 @@ TEST_CASE("narrow: --limit for a list without --fields; --nonzero, then --own, f
     CHECK(changes[0].flag == "--limit");
     CHECK(std::stoul(*changes[0].value) * 100 < budget::ToolBudget);
 
-    const budget::Profile dump(Json{{"rows", Json::array({{{"name", std::string(30000, 'x')}}})}});
-    const auto& dumpRow = Row("dump");
-    CHECK(budget::Narrow(dump, dumpRow, TypedArgs(dumpRow, "dump $1"), budget::ToolBudget) ==
+    const budget::Profile all(Json{{"rows", Json::array({{{"name", std::string(30000, 'x')}}})}});
+    const auto& getRow = Row("get");
+    CHECK(budget::Narrow(all, getRow, TypedArgs(getRow, "get $1"), budget::ToolBudget) ==
         std::vector<budget::Change>{{"--nonzero", {}}});
-    CHECK(budget::Narrow(dump, dumpRow, TypedArgs(dumpRow, "dump $1 --nonzero"), budget::ToolBudget) ==
+    CHECK(budget::Narrow(all, getRow, TypedArgs(getRow, "get $1 --nonzero"), budget::ToolBudget) ==
         std::vector<budget::Change>{{"--own", {}}});
 
     // A verb with no narrowing flag offers no line.

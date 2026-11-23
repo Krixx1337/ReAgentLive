@@ -11,7 +11,7 @@ off the engine's thread (`docs/commands/unreal.md#off-the-engines-thread`).
 - `game-thread` answers unsupported: the host does not link
   `reagentlive::ue-draw`. Use the host's own switch if its notes name one;
   else stay at reads and tell the user.
-- Can reads answer the question (`get`, `dump`, `fields`, `entries`, a
+- Can reads answer the question (`get`, `get --types`, `entries`, a
   capture)? Then skip the switch.
 
 ## Confirm Draw, read-only

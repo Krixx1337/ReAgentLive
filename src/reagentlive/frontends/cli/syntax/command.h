@@ -32,7 +32,7 @@ struct Command {
     // before the start; `range` is the index into `reads` they fill.
     struct WatchField { size_t range; Ref object; std::string path; };
     std::vector<WatchField> watchFields;
-    // A class or struct named instead of an object ref (fields, dump, func,
+    // A class or struct named instead of an object ref (get --types, func,
     // funcs, params; each's class): the console resolves it before the request.
     std::string className;
     std::string target;         // A name the verb acts on (a function, a member, a watch action).
@@ -50,7 +50,7 @@ struct Command {
     uint32_t interval = 0;
     std::string root;
     std::string then;           // watch --then: a call line run right after the start.
-    // dump filters: rows whose name contains `match` (case-insensitive), with
+    // get filters (no paths): rows whose name contains `match` (case-insensitive), with
     // non-zero bytes, or changed against the snapshot (`file`, else the
     // session's baseline). census: `match` filters class names; census --diff
     // sets `changed`, comparing with the census baseline. batch: `fields` holds the command
@@ -58,7 +58,7 @@ struct Command {
     std::string match;
     // each --where Field~text: the field path whose value must contain `match`.
     std::string whereField;
-    bool nonzero = false, changed = false, own = false; // dump filters; own: only the fields the class itself declares.
+    bool nonzero = false, changed = false, own = false; // get filters; own: only the fields the class itself declares.
     uint32_t elements = 0;      // --elements: per container in get, each and dump; 0: the default.
     // --outer on find, each and census: an object (its full ref) or an outer's name text.
     std::string outer, outerText;

@@ -84,7 +84,7 @@ requests inside a command.
   priority: a client that slept through one response missed the agent's
   short wait for every later request too, so held batches ran either in one
   tick or one tick per request.
-- **Not built, measured unneeded:** larger responses (a large `dump`'s
+- **Not built, measured unneeded:** larger responses (a large `get`'s
   requests are pointer lookups and array previews, not 4 KB paging) and a
   wake-up event (a read already costs one host tick).
 - **Host logging counts against the hold budget.** A host that logs every
@@ -100,7 +100,7 @@ on live samples), where time and context went for no gain.
   member metadata made up most of nearly every command's output and was
   flattened by hand per call. One rule for every struct, vectors included:
   a shorter special case for vectors was rejected. `--meta` restores the
-  layout; `fields` keeps it, being the layout command.
+  layout; `get --types` keeps it, being the layout mode.
 - **Calls explain themselves.** An outputs-only call gets a zeroed block;
   refusals name the parameter and the reason in terms of it. A message that
   reads as true of the input it refuses ("parameters are plain outputs:
@@ -153,7 +153,7 @@ where every question was answered and the cost was output and turns:
   the tool said `class_`, `batch` wanted `class`. A table test refuses a
   keyword.
 - **Compact rows, layout on request**, the rule values already followed.
-  A `dump` row is its name, offset and value (about 25 KB for one actor
+  A `get` row (every field) is its name, offset and value (about 25 KB for one actor
   before); the offset stays because it is the bridge to raw reads, and the
   recovered readable name is the row's name, the reflected one beside it.
   A `get` row is its value and address; `path` and `ok` went because rows
@@ -344,7 +344,7 @@ sits on the console.
 | **MCP** | `frontends/mcp/reagentlive_mcp.py`: one tool per row of the console's table | exists; on the console's JSON calls ([tool interface](tool-interface.md#tool-interface)) |
 | **C++ callers** | link the client | test harnesses, scripts, other tools |
 
-The console has become the command layer: `dump`, `get`, `batch`, `entries`
+The console has become the command layer: `get`, `batch`, `entries`
 and the cache exist only there. A frontend that wants those commands goes
 through the console's JSON calls, as the Python client does; only a
 frontend that needs raw requests links the client. A new console command
@@ -410,7 +410,7 @@ tools, with their decisions and rejected alternatives:
   fixes); queuing requests from a borrowed thread to the engine's (that
   needs a second tick source, which is what the Draw tick is).
 - **Best-effort pack reads off the engine's thread, behind a host
-  opt-in.** Lookups and reads (`find`, `fields`, object reads, `entries`,
+  opt-in.** Lookups and reads (`find`, field tables, object reads, `entries`,
   `enum`, `func`, ...) read memory the engine owns but call none of its
   code, so a host ticking on its own thread can answer them under a fault
   guard, checking the object's identity before and after each read; values
@@ -467,7 +467,7 @@ tools, with their decisions and rejected alternatives:
 - **Class names by exact find.** A bare class name was resolved by
   `find`'s first page, which scans and counts the whole table even after
   the match, so every new class cost a full scan: the likely cause of a
-  925 ms median for `fields` in one host's usage log, where `fields` on
+  925 ms median for field tables in one host's usage log, where a table on
   class names was most of the time (not yet measured live against the
   fix). `FindExact` stops at the first match. Rejected for now: a
   name-to-class index built by one scan (thousands of pages for the
@@ -709,7 +709,7 @@ The layout itself and its rules are in
 - **`frontends/cli/` is grouped by layer** (syntax, values, state, results,
   code, console), each with one include rule a test checks.
 - **Rejected:** feature folders (`memory/`, `unreal/`, each with parser,
-  logic and console). Commands cross areas (`dump` uses value formatting,
+  logic and console). Commands cross areas (`get` uses value formatting,
   state files and results), and the two CMake targets and the no-JSON rule
   would be split across every folder.
 - **Each pack is one folder, `packs/<id>/`**: its agent and client files,

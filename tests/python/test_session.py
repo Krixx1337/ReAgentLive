@@ -117,19 +117,20 @@ CALLS = [
     [C('trial-clear', {'id': 1}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'start': 24}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
-    [C('dump', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
-                                                      'truncated': False, 'capped': False})],
-    [C('dump', {'object': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
+    [C('get', {'object': REF, 'changed': True}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
+                                                     'truncated': False, 'capped': False})],
+    [C('get', {'object': REF, 'match': 'Ammo', 'changed': 'ctrl.snap'}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False})],
+    [C('get', {'object': REF, 'snap': True}), ok({'ref': REF, 'rows': [], 'snap': {'size': 1264}})],
     [C('census', {'cls': 'Actor', 'diff': True}), ok({'classes': 4, 'instances': 11, 'before': {'classes': 3, 'instances': 9},
                                                        'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
     [C('get', {'object': REF, 'paths': ['A.B']}), ok({'ref': REF, 'same_tick': True, 'rows': [
-        {'value': 1.5, 'address': '0x18', 'object': REF}]})],
+        {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF}]})],
     [C('get', {'object': REF, 'paths': ['A.B', 'C']}), ok({'ref': REF, 'same_tick': True, 'rows': [
-        {'value': 1.5, 'address': '0x18', 'object': REF},
-        {'error': 'no field C'}]})],
+        {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF},
+        {'path': 'C', 'error': 'no field C'}]})],
     [C('name', {'indices': [5, 6]}), ok({'rows': [{'index': 5, 'name': 'Five'}, {'index': 6}]})],
     [C('refs', {'name': 'Missing'}), error(kind='validation', message='no pooled name is exactly Missing')],
     [C('call', {'object': REF, 'function': 'Pawn:Fn', 'params': ['01']}), ok(CALL)],
@@ -381,8 +382,9 @@ class SessionTests(unittest.TestCase):
 
     def test_pack_verbs(self):
         self.assertEqual(self.c.ue.find('A', cls='Pawn')['total'], 2)
-        self.assertEqual(self.c.ue.dump(REF, changed=True)['rows'][0]['before'], 5)
-        self.c.ue.dump(REF, match='Ammo', changed='ctrl.snap')
+        self.assertEqual(self.c.ue.get(REF, snap=True)['snap']['size'], 1264)
+        self.assertEqual(self.c.ue.get(REF, changed=True)['rows'][0]['before'], 5)
+        self.c.ue.get(REF, match='Ammo', changed='ctrl.snap')
         diff = self.c.ue.census(cls='Actor', diff=True)
         self.assertEqual(diff['rows'][0]['count'], 2)
         self.assertEqual(diff['before']['instances'], 9)

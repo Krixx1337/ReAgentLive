@@ -277,16 +277,6 @@ Parsed Describe(const Args& args, const ParseContext& context) {
     return command;
 }
 
-Parsed Snap(const Args& args, const ParseContext& context) {
-    Command command;
-    Ref ref{};
-    if (!Reference(args.At(0), context.refs, ref)) return Fail("use an object ref ($N or 0x<address>#<index>:<serial>)");
-    ue::SetRef(command.request, ref);
-    command.file = args.At(1); // Optional snapshot file.
-    command.kind = Kind::Snap;
-    return command;
-}
-
 Parsed Record(const Args& args, const ParseContext& context) {
     Command command;
     Ref ref{};
@@ -299,29 +289,6 @@ Parsed Record(const Args& args, const ParseContext& context) {
     if (command.fields.size() > 8) return Fail("record needs a file and 1..8 exact field names");
     command.request.length = static_cast<uint32_t>(seconds);
     command.kind = Kind::Record;
-    return command;
-}
-
-Parsed Fields(const Args& args, const ParseContext& context) {
-    Command command;
-    if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
-    command.match = args.Value("--match");
-    command.request.op = ue::op::Fields;
-    return command;
-}
-
-// dump <object|class> [--match text] [--nonzero] [--changed [file]]: fields, then reads of the object's bytes.
-Parsed Dump(const Args& args, const ParseContext& context) {
-    Command command;
-    if (!ObjectOrClass(args.At(0), context.refs, command)) return Fail("object must be $N, an address or a class name");
-    command.nonzero = args.Has("--nonzero");
-    command.changed = args.Has("--changed");
-    if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
-    command.own = args.Has("--own");
-    command.file = args.Value("--changed");
-    command.match = args.Value("--match");
-    command.request.op = ue::op::Fields;
-    command.kind = Kind::Dump;
     return command;
 }
 
@@ -406,10 +373,19 @@ Parsed Rows(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// get <object> <Field[.Field...]>...: named fields, following object pointers.
+// get <object|Class> [Field[.Field...]]... [--match T] [--nonzero] [--own] [--types] [--elements N]
+// [--snap [file]] [--changed [file]]: one reader of reflected fields. Its
+// modes run as the internal kinds: paths (Get), every field (Dump), the
+// layout (op::Fields) and the baseline (Snap).
 Parsed Get(const Args& args, const ParseContext& context) {
     Command command;
-    if (!CallObject(args.At(0), context, command)) return Fail("object must be $N, an address or a Default__ name");
+    if (!ObjectOrClass(args.At(0), context.refs, command))
+        return Fail("object must be $N, a literal ref, an address, a Default__ name or with --types a class name");
+    const bool types = args.Has("--types"), snap = args.Has("--snap"), changed = args.Has("--changed");
+    const bool named = !command.className.empty() && !command.className.starts_with("Default__");
+    if (named && !types)
+        return Fail("a class or struct by name has no values: add --types for its layout, or give an object "
+                    "(Default__" + command.className + " for its defaults)");
     for (size_t i = 1; i < args.positionals.size(); ++i) {
         const std::string_view path = args.positionals[i];
         size_t depth = 1;
@@ -419,10 +395,33 @@ Parsed Get(const Args& args, const ParseContext& context) {
             depth > MaxGetDepth) return Fail("a path is Field[.Field...], up to " + std::to_string(MaxGetDepth) + " deep");
         command.fields.emplace_back(path);
     }
+    const bool paths = !command.fields.empty();
+    if (paths && (args.Has("--match") || args.Has("--own") || snap || changed || types))
+        return Fail("--match, --own, --types, --snap and --changed take no paths");
+    if (types && (args.Has("--nonzero") || args.Has("--elements") || snap || changed))
+        return Fail("--types reads no values: no --nonzero, --elements, --snap or --changed");
+    if (snap && changed) return Fail("--snap and --changed are separate calls: snap, act, then --changed");
+    if ((snap || changed) && command.className.empty() && ue::GetRef(command.request).index < 0)
+        return Fail("--snap and --changed need an object ref ($N or 0x<address>#<index>:<serial>)");
+    if (snap && (args.Has("--match") || args.Has("--nonzero") || args.Has("--own") || args.Has("--elements")))
+        return Fail("--snap keeps the whole object: no filters");
     command.nonzero = args.Has("--nonzero");
     if (auto why = Elements(args, command); !why.empty()) return Fail(std::move(why));
-    command.kind = Kind::Get;
+    command.own = args.Has("--own");
+    command.match = args.Value("--match");
     command.request.op = ue::op::Fields;
+    if (paths) {
+        command.kind = Kind::Get;
+    } else if (types) {
+        command.kind = Kind::Remote;
+    } else if (snap) {
+        command.kind = Kind::Snap;
+        command.file = args.Value("--snap");
+    } else {
+        command.kind = Kind::Dump;
+        command.changed = changed;
+        command.file = args.Value("--changed");
+    }
     return command;
 }
 

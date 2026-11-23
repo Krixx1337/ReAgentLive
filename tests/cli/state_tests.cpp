@@ -227,9 +227,9 @@ TEST_CASE("label files a member under its class and appends a line the names fil
     REQUIRE(native.For(Zone).size() == 1);
     CHECK(native.For(Zone)[0]->line == 2);
     CHECK(names.Size() == 1);
-    // As dump shows it: a field row marked native, decoded by its type.
+    // As get --types shows it: a row marked native, decoded by its type.
     const auto& member = *native.For(Zone)[0];
-    auto row = ToJson(MakeNativeFieldRow(member, true));
+    auto row = ToJson(MakeNativeTypeRow(member, true));
     CHECK(row["type"] == "f64[3]");
     CHECK(row["size"] == 24);
     CHECK(row["native"] == true);

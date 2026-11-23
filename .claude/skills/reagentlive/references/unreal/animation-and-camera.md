@@ -3,8 +3,8 @@
 ## Finding the right object
 
 - First-person pose questions: the arms mesh's anim instance links
-  per-weapon layers; blueprint anim variables keep readable names, so `dump`
-  the layer and search its rows (`dump --match`).
+  per-weapon layers; blueprint anim variables keep readable names, so `get`
+  the layer and search its rows (`get --match`).
   `GetLinkedAnimLayerInstanceByClass(baseClass, true)` finds the held
   weapon's layer.
 - To find which sequence node plays a clip, read each player's `Sequence`
@@ -27,7 +27,7 @@
 
 - Before snapping a few anim nodes, scan them all read-only: list every
   node's alpha source, bool blend times and interp speeds from one raw
-  snapshot plus the offsets `fields` gives, and cross with a hip-vs-aim diff. A node
+  snapshot plus the offsets `get --types` gives, and cross with a hip-vs-aim diff. A node
   that differs between two states may smooth something else too (look sway):
   snapping it can make the gun shake. Ship such snaps behind a session-only
   testing switch first.

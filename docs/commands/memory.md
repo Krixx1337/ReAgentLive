@@ -87,7 +87,7 @@ value exist.
 
 ## mem-snap and mem-diff
 
-`dump --changed` compares reflected fields; these compare raw bytes, for
+`get --changed` compares reflected fields; these compare raw bytes, for
 state no reflection names (a native block, a struct found by `search`, an
 object with no engine pack). `mem-snap` keeps the range
 (`%TEMP%\reagentlive-<pid>.memsnap`, tied to the agent instance like the

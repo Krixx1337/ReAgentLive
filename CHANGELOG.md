@@ -35,6 +35,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `modules` lists the exe first. `region` is gone: `read` and `peek` add
   `region: {kind, base, size, protect}`. `read-batch` is gone: use `batch`
   or `get`. Regenerate Python modules and restart MCP servers.
+- **One field reader, `get`:** `dump`, `fields` and `snap` are gone.
+  `get <obj>` lists every field (as `dump` did, same filters), `get <obj>
+  <path>...` reads paths (rows add `path`; `object` is now `holder`),
+  `get <obj|Class> --types` gives the layout (as `fields`; rows carry
+  `raw` in place of `label`), `get <ref> --snap [file]` keeps a baseline
+  and `get <ref> --changed [file]` compares with it. A path that names no
+  field lists the closest field names. A class by name needs `--types`.
 
 - **The MCP adapter needs the MCP Python SDK 2:** run
   `python -m pip install --upgrade "mcp>=2"` in the Python your MCP config

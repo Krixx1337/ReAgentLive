@@ -35,7 +35,7 @@ build/unreal/reagentlive-ue.exe -c "status; fields Vector; enum ENetRole"
 
 - **The first Unreal command stalls the game once**, for up to seconds
   ([before the first command](../../docs/commands/unreal.md#before-the-first-command)).
-- **Reads** (objects, fields, `dump`, `get`, `entries`, `enum`, ...)
+- **Reads** (objects, fields, `get`, `entries`, `enum`, ...)
   answer from the DLL's own thread under fault guards; values read across
   ticks need not line up. **Engine calls** (`call`, `each`, `script`, ...)
   need the game thread. The exact lists:

@@ -211,7 +211,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         }
         return Emit(session, jsonCommand, std::move(record));
     }
-    case ue::op::Fields: return PrintFields(session, ue::GetRef(request), command.className.empty(), command.match, jsonCommand);
+    case ue::op::Fields: return PrintTypes(session, ue::GetRef(request), command, jsonCommand);
     case ue::op::Names: {
         std::vector<int32_t> indices(request.length / 4);
         memcpy(indices.data(), request.data, request.length);
@@ -340,7 +340,8 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
     // get, rows and entries take a default object by name (Default__Class), as
     // call does: found here, before they run, and passed on as a ref.
     Command command = given;
-    if ((command.kind == Kind::Get || command.kind == Kind::Rows || command.kind == Kind::Entries) &&
+    if ((command.kind == Kind::Get || command.kind == Kind::Snap || command.kind == Kind::Rows ||
+         command.kind == Kind::Entries) &&
         command.className.starts_with("Default__")) {
         auto object = ResolveObjectOrClass(session, command.className);
         if (!object) return CommandError(session, jsonCommand, object.error());

@@ -198,7 +198,50 @@ Json EachValue(const std::optional<ue::Field>& field, const ue::Signature& signa
 }
 
 namespace {
-// A field by [Owner:]Name, readable or reflected; nullptr when missing or ambiguous (why says which).
+// Up to three field names (readable where recovered) closest to `wanted`:
+// one containing it first, then by edit distance, any case.
+std::string ClosestFields(const Names& names, std::span<const ue::Field> fields, std::string_view wanted) {
+    const auto lower = [](std::string_view s) {
+        std::string out(s);
+        for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return out;
+    };
+    const std::string want = lower(wanted.substr(wanted.find(':') == std::string_view::npos ? 0 : wanted.find(':') + 1));
+    const auto distance = [](const std::string& a, const std::string& b) {
+        std::vector<size_t> row(b.size() + 1);
+        for (size_t j = 0; j <= b.size(); ++j) row[j] = j;
+        for (size_t i = 1; i <= a.size(); ++i) {
+            size_t diagonal = row[0];
+            row[0] = i;
+            for (size_t j = 1; j <= b.size(); ++j) {
+                const size_t above = row[j];
+                row[j] = std::min({row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] == b[j - 1] ? 0 : 1)});
+                diagonal = above;
+            }
+        }
+        return row[b.size()];
+    };
+    std::vector<std::pair<size_t, std::string>> ranked;
+    for (const auto& field : fields) {
+        const auto readable = names.Find(field.owner, field.offset, field.size, field.boolMask);
+        const std::string name = readable.empty() ? field.name : std::string(readable);
+        const std::string low = lower(name);
+        const size_t score = low.find(want) != std::string::npos || want.find(low) != std::string::npos ? 0 :
+            1 + distance(low, want);
+        if (std::ranges::find(ranked, name, &std::pair<size_t, std::string>::second) == ranked.end())
+            ranked.emplace_back(score, name);
+    }
+    std::ranges::stable_sort(ranked, {}, &std::pair<size_t, std::string>::first);
+    std::string out;
+    for (size_t i = 0; i < ranked.size() && i < 3; ++i) {
+        if (ranked[i].first > std::max<size_t>(3, want.size() / 2) + 1) break;  // Too far to be a typo.
+        out += (out.empty() ? "" : ", ") + ranked[i].second;
+    }
+    return out;
+}
+
+// A field by [Owner:]Name, readable or reflected; nullptr when missing or
+// ambiguous (why says which, and names the closest fields for a missing one).
 const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields, std::string_view wanted, std::string& why) {
     const auto colon = wanted.find(':');
     const auto matches = [&](const ue::Field& field) {
@@ -208,6 +251,7 @@ const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields
     const auto found = std::ranges::find_if(fields, matches);
     if (found == fields.end()) {
         why = "no field " + std::string(wanted);
+        if (const auto closest = ClosestFields(names, fields, wanted); !closest.empty()) why += "; closest: " + closest;
         return nullptr;
     }
     if (std::ranges::find_if(std::next(found), fields.end(), matches) != fields.end()) {
@@ -699,8 +743,10 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
     const auto modules = LoadedModules(session);
     shape::Get result;
     bool failed = false;
-    for (const auto& value : values) {
+    for (size_t i = 0; i < values.size(); ++i) {
+        const auto& value = values[i];
         shape::GetRow row;
+        row.path = command.fields[i];
         if (!value.error.empty()) {
             failed = true;
             row.error = value.error;
@@ -710,7 +756,7 @@ void RunGet(Session& session, const Command& command, StructCache& structs, std:
         row.address = Addr(value.address);
         row.where = Locate(value.address, modules);
         // The holder only when a pointer led there; otherwise it is the ref asked about.
-        if (!(value.object == root)) row.object = ReusableRef(value.object);
+        if (!(value.object == root)) row.holder = ReusableRef(value.object);
         if (session.meta) row.hex = HexBytes(value.bytes);
         if (value.native) {
             row.value = layout::Value(value.native->field, value.bytes);

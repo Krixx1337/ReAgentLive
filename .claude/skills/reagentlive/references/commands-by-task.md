@@ -21,7 +21,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Live instances per class; what spawned during an action | `census`, then `census --diff` |
 | Name, class and ref of an address | `describe` |
 | FName index to text / text to index | `name` / `name-find` |
-| An object's layout / its values | `fields` / `dump` (filter it) |
+| An object's layout / its values | `get --types` / `get` (filter it, or name paths) |
 | Typed values along pointer and struct paths, one moment | `get` |
 | One table over every instance of a class (one tick, one call) | `each` |
 | Elements of an array, set or map | `entries` |
@@ -62,7 +62,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Question | Verb |
 |---|---|
 | Memory or a reflected field over seconds to minutes | `watch-start`, `watch-read`, `watch-stop` |
-| An object's fields before and after an action | `snap`, then `dump --changed` |
+| An object's fields before and after an action | `get --snap`, then `get --changed` |
 | Every tick for a few seconds, holding the caller | `watch`, `record` (blocking; interfaces reference) |
 
 ## Native code (fast lane: `docs/commands/fast-lane.md`)

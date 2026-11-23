@@ -46,13 +46,13 @@ def main():
         out['read_ms'] = (time.perf_counter() - started) / 200 * 1000
         out['read_ticks_per_second'] = rate()
         rate = tick_rate(s)
-        seconds, timing, envelope = timed(s, 'dump', {'object': args.object})
-        out['dump'] = {'ms': seconds * 1000, **timing, 'bytes': len(json.dumps(envelope)),
+        seconds, timing, envelope = timed(s, 'get', {'object': args.object})
+        out['get_all'] = {'ms': seconds * 1000, **timing, 'bytes': len(json.dumps(envelope)),
                        'ticks_per_second': rate()}
-        _, timing, envelope = timed(s, 'dump', {'object': args.object, 'nonzero': True})
-        out['dump_nonzero_bytes'] = len(json.dumps(envelope))
-        seconds, snap, _ = timed(s, 'snap', {'object': args.object})
-        seconds2, diff, _ = timed(s, 'dump', {'object': args.object, 'changed': True})
+        _, timing, envelope = timed(s, 'get', {'object': args.object, 'nonzero': True})
+        out['get_all_nonzero_bytes'] = len(json.dumps(envelope))
+        seconds, snap, _ = timed(s, 'get', {'object': args.object, 'snap': True})
+        seconds2, diff, _ = timed(s, 'get', {'object': args.object, 'changed': True})
         out['snap_diff'] = {'ms': (seconds + seconds2) * 1000, 'trips': snap.get('trips', 0) + diff.get('trips', 0)}
         if args.path:
             seconds, timing, envelope = timed(s, 'get', {'object': args.object, 'paths': [args.path]})

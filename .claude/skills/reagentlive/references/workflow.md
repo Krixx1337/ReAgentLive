@@ -7,12 +7,12 @@
 2. **Locate.** `find --cls <Class>` lists instances; add name text to
    narrow. Name text matches anywhere, so short text floods the page: use a
    distinctive suffix or a class.
-3. **Navigate.** `dump` an owner object and follow the printed refs instead
+3. **Navigate.** `get` an owner object and follow the printed refs instead
    of computing offsets.
 4. **Decode.** Names print as text; `name` resolves a leftover `#N`.
    Readable names for obfuscated fields are hints: trust offsets, sizes and
    types.
-5. **Observe change.** `snap`, the user acts, `dump --changed`; or a
+5. **Observe change.** `get --snap`, the user acts, `get --changed`; or a
    capture for sequences. Pick the object that owns the data: no changed
    rows usually means the wrong object (position lives on a scene
    component, not the pawn). An action that resets at once (a jump): the
@@ -36,7 +36,7 @@
   again. A raw `read` of an old address still returns bytes: it checks
   memory, not identity; a literal ref checks identity.
 - **Separate calls read separate ticks** (SKILL.md rules).
-- **Native members may be absent from reflection.** `dump` can show a data
+- **Native members may be absent from reflection.** `get` can show a data
   table's row struct and omit its native `RowMap` (`rows` reads it).
 - **UI names differ from internal names.** Map through item tags, not by
   guessing.

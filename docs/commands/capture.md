@@ -1,10 +1,10 @@
 # Capture and replay
 
-*Home of:* which command answers which question about change, and `snap`, `record` and replay.
+*Home of:* which command answers which question about change, and `get --snap`, `record` and replay.
 
 **TL;DR:** To see what changes when something happens in the game, pick
 the command by the question: one object's fields across an action
-(`snap`, then `dump --changed`), named fields over time (`record`), raw
+(`get --snap`, then `get --changed`), named fields over time (`record`), raw
 bytes every tick (`watch`), or every instance of a class (`each`,
 `census --diff`). These read and change nothing, except `watch --then` and
 `each` with a function, which call into the game.
@@ -13,21 +13,21 @@ Which command for which question about change:
 
 | Question | Command |
 |---|---|
-| Which fields of this object changed across an action? | `snap`, then `dump --changed` |
+| Which fields of this object changed across an action? | `get --snap`, then `get --changed` |
 | How do these named fields move over time? | `record` |
 | What do these raw bytes do every tick? | [`watch`](memory.md#watch) |
 | How does one field differ across all instances, or change in any of them? | [`each`](unreal.md#each), `each --seconds` |
 | Which classes gained or lost instances? | [`census --diff`](unreal.md#census-changes) |
 
-Use `snap $N` on a live instance, perform an action, then run `dump $N
+Use `get $N --snap` on a live instance, perform an action, then run `get $N
 --changed`. It compares reflected fields and prints the changed ones with
 `before` and `value`; `--match` narrows them. It checks that the ref and
 field layout match the baseline. Reads can span ticks, and fields outside the
-64 KB dump window are skipped. The last snap is kept in the cache file, so
-`dump --changed` works in a later run against the same agent instance
+64 KB read window are skipped. The last snapshot is kept in the cache file, so
+`get --changed` works in a later run against the same agent instance
 (one-shot runs, and the MCP adapter's console per call).
 
-Use `fields $N` to choose exact field names for a recording. Qualify duplicate
+Use `get $N --types` to choose exact field names for a recording. Qualify duplicate
 names with `Owner:Field`. Select up to eight fields of up to 64 bytes each
 within a single 4 KB span. Use a new file path (quote one with spaces).
 The recorder samples a baseline, gives a three-second countdown, then writes

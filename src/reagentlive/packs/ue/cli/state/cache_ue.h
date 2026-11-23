@@ -1,7 +1,7 @@
 // reagentlive CLI, Unreal pack: its block of the cache file (state/cache.h):
 // class names to refs, field tables by type, the census baselines and the
-// last snap (so one-shot runs, and the MCP adapter's console per call, can
-// use census --changed and dump --changed). Field tables are checked against
+// last get --snap (so one-shot runs, and the MCP adapter's console per call, can
+// use census --diff and get --changed). Field tables are checked against
 // page 0 of every lookup (ue::Fields with a cache). Field lines are shared
 // with snapshot files.
 #pragma once
@@ -19,7 +19,7 @@
 #include "reagentlive/packs/ue/client_ue.h"
 
 namespace reagentlive::cli {
-// snap's baseline for dump --changed: the object, its field table and its bytes.
+// get --snap's baseline for get --changed: the object, its field table and its bytes.
 struct Snapshot {
     Ref object;
     std::vector<ue::Field> fields;

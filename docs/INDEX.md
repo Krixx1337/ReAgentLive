@@ -58,8 +58,8 @@ the README's paste prompts send an agent there.
 | [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write`, trials, `search`, `pin`, `watch`, typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
 | [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`--rtti`), pointer chains, regions, strings |
-| [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `dump`, labels, readable names, native members |
-| [commands/capture.md](commands/capture.md) | which command for which question about change; `snap`, `record`, replay |
+| [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `get`, labels, readable names, native members |
+| [commands/capture.md](commands/capture.md) | which command for which question about change; `get --snap`, `record`, replay |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
 | [hosting.md](hosting.md) | Unreal and own-thread examples, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
 | [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
@@ -94,7 +94,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `sig-check`, `sig-check --file`, `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
 | `labels-sign`, `labels-port` | T0 | [labels](commands/unreal.md#names-that-survive-a-patch) |
 | `find`, `describe`, `name`, `name-find` | T1 | [Unreal pack](commands/unreal.md) |
-| `fields`, `entries`, `func`, `funcs`, `enum` | T2 (`func`'s `params`: T3) | [Unreal pack](commands/unreal.md) |
+| `get --types`, `entries`, `func`, `funcs`, `enum` | T2 (`func`'s `params`: T3) | [Unreal pack](commands/unreal.md) |
 | `rows` | T2 | [Unreal pack](commands/unreal.md#rows) |
 | `call`, `call-pure`, `release`, `script`, `refs`, `trace` | T3 | [Unreal pack](commands/unreal.md) |
 | `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal pack](commands/unreal.md) |
@@ -102,12 +102,12 @@ offers (`packs`). **T3** commands also need the game thread
 | `layout-export`, `layout-check` | T2 | [Unreal pack](commands/unreal.md#layouts-in-bulk) |
 | `each` | T3 | [Unreal pack](commands/unreal.md#each) |
 | `census`, `census --diff` | T1 | [Unreal pack](commands/unreal.md#census) |
-| `dump` | T2 | [Unreal pack](commands/unreal.md#dump), filters: [console](commands/console.md#fewer-round-trips) |
+| `get` (every field, `--match`, `--nonzero`, `--own`) | T2 | [Unreal pack](commands/unreal.md#get), paths: [console](commands/console.md#fewer-round-trips) |
 | `export-labels` | T3 (native exec thunks); other `--kinds` T2 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `peek --label` | T0 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `label` | T2 | [Unreal pack](commands/unreal.md#native-members) |
-| `snap`, `record`, `--replay` | T2 | [capture](commands/capture.md) |
-| `get`, `--meta` | T2 | [console](commands/console.md#fewer-round-trips) |
+| `get --snap`, `get --changed`, `record`, `--replay` | T2 | [capture](commands/capture.md) |
+| `get <obj> <path>...`, `--meta` | T2 | [console](commands/console.md#fewer-round-trips) |
 | `batch`, `--timing` | T0 | [console](commands/console.md#fewer-round-trips) |
 | `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
 | `stats`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-stats) |

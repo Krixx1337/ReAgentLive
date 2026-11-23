@@ -10,14 +10,14 @@
 - **Blocking `watch`** (blocking; interfaces reference): every tick for a
   short span, and it can start the action right after sampling starts
   (`help watch`); send the off call afterwards.
-- **Named fields before and after:** `snap`, the user acts,
-  `dump --changed`. `record` (blocking; interfaces reference) for a few
+- **Named fields before and after:** `get <ref> --snap`, the user acts,
+  `get <ref> --changed`. `record` (blocking; interfaces reference) for a few
   seconds of a few fields.
-- **A short action that resets at once (a jump, a shot):** `snap` then
-  `dump --changed` misses it once the state is back. Capture across it:
+- **A short action that resets at once (a jump, a shot):** `--snap` then
+  `--changed` misses it once the state is back. Capture across it:
   `watch-start 5s <ref>.<Field>` on the owning component (movement, not
   the pawn), tell the user to act now, then `watch-read`; or `record` for
-  a few seconds. Else `snap` at rest and `dump --changed` while the user
+  a few seconds. Else `get --snap` at rest and `get --changed` while the user
   holds the state mid-action.
 - **Getters or mixed sources:** one `batch` (a `call-pure` and the `read`s)
   per sample keeps a getter and raw reads in one tick; loop it from Python.
@@ -56,7 +56,7 @@
   rest but agree across steady snapshots, map each offset to the reflected
   field that contains it (anim graph nodes are fields too), then watch only
   those offsets.
-- Past what `dump` reads (dump: `docs/commands/unreal.md#dump`):
+- Past what `get` reads (`docs/commands/unreal.md#get`):
   `read` the rest in chunks.
 
 ## Analysis

@@ -29,10 +29,10 @@ approval rules); they win over this skill.
 
 `status` prints no tier (full reading: `docs/tiers.md#read-your-tier-from-status`):
 `packs` empty: T0. `packs: ["ue"]`, `host_thread` `own`/`borrowed`: T1, T2
-once `fields Vector` answers. `host_thread: engine`: T3. Real serials (not `:0`): T4.
+once `get Vector --types` answers. `host_thread: engine`: T3. Real serials (not `:0`): T4.
 
 - T0: Unreal verbs need a host with the pack (tiers: `docs/tiers.md#the-ladder`).
-- T1 (`fields Vector` refused with a layout-group check): load `references/unreal/new-game.md`.
+- T1 (`get Vector --types` refused with a layout-group check): load `references/unreal/new-game.md`.
 - T2: `game-thread on` (approval); load `references/unreal/game-thread.md`.
 - T3: T4 is a host built with the SDK (hosting: `docs/hosting.md`).
 - What answers below T3: off the engine's thread (`docs/commands/unreal.md#off-the-engines-thread`).

@@ -147,11 +147,11 @@ one file:
 | `console/pack.h`, `packs/ue/cli/console/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
 | `packs/ue/cli/console/members.cpp`, `packs/ue/cli/state/native_names.h` | native members: `label`, the native file and its checks |
 | `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --type "<layout>"`, native member types) |
-| `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `fields`, `dump` |
+| `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `get` with no paths and `--types` |
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
-| `packs/ue/cli/console/capture.cpp` | snapshots, `snap`, `record`, replay |
+| `packs/ue/cli/console/capture.cpp` | snapshots (`get --snap`), `record`, replay |
 | `packs/ue/cli/console/calls.cpp` | `func` (with its signature), typed calls |
-| `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each`/`dump` values) and `--fields`; `rows` |
+| `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each` values) and `--fields`; `rows` |
 | `packs/ue/cli/console/text.cpp` | text values through the engine's converter |
 | `packs/ue/cli/console/query.cpp` | class lookup, `each`, `get`, `entries` |
 | `packs/ue/cli/state/cache_ue.h`, `packs/ue/cli/values/format_ue.h`, `packs/ue/cli/values/json_output.h`, `packs/ue/cli/results/` | the pack's cache block, property values as text and JSON, its result builders |
@@ -163,7 +163,7 @@ one file:
 | `agent_ue_check.cpp` | the layout groups: each checked once on known objects before its ops run |
 | `agent_ue_census.cpp` | the cached table and pool scans: `census`, `name-find` |
 | `agent_ue_entries.cpp` | array previews and `entries` |
-| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, `fields`, parameters, `enum` and the function lookup |
+| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, field tables, parameters, `enum` and the function lookup |
 | `agent_ue_scan.cpp` | the cached scans: `each`, `exec-entries` |
 | `agent_ue_script.cpp` | Blueprint bytecode: `script`, `refs` |
 | `agent_ue_calls.cpp` | the call recorder: `calls-start`, `calls-read`, `calls-stop` |
@@ -209,7 +209,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 | Suite | Covers |
 |---|---|
 | `reagentlive-loopback-tests` (`tests/loopback/`) | the real agent ticking on a thread against a real client in one process, with a test `Host` (shared agent in `support.h`, cases by area): attach, busy and layout refusal, build stamp, wait notices, op list, reads, writes and expected-bytes writes, refusals, guarded faults, modules, search pages, filters and the background worker, pins, trials, watch rows and guards, multi-tick handlers, unsupported ops, timeouts and recovery, response ticks, held requests and hold budgets, trip counts and round-trip time |
-| `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get`, `each`, `dump` (values and previews) and `entries` must print the same JSON, with and without `--nonzero` and `--meta`; status keys (`unnamed`, digested or not) and stale object arguments (positional and `--outer`) must agree. Add a case here when a verb gains a value or an object argument |
+| `reagentlive-console-tests` (`tests/console/`) | the real console against a fake engine (`fake_engine.h`): an in-process agent whose Unreal pack ops answer from a synthetic world in test memory (types with fields, objects with bytes, an FName pool), core reads real. One fixture read through `get` (paths, and every field with values and previews), `each` and `entries` must print the same JSON, with and without `--nonzero` and `--meta`; status keys (`unnamed`, digested or not) and stale object arguments (positional and `--outer`) must agree. Add a case here when a verb gains a value or an object argument |
 | `reagentlive-cli-tests` (`tests/cli/`) | the verb table (every row, the tokeniser, usage errors, help), the parsers, typed results (each checked against its own type), value formatting, the state files (cache, names), signatures and the fast lane |
 | `reagentlive.results-doc` (`tests/table/`) | [result shapes](commands/results.md) is what the table generates; `reagentlive-table` also prints `help --json` without a console |
 | `reagentlive-ue-tests` (`tests/ue/`) | the Unreal pack's request bounds, ref packing, op ranges, the name-pool walk, the plain rule, kept results, container layouts, script scans; its own executable with no CLI headers |

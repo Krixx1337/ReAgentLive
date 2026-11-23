@@ -97,7 +97,7 @@ inline ue::Field Element(const ue::Field& array) {
 
 // Values read through engine memory and decoded with their reflected
 // structs: a call's returned arrays and a data table's rows (paged), and the
-// compact values of get, each, dump and entries. Arrays, sets and maps nest
+// compact values of get, each and entries. Arrays, sets and maps nest
 // (each read from the engine, at most `nested` elements, then `truncated`),
 // structs expand member by member, a tag container is the list of its tags,
 // text is converted by the engine and object pointers are named. Rendered
@@ -108,7 +108,7 @@ inline ue::Field Element(const ue::Field& array) {
 class RowReader {
 public:
     static constexpr uint32_t MaxNested = 256;    // Elements per nested array in rows.
-    static constexpr uint32_t PreviewNested = 8;  // In get, each and dump, as dump's previews.
+    static constexpr uint32_t PreviewNested = 8;  // In get and each, as get's previews.
     static constexpr unsigned MaxDepth = 3;       // Arrays inside arrays.
     static constexpr unsigned MaxStructs = 4;     // Structs inside structs.
     static constexpr size_t MaxBytes = 16u << 20; // All element reads of one command.
@@ -117,7 +117,7 @@ public:
     RowReader(Session& session, StructCache& structs, uint32_t nested = MaxNested)
         : session_(session), structs_(structs), nested_(nested) {}
 
-    // Top-level pointer fields stay addresses: dump and get name them on their rows.
+    // Top-level pointer fields stay addresses: get names them on its rows.
     void KeepTopPointers() { topPointers_ = false; }
     // --meta: a value in its reflected layout (members with their layout, a
     // name's index and number, a text with how it was read), not compact.

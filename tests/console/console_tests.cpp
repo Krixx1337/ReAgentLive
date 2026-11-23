@@ -125,12 +125,12 @@ Json Each(const std::string& path, const std::string& flags = {}) {
     REQUIRE(result["rows"].size() == 1);
     return result["rows"][0]["values"][0];
 }
-// A dump row's value by field name.
+// A row of get with no paths, by field name.
 Json DumpRow(const std::string& name, const std::string& key = "value", const std::string& flags = {}) {
-    const auto result = Result("dump " + TheFixture().thing + (flags.empty() ? "" : " " + flags));
+    const auto result = Result("get " + TheFixture().thing + (flags.empty() ? "" : " " + flags));
     for (const auto& row : result["rows"])
         if (row["name"] == name) return row.value(key, Json());
-    FAIL("no dump row " << name);
+    FAIL("no get row " << name);
     return {};
 }
 }
@@ -241,9 +241,15 @@ TEST_CASE("a stale object fails alike as a positional and as --outer") {
     CHECK(Result("find --cls Thing --outer " + fixture.package)["total"] == 3);
 }
 
-TEST_CASE("fields --match keeps the matching fields, any case") {
-    const auto all = Result("fields " + TheFixture().thing);
-    const auto some = Result("fields " + TheFixture().thing + " --match sCORE");
+TEST_CASE("a get path that names no field suggests the closest fields") {
+    const auto records = RunLines("get " + TheFixture().thing + " Scorez");
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].dump().find("no field Scorez; closest: Scores") != std::string::npos);
+}
+
+TEST_CASE("get --types --match keeps the matching fields, any case") {
+    const auto all = Result("get " + TheFixture().thing + " --types");
+    const auto some = Result("get " + TheFixture().thing + " --types --match sCORE");
     REQUIRE(some["rows"].size() == 1);
     CHECK(some["rows"][0]["name"] == "Scores");
     CHECK(all["rows"].size() > some["rows"].size());
@@ -326,14 +332,14 @@ const Extras& TheExtras() {
 
 TEST_CASE("a class named past 63 characters resolves, and names travel whole") {
     const auto& extras = TheExtras();
-    const auto fields = Result("fields " + extras.longClass);
+    const auto fields = Result("get " + extras.longClass + " --types");
     REQUIRE(fields["rows"].size() == 1);
     CHECK(fields["rows"][0]["name"] == std::string(120, 'L'));
     CHECK(fields["rows"][0]["owner"] == extras.longClass);
 }
 
-TEST_CASE("dump --own keeps the fields a 51-character class declares") {
-    const auto dumped = Result("dump " + TheExtras().armor + " --own");
+TEST_CASE("get --own keeps the fields a 51-character class declares") {
+    const auto dumped = Result("get " + TheExtras().armor + " --own");
     REQUIRE(dumped["rows"].size() == 1);
     CHECK(dumped["rows"][0]["name"] == "Durability");
 }
@@ -352,30 +358,30 @@ TEST_CASE("enum names an enum's values, past one page") {
 
 TEST_CASE("a bare Default__ name is the default object, not a class") {
     TheExtras();
-    const auto fields = Result("fields Default__Wide");
+    const auto fields = Result("get Default__Wide --types");
     CHECK(fields["rows"].size() == 120);
-    const auto dumped = Result("dump Default__Wide --match Field_7");
+    const auto dumped = Result("get Default__Wide --match Field_7");
     CHECK(dumped["rows"].size() > 0);
 }
 
 TEST_CASE("a class's fields come in few pages") {
     const auto& extras = TheExtras();
     const uint32_t before = extras.wide->pages;
-    const auto fields = Result("fields Wide");
+    const auto fields = Result("get Wide --types");
     CHECK(fields["rows"].size() == 120);
     const uint32_t pages = extras.wide->pages - before;
     CHECK(pages * 4 <= (120 + 10) / 11); // At least 4x fewer than 11 entries a page.
 }
 
-TEST_CASE("dump --elements lifts a top-level array's preview past 8") {
+TEST_CASE("get --elements lifts a top-level array's preview past 8") {
     const auto& fixture = TheFixture();
-    const auto dumped = Result("dump " + fixture.thing + " --match Crowd --elements 12");
+    const auto dumped = Result("get " + fixture.thing + " --match Crowd --elements 12");
     REQUIRE(dumped["rows"].size() == 1);
     const auto& preview = dumped["rows"][0]["preview"];
     CHECK(preview["total"] == fixture.crowd);
     REQUIRE(preview["elements"].size() == 12);
     CHECK(preview["elements"][11]["object"]["name"] == "Extra_11");
-    CHECK(Result("dump " + fixture.thing + " --match Crowd")["rows"][0]["preview"]["elements"].size() == 8);
+    CHECK(Result("get " + fixture.thing + " --match Crowd")["rows"][0]["preview"]["elements"].size() == 8);
 }
 
 TEST_CASE("calls-read decodes a recorded block through the shared reader, as a copy") {

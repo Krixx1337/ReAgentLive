@@ -57,7 +57,7 @@
 ## Data and maps
 
 - A reflected map or set: `entries <obj> <Field>`. Cross-check keys against
-  an engine getter and values against a second live instance. If `fields`
+  an engine getter and values against a second live instance. If `get --types`
   shows no `stride` for it, the layout failed its check: decode the header
   by hand (sparse-array allocation bits and occupied count).
 - A data table's rows: `rows <table> --match <row> --fields <a,b.c>`.

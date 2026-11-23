@@ -41,8 +41,8 @@ No reflection, no engine pack, or a native member behind a reflected one:
   not from the values alone, then decode the whole block in one `read`
   with a layout type (`--type "u8 phase, pad 3, f32 duration, f32 elapsed,
   f64[3] start"`). No hand slicing of hex.
-- **Name what you decoded, once:** `label <obj> 0x538 f64[3] Start`; `fields`,
-  `dump` and `get <ref> Start` then show it in every later run. Re-check
+- **Name what you decoded, once:** `label <obj> 0x538 f64[3] Start`; `get --types`,
+  `get` and `get <ref> Start` then show it in every later run. Re-check
   labels marked `stale` after a patch. Readable names (labels, the host's
   names file) are hints: trust offsets and types.
 - **Prove a decoded motion model live.** Sample the moving thing and the
@@ -58,7 +58,7 @@ No reflection, no engine pack, or a native member behind a reflected one:
   pointed-to value together in one `batch` before relying
   on a saved data address.
 - Containers reflection does not describe (native-only sets and maps,
-  table storage): read the layout and stride from `fields` or a static
+  table storage): read the layout and stride from `get --types` or a static
   tool, `read` the allocation (one `batch` for several ranges), then `name` the FName keys.
 
 ## Narrowing by change

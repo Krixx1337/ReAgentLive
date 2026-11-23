@@ -156,8 +156,8 @@ when sessions keep making four to six calls for one function.
 No CI runs the tests, and the Unreal agent handlers have no automated
 tests against engine data (the Unreal example's test loads its DLL with
 no engine). Shape: a Windows build and `ctest` on every push; a small test
-process with a synthetic object table and name pool so `find`, `fields`,
-`dump` and `each` run end to end; prebuilt console and own-thread
+process with a synthetic object table and name pool so `find`, `get`
+and `each` run end to end; prebuilt console and own-thread
 binaries.
 
 ### 31 · Finding a function again after a patch

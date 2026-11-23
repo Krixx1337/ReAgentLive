@@ -1,4 +1,4 @@
-// reagentlive CLI console: snapshots (the dump --changed baseline), record and replay.
+// reagentlive CLI console: snapshots (the get --changed baseline), record and replay.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -92,14 +92,14 @@ Result<std::vector<uint8_t>> ReadObjectBytes(Client& client, const Ref& object, 
     return bytes;
 }
 
-// The baseline dump --changed compares against; with a file, also saved there for a later run.
+// get --snap: the baseline get --changed compares against; with a file, also saved there for a later run.
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand) {
     Client& client = session.client;
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, jsonCommand, fields.error());
     auto sorted = SortedByOffset(std::move(*fields));
-    // Native members past the last reflected field, so dump --changed can compare them.
+    // Native members past the last reflected field, so get --changed can compare them.
     size_t end = DumpEnd(sorted);
     for (const auto& check : NativeMembers(session, object, sorted, true).shown)
         end = std::max(end, std::min<size_t>(size_t{check.member->field.offset} + check.member->field.Size(), MaxDumpBytes));
@@ -108,8 +108,10 @@ void Snap(Session& session, const Ref& object, const std::string& path, std::opt
     baseline = Snapshot{object, std::move(sorted), std::move(*bytes)};
     if (!path.empty() && !SaveSnapshot(path, *baseline))
         return JsonError(session, jsonCommand, "snapshot", "cannot write snapshot file " + path);
-    Emit(session, jsonCommand, shape::Snap{ReusableRef(object), end,
-        path.empty() ? std::nullopt : std::optional<std::string>(path)});
+    shape::Get result;
+    result.ref = ReusableRef(object);
+    result.snap = shape::SnapInfo{end, path.empty() ? std::nullopt : std::optional<std::string>(path)};
+    Emit(session, jsonCommand, std::move(result));
 }
 
 void Record(Session& session, const Ref& object, const Command& command, StructCache& structs, std::string_view jsonCommand) {

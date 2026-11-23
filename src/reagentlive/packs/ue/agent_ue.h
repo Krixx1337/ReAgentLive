@@ -28,7 +28,7 @@ struct Context {
     // fails; 0 is the process's exe.
     uintptr_t image = 0;
     // Opt-in, off by default: answer lookups and reads (find, describe,
-    // census, names, object reads, fields, entries, enum, func, funcs) when
+    // census, names, object reads, field tables, entries, enum, func, funcs) when
     // gameThread() says no, as on a borrowed thread. Best effort: each runs
     // under a fault guard, an object's identity is checked before and after
     // its read, and values may still be torn. Calls, params, each, script,

@@ -31,7 +31,7 @@ tick or two after the question.
 | A client library the program links | [clients](client.md) |
 | A host that ticks the core | [hosting](hosting.md); the DLL, its entry and its tick source are the host author's |
 
-A program that wants `dump`, `get`, `batch` or the cache drives the console's
+A program that wants `get`, `batch` or the cache drives the console's
 JSON mode instead of linking the client, as the Python client does.
 
 ## Limits
