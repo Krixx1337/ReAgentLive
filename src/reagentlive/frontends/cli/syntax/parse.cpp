@@ -63,9 +63,9 @@ Parsed Stats(const Args& args, const ParseContext&) {
 }
 
 namespace {
-// Timed commands hold the console, not the tick; the rest have nothing to hold.
+// Commands with nothing for a batch to hold.
 bool NotInBatch(std::string_view verb) {
-    return verb == "batch" || verb == "watch" || verb == "record" || verb == "quit" || verb == "exit" || verb == "q" ||
+    return verb == "batch" || verb == "quit" || verb == "exit" || verb == "q" ||
         verb == "help" || verb == "?" || verb == "status" || verb == "stats";
 }
 }

@@ -36,6 +36,5 @@ struct ConsoleConfig {
 // A stdin line is a typed command or a JSON call ({"verb": ..., "args": {...}}).
 // -c lines that are all `help` are answered from the verb table, with no
 // target running.
-// "--replay <file>" shows a capture without attaching.
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv);
 }

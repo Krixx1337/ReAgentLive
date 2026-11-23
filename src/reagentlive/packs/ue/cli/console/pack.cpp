@@ -306,7 +306,7 @@ std::vector<std::string> OfferedPacks(Session& session) {
 
 bool PackCommand(const Command& command) {
     switch (command.kind) {
-    case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Record: case Kind::Each:
+    case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
     case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::GameThread:
         return true;
@@ -389,14 +389,12 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
         else RunGet(session, command, Ue(session).structs, session.refs, jsonCommand);
         return;
     }
-    if (command.kind == Kind::Snap || command.kind == Kind::Record) {
+    if (command.kind == Kind::Snap) {
         if (!client.Supports(ue::op::ReadObject) || !client.Supports(ue::op::Fields)) {
-            JsonError(session, jsonCommand, "unsupported", "this command needs an agent with fields and object reads");
+            JsonError(session, jsonCommand, "unsupported", "get --snap needs an agent with fields and object reads");
             return;
         }
-        const auto object = ue::GetRef(command.request);
-        if (command.kind == Kind::Record) Record(session, object, command, Ue(session).structs, jsonCommand);
-        else Snap(session, object, command.file, Ue(session).baseline, jsonCommand);
+        Snap(session, ue::GetRef(command.request), command.file, Ue(session).baseline, jsonCommand);
         return;
     }
     RunUnreal(session, command, session.refs, Ue(session).structs, Ue(session).baseline, jsonCommand);
@@ -437,15 +435,6 @@ std::expected<uint32_t, std::string> TrialOwnerSize(Session& session, const Ref&
     if (!reflected) return std::unexpected("owner has no reflected fields");
     // A class size smaller than its own reflected fields is not believed.
     return object->size >= reflected ? object->size : static_cast<uint32_t>(reflected);
-}
-
-bool PackCall(const Command& command) { return command.kind == Kind::Remote && command.request.op == ue::op::Call; }
-
-shape::WatchThen RunPackCall(Session& session, const Command& call) {
-    const Request& request = call.request;
-    auto block = ue::Call(session.client, ue::GetRef(request), request.text, std::span(request.data, request.length));
-    if (!block) return {false, std::nullopt, block.error().message};
-    return {true, HexBytes(*block), std::nullopt};
 }
 
 void DescribePeek(Session& session, std::span<PeekValue> values) {

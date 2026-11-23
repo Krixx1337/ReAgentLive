@@ -36,9 +36,10 @@ instead: its size, its largest parts and `next`, the call narrowed, or
 again.
 
 `s.call(verb, args)` sends any verb by name; a generated function does the
-same with checked argument names. Two helpers do what a generated function
-cannot: `s.batch_results` (a strict result per batch item) and `samples`
-(a watch's rows as bytes). Nothing else here names a verb; the converters
+same with checked argument names. Three helpers do what a generated function
+cannot: `s.batch_results` (a strict result per batch item), `s.watch` (a
+capture that blocks: watch-start, wait, watch-stop) and `samples` (a
+capture's rows as bytes). Nothing else here names a verb; the converters
 (`unhex`, `addr`, `pack`, `f32`...) name none. Paging, filtering and
 retrying are the console's (flags and cursors), not Python's.
 
@@ -50,6 +51,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import time
 from collections.abc import Mapping
 
 __all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'Digest', 'Session', 'samples', 'addr', 'unhex',
@@ -337,3 +339,18 @@ class Session:
                  else self.wrap(row.get('command', '?'), row.get('result', {})) if row.get('ok')
                  else ReAgentLiveError(row.get('command', '?'), row.get('error')) for row in result['rows']]
         return items, result['same_tick']
+
+    def watch(self, seconds, ranges, every=None, follow=None, file=None, all=False):
+        """A capture that blocks: watch-start for `seconds`, wait it out, then watch-stop's strict result.
+
+        ranges: watch-start's (addr:len, addr:type[n], <ref>.<Field>, or offsets with follow). The wait ends
+        early once the agent says the capture stopped (an object replaced, the buffer full).
+        """
+        self.call('watch-start', {'duration': seconds, 'ranges': list(ranges), 'every': every, 'follow': follow,
+                                  'file': file})
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
+            if not self.call('watch-read')['running']:
+                break
+        return self.call('watch-stop', {'all': all})

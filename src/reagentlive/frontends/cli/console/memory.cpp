@@ -316,6 +316,17 @@ void ReduceRows(Shape& result, bool all) {
     if (dropped) result.dropped = dropped;
 }
 
+// watch-start --file: the ranges as the first line, then one line per sample.
+bool WriteCapture(const std::string& path, const std::vector<shape::WatchRange>& ranges,
+                  std::span<const shape::WatchSample> rows) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    Json header = Json::array();
+    for (const auto& range : ranges) header.push_back(ToJson(range));
+    file << Json{{"ranges", std::move(header)}}.dump() << '\n';
+    for (const auto& row : rows) file << ToJson(row).dump() << '\n';
+    return static_cast<bool>(file);
+}
+
 void PrintCapture(Session& session, std::string_view jsonCommand, bool all) {
     Client& client = session.client;
     auto info = client.WatchStatus();
@@ -325,6 +336,11 @@ void PrintCapture(Session& session, std::string_view jsonCommand, bool all) {
     std::vector<shape::WatchGap> gaps;
     shape::WatchCapture result;
     result.rows = WatchSamples(info->spec, *rows, gaps);
+    if (!session.watchFile.empty()) {
+        if (!WriteCapture(session.watchFile, WatchRanges(info->spec), result.rows))
+            return JsonError(session, jsonCommand, "file", "cannot write " + session.watchFile);
+        result.file = session.watchFile;
+    }
     result.running = info->stop == WatchEnd::Running;
     result.stopped = WatchEndText(info->stop);
     result.capacity = info->maxRows;
@@ -338,8 +354,7 @@ void PrintCapture(Session& session, std::string_view jsonCommand, bool all) {
 }
 }
 
-void RunWatch(Session& session, const Command& original, std::span<const Ref> refs, std::span<const Module> modules,
-              std::string_view jsonCommand) {
+void RunWatch(Session& session, const Command& original, std::string_view jsonCommand) {
     Client& client = session.client;
     Command command = original;
     // <object>.<Field> ranges: place, size and type from reflection; guarded on the field's object.
@@ -374,40 +389,14 @@ void RunWatch(Session& session, const Command& original, std::span<const Ref> re
     if (!WatchFits(spec))
         return JsonError(session, jsonCommand, "validation", "the capture does not fit the agent's buffer: at most " +
             std::to_string(WatchLongestFit(spec) / 1000) + " s at this interval and row size");
-    if (command.target == "start") {
-        auto capacity = client.WatchStart(spec);
-        if (!capacity) return CommandError(session, jsonCommand, capacity.error());
-        return Emit(session, jsonCommand,
-            shape::WatchStart{*capacity, spec.milliseconds, spec.interval, WatchRoot(spec), WatchRanges(spec)});
-    }
-    std::optional<Parsed> then;
-    if (!command.then.empty()) {
-        then = Parse(session.verbs, command.then, refs, modules);
-        if (!*then || !PackCall(**then))
-            return JsonError(session, jsonCommand, "syntax", "--then needs a raw call: call <object> <[Class:]Function> [hex params]");
-    }
-    const auto started = std::chrono::steady_clock::now();
+    // A file is checked before the capture starts: the ranges go in as its first line.
+    if (!command.file.empty() && !WriteCapture(command.file, WatchRanges(spec), {}))
+        return JsonError(session, jsonCommand, "file", "cannot write " + command.file);
     auto capacity = client.WatchStart(spec);
     if (!capacity) return CommandError(session, jsonCommand, capacity.error());
-    shape::Watch result;
-    if (then) result.then = RunPackCall(session, **then);
-    // Wait out the duration, then for the agent to finish.
-    std::this_thread::sleep_until(started + std::chrono::milliseconds(command.milliseconds));
-    Result<WatchRows> rows = std::unexpected(Error{});
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        rows = client.WatchRead(spec);
-        if (!rows || !rows->running) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-    if (!rows) return CommandError(session, jsonCommand, rows.error());
-    const auto info = client.WatchStatus();
-    std::vector<shape::WatchGap> gaps;
-    result.rows = WatchSamples(spec, *rows, gaps);
-    result.capacity = *capacity;
-    result.complete = !rows->running;
-    if (info) result.stopped = WatchEndText(info->stop);
-    result.ranges = WatchRanges(spec);
-    ReduceRows(result, command.all);
+    session.watchFile = command.file;
+    shape::WatchStart result{*capacity, spec.milliseconds, spec.interval, WatchRoot(spec), WatchRanges(spec), {}};
+    if (!command.file.empty()) result.file = command.file;
     Emit(session, jsonCommand, std::move(result));
 }
 }

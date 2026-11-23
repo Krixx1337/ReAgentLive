@@ -111,9 +111,11 @@ CALLS = [
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00'], 'root': '0x10'}, {'tick': 9, 'us': 10, 'lost': True},
                                    {'tick': 12, 'us': 20, 'values': ['02 00'], 'resumed': True, 'root': '0x20'}],
                           'gaps': [{'from_us': 10, 'to_us': 20}]})],
-    [C('watch', {'duration': 1.5, 'ranges': ['0x10#1:1+0x3e4:4', '0x9000:1'], 'then': 'call 0x10#1:1 Fn 01'}), ok({
-        'capacity': 100, 'complete': True, 'ranges': [RANGE], 'then': {'ok': True, 'hex': '01'},
-        'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
+    [C('watch-start', {'duration': 0.3, 'ranges': ['0x10#1:1.Health', '0x9000:1'], 'file': 'cap.jsonl'}), ok({
+        'capacity': 100, 'ms': 300, 'interval_ms': 0, 'ranges': [RANGE, RANGE], 'file': 'cap.jsonl'})],
+    [C('watch-stop'), ok({'running': False, 'stopped': 'stopped', 'capacity': 100, 'ms': 300, 'interval_ms': 0,
+                          'ranges': [RANGE, RANGE], 'file': 'cap.jsonl',
+                          'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
     [C('write', {'addr': '0x10#1:1+0x28', 'data': '0000000000000040', 'expect': '000000000000f03f', 'undo': 5,
                  'owner': REF, 'object': 0x2000}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
     [C('writes', {'action': 'clear', 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
@@ -254,7 +256,7 @@ class SessionTests(unittest.TestCase):
             self.assertTrue(callable(getattr(owner, verb.replace('-', '_'), None)), verb)
         marks = {item['verb']: (item['writes'], item['blocks']) for item in self.gen.VERBS}
         self.assertEqual(marks['write'], (True, False))
-        self.assertEqual(marks['watch'], (True, True))
+        self.assertEqual(marks['watch-start'], (False, False))
         self.assertEqual(marks['read'], (False, False))
         self.assertNotIn('quit', marks)
 
@@ -367,7 +369,7 @@ class SessionTests(unittest.TestCase):
             self.c.write(0x1000, b'\x01\x02', expect=b'\xff\xff')
         self.assertEqual(caught.exception.error['found'], '00 00')
 
-    def test_pins_trials_and_watches(self):
+    def test_timed_writes_and_captures(self):
         held = self.c.write('0x10#1:1+0x3e4', dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
         self.assertEqual(held['timed']['id'], 'hold:1')
         self.assertEqual([row['mode'] for row in self.c.writes()['rows']], ['undo', 'hold'])
@@ -377,7 +379,8 @@ class SessionTests(unittest.TestCase):
         self.assertIsNone(row['guard'])
         self.assertIsNone(row['writes'])                     # A --hold key, absent on an --undo write.
         self.assertEqual(self.c.writes('clear', 'undo:1')['rows'][0]['state'], 'restored')
-        result = self.c.watch(1.5, ['0x10#1:1+0x3e4:4', '0x9000:1'], then='call 0x10#1:1 Fn 01')
+        result = self.session.watch(0.3, ['0x10#1:1.Health', '0x9000:1'], file='cap.jsonl')   # start, wait, stop
+        self.assertEqual(result['file'], 'cap.jsonl')
         rows = dl.samples(result)
         self.assertEqual(rows[1]['values'], [bytes([2, 0]), bytes([255])])
         self.assertEqual(self.c.watch_start(600, ['0x538:16'], every=10, follow='pawn')['capacity'], 9000)

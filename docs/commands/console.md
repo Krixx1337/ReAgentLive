@@ -28,7 +28,8 @@ the MCP tools all read it, so none of them can disagree with the console.
   target running.
 - **Marks:** `writes` on a verb that writes the target's memory or calls
   into it, `blocks` on one that holds the console for seconds by design
-  (`watch`, `record`).
+  (only a host's, such as a countdown capture: the core's and the pack's
+  captures return at once).
 - **`status`** reports the agent's pid, ticks per second since attach or the
   last status (at least 100 ms), the answering agent's build time, the
   library `version`, `commit` (the git commit the console was built from:
@@ -145,8 +146,7 @@ request costs up to a host tick. The console cuts both:
   `same_tick`, `first_tick` and `last_tick`. Each line is parsed just before
   it runs, so a `$N` set by an earlier line in the same batch works; a value
   read in the batch cannot feed a later line (console syntax has no
-  variables). Not allowed inside: `batch`, `watch` (the blocking one; the
-  capture verbs are fine), `record`, `status`, `help`, `quit`,
+  variables). Not allowed inside: `batch`, `status`, `help`, `quit`,
   `each --seconds`. Same tick is best effort: check
   `same_tick`. Each envelope carries its own `tick` (its first response's)
   and `last_tick` when its responses spanned ticks; `spans_ticks` lists
@@ -274,10 +274,7 @@ baseline until EOF or `quit`.
 Console arguments: `[pid] [-c "..."] [--names <file>] [--caller
 tool|script|shell] [--session <id>] [--no-usage]`; the last three are the
 [usage log](#usage-log-and-stats)'s. `--names <file>` loads a
-[names file](unreal.md#readable-names). `<console> --replay <file>`, alone,
-shows a recorded capture with no target
-([capture and replay](capture.md)); it needs a console built with the
-Unreal pack.
+[names file](unreal.md#readable-names).
 
 `help --hash` answers the verb table's hash alone (`{rows: [],
 table_hash}`), with no target: a program that keeps a table reads it to

@@ -72,7 +72,7 @@ Each waits for a real program that needs it:
   [Unreal](hosting.md#unreal-example));
 - throughput measurements with the example client, then, if needed,
   registered per-tick reads: the client names ranges once, the agent
-  samples them every tick (`watch` is the start), and they expire when the
+  samples them every tick (`watch-start` is the start), and they expire when the
   client's heartbeat stops;
 - a second channel, so the console and a program run together: the core's
   state moves into a per-channel context. The one case so far (a long

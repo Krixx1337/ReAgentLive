@@ -34,8 +34,9 @@ struct CacheData {
     std::vector<Module> modules;                                    // Exe first.
     std::vector<std::pair<uint64_t, image::Layout>> layouts;        // Module headers by module base.
     std::vector<CachePack> packs;
+    std::string watchFile;                                          // watch-start --file.
 };
-constexpr std::string_view CacheHeader = "reagentlive cache 10";
+constexpr std::string_view CacheHeader = "reagentlive cache 11";
 constexpr size_t MaxCachedModules = 1024, MaxCachedPackLines = size_t{1} << 22;
 
 namespace cache_detail {
@@ -54,6 +55,7 @@ inline std::string SaveCache(const CacheData& data) {
     std::ostringstream out;
     out << CacheHeader << "\nowner\t" << data.owner << '\n';
     if (!data.session.empty()) out << "session\t" << data.session << '\t' << data.sessionCaller << '\n';
+    if (!data.watchFile.empty()) out << "watch_file\t" << data.watchFile << '\n';
     for (const auto& module : data.modules)
         out << "module\t0x" << std::hex << module.base << std::dec << '\t' << module.size << '\t' << module.name << '\n';
     for (const auto& [base, layout] : data.layouts) {
@@ -99,6 +101,10 @@ inline std::optional<CacheData> LoadCache(std::string_view text) {
         if (parts[0] == "session" && parts.size() == 3 && !parts[1].empty()) {
             data.session = parts[1];
             data.sessionCaller = parts[2];
+            continue;
+        }
+        if (parts[0] == "watch_file" && parts.size() == 2 && !parts[1].empty()) {
+            data.watchFile = parts[1];
             continue;
         }
         if (parts[0] == "module" && parts.size() == 4) {

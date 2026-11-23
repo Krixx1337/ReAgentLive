@@ -34,7 +34,7 @@ bool RangeSize(std::string_view text, uint64_t& length, uint32_t& type) {
     return type != 0;
 }
 
-// watch's ranges: <addr>:<len> or <addr>:<type>[n], or following a root <offset>:<len|type>.
+// watch-start's ranges: <addr>:<len>, <addr>:<type>[n] or <object>.<Field>, or following a root <offset>:<len|type>.
 Parsed WatchRanges(const Args& args, const ParseContext& context, Command command) {
     for (size_t i = 1; i < args.positionals.size(); ++i) {
         const std::string_view item = args.positionals[i];
@@ -318,24 +318,7 @@ Parsed Search(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// watch <duration> <addr>:<len>... [--then <call line>]: blocks for the duration.
-Parsed Watch(const Args& args, const ParseContext& context) {
-    Command command;
-    command.kind = Kind::Watch;
-    const uint64_t n = Milliseconds(args.At(0));
-    if (!n) return Fail("duration is seconds, or Nms, Ns, Nm");
-    if (n > MaxWatchMilliseconds)
-        return Fail("a watch sampling every tick lasts at most " + std::to_string(MaxWatchMilliseconds / 1000) + " s");
-    command.milliseconds = static_cast<uint32_t>(n);
-    command.all = args.Has("--all");
-    if (args.Has("--then")) {
-        command.then = args.Value("--then");
-        if (!command.then.starts_with("call ")) return Fail("--then takes a call line");
-    }
-    return WatchRanges(args, context, std::move(command));
-}
-
-// watch-start <duration> <addr|offset>:<len>... [--every <duration>] [--follow <root>]:
+// watch-start <duration> <addr|offset>:<len>|<ref>.<Field>... [--every <duration>] [--follow <root>] [--file <path>]:
 // a capture the agent keeps.
 Parsed WatchStart(const Args& args, const ParseContext& context) {
     Command command;
@@ -352,6 +335,7 @@ Parsed WatchStart(const Args& args, const ParseContext& context) {
         if (args.Value("--follow").size() >= MaxRootName) return Fail("the root's name is too long");
         command.root = args.Value("--follow");
     }
+    command.file = args.Value("--file");
     const uint64_t longest = command.interval ? MaxWatchCaptureMilliseconds : MaxWatchMilliseconds;
     if (n > longest)
         return Fail(std::string("a watch ") + (command.interval ? "with --every" : "sampling every tick") +

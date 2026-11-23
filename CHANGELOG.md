@@ -47,6 +47,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   the write with `timed`. `writes` lists every timed write (ids `undo:N`,
   `hold:N`) and `writes clear [id]` ends them, replacing `trial-list`,
   `trial-clear`, `pin-list` and `pin-clear`.
+- **One capture family:** the blocking `watch` (and `--then`) and `record`
+  are gone, and so is the console's `--replay`. `watch-start` takes
+  `<ref>.<Field>` ranges and `--file <path>` (every sample as JSON lines,
+  written by each `watch-read` and `watch-stop`); a script that waits uses
+  the Python session's `watch(seconds, ranges)`: start, wait, stop.
 
 - **The MCP adapter needs the MCP Python SDK 2:** run
   `python -m pip install --upgrade "mcp>=2"` in the Python your MCP config

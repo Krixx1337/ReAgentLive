@@ -111,14 +111,14 @@ missing instances spawned since. Pull forward when a session repeats
 
 ### 24 · `watch-call`: a pure getter sampled every tick
 
-`watch` samples fixed address ranges, so state that lives briefly inside a
+`watch-start` samples fixed address ranges, so state that lives briefly inside a
 manager object (a projectile in a subsystem, reached through a getter that
 takes a handle) cannot be followed: the value has no stable address, and a
 console round trip per sample is slower than the object's lifetime. A
 session had to infer a projectile's first frames from disassembly instead
 of measuring them. Shape: `watch-call <dur> <object> <Fn> [Name=value...]`,
 const or pure functions with plain outputs only (the `each` guard),
-sampled inside the agent like `watch`, with the same summary. Pull forward
+sampled inside the agent like `watch-start`, with the same summary. Pull forward
 when a second session needs a short-lived value behind a getter.
 
 ### 25 · `entries` over an unreflected engine container

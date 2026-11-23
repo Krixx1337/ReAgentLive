@@ -401,7 +401,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
 
 // Commands that make several round trips run held, so they finish in as few
 // host ticks as the agent's budget allows. Single requests and timed loops
-// (watch, record, each --seconds) do not: a hold would only add one wait.
+// (each --seconds) do not: a hold would only add one wait.
 bool Held(const Command& command) {
     if (command.kind == Kind::Peek) return true;
     // read: the bytes, then the region they lie in.
@@ -622,7 +622,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::Pin: RunPin(session, *parsed, jsonCommand); return false;
     case Kind::Trial: RunTrial(session, *parsed, jsonCommand); return false;
     case Kind::Writes: RunWrites(session, *parsed, jsonCommand); return false;
-    case Kind::Watch: RunWatch(session, *parsed, session.refs, LoadedModules(session), jsonCommand); return false;
+    case Kind::Watch: RunWatch(session, *parsed, jsonCommand); return false;
     case Kind::Batch: RunBatch(session, *parsed, jsonCommand); return false;
     case Kind::Sig: RunSig(session, *parsed, jsonCommand); return false;
     case Kind::Disasm: RunDisasm(session, *parsed, jsonCommand); return false;
@@ -662,6 +662,7 @@ void LoadSessionCache(Session& session, const std::filesystem::path& path, bool 
         session.usage.session = data->session;
     session.refs = std::move(data->refs);
     session.modules = std::move(data->modules);
+    session.watchFile = std::move(data->watchFile);
     for (auto& [base, layout] : data->layouts) session.layouts[base] = std::move(layout);
     LoadPackCache(session, data->packs);
 }
@@ -672,6 +673,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     if (!data.owner) return;
     data.session = session.usage.session;
     data.sessionCaller = session.usage.caller;
+    data.watchFile = session.watchFile;
     for (const auto& ref : session.refs) {
         if (!ref.address) break; // Not expressible as a literal ref; $N past it would shift.
         data.refs.push_back(ref);
@@ -770,11 +772,6 @@ namespace reagentlive::cli {
 using namespace detail;
 
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
-    if (argc > 1 && std::wstring_view(argv[1]) == L"--replay") {
-        if (argc == 3) return Replay(argv[2]);
-        std::puts("Usage: <console> --replay <file>");
-        return 1;
-    }
     constexpr const char* usage = "Usage: <console> [pid] [-c \"command; command ...\"] [--names <file>] "
         "[--caller tool|script|shell] [--session <id>] [--no-usage]";
     // Before a session exists: print the envelope directly.

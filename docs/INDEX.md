@@ -55,11 +55,11 @@ the README's paste prompts send an agent there.
 | [agents/setup.md](agents/setup.md) | instructions an AI agent follows to build, register the MCP tools, install the skill, check and write the setup record |
 | [agents/update.md](agents/update.md) | instructions an AI agent follows to update a clone: what is coming, pull, rebuild, skill, MCP server, re-inject, verify |
 | [commands/console.md](commands/console.md) | command lines, `help` and the verb table, addresses and refs, round trips (`batch`, `get`, hold, cache), one-shot runs, JSON Lines |
-| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write` (and timed writes, `writes`), `search`, `watch`, typed layouts |
+| [commands/memory.md](commands/memory.md) | core memory commands: `read`, `peek`, `write` (and timed writes, `writes`), `search`, captures (`watch-start`), typed layouts |
 | [commands/fast-lane.md](commands/fast-lane.md) | one-address code questions: `disasm`, `xrefs`, `touches`, `search text`, `sig` |
 | [commands/native-objects.md](commands/native-objects.md) | without an engine pack: `vtable` (`--rtti`), pointer chains, regions, strings |
 | [commands/unreal.md](commands/unreal.md) | the Unreal pack: lookups, reflection, calls, the call recorder, `trace`, `each`, `census`, `get`, labels, readable names, native members |
-| [commands/capture.md](commands/capture.md) | which command for which question about change; `get --snap`, `record`, replay |
+| [commands/capture.md](commands/capture.md) | which command for which question about change; `get --snap`, timing an action |
 | [commands/results.md](commands/results.md) | every command's arguments and result keys, generated from the console's verb table; notation, conventions, envelopes |
 | [hosting.md](hosting.md) | Unreal and own-thread examples, using it in your project (options, dependencies, version), host checklist, CMake targets, the tick, host thread, logging |
 | [client.md](client.md) | C++ client library, generated Python functions, Python session, MCP tools |
@@ -84,7 +84,7 @@ offers (`packs`). **T3** commands also need the game thread
 |---|---|---|
 | `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
 | `write --hold`, `writes` | T0 | [memory](commands/memory.md#timed-writes) |
-| `watch`, `watch-start`, `watch-read`, `watch-stop` | T0 | [memory](commands/memory.md#watch) |
+| `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
 | `write --undo` | T0; the owner check needs T1 | [memory](commands/memory.md#timed-writes) |
 | `search` | T0 | [memory](commands/memory.md#search) (`search text`: [fast lane](commands/fast-lane.md#search-text)) |
 | `read --type "<layout>"` | T0 | [memory](commands/memory.md#typed-layouts) |
@@ -106,7 +106,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `export-labels` | T3 (native exec thunks); other `--kinds` T2 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `peek --label` | T0 | [Unreal pack](commands/unreal.md#labels-for-a-static-tool) |
 | `label` | T2 | [Unreal pack](commands/unreal.md#native-members) |
-| `get --snap`, `get --changed`, `record`, `--replay` | T2 | [capture](commands/capture.md) |
+| `get --snap`, `get --changed` | T2 | [capture](commands/capture.md) |
 | `get <obj> <path>...`, `--meta` | T2 | [console](commands/console.md#fewer-round-trips) |
 | `batch`, `--timing` | T0 | [console](commands/console.md#fewer-round-trips) |
 | `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |

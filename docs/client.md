@@ -14,7 +14,7 @@ Every one speaks the same verbs with the same argument names, so what
 | Interface | Use it for | Start here |
 |---|---|---|
 | **MCP tools** | an AI agent: one typed tool per verb, arguments checked before they are sent, writes marked so the client asks | [MCP tools](#mcp-tools) |
-| **Console** | a person at a shell, a quick check, no MCP registered, replaying a capture | type `help`, then `<console> -c "find X; get $1"` ([console](commands/console.md)) |
+| **Console** | a person at a shell, a quick check, no MCP registered | type `help`, then `<console> -c "find X; get $1"` ([console](commands/console.md)) |
 | **Python** (generated functions, `Session`) | loops, sweeps, comparisons, long captures: logic that should not be twenty tool calls | [generated functions](#generated-python-functions) |
 | **C++ client** | your own tool or outside program, linking the library | [C++ client](#c-client) |
 | IDA label import (a helper) | bringing the console's labels into an IDA database | [helpers](#helpers) |
@@ -101,9 +101,10 @@ with Session(r'path\to\console.exe') as s:
   a Python keyword: `cls`, `start`, `type`). A positional that takes several values takes
   a list, except bytes, patterns and text, which are one string (or
   `bytes`). Each docstring is the verb's usage, arguments and notes.
-- **Every verb but `quit`:** the blocking ones (`watch`, `record`) are
-  there too and hold the script for their duration, unlike MCP, which
-  leaves them out.
+- **Every verb but `quit`:** a host's blocking ones are there too and
+  hold the script for their duration, unlike MCP, which leaves them out.
+  The session's `watch(seconds, ranges)` is a blocking capture:
+  `watch-start`, a wait, then `watch-stop`'s result.
 - **Typed:** argument types from the row (`addr` is `int | str`, an int
   goes as hex), each result annotated with a `TypedDict` of the console's
   keys (named types are classes: `Chain`, `Object`, `UeName`), so a type
@@ -200,9 +201,8 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   console built without the pack ([hosting](hosting.md#using-it-in-your-project)) serves no
   pack tools.
 - **Left out:** `quit` (the adapter owns the console) and verbs marked
-  `blocks` (`watch`, `record`, a host's countdown capture): a call would
-  outlast a client's timeout. Use `watch-start`, then `watch-read`; or
-  Python, whose `watch` blocks.
+  `blocks` (a host's countdown capture): a call would outlast a client's
+  timeout. Captures go as `watch-start`, then `watch-read` or `watch-stop`.
 - **`batch`** takes a list of `{verb, args}` (console verb names:
   `sig-check`, not `sig_check`) and runs them in as few host ticks as
   possible, one envelope each. It takes only verbs not marked as writing:

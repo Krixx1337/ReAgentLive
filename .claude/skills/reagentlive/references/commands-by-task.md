@@ -63,7 +63,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 |---|---|
 | Memory or a reflected field over seconds to minutes | `watch-start`, `watch-read`, `watch-stop` |
 | An object's fields before and after an action | `get --snap`, then `get --changed` |
-| Every tick for a few seconds, holding the caller | `watch`, `record` (blocking; interfaces reference) |
+| Every tick for a few seconds, holding the caller | Python `s.watch(seconds, ranges)` (start, wait, stop) |
 
 ## Native code (fast lane: `docs/commands/fast-lane.md`)
 

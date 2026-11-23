@@ -335,49 +335,19 @@ struct WatchSummary {
         v("per_second", &WatchSummary::perSecond);
     }
 };
-// watch --then: what the call right after the start returned.
-struct WatchThen {
-    bool ok = false;
-    std::optional<HexBytes> hex;
-    std::optional<std::string> message;
-    template<class V> static void Describe(V& v) {
-        v("ok", &WatchThen::ok);
-        v("hex", &WatchThen::hex);
-        v("message", &WatchThen::message);
-    }
-};
 constexpr auto WatchStops = "deadline|stopped|buffer full|object replaced";
-struct Watch {
-    uint32_t capacity = 0;
-    bool complete = false;
-    std::optional<std::string> stopped;
-    std::vector<WatchRange> ranges;
-    std::optional<WatchThen> then;
-    std::vector<WatchSample> rows;
-    std::optional<uint64_t> samples, dropped; // See WatchChanges.
-    std::optional<std::vector<WatchSummary>> summary;
-    template<class V> static void Describe(V& v) {
-        v("capacity", &Watch::capacity);
-        v("complete", &Watch::complete);
-        v("stopped", &Watch::stopped, WatchStops);
-        v("ranges", &Watch::ranges);
-        v("then", &Watch::then);
-        v("rows", &Watch::rows);
-        v("samples", &Watch::samples);
-        v("dropped", &Watch::dropped);
-        v("summary", &Watch::summary);
-    }
-};
 struct WatchStart {
     uint32_t capacity = 0, ms = 0, intervalMs = 0;
     std::optional<std::string> root;
     std::vector<WatchRange> ranges;
+    std::optional<std::string> file;
     template<class V> static void Describe(V& v) {
         v("capacity", &WatchStart::capacity);
         v("ms", &WatchStart::ms);
         v("interval_ms", &WatchStart::intervalMs);
         v("root", &WatchStart::root);
         v("ranges", &WatchStart::ranges);
+        v("file", &WatchStart::file);
     }
 };
 // watch-read and watch-stop: the agent's record of the capture.
@@ -391,6 +361,7 @@ struct WatchCapture {
     std::optional<uint64_t> samples, dropped; // See WatchChanges.
     std::optional<std::vector<WatchGap>> gaps;
     std::optional<std::vector<WatchSummary>> summary;
+    std::optional<std::string> file;    // watch-start --file: where every sample went.
     template<class V> static void Describe(V& v) {
         v("running", &WatchCapture::running);
         v("stopped", &WatchCapture::stopped, WatchStops);
@@ -404,6 +375,7 @@ struct WatchCapture {
         v("dropped", &WatchCapture::dropped);
         v("gaps", &WatchCapture::gaps);
         v("summary", &WatchCapture::summary);
+        v("file", &WatchCapture::file);
     }
 };
 

@@ -93,7 +93,6 @@ inline const std::vector<ue::Field>* StructCache::operator()(const Ref& type) {
 
 size_t DumpEnd(std::span<const ue::Field> fields);
 std::span<const uint8_t> FieldBytes(std::span<const uint8_t> bytes, const ue::Field& field);
-std::string FieldValue(const ue::Field& field, std::span<const uint8_t> bytes, StructCache& structs);
 // get --types: the layout; --match keeps names or readable labels containing it, --own the class's own.
 void PrintTypes(Session& session, const Ref& object, const Command& command, std::string_view jsonCommand);
 void RememberRef(std::vector<Ref>& refs, const Ref& object);
@@ -104,7 +103,6 @@ std::optional<Snapshot> LoadSnapshot(const std::string& path);
 Result<std::vector<uint8_t>> ReadObjectBytes(Client& client, const Ref& object, size_t end);
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand);
-void Record(Session& session, const Ref& object, const Command& command, StructCache& structs, std::string_view jsonCommand);
 shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept);
 // call --dry: the block that would be sent, with the function's native entry and whether it is const or pure.
 shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, const ue::FunctionInfo& function);

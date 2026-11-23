@@ -68,6 +68,7 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     // The last one is address-only: a pointer get followed, kept as its address.
     data.refs = {{0x7000, 1, 2}, {0x8000, 3, 4}, {0x9000, -1, 0}};
     data.packs = {{"ue", {"class\tA\t0x10#1:1", "table\t1\t0", "field\tends\tin\ta\ttab\t"}}, {"other", {}}};
+    data.watchFile = "C:\\caps\\aim run.jsonl";
     const auto text = SaveCache(data);
     const auto loaded = LoadCache(text);
     REQUIRE(loaded.has_value());
@@ -80,13 +81,14 @@ TEST_CASE("the cache file round-trips and refuses partial or malformed text") {
     CHECK(loaded->modules[1].size == 0x2000);
     CHECK(loaded->refs == data.refs);
     CHECK(loaded->packs == data.packs); // Kept verbatim, trailing tabs included.
+    CHECK(loaded->watchFile == data.watchFile);             // watch-start --file, spaces kept.
     CHECK_FALSE(LoadCache(text.substr(0, text.size() - 4)).has_value()); // No end line.
-    CHECK_FALSE(LoadCache("reagentlive cache 10\nowner\t0\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 10\nowner\t5\nbogus\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 10\nowner\t5\npack\tue\t3\nclass\tA\t0x10#1:1\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 10\nowner\t5\npack\t\t0\nend\n").has_value()); // A pack has a name.
-    CHECK(LoadCache("reagentlive cache 10\nowner\t5\nend\n").has_value());
-    CHECK_FALSE(LoadCache("reagentlive cache 7\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
+    CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t0\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\nbogus\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\npack\tue\t3\nclass\tA\t0x10#1:1\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 11\nowner\t5\npack\t\t0\nend\n").has_value()); // A pack has a name.
+    CHECK(LoadCache("reagentlive cache 11\nowner\t5\nend\n").has_value());
+    CHECK_FALSE(LoadCache("reagentlive cache 10\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
     CHECK_FALSE(LoadCache("reagentlive cache 3\nowner\t5\nend\n").has_value()); // Older layout: dropped, not migrated.
 }
 

@@ -7,17 +7,14 @@
   once; the agent keeps sampling while you work, and every interface has
   it. Minutes-long sampling and following a respawn: `help watch-start`
   (capture that does not hold the console: `docs/commands/memory.md#a-capture-that-does-not-hold-the-console`).
-- **Blocking `watch`** (blocking; interfaces reference): every tick for a
-  short span, and it can start the action right after sampling starts
-  (`help watch`); send the off call afterwards.
+  Named fields: `<ref>.<Field>` ranges. Every sample to a file: `--file`.
+  A script that should wait: the Python session's `watch(seconds, ranges)`.
 - **Named fields before and after:** `get <ref> --snap`, the user acts,
-  `get <ref> --changed`. `record` (blocking; interfaces reference) for a few
-  seconds of a few fields.
+  `get <ref> --changed`.
 - **A short action that resets at once (a jump, a shot):** `--snap` then
   `--changed` misses it once the state is back. Capture across it:
   `watch-start 5s <ref>.<Field>` on the owning component (movement, not
-  the pawn), tell the user to act now, then `watch-read`; or `record` for
-  a few seconds. Else `get --snap` at rest and `get --changed` while the user
+  the pawn), tell the user to act now, then `watch-read`. Else `get --snap` at rest and `get --changed` while the user
   holds the state mid-action.
 - **Getters or mixed sources:** one `batch` (a `call-pure` and the `read`s)
   per sample keeps a getter and raw reads in one tick; loop it from Python.

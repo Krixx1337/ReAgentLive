@@ -759,16 +759,6 @@ struct Calls {
         v("unnamed", &Calls::unnamed);
     }
 };
-struct Record {
-    RefId ref;
-    std::string path;
-    uint64_t total = 0;                 // Samples written.
-    template<class V> static void Describe(V& v) {
-        v("ref", &Record::ref);
-        v("path", &Record::path);
-        v("total", &Record::total);
-    }
-};
 // layout-export: the reflected fields each named class or struct declares,
 // one JSON line each in the file; names that are no class or struct.
 struct LayoutExport {

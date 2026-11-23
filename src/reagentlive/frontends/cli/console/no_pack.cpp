@@ -47,13 +47,6 @@ Result<Guard> ObjectGuard(Session&, uint64_t object) {
         "an object-relative address needs an engine pack's identity guard: this console was built without one"});
 }
 std::expected<uint32_t, std::string> TrialOwnerSize(Session&, const Ref&) { return std::unexpected(NoPack); }
-bool PackCall(const Command&) { return false; }
-shape::WatchThen RunPackCall(Session&, const Command&) { return {false, std::nullopt, NoPack}; }
 void DescribePeek(Session&, std::span<PeekValue>) {}
 void NamePeek(Session&, std::span<PeekValue>, std::span<const Module>) {}
-
-int Replay(const std::filesystem::path&) {
-    std::puts("--replay needs an engine pack: this console was built without one");
-    return 1;
-}
 }

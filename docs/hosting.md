@@ -103,7 +103,7 @@ A host is whatever code inside the target calls `Tick`. It provides:
   [game-thread tick](#game-thread-tick).
 - **Optional:** a log callback ([logging](#logging)), hold budgets
   ([protocol](protocol.md#exchange)), `Host::backgroundSearch`, and named
-  roots for `watch --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).
+  roots for `watch-start --follow` ([memory commands](commands/memory.md#following-a-replaced-object)).
 
 ## Using it in your project
 
@@ -254,7 +254,7 @@ those Draw ticks ([game-thread tick](#game-thread-tick)).
 
 Off the engine's thread, `status` adds `tick_note` saying so once, and the
 results that carry `same_tick` (`batch`, `get`) add `tick_accurate:
-false`. `pin`, `watch` and trials act every host tick, as they always do.
+false`. Timed writes and captures act every host tick, as they always do.
 The kind is the host's statement; the core does not verify it. The pack's
 required thread check ([Unreal pack](commands/unreal.md)) remains the guard for
 engine calls. Nothing that works today is refused because of the kind.

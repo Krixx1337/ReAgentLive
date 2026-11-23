@@ -24,7 +24,7 @@ result keys: `help <verb>` or [result shapes](results.md).
 | `func <object\|class> <[Owner:]Function>` | resolves a function by exact name on the object's class chain or the supplied class itself; validates the function metadata and checks the exec entry's page protection; then reads its reflected parameters (`params`: name, type, offset, direction, flags) and the call block's size (`block_size`). The parameters need the game thread: off it, `params_error` says so and the rest stands. **Native interfaces:** with `Interface:Function` on an object, a function declared on an interface its class (or a parent) implements is found through the class's `Interfaces` array (`EngineLayout::interfaces` in `packs/ue/engine_layout.h`, `{UClass*, int32 PointerOffset}` entries, read live). An SDK does not describe it, so each array is checked first: every entry must be a `UInterface` subclass whose part lies inside the implementing class's size; otherwise `func` refuses with "interfaces array implausible" rather than trusting any entry. `interface` then reports the interface part's offset in the object, the vtable slot its stub calls (decoded from the stub's `mov rax, [reg]; call [rax + disp]`) and the implementation the object's interface vtable holds there, with its RVA, ready to disassemble. `call` refuses these: the stub calls that slot on the object it gets without moving `this` to the interface part, so through `ProcessEvent` it would run another function |
 | `funcs <object\|class> [text] [--start N]` | lists owner-qualified function names on the class chain, derived class first, then those declared on each native interface the class (or a parent) implements, each interface once, marked `via: "interface"`, with a case-insensitive substring filter and a next-page cursor. Interface rows use the same plausibility check as `func`; an implausible interfaces array lists none. An interface row is never callable on the object (`call` refuses it); use `func Interface:Function` for its implementation |
 | Field table (`get --types`, and under every `get`) | object resolved as for `call`; a class or struct lists its own properties, anything else its class's; walks the chain's reflected properties (bounded depth and count); bool properties report the byte holding their bit and the bit mask |
-| Object range read | used by `get` (every field, `--snap`) and `record`; checks the thread ([off-thread](#off-the-engines-thread)) and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
+| Object range read | used by `get` (every field, `--snap`); checks the thread ([off-thread](#off-the-engines-thread)) and resolves the full ref on each request, then uses the core guarded read. Up to 4 KB per request within the first 64 KB from the object's address |
 | `describe <address\|$N>` | checks the thread and object table before returning the object's name, class and full ref. Weak pointers must match the table slot and serial |
 | `name <index>...` | up to 1024 indices; the console pages them to the agent. FName comparison indices as base text, including gameplay tags and DataTable row names; checks the thread; an undecodable index returns empty |
 | Array preview | used by `get` with no paths; resolves the instance, reads the array header and a bounded prefix of its backing storage on the same tick |
@@ -404,7 +404,7 @@ class absent before they are necessarily new, otherwise follow up with
 
 - A census scans across several ticks, so it is not one moment in time,
   and an object that lives a tick or two can fall between two censuses.
-  For those, `watch` a container or use `each --seconds`.
+  For those, `watch-start` a container or use `each --seconds`.
 - A broad filter shows unrelated churn (effects, audio, UI). Narrow
   `--cls` to a base class instead.
 
@@ -481,10 +481,10 @@ rest of this section is every field.
   metadata keep their header.
 - Struct values expand through the struct type's field table, as
   [compact values](console.md#fewer-round-trips) (`{"X": -928370, "Y": -861551, "Z":
-  -81104}`; `record` files: `(X -928370, Y -861551, Z -81104)`). Nested structs expand up to
+  -81104}`). Nested structs expand up to
   three levels and 16 members per struct; deeper levels, unknown structs and
   members outside the value's bytes fall back to hex. Struct layouts are
-  cached for the console session. `get --changed`, `record` and struct array elements
+  cached for the console session. `get --changed` and struct array elements
   use the same expansion.
 
 ## Text values
@@ -624,7 +624,7 @@ Games may obfuscate reflected property names. A host can supply a names file
 (format in `frontends/cli/state/names.h`: owner, offset, size, bool mask, name), loaded
 from `ConsoleConfig::namesFile` beside the console or `--names <file>`.
 A `get` row (every field or `--types`) is then named `ControlRotation`
-with `raw` `_qkzvxwmpltrnhdbgf`; struct members show the readable name alone. `record` and `Owner:Field` accept
+with `raw` `_qkzvxwmpltrnhdbgf`; struct members show the readable name alone. Paths (`get`, `each`, `watch-start`) and `Owner:Field` accept
 either name. A size or bit mismatch keeps the raw name, so a stale file never
 labels a moved field. Snapshot files keep raw names.
 

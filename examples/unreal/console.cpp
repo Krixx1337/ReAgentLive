@@ -27,13 +27,13 @@ bool IsNumber(std::wstring_view text) {
     return !text.empty() && std::ranges::all_of(text, [](wchar_t c) { return c >= L'0' && c <= L'9'; });
 }
 
-// True when the arguments already name a pid or replay a file. The values of
+// True when the arguments already name a pid. The values of
 // the console's flags are skipped: a session id may be all digits.
 bool HasTarget(int argc, wchar_t** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::wstring_view arg(argv[i]);
         if (arg == L"-c" || arg == L"--names" || arg == L"--caller" || arg == L"--session") { ++i; continue; }
-        if (arg == L"--replay" || IsNumber(arg)) return true;
+        if (IsNumber(arg)) return true;
     }
     return false;
 }

@@ -221,11 +221,6 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"object", "object|Class", One, "str", objectOrClass}, {"text", "text", Optional, "str", "keep function names containing it"}},
             {cursor}, Of<shape::Funcs>, parse::Funcs,
             "A row with via \"interface\" is declared only on that native interface: call refuses it on the object; func shows the implementation to call instead."},
-        {"record", "ue", "sample 1..8 named fields for 1..10 seconds into a new file, after a countdown",
-            {{"object", "ref", One, "ref", "an object ref: $N or 0x<address>#<index>:<serial>"},
-             {"seconds", "seconds", One, "int", "how long, 1..10"}, {"file", "file", One, "path", path},
-             {"fields", "field", Some, "str", "an exact field name, per column"}},
-            {}, Of<shape::Record>, parse::Record, {}, {}, false, true},
     };
     return verbs;
 }

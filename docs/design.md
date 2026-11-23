@@ -65,7 +65,7 @@ requests inside a command.
   miss is visible. The per-tick budget bounds the stall the host pays.
 - **No fast lane for memory reads on a worker thread.** Reads off the tick
   would be torn against the game; a second request slot helps no one while
-  every frontend is synchronous; `watch` already samples every tick.
+  every frontend is synchronous; `watch-start` already samples every tick.
 - **No `ReadProcessMemory` from the client.** Fastest for raw reads, but the
   client would open the target process, which the design avoids.
 - **One client at a time, kept short.** An agent takes one client. A
@@ -132,7 +132,7 @@ on live samples), where time and context went for no gain.
   timestamp and shows `stale` under another one. Typed layouts share one
   syntax with `read --type`, so a decoded layout pastes into `label`.
 - **A capture that does not hold the console**, without a second channel:
-  the capture belongs to the agent instance (`watch --start`, `--read`,
+  the capture belongs to the agent instance (`watch-start`, `-read`,
   `--stop`), bounded by the existing buffer, so a long capture and other
   questions overlap. Following a replaced object asks the host: the core
   knows no names, a host offers roots through one optional callback.
@@ -230,7 +230,7 @@ were cheap and carry the parts no other tool has:
 
 - **In the host's own image.** No second injector, debugger or hook set; it
   reuses the host's thread and object checks.
-- **Tick accuracy.** Same-tick reads, per-tick `watch`, hold, and `each` over
+- **Tick accuracy.** Same-tick reads, per-tick `watch-start`, hold, and `each` over
   every instance in one tick. A reader outside the process sees torn values.
 - **Identity and guards.** Refs that go stale safely, guarded pins, writes
   that refuse reused memory.
@@ -246,7 +246,7 @@ borrowed:
 
 | Need | Borrow from | Not built here because |
 |---|---|---|
-| What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch` for the tick a value changes on, a trial write or `pin` to tell a value recomputed every tick from one set once, and `func --script` or `refs` for Blueprint readers |
+| What writes or reads an address (data breakpoints) | nothing: debuggers are out of scope | needs debug registers and an exception handler in the target. Reach the answer in steps instead: the static tool for code that touches the field's offset, `watch-start` for the tick a value changes on, `write --undo` or `--hold` to tell a value recomputed every tick from one set once, and `func --script` or `refs` for Blueprint readers |
 | Narrowing scans over the whole process, pointer scans | a memory scanner | large, and needs no tick or identity. A bounded one over one range (`mem-snap`, `mem-diff`, up to 1 MiB) is built: an AI agent cannot drive the scanner's window, and the range is usually an object it already found |
 | Tracing native code, direct C++ calls, code hooks | a dynamic instrumentation tool | code patches in the target; the core writes none. Reflected calls are covered by the call recorder (`calls-start`), one `UFunction` pointer |
 | What is at one address, what points at it, what uses a member offset, whether a signature holds there | nothing: the [fast lane](#fast-lane) answers from live bytes | a static tool needs its whole-program analysis first, which takes hours on a large image and again after every patch |

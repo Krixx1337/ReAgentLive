@@ -407,22 +407,27 @@ TEST_CASE("write --hold and watch parse targets, guards and durations") {
     CHECK_FALSE(Parse("write 0x5000 01 --hold 61", refs).has_value());
     CHECK_FALSE(Parse("write 0x5000 01 02 --hold --expect 01", refs).has_value());
 
-    parsed = Parse("watch 2 $1+0x3e4:4 0x7000#12:3+0x258:8 0x9000:16 --then call $1 Owner:SetAiming 01", refs);
+    parsed = Parse("watch-start 2 $1+0x3e4:4 0x7000#12:3+0x258:8 0x9000:16 --file aim.jsonl", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Watch);
+    CHECK(parsed->target == "start");
     CHECK(parsed->milliseconds == 2000);
     REQUIRE(parsed->reads.size() == 3);
     CHECK(parsed->reads[1].address == 0x7000 + 0x258);
     CHECK(parsed->reads[1].length == 8);
     CHECK(parsed->guardObjects == std::vector<uint64_t>{0x7000, 0x7000, 0});
-    CHECK(parsed->then == "call $1 Owner:SetAiming 01");
-    parsed = Parse("watch 250ms 0x9000:4", refs);
+    CHECK(parsed->file == "aim.jsonl");
+    parsed = Parse("watch-start 250ms 0x9000:4", refs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->milliseconds == 250);
-    CHECK_FALSE(Parse("watch 2", refs).has_value());
-    CHECK_FALSE(Parse("watch 31 0x9000:4", refs).has_value());
-    CHECK_FALSE(Parse("watch 2 0x9000:513", refs).has_value());
-    CHECK_FALSE(Parse("watch 2 0x9000:4 --then read 0x1", refs).has_value());
+    CHECK(parsed->file.empty());
+    CHECK_FALSE(Parse("watch-start 2", refs).has_value());
+    CHECK_FALSE(Parse("watch-start 31 0x9000:4", refs).has_value());
+    CHECK_FALSE(Parse("watch-start 2 0x9000:513", refs).has_value());
+    CHECK_FALSE(Parse("watch-start 2 0x9000:4 --file", refs).has_value());
+    // The blocking capture and the recorder are gone: watch-start, wait, watch-stop.
+    CHECK_FALSE(Parse("watch 2 0x9000:4", refs).has_value());
+    CHECK_FALSE(Parse("record $1 4 burst.tsv Ammo", refs).has_value());
 }
 
 TEST_CASE("get --types takes one object as a ref or raw address, or a class") {
@@ -474,18 +479,9 @@ TEST_CASE("get with no paths reads every field") {
     CHECK(Parse("get Default__Character", NoRefs)->kind == Kind::Dump);
 }
 
-TEST_CASE("capture commands preserve the ref and bound the recording") {
-    const auto record = Parse("record $1 4 burst.tsv Ammo Weapon:State", TwoRefs);
-    REQUIRE(record.has_value());
-    CHECK(record->kind == Kind::Record);
-    CHECK(ue::GetRef(record->request) == Ref{0x1000, 5, 9});
-    CHECK(record->request.length == 4);
-    CHECK(record->file == "burst.tsv");
-    CHECK(record->fields == std::vector<std::string>{"Ammo", "Weapon:State"});
+TEST_CASE("get --snap needs a ref and takes no extra positional file") {
     CHECK_FALSE(Parse("get 0x1000 --snap", TwoRefs).has_value());     // A baseline needs a ref.
     CHECK_FALSE(Parse("get $1 a.snap extra --snap", TwoRefs).has_value());
-    CHECK_FALSE(Parse("record $1 11 burst.tsv Ammo", TwoRefs).has_value());
-    CHECK_FALSE(Parse("record $1 4 burst.tsv", TwoRefs).has_value());
 }
 
 TEST_CASE("describe takes an address or preserves a find ref") {
@@ -836,7 +832,7 @@ TEST_CASE("batch keeps its command lines and refuses what cannot be held") {
     CHECK_FALSE(Parse("batch read 0x10 4", NoRefs).has_value());
     CHECK_FALSE(Parse("batch { }", NoRefs).has_value());
     CHECK_FALSE(Parse("batch { batch { read 0x10 4 } }", NoRefs).has_value());
-    CHECK_FALSE(Parse("batch { watch 1 0x10:4 }", NoRefs).has_value());
+    CHECK_FALSE(Parse("batch { quit }", NoRefs).has_value());
     CHECK_FALSE(Parse("batch { status }", NoRefs).has_value());
     std::string many = "batch {";
     for (size_t i = 0; i <= MaxBatchCommands; ++i) many += " read 0x10 4;";
@@ -992,10 +988,9 @@ TEST_CASE("watch-start takes an interval and a root; --read and --stop take noth
     CHECK_FALSE(Parse("watch-start 10s --every 20s 0x9000:4", refs).has_value());  // Interval past the duration.
     CHECK_FALSE(Parse("watch-start 10s --follow pawn 0x10000:4", refs).has_value()); // Offset past an object.
     CHECK_FALSE(Parse("watch-start 10s 0x9000:4 --then call $1 F", refs).has_value());
-    CHECK_FALSE(Parse("watch 10s --every 1s 0x9000:4", refs).has_value());           // Options need --start.
 }
 
-TEST_CASE("a watch range may name a reflected field; --all on watch, watch-read and watch-stop") {
+TEST_CASE("a watch range may name a reflected field; --all on watch-read and watch-stop") {
     const std::vector<Ref> refs{{0x1000, 5, 2}};
     auto parsed = Parse("watch-start 30s $1.Health 0x1000#5:2.Root.RelativeLocation 0x9000:f64", refs);
     REQUIRE(parsed.has_value());
@@ -1012,7 +1007,6 @@ TEST_CASE("a watch range may name a reflected field; --all on watch, watch-read 
     CHECK_FALSE(parsed->all);
     CHECK(Parse("watch-read --all", refs)->all);
     CHECK(Parse("watch-stop --all", refs)->all);
-    CHECK(Parse("watch 2s 0x9000:4 --all", refs)->all);
 }
 
 TEST_CASE("a watch range may carry a read --type element, with a count") {
@@ -1026,7 +1020,8 @@ TEST_CASE("a watch range may carry a read --type element, with a count") {
     CHECK(parsed->watchTypes == std::vector<uint32_t>{WatchTypeCode("f64"), WatchTypeCode("i32"), 0});
     CHECK(WatchTypeName(parsed->watchTypes[1]) == "i32");
     CHECK(Parse("watch-start 10s --follow pawn +0x538:f32", refs)->watchTypes.front() == WatchTypeCode("f32"));
-    for (const char* bad : {"watch 1s 0x9000:f16", "watch 1s 0x9000:i32[0]", "watch 1s 0x9000:i32[", "watch 1s 0x9000:cstr"})
+    for (const char* bad : {"watch-start 1s 0x9000:f16", "watch-start 1s 0x9000:i32[0]", "watch-start 1s 0x9000:i32[",
+                            "watch-start 1s 0x9000:cstr"})
         CHECK(Parse(bad, refs).error().starts_with("a range is <addr>:<len>"));
 }
 

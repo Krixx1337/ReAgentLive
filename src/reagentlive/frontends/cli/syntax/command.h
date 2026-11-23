@@ -16,7 +16,7 @@
 #include "reagentlive/frontends/cli/syntax/pattern.h"
 
 namespace reagentlive::cli {
-enum class Kind { Remote, TypedCall, Release, Dump, Snap, Record, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
+enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Writes, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
     MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread };
 struct Verb;
@@ -27,8 +27,8 @@ struct Command {
     std::string file;
     std::vector<std::string> fields;
     std::vector<ReadSpan> reads;
-    std::vector<uint32_t> watchTypes; // watch: per range in `reads`, its element type (WatchTypeCode), 0 = raw.
-    // watch: ranges named as <object>.<Field[.Field]>, resolved through the pack
+    std::vector<uint32_t> watchTypes; // watch-start: per range in `reads`, its element type (WatchTypeCode), 0 = raw.
+    // watch-start: ranges named as <object>.<Field[.Field]>, resolved through the pack
     // before the start; `range` is the index into `reads` they fill.
     struct WatchField { size_t range; Ref object; std::string path; };
     std::vector<WatchField> watchFields;
@@ -40,16 +40,16 @@ struct Command {
     uint32_t limit = 0;         // census, call: rows to print, 0 = all. find: rows at most, 0 = one agent page.
     uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
     std::string view;           // read --type: element type or layout for decoded values.
-    // write --hold and watch: per target (watch: per range in `reads`), the object an
+    // write --hold and watch-start: per target (watch-start: per range in `reads`), the object an
     // address was given relative to ($N+0x10), 0 for raw addresses. The
     // console guards those on the object's identity.
     std::vector<uint64_t> guardObjects;
-    uint32_t milliseconds = 0;  // write --undo and --hold, watch: duration.
-    // watch, watch-start, watch-read, watch-stop: `target` is empty (a
-    // blocking watch), "start", "read" or "stop"; the sample interval (0: every tick) and a host root to follow.
+    uint32_t milliseconds = 0;  // write --undo and --hold, watch-start: duration.
+    // watch-start, watch-read, watch-stop: `target` is "start", "read" or
+    // "stop"; the sample interval (0: every tick) and a host root to follow;
+    // watch-start --file: `file`.
     uint32_t interval = 0;
     std::string root;
-    std::string then;           // watch --then: a call line run right after the start.
     // get filters (no paths): rows whose name contains `match` (case-insensitive), with
     // non-zero bytes, or changed against the snapshot (`file`, else the
     // session's baseline). census: `match` filters class names; census --diff
@@ -72,7 +72,7 @@ struct Command {
     // `target` names the module (empty: the exe). sig-check --file: `file`.
     // sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is --json, `hashOnly` is --hash.
-    // stats: `all` is --all. watch, watch-read, watch-stop: `all` is --all (every sample).
+    // stats: `all` is --all. watch-read, watch-stop: `all` is --all (every sample).
     bool hashOnly = false;
     bool listSessions = false;  // stats --sessions; --session <id> is `target`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;

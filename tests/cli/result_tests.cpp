@@ -133,7 +133,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     std::set<std::string> writers;
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
-    CHECK(writers == std::set<std::string>{"write", "writes", "watch", "each", "call", "release", "calls-start", "game-thread"});
+    CHECK(writers == std::set<std::string>{"write", "writes", "each", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
         {"help", "start, or a page's next_cursor"}});
@@ -247,8 +247,8 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     same("write 0x10 \"00 00 80 3f\"", {{"addr", "0x10"}, {"data", "00 00 80 3f"}});
     same("search text \"a b\" --wide --max 2", {{"type", "text"}, {"value", "a b"}, {"wide", true}, {"max", 2}});
     same("search hex 01 02", {{"type", "hex"}, {"value", {"01", "02"}}, {"heap", false}});
-    same("watch 1500ms 0x10:4 0x20:1 --then call 0x10#1:1 Fn 01",
-        {{"duration", 1.5}, {"ranges", {"0x10:4", "0x20:1"}}, {"then", "call 0x10#1:1 Fn 01"}});
+    same("watch-start 1500ms 0x10:4 0x20:1 --file \"my capture.jsonl\"",
+        {{"duration", 1.5}, {"ranges", {"0x10:4", "0x20:1"}}, {"file", "my capture.jsonl"}});
     same("watch-start 10s 0x10:4", {{"duration", 10}, {"ranges", "0x10:4"}});
     same("get 0x10#1:1 --changed", {{"object", "0x10#1:1"}, {"changed", true}});
     same("get 0x10#1:1 --changed f.snap --nonzero", {{"object", "0x10#1:1"}, {"changed", "f.snap"}, {"nonzero", true}});
@@ -288,10 +288,10 @@ TEST_CASE("a JSON call's named arguments land where a typed line's tokens do") {
     CHECK(parsed->fields.size() == 2);
     CHECK(Json::parse(parsed->fields[0])["args"]["addr"] == "0x10");
     Json watchCall = Json::object();
-    watchCall["calls"] = Json::array({Json{{"verb", "watch"}}});
+    watchCall["calls"] = Json::array({Json{{"verb", "status"}}});
     const auto watch = CallArgs(*batch, watchCall);
     REQUIRE(watch.has_value());
-    CHECK(Build(*batch, *watch, {}).error().starts_with("not allowed in a batch: watch"));
+    CHECK(Build(*batch, *watch, {}).error().starts_with("not allowed in a batch: status"));
     CHECK(CallArgs(*batch, Json{{"calls", "read 0x10"}}).error().starts_with("calls: a list of {verb, args}"));
 }
 
@@ -321,11 +321,9 @@ TEST_CASE("named types: listed once in the table, by name in the rows that use t
         "{ref: ref, name: str, class: str, class_size?: u32, outer?: {name: str, ref: ref}}");
     // Origins give their own titles; only origins with rows are listed.
     CHECK(table["origins"] == Json{{{"origin", "core"}, {"title", "Core"}}, {{"origin", "ue"}, {"title", "Unreal pack"}}});
-    // Blocking verbs are marked so a tool client can leave them out.
-    std::set<std::string> blocking;
-    for (const auto& verb : AllVerbs())
-        if (verb.blocks) blocking.insert(std::string(verb.name));
-    CHECK(blocking == std::set<std::string>{"watch", "record"});
+    // Blocking verbs are marked so a tool client can leave them out: only a host's may block
+    // (a countdown capture); the core's and the pack's return at once.
+    for (const auto& verb : AllVerbs()) CHECK_FALSE(verb.blocks);
 }
 
 TEST_CASE("find and describe results") {

@@ -91,7 +91,7 @@ class McpTests(unittest.TestCase):
         expected = {(row['verb'] if row['origin'] == 'core' else f'{row["origin"]}_{row["verb"]}').replace('-', '_')
                     for row in rows}
         self.assertEqual(set(tools), expected)
-        self.assertNotIn('watch', tools)                      # Blocking verbs are left out.
+        self.assertIn('watch_start', tools)                   # A capture returns at once: a tool.
         self.assertTrue(tools['read'].annotations.read_only_hint)
         self.assertFalse(tools['read'].annotations.destructive_hint)
         self.assertTrue(tools['write'].annotations.destructive_hint)

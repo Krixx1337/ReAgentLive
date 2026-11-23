@@ -46,14 +46,9 @@ Result<Guard> ObjectGuard(Session& session, uint64_t object);
 // the object holding it (the range's guard), or why it cannot be watched.
 struct WatchFieldRange { uint64_t address, object; uint32_t length, type; };
 std::expected<WatchFieldRange, std::string> PackWatchField(Session& session, const Ref& object, std::string_view path);
-// write --trial: the owner's size, or why the object cannot own a trial.
+// write --undo: the owner's size, or why the object cannot own a trial.
 std::expected<uint32_t, std::string> TrialOwnerSize(Session& session, const Ref& owner);
-// watch --then: whether the command is a call the pack runs, and running it.
-bool PackCall(const Command& command);
-shape::WatchThen RunPackCall(Session& session, const Command& call);
 // peek: which pointer-shaped values are live objects, then name hints for value rows.
 void DescribePeek(Session& session, std::span<PeekValue> values);
 void NamePeek(Session& session, std::span<PeekValue> values, std::span<const Module> modules);
-// --replay <file>: print a record file.
-int Replay(const std::filesystem::path& path);
 }

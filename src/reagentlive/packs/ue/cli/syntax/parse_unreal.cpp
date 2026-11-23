@@ -277,21 +277,6 @@ Parsed Describe(const Args& args, const ParseContext& context) {
     return command;
 }
 
-Parsed Record(const Args& args, const ParseContext& context) {
-    Command command;
-    Ref ref{};
-    if (!Reference(args.At(0), context.refs, ref)) return Fail("use an object ref ($N or 0x<address>#<index>:<serial>)");
-    ue::SetRef(command.request, ref);
-    uint64_t seconds = 0;
-    if (!Number(args.At(1), seconds) || seconds < 1 || seconds > 10) return Fail("seconds is 1..10");
-    command.file = args.At(2);
-    for (size_t i = 3; i < args.positionals.size(); ++i) command.fields.push_back(args.positionals[i]);
-    if (command.fields.size() > 8) return Fail("record needs a file and 1..8 exact field names");
-    command.request.length = static_cast<uint32_t>(seconds);
-    command.kind = Kind::Record;
-    return command;
-}
-
 // label <object|Class> <offset> <type>[n] <Name>: names an unreflected member in the native file.
 Parsed Label(const Args& args, const ParseContext& context) {
     Command command;

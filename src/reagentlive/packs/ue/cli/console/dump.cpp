@@ -73,10 +73,6 @@ Result<std::vector<ue::Field>> ObjectFields(Session& session, const Ref& object)
     return **table;
 }
 
-std::string FieldValue(const ue::Field& field, std::span<const uint8_t> bytes, StructCache& structs) {
-    return FormatField(field, bytes, structs);
-}
-
 namespace {
 // One previewed element's parts: an array's element, a set's element, or a
 // map's key and value, each at its offset in a slot of `stride` bytes.

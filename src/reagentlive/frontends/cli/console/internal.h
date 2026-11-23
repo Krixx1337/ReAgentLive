@@ -105,6 +105,7 @@ struct Session {
     // (ConsoleConfig::labelsFile), where peek --label writes; empty: `labels`.
     // disasm --save reads both.
     std::filesystem::path labels, hostLabels;
+    std::string watchFile;                  // watch-start --file: where watch-read and watch-stop write every sample.
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}
 };
@@ -138,8 +139,7 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
-void RunWatch(Session& session, const Command& command, std::span<const Ref> refs, std::span<const Module> modules,
-              std::string_view jsonCommand);
+void RunWatch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunSig(Session& session, const Command& command, std::string_view jsonCommand);
 void RunDisasm(Session& session, const Command& command, std::string_view jsonCommand);
 void RunXrefs(Session& session, const Command& command, std::string_view jsonCommand);

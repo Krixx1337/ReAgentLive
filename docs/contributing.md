@@ -22,7 +22,7 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 | Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls, every one with no SDK (`ue-base`, layouts through `engine_layout.h`); the opt-in game-thread tick for hosts (`host_draw.*`, `ue-draw`) | `packs/ue/` | core; only `reagentlive::ue` also the host's `SDK/` headers (`engine_layout_sdk.h`, `agent_ue_globals.cpp`) |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |
 | Python, MCP, IDA | session client, the generator of typed functions, the MCP adapter (tools from the table's rows); label importer | `frontends/python/`, `frontends/mcp/`, `frontends/ida/` | the console's JSON calls and `help --json` (MCP: the MCP Python SDK), its label file |
-| Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch --follow` | the host's code ([hosting](hosting.md)) | core, packs |
+| Host glue | section name, checks, logging, command table, where `Tick` runs, optional roots for `watch-start --follow` | the host's code ([hosting](hosting.md)) | core, packs |
 
 Dependencies point one way: host → pack → core. Frontends use the client API,
 never the section directly. ReAgentLive never includes host code.
@@ -91,7 +91,7 @@ console reaches the pack only through `console/pack.h`, which
 `packs/ue/cli/console/pack.cpp` implements (and `console/no_pack.cpp`, empty, for a
 console built without the pack): the pack's state for a run, its cache
 block, its rows of the verb table and `status` line, which commands are its own, and what core
-commands borrow (object guards, the `write --undo` owner check, `watch --then`,
+commands borrow (object guards, the `write --undo` owner check, `watch-start`'s field ranges,
 `peek`'s objects and names). `packs/ue/cli/console/internal_ue.h` is for
 `packs/ue/cli/console/` only. Why seams and not a pack interface:
 [design](design.md#source-layout).
@@ -139,7 +139,7 @@ one file:
 | `console/console.cpp` | the input line reader, `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole`, its busy wait and its no-target mode |
 | `console/output.cpp` | JSON records, the check of a result against its row, errors, `--timing`, output budgets (the digest, the kept-results file), batch capture, each line's output size for the usage log |
 | `results/budget.h` | output budgets: the size profile of a result, the narrower line and the digest |
-| `console/memory.cpp` | `status`, read decoding, timed writes (`write --undo`, `--hold`, `writes`), `watch` (blocking and detached), `peek` |
+| `console/memory.cpp` | `status`, read decoding, timed writes (`write --undo`, `--hold`, `writes`), captures (`watch-start`, `--file`), `peek` |
 | `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
 | `console/sig.cpp` | `sig-check` (one pattern or `--file`), `sig-bytes`: byte signatures against the live image |
 | `console/label_sigs.cpp`, `code/label_sign.h` | `labels-sign`, `labels-port`: signatures on a labels file's names, grown and ported |
@@ -149,7 +149,7 @@ one file:
 | `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --type "<layout>"`, native member types) |
 | `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `get` with no paths and `--types` |
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
-| `packs/ue/cli/console/capture.cpp` | snapshots (`get --snap`), `record`, replay |
+| `packs/ue/cli/console/capture.cpp` | snapshots (`get --snap`, `--changed` files) |
 | `packs/ue/cli/console/calls.cpp` | `func` (with its signature), typed calls |
 | `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each` values) and `--fields`; `rows` |
 | `packs/ue/cli/console/text.cpp` | text values through the engine's converter |

@@ -48,7 +48,7 @@ the console.
 - **Optional keys are omitted, never null.** Output weight is a
   [principle](design.md#output-weight-and-dead-ends), and the strict layer gives
   `None` either way. Nulls remain only inside game values and as list
-  elements where position matters (a `watch` row's `values`).
+  elements where position matters (a capture row's `values`).
 - **The console checks what it prints.** A result that does not match its
   row's type is an `internal` error. This binds a runner to its row and
   covers a host's verbs, whose results arrive as JSON.

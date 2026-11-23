@@ -5,6 +5,8 @@
 // known is marked should_fail, so the test turns red when it is fixed and
 // the mark can go.
 #include "fake_engine.h"
+#include <chrono>
+#include <format>
 #include <map>
 
 using namespace fake;
@@ -239,6 +241,30 @@ TEST_CASE("a stale object fails alike as a positional and as --outer") {
     // An outer named by text that matches nothing is an answer: no rows.
     CHECK(Result("find --cls Thing --outer NoSuchPackage")["rows"].empty());
     CHECK(Result("find --cls Thing --outer " + fixture.package)["total"] == 3);
+}
+
+TEST_CASE("watch-start --file keeps every sample in a file each later read rewrites") {
+    static volatile uint32_t value = 7;
+    const std::string address = std::format("0x{:x}", reinterpret_cast<uintptr_t>(&value));
+    const auto path = (std::filesystem::temp_directory_path() /
+        ("reagentlive-watch-" + std::to_string(GetCurrentProcessId()) + ".jsonl")).generic_string();
+    std::filesystem::remove(path);
+    const auto started = Result("watch-start 100ms " + address + ":u32 --file \"" + path + "\"");
+    CHECK(started["file"] == path);
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    const auto stopped = Result("watch-stop");      // Another console run: the path comes from the cache file.
+    CHECK(stopped["file"] == path);
+    std::ifstream in(path);
+    std::string line;
+    REQUIRE(std::getline(in, line));
+    CHECK(Json::parse(line)["ranges"][0]["type"] == "u32");
+    REQUIRE(std::getline(in, line));
+    CHECK(Json::parse(line)["values"][0] == 7);
+    in.close();
+    // A start without --file drops it.
+    Result("watch-start 50ms " + address + ":4");
+    CHECK_FALSE(Result("watch-stop").contains("file"));
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("a get path that names no field suggests the closest fields") {

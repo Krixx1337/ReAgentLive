@@ -1,6 +1,6 @@
 # Memory commands
 
-*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `writes`, `search`, `watch`, `mem-snap`/`mem-diff`, typed layouts.
+*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `writes`, `search`, captures (`watch-start`, `watch-read`, `watch-stop`), `mem-snap`/`mem-diff`, typed layouts.
 
 **TL;DR:** Read, search and change raw memory in any process the agent
 runs in, with no engine pack (tier T0). Every write is guarded and can
@@ -23,8 +23,7 @@ keys: `help <verb>` or [result shapes](results.md).
 | `write <addr> <hex> --hold [duration] [--expect <hex>]` | a pin: up to 8 of 1..64 bytes, each 1 ms..60 s (default 10 s); written at the start of every host tick, before requests ([timed writes](#timed-writes)) |
 | `write <addr> <hex> --undo <duration> --owner <ref> --expect <hex> [--object <addr>]` | a trial: up to 8 of 1..64 bytes, 1 ms..60 s. One write when memory holds `--expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear them (`writes clear`) before stopping it. Checked at the start of every host tick: a changed owner identity or `--object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `--object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so `--undo` needs a host with the Unreal pack; the agent does not check classes |
 | `writes [clear [undo:N\|hold:N]]` | every timed write as a row (`id`, `mode`, `state`, time left): an `--undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `--hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from --expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one or all, restoring active `--undo` ones, and returns the rows it ended |
-| `watch <seconds\|Nms> <addr>:<len>... [--then call ...]` | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, up to 30 s; sampled at the start of every host tick into a 4 MB agent buffer |
-| `watch-start <duration> <addr\|offset>:<len>\|<object>.<Field>... [--every <duration>] [--follow <root>]` / `watch-read [--all]` / `watch-stop [--all]` | the same ranges, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
+| `watch-start <duration> <addr\|offset>:<len>\|<object>.<Field>... [--every <duration>] [--follow <root>] [--file <path>]` / `watch-read [--all]` / `watch-stop [--all]` | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, sampled at the start of every host tick into a 4 MB agent buffer for up to 30 s, returning at once; with `--every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
 
 ## Faults
 
@@ -104,7 +103,7 @@ refused. So "which value fell when I got hit?" is a snap of the owner's
 native range, `mem-diff unchanged f32 --keep` while nothing happens,
 `mem-diff decreased f32 --keep` after the hit, repeated until a few rows
 remain. Each diff is one read of the range, not one tick: values may be
-torn across 4 KB requests, so confirm a candidate with `watch`. This is a
+torn across 4 KB requests, so confirm a candidate with `watch-start`. This is a
 bounded narrowing scan over one range the agent names, not a memory
 scanner: no whole-process scan, no tolerance, no pointer scan
 ([design](../design.md#place-among-other-tools)).
@@ -124,17 +123,17 @@ state (a timer, an eased value) stays pinned.
 
 ## watch
 
-`watch` samples ranges every host tick inside the agent and prints the
-`rows`: each with `tick` (agent heartbeat), `us` (since start) and
-`values` (one per range, null while unreadable: its bytes as hex, or a
-[typed range](#typed-ranges)'s numbers). Object-relative ranges are
-guarded like pins: when the object is freed or replaced the capture stops,
-`stopped: "object replaced"`, and the rows so far stay. `--then call <object>
-<[Class:]Function> [hex]` runs that call right after sampling starts (a setter
-that starts the action, such as aiming); its result is `then`. Rows
-before it show the state before the action. `stopped` says why a capture
-ended: `deadline`, `stopped`, `buffer full`, `object replaced` (absent while
-it runs).
+`watch-start` samples ranges every host tick (or `--every`) inside the
+agent and returns at once; `watch-read` prints the `rows` so far and
+`watch-stop` ends the capture and prints them: each with `tick` (agent
+heartbeat), `us` (since start) and `values` (one per range, null while
+unreadable: its bytes as hex, or a [typed range](#typed-ranges)'s
+numbers). Object-relative ranges are guarded like pins: when the object is
+freed or replaced the capture stops, `stopped: "object replaced"`, and the
+rows so far stay. `stopped` says why a capture ended: `deadline`,
+`stopped`, `buffer full`, `object replaced` (absent while it runs). A
+caller that wants to block (a script waiting out the capture) starts,
+waits and stops: the Python session's `watch(seconds, ranges)` does that.
 
 ### Typed ranges
 
@@ -165,7 +164,7 @@ holds the field. Not with `--follow`, whose ranges are offsets from the root.
 
 ### Rows: the changes, not every sample
 
-`watch`, `watch-read` and `watch-stop` return the first sample, every
+`watch-read` and `watch-stop` return the first sample, every
 sample that differs from the one before it (each with its `us`), and the
 last, so a transition keeps its time while a capture of a value that sits
 still for 30 s is a handful of rows. `lost` and `resumed` rows, and the row
@@ -185,7 +184,12 @@ console exiting, `watch-read` from any later run returns the rows so far
 `ranges`), `watch-stop` ends it and returns them. A new start replaces it;
 a newer agent taking over ends it. Reflected paths are resolved once, at
 the start ([above](#watching-a-reflected-field)).
-No file is written inside the target.
+No file is written inside the target. `--file <path>` keeps every sample
+on the console's side: the start writes the ranges as the file's first
+line (JSON), and each `watch-read` and `watch-stop` rewrites it with every
+sample so far, one JSON line each (as `--all` prints them), and adds
+`file`. The path persists for the agent instance in the cache file, so a
+later run's read writes it too; a start without `--file` drops it.
 
 ### Following a replaced object
 

@@ -114,27 +114,27 @@ inline const std::vector<Verb>& CoreVerbs() {
             "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
             "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 --keep, act, mem-diff ... --keep "
             "until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
-        {"watch", "core", "sample up to 8 ranges every tick (up to 30 s) and return the rows",
-            {{"duration", "seconds|Nms", One, "dur", "how long: seconds, or Nms, Ns"},
-             {"ranges", "addr:len|addr:type[n]", Some, "range", "a range to sample, per range: a length, or a read --type element (f64, i32[2]) to decode"}},
-            {{"--then", Takes::Rest, "line", "call line", "a raw call (a pack runs it) right after sampling starts"},
-             {"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}},
-            Of<shape::Watch>, parse::Watch, {}, {}, true, true},
         {"watch-start", "core", "a capture the agent keeps (up to 60 min with --every); returns at once",
             {{"duration", "duration", One, "dur", "how long: seconds, or Nms, Ns, Nm"},
-             {"ranges", "addr|offset:len|type[n]", Some, "range",
-              "a range to sample: a length, or a read --type element (f64, i32[2]) to decode; following a root, its offset from the root"}},
+             {"ranges", "addr|offset:len|type[n]|ref.Field", Some, "range",
+              "a range to sample: a length, or a read --type element (f64, i32[2]) to decode; following a root, its offset "
+              "from the root; or an object's reflected field (<ref>.<Field[.Field]>, a pack resolves it)"}},
             {{"--every", Takes::One, "dur", "duration", "sample interval (default: every tick, then at most 30 s)"},
-             {"--follow", Takes::One, "str", "root", "continue on a host root's replacement; ranges are offsets from it"}},
+             {"--follow", Takes::One, "str", "root", "continue on a host root's replacement; ranges are offsets from it"},
+             {"--file", Takes::One, "path", "file", "keep every sample in this file (JSON lines), rewritten by each watch-read and watch-stop"}},
             Of<shape::WatchStart>, parse::WatchStart,
             "status lists the roots. The capture outlives the console, its types too. A typed range's samples are "
             "numbers (a list for [n]), and watch-read and watch-stop add its summary: first, last, least, greatest "
-            "and the change per second, per value."},
+            "and the change per second, per value. A field range takes the field's place and type at the start and "
+            "is guarded on its object. --file writes the ranges as the first line now; the file persists for the "
+            "agent instance in the cache, and a later watch-start without --file drops it. For a blocking capture, "
+            "start, wait and stop (the Python session's watch helper)."},
         {"watch-read", "core", "the capture so far: its first sample, each change and its last", {},
             {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchRead,
             "Rows are the first sample, every sample that differs from the one before (each with its time) and the last; "
             "samples counts them all. Past 200 rows the middle is dropped (dropped). The summary covers every sample, "
-            "with changes per value. --all returns every sample."},
+            "with changes per value. --all returns every sample. With watch-start --file, every sample also goes to "
+            "the file (file names it)."},
         {"watch-stop", "core", "end the capture and return it: its first sample, each change and its last", {},
             {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchStop,
             "As watch-read."},
