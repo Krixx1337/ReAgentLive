@@ -1,0 +1,44 @@
+# Signatures
+
+Verb behaviour: fast lane (`docs/commands/fast-lane.md#signatures`); labels
+files: Unreal pack (`docs/commands/unreal.md#names-that-survive-a-patch`).
+
+## Two ways, never mixed up
+
+- **A labels file's names:** `labels-sign`, the mass signer, after naming
+  (one fixed loop; it never gets smarter). A name it lists `unsigned`, or
+  one `labels-port` lists `missing` once found again, gets a signature made
+  as below, written into its row's `sig` (`{pattern, offset}` or
+  `{pattern, resolve}`) and checked with `sig-file`. Never extend the
+  signer for a failure.
+- **Everything else** (a host's runtime patterns): you make it as below,
+  and ReAgentLive checks it.
+
+## Making one
+
+1. Read the function in the static tool with bytes shown, at the RVA
+   (`func` gives a reflected function's native entry).
+2. Wildcard what moves with every build: relative call and jump targets,
+   RIP-relative displacements, absolute addresses. Keep ordinary constants.
+   Wildcard struct offsets and stack slots only when the signature should
+   survive a recompile that moves fields.
+3. Whole instructions only, within the checker's length and fixed-byte
+   limits (signatures page above).
+4. Function openings repeat. If the start is not unique, begin at a later
+   instruction and record the offset (`--expect <entry> --offset N`).
+5. Still not unique: sign an instruction that references the target (a
+   caller, or code that loads the global) and record the resolve formula,
+   `--expect` set to the target. A `call rel32` at match offset C is
+   `--resolve C+5,C+1`; `lea rcx, [rip+d]` at C is `C+7,C+3`.
+6. `sig-check <pattern> --expect <module>+<rva>` after every attempt; act on
+   what it reports (keys: `help sig-check`): mismatches (a typo or slipped
+   byte count), where it diverges or turns unique (how much longer; the
+   extra bytes must be ones you would keep fixed), warnings (a fixed field
+   holds an address: wildcard).
+7. Prefer the shortest unique pattern, then the most fixed bytes. Try
+   several candidates in one `sig-file`. Then hand it to the host's checks.
+
+Without a static database: `disasm <entry> --function` for instruction
+boundaries, `sig-bytes <boundary> 96` for `suggested` masks, and
+`xrefs <entry>` for callers to build a reference signature from. Check
+the decoded length covers the pattern.
