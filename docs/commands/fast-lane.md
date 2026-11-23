@@ -109,13 +109,21 @@ of one is unreadable, up to the page end and on from there.
 for a static tool, so it decompiles that one function without analysing
 the whole image. The result names the file in `saved` and counts its
 instructions in `saved_rows`; it leaves out `rows` and `strings`, which
-the file holds. A function's **chained chunks** (continuations the
-exception directory lists apart, reached by a jump from the function or
-following on where its entry ends mid-flow) are
-saved with it, each to its own end, and listed in `chunks`; the loader
-attaches them as function tails, so the decompiler shows the whole
-function instead of a `JUMPOUT`. Up to 16 chunks per file; a chunk reached
-only through a jump table is not found.
+the file holds. A function's **chunks** (continuations the exception
+directory lists apart, reached by a jump from the function or following
+on where its entry ends mid-flow, and switch targets) are saved with it,
+each to its own end, and listed in `chunks`; the loader attaches them as
+function tails, so the decompiler shows the whole function instead of a
+`JUMPOUT`. **Switches:** a jump through a register fed by a table of
+32-bit entries (the MSVC form `cmp idx, N; ja; lea; mov r, [base +
+idx*4 + table]; add r, base; jmp r`, with or without a byte index table,
+and the table-relative form) is recognised; its table is read (bounded
+by the `cmp` before it), saved as `data` (the function's code stops where
+a table after the jump starts) and listed in `tables` (`jump`, `table`,
+`targets`), and each target the saved parts do not hold becomes a chunk
+(listed in no entry: walked from the target). Up to 256 chunks per file,
+then `capped: true`; targets of the function still unsaved are listed in
+`jumpouts_left`.
 
 - **`--callees`** also saves each function it calls directly or reaches by
   a tail jump (a direct `jmp` out of the function and its chunks), one
@@ -144,9 +152,9 @@ JSON lines:
 | `row` | Keys |
 |---|---|
 | `function` | `module`, `module_size`, `timestamp` (the build), `base`, `start`, `end`: one row per saved function, the first first |
-| `chunk` | `start`, `end`, `function`: a chained chunk of the function starting at `function` |
+| `chunk` | `start`, `end`, `function`: a chunk (chained entry or switch target) of the function starting at `function` |
 | `code` | `address`, `rva`, `bytes` (hex): the listed code of every saved part, one row per contiguous run; runs that overlap or touch are joined, so no two rows overlap |
-| `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch; bytes a `code` row holds are left out |
+| `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch, and each switch table whole; bytes a `code` row holds are left out |
 | `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
 
 `frontends/ida/reagentlive_ida.py` is the IDA loader: copy it into IDA's

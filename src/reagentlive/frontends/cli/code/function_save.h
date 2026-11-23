@@ -20,8 +20,9 @@ namespace reagentlive::cli::save {
 constexpr size_t MaxData = 64; // Bytes kept per referenced constant or string.
 // --callees: functions saved besides the first, and their code in bytes.
 constexpr size_t MaxCallees = 16, MaxCalleeBytes = 256 * 1024;
-// Chained chunks saved per file: a function's continuations elsewhere.
-constexpr size_t MaxChunks = 16;
+// Chunks saved per file: a function's continuations elsewhere (chained
+// entries, switch targets); past it the result says capped.
+constexpr size_t MaxChunks = 256;
 // Bytes of junk a packed image may leave between a return and the next
 // function: a walk that far into its unlisted piece is still a start.
 constexpr uint64_t JunkBytes = 32;

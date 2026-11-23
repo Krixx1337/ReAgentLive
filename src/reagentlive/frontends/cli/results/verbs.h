@@ -186,7 +186,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             "exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch "
             "passes: stop \"walk end\", no function key. Strings built at run time, reached through a pointer, or held as "
             "names are not seen. --save leaves rows and strings out of the result (the file holds them) and adds saved "
-            "and saved_rows, and saves each chained chunk the function jumps into (chunks); --callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
+            "and saved_rows, and saves each chunk the function jumps into: chained entries and switch targets "
+            "(chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets "
+            "still unsaved in jumpouts_left; --callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
             "256 KB). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
             "piece (the piece holding addr, as xrefs gives it), and --save then refuses unless --resume."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",

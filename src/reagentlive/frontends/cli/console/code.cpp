@@ -17,6 +17,7 @@
 #include "reagentlive/frontends/cli/console/console.h"
 #include "reagentlive/frontends/cli/code/disasm.h"
 #include "reagentlive/frontends/cli/code/function_save.h"
+#include "reagentlive/frontends/cli/code/jump_table.h"
 #include "reagentlive/frontends/cli/code/pe_names.h"
 #include "reagentlive/frontends/cli/code/unwind.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
@@ -208,10 +209,47 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     if (!module) return JsonError(session, jsonCommand, "module", "--save needs code inside a loaded module");
     const auto timestamp = ImageTimestamp(session, *module);
     if (!timestamp) return JsonError(session, jsonCommand, "file", "the module's PE header is unreadable");
+    // Switch tables in a part: each site, its entries' bytes and the targets
+    // inside the module's code. The part's rows stop where a table after the
+    // jump starts (its bytes are data, not code), so the table is saved as data.
+    struct Table { jumptab::Site site; std::vector<uint8_t> index, entries; std::vector<uint64_t> targets; };
+    const auto readSpan = [&](uint64_t at, uint64_t length) -> std::optional<std::vector<uint8_t>> {
+        const ReadSpan span{at, length};
+        auto items = AgentRead(session)(std::span(&span, 1));
+        if (!items || items->empty() || !items->front()) return std::nullopt;
+        return std::move(*items->front());
+    };
+    const auto findTables = [&](dis::Listing& part) {
+        std::vector<Table> found;
+        for (const auto& site : jumptab::Find(part.rows)) {
+            Table table{site};
+            if (site.indexTable) {
+                auto index = readSpan(*site.indexTable, site.indexCount);
+                if (!index) continue;
+                table.index = std::move(*index);
+                table.site.count = jumptab::CountFromIndex(table.index);
+            }
+            if (!table.site.count || table.site.count > jumptab::MaxCases) continue;
+            auto entries = readSpan(site.table, uint64_t{table.site.count} * 4);
+            if (!entries) continue;
+            table.entries = std::move(*entries);
+            for (const uint64_t target : jumptab::Targets(table.site, table.entries))
+                if (target - module->base < module->size && InCode(session, target)) table.targets.push_back(target);
+            if (!table.targets.empty()) found.push_back(std::move(table));
+        }
+        uint64_t cut = UINT64_MAX;
+        for (const auto& table : found)
+            for (const uint64_t at : {table.site.table, table.site.indexTable.value_or(0)})
+                if (at > table.site.jump) cut = std::min(cut, at);
+        std::erase_if(part.rows, [cut](const dis::Instruction& row) { return row.address + row.bytes.size() > cut; });
+        return found;
+    };
     // The saved parts: each function, then its chained chunks (owners[i] is
-    // 0 for a function, else the function's start).
+    // 0 for a function, else the function's start), and each part's tables.
     std::vector<uint64_t> starts{address}, owners{0};
     std::vector<dis::Listing> listings;
+    std::vector<std::vector<Table>> tables;
+    tables.push_back(findTables(*listing));
     listings.push_back(std::move(*listing));
     const auto held = [&](uint64_t at) {
         return std::ranges::any_of(listings, [at](const dis::Listing& part) {
@@ -219,29 +257,66 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
                 at < part.rows.back().address + part.rows.back().bytes.size();
         });
     };
-    // Chained chunks of the function at `owner`: jumps out of its listed
-    // parts into entries chained to its entry, each listed to its own end.
+    // A switch table's bytes: never a jump target to list.
+    const auto inTable = [&](uint64_t at) {
+        return std::ranges::any_of(tables, [at](const std::vector<Table>& part) {
+            return std::ranges::any_of(part, [at](const Table& table) {
+                return (at >= table.site.table && at - table.site.table < table.entries.size()) ||
+                    (table.site.indexTable && at >= *table.site.indexTable && at - *table.site.indexTable < table.index.size());
+            });
+        });
+    };
+    // Chunks of the function at `owner`: the jump and switch targets of its
+    // listed parts that they do not hold, each listed to its own end: in an
+    // entry chained to its entry (from that entry's start), in its own entry
+    // (from the target: code past a table or a cut), or, for a switch
+    // target, in code no entry lists (walked from the target). Its targets
+    // still unsaved are `left` (jumpouts_left).
     size_t chunks = 0;
+    bool capped = false;
+    std::vector<uint64_t> left;
     const auto addChunks = [&](uint64_t owner) -> std::expected<void, std::string> {
         auto entry = FunctionAt(session, owner);
         if (!entry) return std::unexpected(entry.error());
-        if (!*entry) return {};
-        const uint64_t primary = (*entry)->range.start;
+        const std::optional<uint64_t> primary = *entry ? std::optional((*entry)->range.start) : std::nullopt;
+        std::vector<uint64_t> missed;
         for (size_t part = 0; part < listings.size(); ++part) {
             if (starts[part] != owner && owners[part] != owner) continue;
-            for (const uint64_t target : save::Jumps(listings[part].rows)) {
-                if (chunks == save::MaxChunks || held(target)) continue;
+            std::vector<std::pair<uint64_t, bool>> targets; // A target, and whether a table gave it.
+            for (const uint64_t target : save::Jumps(listings[part].rows)) targets.push_back({target, false});
+            for (const auto& table : tables[part])
+                for (const uint64_t target : table.targets) targets.push_back({target, true});
+            for (const auto& [target, fromTable] : targets) {
+                if (held(target) || inTable(target)) continue;
                 auto chained = FunctionAt(session, target);
                 if (!chained) return std::unexpected(chained.error());
-                if (!*chained || !(*chained)->chunk || (*chained)->range.start != primary) continue;
-                auto chunk = list((*chained)->chunk->start, MaxFunctionDisasm, false, false);
-                if (!chunk || chunk->rows.empty()) continue;
-                starts.push_back((*chained)->chunk->start);
+                const bool ours = primary && *chained && (*chained)->range.start == *primary;
+                uint64_t from = 0;
+                bool walking = false;
+                if (ours && (*chained)->chunk) from = (*chained)->chunk->start;
+                else if (ours) from = target;
+                else if (!*chained && fromTable) { from = target; walking = true; }
+                else continue;
+                if (chunks == save::MaxChunks) {
+                    capped = true;
+                    missed.push_back(target);
+                    continue;
+                }
+                auto chunk = list(from, MaxFunctionDisasm, walking, false);
+                if (!chunk || chunk->rows.empty()) {
+                    missed.push_back(target);
+                    continue;
+                }
+                tables.push_back(findTables(*chunk));
+                starts.push_back(from);
                 owners.push_back(owner);
                 listings.push_back(std::move(*chunk));
                 ++chunks;
+                if (!held(target)) missed.push_back(target);
             }
         }
+        for (const uint64_t target : missed)
+            if (!held(target) && std::ranges::find(left, target) == left.end()) left.push_back(target);
         return {};
     };
     if (auto added = addChunks(address); !added) return JsonError(session, jsonCommand, "unwind", added.error());
@@ -262,7 +337,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             for (const uint64_t target : save::TailJumps(listings[part].rows, *module, parts))
                 if (std::ranges::find(targets, target) == targets.end()) targets.push_back(target);
         for (const uint64_t target : targets) {
-            if (starts.size() > save::MaxCallees || calleeBytes >= save::MaxCalleeBytes) {
+            if (static_cast<size_t>(std::ranges::count(owners, 0)) > save::MaxCallees || calleeBytes >= save::MaxCalleeBytes) {
                 skipped.push_back(target);
                 continue;
             }
@@ -277,12 +352,25 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
                 skipped.push_back(target);
                 continue;
             }
+            tables.push_back(findTables(*callee));
             for (const auto& row : callee->rows) calleeBytes += row.bytes.size();
             starts.push_back(start);
             owners.push_back(0);
             listings.push_back(std::move(*callee));
             if (auto added = addChunks(start); !added) return JsonError(session, jsonCommand, "unwind", added.error());
         }
+    }
+    // A table that one part found may lie inside another (a chunk that runs
+    // through it): every part stops where a table starts inside it.
+    for (auto& part : listings) {
+        if (part.rows.empty()) continue;
+        const uint64_t first = part.rows.front().address;
+        uint64_t cut = UINT64_MAX;
+        for (const auto& found : tables)
+            for (const auto& table : found)
+                for (const uint64_t at : {table.site.table, table.site.indexTable.value_or(0)})
+                    if (at > first) cut = std::min(cut, at);
+        std::erase_if(part.rows, [cut](const dis::Instruction& row) { return row.address + row.bytes.size() > cut; });
     }
     std::vector<save::Range> ranges;
     for (const auto& one : listings) {
@@ -299,6 +387,23 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         if (!items) return JsonError(session, jsonCommand, "read", items.error());
         for (size_t i = 0; i < n && i < items->size(); ++i)
             if ((*items)[i]) data.push_back({spans[first + i].address, std::move(*(*items)[i])});
+    }
+    // Switch tables are data whole: other data keeps only what they leave.
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> tableRuns;
+    std::vector<shape::JumpTable> tableRows;
+    for (const auto& part : tables)
+        for (const auto& table : part) {
+            tableRuns.push_back({table.site.table, table.entries});
+            if (table.site.indexTable) tableRuns.push_back({*table.site.indexTable, table.index});
+            tableRows.push_back({table.site.jump, table.site.table, static_cast<uint32_t>(table.targets.size())});
+        }
+    if (!tableRuns.empty()) {
+        tableRuns = save::JoinedRuns(std::move(tableRuns));
+        std::vector<std::pair<uint64_t, std::vector<uint8_t>>> kept;
+        for (const auto& [at, bytes] : data)
+            for (auto& rest : save::Uncovered(at, bytes, tableRuns)) kept.push_back(std::move(rest));
+        data = std::move(kept);
+        for (auto& run : tableRuns) data.push_back(std::move(run));
     }
     // --labels, else the console's labels file and the host's names file,
     // those that exist: the names this build's rows give, by address (the
@@ -341,6 +446,12 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         }
     }
     if (!skipped.empty()) out.skipped = std::move(skipped);
+    if (!tableRows.empty()) out.tables = std::move(tableRows);
+    if (!left.empty()) {
+        std::ranges::sort(left);
+        out.jumpoutsLeft.emplace(left.begin(), left.end());
+    }
+    if (capped) out.capped = true;
     Emit(session, jsonCommand, std::move(out));
 }
 

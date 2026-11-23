@@ -121,6 +121,17 @@ struct SavedFunction {
         v("rows", &SavedFunction::rows);
     }
 };
+// disasm --save: a switch found in the saved code: its indirect jump, its
+// table (saved as data) and the distinct targets the table gives.
+struct JumpTable {
+    Addr jump, table;
+    uint32_t targets = 0;
+    template<class V> static void Describe(V& v) {
+        v("jump", &JumpTable::jump);
+        v("table", &JumpTable::table);
+        v("targets", &JumpTable::targets);
+    }
+};
 // disasm: the rows, how many bytes they cover, why the listing stopped
 // (`next` where a count or byte limit cut it), the hops --follow took, the
 // function entry holding the first address, and with --function the strings
@@ -137,7 +148,10 @@ struct Disasm {
     std::optional<uint64_t> savedRows;   // --save: the instructions the file holds.
     std::optional<std::vector<SavedFunction>> functions; // --callees: each saved function, the first included.
     std::optional<std::vector<Addr>> skipped;            // --callees: call targets past the cap, not saved.
-    std::optional<std::vector<SavedFunction>> chunks;    // --save: each chained chunk saved with its function.
+    std::optional<std::vector<SavedFunction>> chunks;    // --save: each chunk saved with its function.
+    std::optional<std::vector<JumpTable>> tables;        // --save: the switches whose targets were followed.
+    std::optional<std::vector<Addr>> jumpoutsLeft;       // --save: the function's jump targets still unsaved.
+    std::optional<bool> capped;                          // --save: chunks stopped at the cap.
     std::optional<AddressRange> piece;   // A walk from inside unlisted code: the piece holding the address.
     std::optional<FunctionBounds> function;
     std::optional<DisasmEnd> end;
@@ -156,6 +170,9 @@ struct Disasm {
         v("functions", &Disasm::functions);
         v("skipped", &Disasm::skipped);
         v("chunks", &Disasm::chunks);
+        v("tables", &Disasm::tables);
+        v("jumpouts_left", &Disasm::jumpoutsLeft);
+        v("capped", &Disasm::capped);
         v("piece", &Disasm::piece);
         v("function", &Disasm::function);
         v("end", &Disasm::end);

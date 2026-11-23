@@ -640,7 +640,7 @@ database:
   and the strings it points at. Reading every instruction by hand cost more
   calls than any other step in a live session.
 - **Saves for the static tool** (`--save`): the bytes and constants of a
-  function, its chained chunks and, with `--callees`, every function it
+  function, its chunks (chained entries, switch targets) and, with `--callees`, every function it
   calls, named from a labels file; a small IDA loader builds one database
   from them and `add_saved` grows it. The decompiler is borrowed: a
   database of the whole image takes hours, a save seconds. Measured on a

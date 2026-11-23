@@ -470,7 +470,10 @@ TEST_CASE("calls-read decodes a recorded block through the shared reader, as a c
 namespace {
 // Game.exe (fake_engine.h): PE32+ headers, .text at 0x1000 and an exception
 // directory of one-byte entries over real code, the decoys a packed image
-// lists: a function's start (0x1000) and a chained chunk (0x1200).
+// lists: a function's start (0x1000) and a chained chunk (0x1200); and a
+// switch (0x1400) whose targets lie in its own entry, a chained chunk
+// (0x1500) that also holds its table, code no entry lists (0x1600) and
+// undecodable bytes (0x1610).
 uint64_t TheCode() {
     static const uint64_t base = [] {
         auto& image = TheImage();
@@ -483,7 +486,7 @@ uint64_t TheCode() {
         image.Put(0x98, {0x0b, 0x02});
         image.Put32(0x98 + 108, 16);
         image.Put32(0x80 + 160, 0x5000);    // Exception directory: three entries.
-        image.Put32(0x80 + 164, 3 * 12);
+        image.Put32(0x80 + 164, 5 * 12);
         const uint64_t sections = 0x98 + 0xf0;
         image.Put(sections, {'.', 't', 'e', 'x', 't', 0, 0, 0});
         image.Put32(sections + 8, 0x4000);
@@ -501,6 +504,21 @@ uint64_t TheCode() {
         entry(0, 0x1000, 0x1001, 0x6000);             // Decoy over a function's start.
         entry(1, 0x1100, 0x1140, 0x6010);
         entry(2, 0x1200, 0x1201, 0x5000 + 1 * 12 + 1); // A decoy chunk, chained to entry 1.
+        entry(3, 0x1400, 0x1480, 0x6020);
+        entry(4, 0x1500, 0x1520, 0x5000 + 3 * 12 + 1); // The switch's chained chunk, holding its table.
+        image.Put(0x6020, {0x01, 0x04, 0x00, 0x00});
+        // cmp ecx, 4; ja 0x1478; lea rdx, [image base]; movsxd rax, ecx; mov ecx, [rdx + rax*4 + 0x1508];
+        // add rcx, rdx; jmp rcx; then two cases (mov eax, N; ret) and the default at 0x1478; the table at
+        // 0x1508, after the chained chunk's code.
+        image.Put(0x1400, {0x83, 0xf9, 0x04, 0x0f, 0x87, 0x6f, 0, 0, 0, 0x48, 0x8d, 0x15, 0xf0, 0xeb, 0xff, 0xff,
+                           0x48, 0x63, 0xc1, 0x8b, 0x8c, 0x82, 0x08, 0x15, 0, 0, 0x48, 0x03, 0xca, 0xff, 0xe1,
+                           0xb8, 0, 0, 0, 0, 0xc3, 0xb8, 0x01, 0, 0, 0, 0xc3});
+        uint32_t slot = 0x1508;
+        for (const uint32_t target : {0x141f, 0x1425, 0x1500, 0x1600, 0x1610}) image.Put32(std::exchange(slot, slot + 4), target);
+        image.Put(0x1478, {0x33, 0xc0, 0xc3});
+        image.Put(0x1500, {0xb8, 0x02, 0, 0, 0, 0xc3});
+        image.Put(0x1600, {0xb8, 0x03, 0, 0, 0, 0xc3});
+        image.Put(0x1610, {0x06});
         image.Put(0x6000, {0x01, 0x04, 0x00, 0x00});
         image.Put(0x6010, {0x01, 0x04, 0x00, 0x00});
         // sub rsp, 0x28; mov eax, 1; add rsp, 0x28; ret
@@ -733,4 +751,30 @@ TEST_CASE("rows reads a curve table's keys and evaluates them with --at") {
     CHECK(refused[0]["error"]["message"] == "neither a data table (no RowStruct field) nor a curve table (no CurveTable class)");
     CHECK(refused[1]["error"]["message"] == "--fields and --nonzero read data tables; a curve table's rows are keys");
     CHECK(refused[2]["error"]["kind"] == "syntax");
+}
+
+TEST_CASE("disasm --save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {
+    const auto file = SaveFile("switch.jsonl");
+    const auto saved = Result("disasm " + At(0x1400) + " --function --save " + file);
+    REQUIRE(saved.contains("tables"));
+    CHECK(saved["tables"] == Json::parse(R"([{"jump": ")" + At(0x141d) + R"(", "table": ")" + At(0x1508) +
+                                         R"(", "targets": 5}])"));
+    std::vector<std::string> chunks;
+    for (const auto& chunk : saved["chunks"]) chunks.push_back(chunk["start"].get<std::string>());
+    CHECK(chunks == std::vector<std::string>{At(0x1500), At(0x1600)});
+    CHECK(saved["jumpouts_left"] == Json::array({At(0x1610)}));
+    CHECK_FALSE(saved.contains("capped"));
+    // The file: the table as one data row, never as code (the chunk that runs through it stops there).
+    std::ifstream in(file);
+    bool table = false;
+    for (std::string line; std::getline(in, line);) {
+        const auto row = Json::parse(line);
+        if (row["row"] == "data" && row["address"] == At(0x1508)) table = row["bytes"].get<std::string>().size() == 40;
+        if (row["row"] == "code") {
+            const uint64_t at = std::stoull(row["address"].get<std::string>(), nullptr, 16);
+            const uint64_t end = at + row["bytes"].get<std::string>().size() / 2;
+            CHECK_FALSE((at < TheCode() + 0x151c && end > TheCode() + 0x1508));
+        }
+    }
+    CHECK(table);
 }

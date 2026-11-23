@@ -147,6 +147,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **Saves follow switches:** `disasm --save` reads each jump table
+  (bounded by the `cmp` before it), saves it as data and each target as a
+  chunk, so switch functions decompile without `JUMPOUT`; up to 256 chunks
+  (then `capped`), with the targets still unsaved in `jumpouts_left` and
+  the tables in `tables` ([saving](docs/commands/fast-lane.md#saving-a-function-for-a-static-tool)).
 - **doctest is fetched, not copied:** CMake downloads a pinned doctest
   release at configure, like Zydis and nlohmann/json, so an update is one
   pin; `third_party/` is gone.

@@ -7,6 +7,7 @@
 #include "reagentlive/frontends/cli/code/disasm.h"
 #include "reagentlive/frontends/cli/code/function_save.h"
 #include "reagentlive/frontends/cli/code/image.h"
+#include "reagentlive/frontends/cli/code/jump_table.h"
 #include "reagentlive/frontends/cli/code/native.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
 #include "reagentlive/frontends/cli/code/touches.h"
@@ -786,6 +787,53 @@ TEST_CASE("a function's chained chunk is found by its jumps and saved as a chunk
     CHECK(lines[3]["row"] == "code");
     CHECK(lines[3]["address"] == "0x140005000");
     CHECK(std::ranges::count_if(lines, [](const Json& l) { return l.value("what", "") == "function"; }) == 1);
+}
+
+TEST_CASE("switch tables: the MSVC form with a byte index table, and the table-relative form") {
+    Image image;
+    dis::Options options;
+    options.count = 16;
+    // cmp ecx, 9; ja; lea rdx, [image base]; movsxd rax, ecx; movzx eax, byte [rdx + rax + 0x2000];
+    // mov ecx, [rdx + rax*4 + 0x2100]; add rcx, rdx; jmp rcx
+    const uint64_t a = Base + 0x1000;
+    image.Put(a, Join({{0x83, 0xf9, 0x09}, {0x77, 0x3b}, {0x48, 0x8d, 0x15}, Rel32(-0x100c), {0x48, 0x63, 0xc1},
+        {0x0f, 0xb6, 0x84, 0x02, 0x00, 0x20, 0x00, 0x00}, {0x8b, 0x8c, 0x82, 0x00, 0x21, 0x00, 0x00},
+        {0x48, 0x03, 0xca}, {0xff, 0xe1}}));
+    auto listing = dis::List(image.Read(), a, options);
+    REQUIRE(listing);
+    const auto sites = jumptab::Find(listing->rows);
+    REQUIRE(sites.size() == 1);
+    CHECK(sites[0].jump == Base + 0x1021);
+    CHECK(sites[0].table == Base + 0x2100);
+    CHECK(sites[0].base == Base);
+    CHECK(sites[0].indexTable == Base + 0x2000);
+    CHECK(sites[0].indexCount == 10);                 // ja: the bound plus one.
+    CHECK_FALSE(sites[0].signedEntries);
+    const std::vector<uint8_t> index{0, 1, 1, 2, 0, 0, 2, 1, 0, 3};
+    CHECK(jumptab::CountFromIndex(index) == 4);
+    const std::vector<uint8_t> entries = Join({Rel32(0x1030), Rel32(0x1038), Rel32(0x1030), Rel32(0x1040)});
+    CHECK(jumptab::Targets(sites[0], entries) == std::vector<uint64_t>{Base + 0x1030, Base + 0x1038, Base + 0x1040});
+
+    // cmp eax, 5; jae; lea rcx, [table]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax
+    const uint64_t b = Base + 0x1100;
+    image.Put(b, Join({{0x83, 0xf8, 0x05}, {0x73, 0x10}, {0x48, 0x8d, 0x0d}, Rel32(0x2200 - 0x110c),
+        {0x48, 0x63, 0x04, 0x81}, {0x48, 0x01, 0xc8}, {0xff, 0xe0}}));
+    auto relative = dis::List(image.Read(), b, options);
+    REQUIRE(relative);
+    const auto found = jumptab::Find(relative->rows);
+    REQUIRE(found.size() == 1);
+    CHECK(found[0].table == Base + 0x2200);
+    CHECK(found[0].base == Base + 0x2200);
+    CHECK(found[0].count == 5);                       // jae: the bound itself.
+    CHECK(found[0].signedEntries);
+    CHECK(jumptab::Targets(found[0], Rel32(-0x1100)) == std::vector<uint64_t>{Base + 0x1100});
+
+    // No bound before the load: no site (the table's size is unknown).
+    image.Put(b, Join({{0x90, 0x90, 0x90, 0x90, 0x90}, {0x48, 0x8d, 0x0d}, Rel32(0x2200 - 0x110c),
+        {0x48, 0x63, 0x04, 0x81}, {0x48, 0x01, 0xc8}, {0xff, 0xe0}}));
+    auto unbounded = dis::List(image.Read(), b, options);
+    REQUIRE(unbounded);
+    CHECK(jumptab::Find(unbounded->rows).empty());
 }
 
 TEST_CASE("a saved function holds its code, the read-only data it reads and its import names") {
