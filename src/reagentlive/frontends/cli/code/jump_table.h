@@ -2,7 +2,8 @@
 // (`disasm --save`). The MSVC form, and the table-relative form some
 // compilers emit, end in an indirect jump through a register:
 //
-//   cmp   idx, N ; ja default          (jae: N cases)
+//   cmp   idx, N ; ja default          (jae: N cases; or the inverted
+//                                       jbe/jb to the dispatch)
 //   [movzx idx, byte [rY + j + D2]]    (a byte index table over j)
 //   lea   rX, [rip + ...]              (the image base, or the table)
 //   mov|movsxd r, dword [rX + idx*4 + D]
@@ -24,7 +25,7 @@
 
 namespace reagentlive::cli::jumptab {
 constexpr uint32_t MaxCases = 512;    // Entries read per table (one read: 2 KB).
-constexpr size_t LookBack = 16;       // Instructions searched before the jump.
+constexpr size_t LookBack = 32;       // Instructions searched before the jump.
 
 // One switch: the jump, its table of `count` 32-bit entries and the base
 // each entry is added to. With an index table: `count` comes from its
@@ -79,7 +80,8 @@ inline bool IsRegOf(const detail::Decoded& d, std::span<const ZydisRegister> nam
 
 // The bound on an index register before row `at`: `cmp reg, imm` (through
 // register copies and extensions of it) followed by ja (imm + 1 cases) or
-// jae (imm cases). Zero when none is found.
+// jae (imm cases) to the default, or by their inverse jbe (imm + 1) or jb
+// (imm) to the dispatch. Zero when none is found.
 inline uint32_t Bound(std::span<const std::optional<detail::Decoded>> decoded, size_t at, ZydisRegister reg, size_t floor) {
     std::vector<ZydisRegister> names{reg};
     for (size_t i = at; i-- > floor;) {
@@ -93,8 +95,8 @@ inline uint32_t Bound(std::span<const std::optional<detail::Decoded>> decoded, s
                 const auto branch = decoded[j]->instruction.mnemonic;
                 const uint64_t limit = d.operands[1].imm.value.u;
                 if (limit >= MaxCases) return 0;
-                if (branch == ZYDIS_MNEMONIC_JNBE) return static_cast<uint32_t>(limit + 1);
-                if (branch == ZYDIS_MNEMONIC_JNB) return static_cast<uint32_t>(limit);
+                if (branch == ZYDIS_MNEMONIC_JNBE || branch == ZYDIS_MNEMONIC_JBE) return static_cast<uint32_t>(limit + 1);
+                if (branch == ZYDIS_MNEMONIC_JNB || branch == ZYDIS_MNEMONIC_JB) return static_cast<uint32_t>(limit);
                 if (decoded[j]->instruction.meta.category == ZYDIS_CATEGORY_COND_BR) return 0;
             }
             return 0;

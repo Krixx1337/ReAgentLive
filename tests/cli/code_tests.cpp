@@ -836,6 +836,31 @@ TEST_CASE("switch tables: the MSVC form with a byte index table, and the table-r
     CHECK(jumptab::Find(unbounded->rows).empty());
 }
 
+TEST_CASE("switch tables: a bound further back, and the inverted jbe guard") {
+    Image image;
+    dis::Options options;
+    options.count = 64;
+    const std::vector<uint8_t> dispatch = Join({{0x48, 0x8d, 0x0d}, Rel32(0x2200 - 0x1124),
+        {0x48, 0x63, 0x04, 0x81}, {0x48, 0x01, 0xc8}, {0xff, 0xe0}});
+    // cmp eax, 5; jae; 24 nops; lea rcx, [table]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax
+    const uint64_t a = Base + 0x1100;
+    image.Put(a, Join({{0x83, 0xf8, 0x05}, {0x73, 0x40}, std::vector<uint8_t>(24, 0x90), dispatch}));
+    auto far = dis::List(image.Read(), a, options);
+    REQUIRE(far);
+    auto found = jumptab::Find(far->rows);
+    REQUIRE(found.size() == 1);
+    CHECK(found[0].table == Base + 0x2200);
+    CHECK(found[0].count == 5);
+
+    // cmp eax, 5; jbe dispatch; the default (xor edx, edx; ret; 21 nops); the dispatch.
+    image.Put(a, Join({{0x83, 0xf8, 0x05}, {0x76, 0x18}, {0x31, 0xd2}, {0xc3}, std::vector<uint8_t>(21, 0x90), dispatch}));
+    auto inverted = dis::List(image.Read(), a, options);
+    REQUIRE(inverted);
+    found = jumptab::Find(inverted->rows);
+    REQUIRE(found.size() == 1);
+    CHECK(found[0].count == 6);                       // jbe: the bound plus one.
+}
+
 TEST_CASE("a saved function holds its code, the read-only data it reads and its import names") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(4);
