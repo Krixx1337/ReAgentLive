@@ -17,7 +17,7 @@ were cheap and carry the parts no other tool has:
   reuses the host's thread and object checks.
 - **Tick accuracy.** Same-tick reads, per-tick `watch-start`, hold, and `each` over
   every instance in one tick. A reader outside the process sees torn values.
-- **Identity and guards.** Refs that go stale safely, guarded pins, writes
+- **Identity and guards.** Refs that go stale safely, guarded holds, writes
   that refuse reused memory.
 - **Reflected and native memory in one tool**, plus the host's own ops.
 - **Shaped for an AI's costs:** few commands, each doing a whole lookup, with
@@ -108,7 +108,7 @@ The layout itself and its rules are in
   part of each layer under that layer's rule. Nothing outside it names
   the pack, and no pack includes another. A reader sees at a glance what works in any
   process, and a core change cannot lean on Unreal types by accident: the
-  layout test fails. Object identity (`Ref`) is core, since refs, pins and
+  layout test fails. Object identity (`Ref`) is core, since refs, holds and
   watches carry it whatever the engine.
 - **The core reaches the pack through plain functions** (`console/pack.h`):
   its state, cache block, its rows of the [verb table](../tool-interface.md#self-describing-console),

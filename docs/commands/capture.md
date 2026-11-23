@@ -1,6 +1,6 @@
 # Capture
 
-*Home of:* which command answers which question about change, and `get` with `mode` `snap`.
+*Home of:* which command answers which question about change, and `get` with `mode` `snap` (its baseline across runs).
 
 **TL;DR:** To see what changes when something happens in the game, pick
 the command by the question: one object's fields across an action
@@ -16,8 +16,11 @@ Which command for which question about change:
 | Which fields of this object changed across an action? | `get` with `mode` `snap`, then `get` with `mode` `changed` |
 | How do these named fields move over time? | [`watch-start`](memory.md#watching-a-reflected-field) with `{"object": <ref>, "field": [...]}` ranges, then `watch-read` or `watch-stop` (`file` keeps every sample) |
 | What do these raw bytes do every tick? | [`watch-start`](memory.md#watch) with `{"addr": <addr>, "len": N}` ranges |
-| How does one field differ across all instances, or change in any of them? | [`each`](unreal.md#each), `each` with `seconds` |
-| Which classes gained or lost instances? | [`census` with `diff`](unreal.md#census-changes) |
+| How does one field differ across all instances, or change in any of them? | [`each`](unreal-objects.md#each), `each` with `seconds` |
+| Which classes gained or lost instances? | [`census` with `diff`](unreal-objects.md#census-changes) |
+| What does a pure getter return on every instance? | [`call-each`](unreal-calls.md#call-each), with `seconds` to watch it |
+| Which raw values in a block rose, fell or stayed across actions? | [`mem-snap`, then `mem-diff`](memory.md#mem-snap-and-mem-diff) with `keep` |
+| What did the game pass to this reflected function? | the [call recorder](unreal-calls.md#call-recorder) (`calls-start`; a write the user approves) |
 
 Take the baseline on a live instance, perform an action, then ask for the
 changes:
@@ -32,7 +35,9 @@ It compares reflected fields and prints the changed ones with `before` and
 match the baseline. Reads can span ticks, and fields outside the 64 KB read
 window are skipped. The last snapshot is kept in the cache file, so `mode`
 `changed` works in a later run against the same agent instance (one-shot
-runs, and the MCP adapter's console per call).
+runs, and the MCP adapter's console per call; a snapshot over 1 MB stays
+in its run). A snapshot `file` (`"file": "before.snap"` on both calls)
+keeps a baseline past the agent instance and beside a later snapshot.
 
 To time an action, start a capture before it, tell the player to act, then
 call `watch-stop`:

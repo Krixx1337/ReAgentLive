@@ -27,9 +27,7 @@ the console.
   describes each command's args and result type. The checks of a call,
   its refusals, `help`, `help` of one verb, `help` with `json`, the generated
   [result shapes](commands/results.md) page and the Python client's
-  strictness all read it. Each shape used to be written five times
-  (builder, key pins in a test, the docs row, a Python docstring, the
-  skill) and agreed only because they were edited together.
+  strictness all read it, so no shape is written twice.
 - **One verb, one result type.** An arg may add optional keys and never
   changes a key's type (`census`'s `diff` adds `before`; `read`'s `type` with a
   layout fills `layout`, not `values`); a mode that would change one stays a
@@ -39,14 +37,13 @@ the console.
 - **Typed result structs with one field list.** A result is a struct
   whose `Describe` lists key and member once (`results/schema.h`); that
   list writes the JSON and describes it, so a builder cannot emit a key
-  the description lacks. The tests that pinned key sets are gone; value
-  checks stay, each also checked against its own type.
+  the description lacks. Tests check values, not key sets.
 - **A small type vocabulary, not a schema language:** `addr`, `hex`,
   `bytes`, `ref`, the plain scalars, string enums, optional keys, lists,
   maps, nested objects, and `value` for game data, which is dynamic and
   stays untyped.
 - **Optional keys are omitted, never null.** Output weight is a
-  [principle](design.md#output-weight-and-dead-ends), and the strict layer gives
+  [principle](design/console-costs.md#output-weight-and-dead-ends), and the strict layer gives
   `None` either way. Nulls remain only inside game values and as list
   elements where position matters (a capture row's `values`).
 - **The console checks what it prints.** A result that does not match its
@@ -60,10 +57,8 @@ the console.
   game does.
 - **Not a `json` arg on `describe`:** `describe` is the Unreal pack's object lookup,
   and one verb with two meanings is what the first decision removes.
-- **Strict Python results.** The session reads `help` with `json` at start and
-  wraps each result; an unknown key raises and names the valid ones, an
-  absent optional key gives `None`. The typed functions generated on top
-  ([tool interface](#tool-interface)) return these same records.
+- **Strict Python results:** a guessed key raises at the line that
+  guessed it ([Python session](client.md#python-session)).
 - **Host verbs are rows of the same kind.** A host hands the console a
   constant list of rows (`ConsoleConfig::verbs`) in place of help text, so
   its commands get help, schema refusals and checked results the same way.
@@ -82,14 +77,9 @@ the console.
   has one, whether it is a list, the words of an enum and a line of
   description: a caller that picks a command, not types one, needs them
   all ([JSON-only contract](#json-only-contract)).
-- **Each row names its tool pack** (`pack`): the workflow it serves,
-  `explore`, `native`, `observe` or `modify`, set where the row is defined
-  (core rows in the console, a pack's in the pack, a host's in the host).
-  It is a second axis beside `origin`, which stays the code owner and the
-  tool-name prefix. A verb marked `writes` is in `modify`; the other three
-  hold none (a test checks every argument form of their verbs). `help`
-  lists the rows grouped by pack, `help` with `json` names the packs and their
-  jobs under `packs`. What the packs are for: [tool packs](#tool-packs).
+- **Each row names its tool pack** (`pack`), set where the row is
+  defined: a second axis beside `origin`, which stays the code owner and
+  the tool-name prefix ([tool packs](#tool-packs)).
 - **Named types.** A struct several results share names itself
   (`TypeName`): `help` with `json` lists it once under `types`, rows refer to it
   (`{"named": "Chain"}`), and `help` with `verb` prints the name and its
@@ -103,7 +93,7 @@ the console.
 - **Mixed verbs stay on the side of their state.** `write`'s `undo` is the
   core's (the write, the undo, the guard); its owner check is borrowed
   from the pack through `console/pack.h`, and without a pack it is
-  refused ([source layout](design.md#source-layout)).
+  refused ([source layout](design/architecture.md#source-layout)).
 
 Rejected:
 
@@ -131,42 +121,26 @@ defines what the table did not.
 
 - **JSON calls are the console's only input** ([JSON-only
   contract](#json-only-contract)): `{verb, args}` with args named by the
-  row's keys, nothing quoted or escaped.
-  The console reads each call once into its verb, its args and the call
-  flags (`meta`, `timing`, `big`, `budget`); the main loop, a `batch`'s
-  items and the no-target mode share that one reader.
+  row's keys, nothing quoted or escaped, read by one reader for the main
+  loop, `batch` items and the no-target mode.
 - **Literal refs only.** There is no `$N`: "result N of the last command
   that listed refs" is session state a picked argument should not depend
   on. A call takes the `ref` a result carries, and the ids of timed
   writes and captures.
-- **Typed Python functions, generated per console** (`reagentlive_gen.py`)
-  from its `help` with `json`, so a host's verbs are included. One method per
-  verb, required args first (by position or name), the others by name
-  only, typed from the row; results
-  annotated with `TypedDict`s of the console's keys, so a type checker
-  reads a script before it runs. At run time they return the strict
-  records: the annotations for the checker, the records for the run. The
-  module carries the table hash and refuses a console whose table differs.
+- **Typed Python functions, generated per console** (`reagentlive_gen.py`),
+  so a host's verbs are included: `TypedDict` annotations let a type
+  checker read a script before it runs, and the strict records catch the
+  run ([generated functions](client.md#generated-python-functions)).
 - **Named by origin:** `c.read` for core, `c.ue.find` for a pack,
   `c.host.world` for the host; as tools `read`, `ue_find`, `host_world`. An
   agent sees what needs a pack when it picks, and a host verb cannot take
   a core verb's name.
 - **MCP tools from the rows** (`frontends/mcp/reagentlive_mcp.py`, the
-  only file that needs the dependency): the adapter reads the console's
-  `help` with `json` and makes each tool from its row: the input schema from
-  its args, the output schema from its result's
-  top-level keys, the description from its summary, example call and notes,
-  `readOnlyHint` or `destructiveHint` from `writes`. A call goes to the
-  console as a JSON call with the row's keys, since those are the tool's
-  argument names. No tool and no JSON Schema is written by hand or
-  exported from the console, and there is no module file to go stale.
-  Verbs marked `blocks` and `quit` are left out (a call would outlast a
-  client's timeout; the generated Python functions keep them, since a
-  script may wait). `batch` takes a list of calls and runs them held.
-  Every tool also takes `budget` (the console's
-  [output budget](commands/console.md#fewer-round-trips), 25,000 characters
-  by default); a result past it comes back as `{digest}` with a text block
-  naming the call to make next, and the output schema allows either.
+  only file that needs the dependency): each tool is made from its row at
+  run time, so no tool or JSON Schema is written by hand or exported, and
+  no module file can go stale. Verbs marked `blocks` are left out: a call
+  would outlast a client's timeout, while a script may wait. What the
+  adapter serves: [MCP tools](client.md#mcp-tools).
 - **`batch` carries reads only.** Its row is not marked `writes`, so its
   tool is read-only and a client may allow it unasked; a write, call or
   `game-thread` inside it would then run with no prompt. The adapter
@@ -184,31 +158,19 @@ defines what the table did not.
   key for key; an `addr` stays its hex text. A helper that converts says
   so in its name. **Behaviour lives in the console:** paging to the end,
   filtering and retrying are verbs, args and cursors, so the shell,
-  scripts and tools all have them; the Python paging helpers went.
+  scripts and tools all have them.
 - **A console per tool call, never one kept open.** A kept console locked
-  the executable (a rebuild failed to link) and kept running the old build;
-  the tools, made once from a module file, kept the old list until the
-  client reconnected. Now each call starts a console and ends it: nothing
-  holds the executable, and the next call runs the new build. JSON calls
-  carry no session state; what runs share (class refs, field tables,
-  census baselines, the last `get` snap) is in the cache file. Calls hold a
-  lock, since a second console would wait and then be refused as busy
-  ([round trips](design.md#round-trips)). Measured with the
-  own-thread host: about 17 ms a call against 2.4 ms on a kept console,
-  most of it the table read that a hash read replaced; a 530 KB cache file
-  adds under 1 ms. Not yet measured: a pack-heavy `get` with the game's
-  cache loaded.
+  the executable (a rebuild failed to link) and kept running the old build.
+  Each call starts a console and ends it, so the next call runs the new
+  build; what runs share (class refs, field tables, census baselines, the
+  last `get` snap) is in the cache file. Measured with the own-thread
+  host: about 17 ms a call against 2.4 ms on a kept console; a 530 KB
+  cache file adds under 1 ms.
 - **A changed table is the adapter's at once.** Each start reads only the
-  hash (`help` with `hash`, no target needed; `status` would need one) and the
-  full table when it changed. The call that saw the change is checked
-  against its verb's new row before it runs, the tool list is read from
-  the new table, and the adapter tells the client the list changed. A
-  client that ignores the notice keeps its list: a tool whose verb kept
-  its arguments and result works; changed arguments are refused with the
-  schema and an example, a changed result by the client's own check against the old type,
-  a removed verb by the adapter. Those need a reconnect. A generated
-  module still refuses a session from another table, which keeps scripts
-  honest.
+  hash (`help` with `hash`, no target needed; `status` would need one) and
+  the full table when it changed, then tells the client the list changed
+  ([what a client sees](client.md#mcp-tools)). A generated module still
+  refuses a session from another table, which keeps scripts honest.
 - **One usage-log session per server:** the adapter passes the same
   session id to every console it starts (a console option).
 
@@ -226,13 +188,8 @@ defines what the table did not.
   that they never spell a pack's id, that no core console file does, and
   that nothing in `core/` includes `packs/`.
 - **The SDK's low-level server** (`mcp.server.lowlevel.Server`): a list
-  handler that reads the live table and a call handler, nothing private.
-  The adapter returns the console's result as it is, as text and as
-  structured content; it says it sends the list-changed notice through the
-  server's own initialisation options.
-- **The protocol revision is the SDK's.** The plan targeted the
-  2026-07-28 revision only; the SDK in use negotiates up to 2025-11-25.
-  Nothing in the adapter depends on the revision.
+  handler that reads the live table and a call handler, nothing private;
+  the SDK it needs: [MCP tools](client.md#mcp-tools).
 
 | Place | Form | Why |
 |---|---|---|
@@ -255,12 +212,7 @@ Rejected:
 
 **A smaller tool list.** Measured, result schemas were about two thirds of
 the list (about 72 KB of 112), and every result of 18 sessions together
-was smaller than the list. Measured once after the change, as the
-serialized tool list: about 58 KB for the own-thread example's console
-(core and pack verbs) with compact schemas; on one host's console with two
-host verbs, before the adapter made schemas from the rows, about 45 KB with
-`off` and 30 KB with the origin and read-only filters that tool packs
-later replaced. So:
+was smaller than the list. So:
 
 - **Compact result schemas by default:** each result's top-level keys and
   JSON types, widened, never narrowed, so a console result always
@@ -273,7 +225,7 @@ later replaced. So:
 |---|---|
 | Full schemas, by default or as an option | the cost every client pays up front for detail only a script reads, and the console already checks; as an option it needed a whole result type in JSON Schema, kept for no caller |
 | A hot set plus a `discover` tool (tools loaded on request) | a second way to reach a tool, and no gain once an agent needs the cold tools; revisit if the compact list is still too large for a client |
-| Hiding tools by what the live host offers | the list is known before a target runs ([source layout](design.md#source-layout)) |
+| Hiding tools by what the live host offers | the list is known before a target runs ([source layout](design/architecture.md#source-layout)) |
 
 **Confirmed calls:** `call` with `dry` resolves and builds the block and calls
 nothing, so an approval request shows exactly what will be sent. A dry run
@@ -314,9 +266,8 @@ path. So JSON is the only input.
   (a range, a combination) starts with the key it is about, so it gets
   the same treatment. Name and path errors from the target keep naming
   the nearest fields.
-- **Input:** `-c` takes one call, a JSON list of calls, or `@<file>` (one
-  call per line, or a list), which avoids shell quoting; stdin takes one
-  call (or a list) per line. `batch` takes a list of calls.
+- **Input:** `-c`, `@<file>` and stdin carry the same JSON calls
+  ([JSON calls](commands/console.md#json-calls)).
 - **One source for verb text.** The row is the only place a verb's name,
   pack, args (with help), notes and example are written;
   [the verb reference](commands/reference.md) is generated from it like
@@ -367,7 +318,7 @@ pack, sized so a normal question stays inside the default ones:
 | Pack | Job | Holds |
 |---|---|---|
 | `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, functions' metadata, memory reads |
-| `native` | read code and keep names across builds | disassembly, references, signatures, labels, layout files |
+| `native` | read code and keep names across builds | disassembly, references, signatures, memory search (`search`, `search-job`), labels, layout files |
 | `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure`, `call-each` |
 | `modify` | change the target or call into it | `write`, `writes`, `call`, `release`, the call recorder, `game-thread` |
 
@@ -385,25 +336,17 @@ one-line change in the row.
   read or restore only, but live with their recorder.
 - **One ceiling, in the console.** `--packs` on the console
   ([console](commands/console.md#one-shot-use)) refuses a verb of any
-  other pack with kind `pack`, `batch` items included. The MCP adapter
-  gives every console it starts its ceiling (`--packs` and `--allow`
-  together), the Python session its `packs=`, so the boundary holds
-  whichever frontend sends the call. A person at the keyboard gets all
-  four by default.
-- **Runtime enable inside the ceiling.** The adapter serves `--packs`
-  (default `explore`) and a `packs` tool, always on and read-only, that
-  lists the packs and enables or disables one within `--allow`, telling
-  the client the list changed. `modify` is reachable only when the person
-  starting the server names it.
-- **`call-pure` keeps one result type** for its two forms: every key of a
-  call and of `each`'s table, all optional but `mode`. A second verb would
-  have kept the shapes apart, but the class-wide call is the same check
-  (const or pure, plain outputs) as one call, and one verb keeps one
-  approval rule.
+  other pack with kind `pack`, `batch` items included, so the boundary
+  holds whichever frontend sends the call (the adapter and the Python
+  session pass theirs down). A person at the keyboard gets all four by
+  default.
+- **Runtime enable inside the ceiling.** The adapter's `packs` tool turns
+  a pack on or off within `--allow` ([MCP tools](client.md#mcp-tools)):
+  only the person starting the server can make `modify` reachable.
 
-Measured on one host's console (52 verbs, two host ones; tool JSON as
-the adapter builds it: name, description, input schema and compact
-output schema, plus the `packs` tool):
+Measured on one host's console with two host verbs (tool JSON as the
+adapter builds it: name, description, input schema and compact output
+schema, plus the `packs` tool):
 
 | Served | Tools | Characters |
 |---|---|---|

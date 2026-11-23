@@ -4,8 +4,8 @@
 
 **TL;DR:** Read, search and change raw memory in any process the agent
 runs in, with no engine pack (tier T0). Every write is guarded and can
-require the old bytes first; timed writes undo themselves when they
-expire. Writes change the running game: they are separate commands
+require the old bytes first; a write with `undo` restores itself, and a
+`hold` stops by itself. Writes change the running game: they are separate commands
 marked `writes`, so a client asks before running them.
 
 Core commands: they work in any host, with or without an engine pack.
@@ -15,16 +15,14 @@ keys: the [reference](reference.md), `help` with `verb`, or
 
 | Command | Guard |
 |---|---|
-| `read` (`addr`, `len`, `type`) | 1..4096 bytes; the whole range must pass the host's `readable` check. `type` `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`, `f64` or `ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. A layout string as `type`: a block of mixed types (below). `type` `cstr` or `wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
-| `peek` (`addr`, `count`, `label`, `file`, `name`) | console only, held: what 1..64 qwords hold (default 8), for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address (`region`) and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with `object`), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `label` (one qword inside a module) appends the reader-confirmed label as a JSON line `{module, module_size, timestamp, rva, name, kind: "global"}` to `file` (default: the console's labels file); `name` names it, the default is `FName_<hint>`. Size and PE timestamp tie it to one build |
-| `write` (`addr`, `data`, `expect`) | 1..256 bytes; committed, writable pages; page protection is never changed. `expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there |
+| `read` | 1..4096 bytes; the whole range must pass the host's `readable` check. `type` `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`, `f64` or `ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. A layout string as `type`: a block of mixed types (below). `type` `cstr` or `wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
+| `peek` | console only, held: what 1..64 qwords hold, for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with a pack), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `label` appends one qword as a confirmed global to a labels file (default: the host's names file, else the console's; [labels](labels.md#peek-with-label)) |
+| `write` | 1..256 bytes; committed, writable pages; page protection is never changed. `expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there. `hold` and `undo`: [timed writes](#timed-writes) |
+| `writes` | every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one (`id`: `undo:N` or `hold:N`) or all, restoring active `undo` ones, and returns the rows it ended |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
-| `search` (`type`, `value`, `scope`, `align`, `wait`, `max`) / `search-job` (`job`, `stop`) | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
-| `mem-snap` (`addr`, `len`) / `mem-diff` (`test`, `type`, `keep`, `view.limit`) | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
-| `write` with `hold` (seconds) and optional `expect` | a pin: up to 8 of 1..64 bytes, each 1 ms..60 s; written at the start of every host tick, before requests ([timed writes](#timed-writes)) |
-| `write` with `undo` (`after`, `owner`, `object`) and `expect` | a trial: up to 8 of 1..64 bytes, 1 ms..60 s. One write when memory holds `expect`; the agent saves those bytes and restores them on expiry, on clear, or when a newer agent in the process takes over while this one still ticks. An agent its host has stopped no longer ticks: clear them (`{"verb": "writes", "args": {"clear": true}}`) before stopping it. Checked at the start of every host tick: a changed owner identity or `undo.object` vtable ends it `abandoned` (nothing written); memory that no longer holds the trial bytes ends it `conflict` (left alone). The target lies inside the owner (its class size as the agent reports it, so native members past the last reflected field count), or within 0x1000 bytes after `undo.object`, whose first 8 bytes must point into a loaded module. No target inside a loaded module. The console refuses owners that are not actors or components (class default objects, archetypes, assets), so `undo` needs a host with the Unreal pack; the agent does not check classes |
-| `writes` (`clear`, `id`) | every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one (`id`: `undo:N` or `hold:N`) or all, restoring active `undo` ones, and returns the rows it ended |
-| `watch-start` (`duration`, `ranges`, `every`, `follow`, `file`) / `watch-read` (`all`) / `watch-stop` (`all`) | 1..8 ranges of up to 512 bytes, rows up to 2048 bytes, sampled at the start of every host tick into a 4 MB agent buffer for up to 30 s, returning at once; with `every` (at least one host tick apart, at most once per tick) up to 60 min, as long as one row per interval fits the buffer (otherwise refused with the longest duration that would); one capture per agent |
+| `search`, `search-job` | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
+| `mem-snap`, `mem-diff` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
+| `watch-start`, `watch-read`, `watch-stop` | a capture inside the agent, one per agent ([below](#watch)); sizes: [limits](../protocol.md#limits) |
 
 ## Faults
 
@@ -54,7 +52,7 @@ unknown type, a bad count or name and a name used twice (the message names
 the field). `layout` is `{name: value}` (keys print sorted), `[n]` fields as
 lists, unnamed fields by offset (`"+0x8"`); `hex` stays. Nothing is saved:
 the same syntax names members for good in the
-[native names file](unreal.md#native-members), so a layout that decoded here pastes
+[native names file](unreal-fields.md#native-members), so a layout that decoded here pastes
 into `label` unchanged.
 
 ## search
@@ -137,21 +135,39 @@ few rows remain. Each diff is one read of the range, not one tick: values
 may be torn across 4 KB requests, so confirm a candidate with
 `watch-start`. This is a bounded narrowing scan over one range the agent
 names, not a memory scanner: no whole-process scan, no tolerance, no
-pointer scan ([design](../design.md#place-among-other-tools)).
+pointer scan ([design](../design/architecture.md#place-among-other-tools)).
 
 ## Timed writes
 
-`write` with `undo` writes once and the agent restores the original bytes
-when `undo.after` is up (a trial, above). `write` with `hold` freezes
-memory: the agent writes the same bytes every tick until the pin expires
-(its `hold` seconds) or stops. A target given relative to an object
-(`{"base": "0x1f2e3d4c50#123:4", "offset": "0x3E4"}`, a literal ref plus
-offset) is guarded on that object's identity (Unreal: object-table index
-and class, read when the pin starts), so the pin stops for good when the
-object is freed or replaced instead of writing into reused memory.
-`expect` makes the first write conditional. A value the game recomputes
-from scratch within each frame still reads the game's value for that
-frame; integrated state (a timer, an eased value) stays pinned.
+Both forms take 1..64 bytes for up to 60 s, at most 8 of each at once,
+and run at the start of every host tick, before requests. `writes` lists
+them and `clear` ends them.
+
+- **`undo`** writes once, when memory holds `expect` (required), and the
+  agent restores the original bytes when `undo.after` is up, on `clear`,
+  or when a newer agent in the process takes over while this one still
+  ticks ([takeover](../protocol.md#section); stopping a host:
+  [hosting](../hosting.md#the-tick)). Each tick it checks its guards: a
+  changed owner identity or `undo.object` vtable ends it `abandoned`
+  (nothing written); memory that no longer holds the written bytes ends
+  it `conflict` (left as the game wrote it). The target lies inside the
+  owner (its class size as the agent reports it, so native members past
+  the last reflected field count), or within 0x1000 bytes after
+  `undo.object`, whose first 8 bytes must point into a loaded module; no
+  target inside a loaded module. The console refuses owners that are not
+  actors or components (class default objects, archetypes, assets), so
+  `undo` needs a host with the Unreal pack; the agent does not check
+  classes.
+- **`hold`** freezes memory: the agent writes the same bytes every tick
+  until its seconds are up or it stops, then leaves them as they are; it
+  restores nothing. A target given relative to an object
+  (`{"base": "0x1f2e3d4c50#123:4", "offset": "0x3E4"}`, a literal ref plus
+  offset) is guarded on that object's identity (Unreal: object-table index
+  and class, read when it starts), so it stops for good when the object is
+  freed or replaced instead of writing into reused memory. `expect` makes
+  the first write conditional. A value the game recomputes from scratch
+  within each frame still reads the game's value for that frame;
+  integrated state (a timer, an eased value) stays held.
 
 ```json
 {"verb": "write", "args": {"addr": {"base": "0x1f2e3d4c50#123:4", "offset": "0x3E4"}, "data": "00 00 c8 42", "hold": 5}}
@@ -159,17 +175,21 @@ frame; integrated state (a timer, an eased value) stays pinned.
 
 ## watch
 
-`watch-start` samples ranges every host tick (or `every`) inside the
-agent and returns at once; `watch-read` prints the `rows` so far and
-`watch-stop` ends the capture and prints them: each with `tick` (agent
-heartbeat), `us` (since start) and `values` (one per range, null while
-unreadable: its bytes as hex, or a [typed range](#typed-ranges)'s
-numbers). Object-relative ranges are guarded like pins: when the object is
-freed or replaced the capture stops, `stopped: "object replaced"`, and the
-rows so far stay. `stopped` says why a capture ended: `deadline`,
-`stopped`, `buffer full`, `object replaced` (absent while it runs). A
-caller that wants to block (a script waiting out the capture) starts,
-waits and stops: the Python session's `watch(seconds, ranges)` does that.
+`watch-start` samples up to 8 ranges inside the agent, at the start of
+every host tick or every `every` seconds (a slow capture over minutes),
+and returns at once. The capture belongs to the agent instance: it
+survives the console exiting; `watch-read` from any run returns the rows
+so far, and `watch-stop` ends it and returns them. A new start replaces
+it; a newer agent taking over ends it. A caller that wants to block
+starts, waits and stops: the Python session's `watch(seconds, ranges)`
+does that. Each row has `tick` (agent heartbeat), `us` (since start) and
+`values` (one per range, null while unreadable: its bytes as hex, or a
+[typed range](#typed-ranges)'s numbers). Object-relative ranges are
+guarded like a `hold`: when the object is freed or replaced the capture
+stops with the rows so far. `stopped` says why a capture ended:
+`deadline`, `stopped`, `buffer full`, `object replaced` (absent while it
+runs). A capture that cannot fit (one row per interval for its whole
+duration) is refused with the longest duration that would.
 
 ```json
 {"verb": "watch-start", "args": {"duration": 5, "ranges": [{"addr": "0x9000", "len": 16}]}}
@@ -215,16 +235,8 @@ after a gap, always stay. `samples` is how many there were. Past 200 rows
 from each end, and `dropped` counts it. The summary is computed from every
 sample first. `all` returns every sample.
 
-### A capture that does not hold the console
+### Keeping every sample
 
-`watch-start` returns at once; `duration` and `every` are seconds, and
-`"every": 10` samples on that interval instead of every tick (a slow
-capture over minutes). The capture belongs to the agent instance: it
-survives the console exiting, `watch-read` from any later run returns the
-rows so far (with `running`, `stopped`, `capacity`, `ms`, `interval_ms`,
-`root`, `ranges`), `watch-stop` ends it and returns them. A new start
-replaces it; a newer agent taking over ends it. Reflected paths are
-resolved once, at the start ([above](#watching-a-reflected-field)).
 No file is written inside the target. `file` keeps every sample on the
 console's side: the start writes the ranges as the file's first line
 (JSON), and each `watch-read` and `watch-stop` rewrites it with every

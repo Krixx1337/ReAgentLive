@@ -45,7 +45,7 @@ ticks, after a dry run.
   the approval request.
 - An access fault is caught and answered as `access faulted` with the
   address, saying the target may be left in a bad state; nothing else is
-  caught. Arguments travel in `data`; an older agent answers `unsupported`.
+  caught. Arguments travel in `data`.
 - Tests (loopback, calling the test program): integer and float returns,
   six arguments in order, `@out`, slot calls with and without an offset,
   heap and non-executable targets refused, no opt-in refused, a faulting
@@ -116,8 +116,9 @@ manager object (a projectile in a subsystem, reached through a getter that
 takes a handle) cannot be followed: the value has no stable address, and a
 console round trip per sample is slower than the object's lifetime. A
 session had to infer a projectile's first frames from disassembly instead
-of measuring them. Shape: `watch-call <dur> <object> <Fn> [Name=value...]`,
-const or pure functions with plain outputs only (the `each` guard),
+of measuring them. Shape: `{"verb": "watch-call", "args": {"duration":
+5, "object": <ref>, "function": "Fn", "params": {...}}}`, const or pure
+functions with plain outputs only (the `call-each` guard),
 sampled inside the agent like `watch-start`, with the same summary. Pull forward
 when a second session needs a short-lived value behind a getter.
 
@@ -132,8 +133,9 @@ a container is the question again.
 
 ### 26 · Longer `search` text
 
-`search` with `type` `text` or `wtext` takes at most 32 UTF-16 characters, which refused a whole
-console-variable name; a prefix worked. Raise the limit or name the
+`search` takes a pattern of at most 64 bytes: 64 characters of `text`,
+32 of `wtext` (UTF-16), which refused a whole console-variable name; a
+prefix worked. Raise the limit or name the
 workaround in the refusal when the request block allows it.
 
 ### 27 · Triggered capture
@@ -147,7 +149,7 @@ raise. Pull forward when a capture misses its moment again.
 
 Bounds, callers, callees, strings, imports and the member offsets one
 function uses, in one console verb built from existing pieces (`disasm`
-with `function`, `xrefs`, `touches`). Inside the [fast-lane](design.md#fast-lane)
+with `function`, `xrefs`, `touches`). Inside the [fast-lane](design/native.md#fast-lane)
 fence: facts about one address, no summary of what it does. Pull forward
 when sessions keep making four to six calls for one function.
 
@@ -209,6 +211,21 @@ layout's source (`stock`, `sdk`, later `profile`), with the failed group
 when one refused. Pull forward when an agent misreads its tier, or with
 idea 33, which needs the layout source in `status` anyway.
 
+### 37 · The skill as a Claude Code plugin
+
+Ship `.claude-plugin/marketplace.json` so `/plugin marketplace add <clone>`
+installs the skill in place (`reagentlive:reagentlive`, updated with
+`/reload-plugins`), as a fourth setup option (`skill_install` `plugin`). A
+plugin from a remote marketplace is a cached copy under
+`~/.claude/plugins/cache`, never edited, so its local lessons would need a
+home outside it (`%LOCALAPPDATA%\reagentlive\local-lessons.md`). Pull
+forward when a user asks for plugin installs.
+
+## Before a public release
+
+- A minimal client example ([#20](#20--example-client)).
+- A plain statement of intended use (a development tool).
+
 ## Done
 
 - **36 · The `game-thread` state as a read:** `status` carries the mode as
@@ -217,10 +234,10 @@ idea 33, which needs the layout source in `status` anyway.
   the host opt-in `Context::offThreadReads`, on in `examples/unreal` and
   used by library hosts; the list of what answers is in
   [unreal](commands/unreal.md#off-the-engines-thread), the decision in
-  [design](design.md#unreal-pack).
+  [design](design/unreal.md#decisions).
 - **30 · Fields without an SDK:** every op runs with no SDK, each layout
   group checked on known objects
-  ([design](design.md#without-an-sdk-the-stock-layout-checked-per-group-on-known-objects)).
+  ([design](design/unreal.md#without-an-sdk-the-stock-layout-checked-per-group-on-known-objects)).
 
 ## Not ideas
 
@@ -239,7 +256,7 @@ scanner's ([positioning](positioning.md#pairings)).
 Also sweeps over the image (every vtable, every function, tables grouped or
 named from nearby strings): the fast lane answers one address at a time,
 and a sweep is a script over the Python client or the static tool's job
-([design](design.md#fast-lane)).
+([design](design/native.md#fast-lane)).
 Also running scripts inside the target (an `eval`): a fixed command set
 keeps refusals, approvals and output shapes documented; scripts stay
 outside, in the Python client.

@@ -33,8 +33,8 @@ a layout is one string.
   `-c` run of only `help` calls needs no target running.
 - **Keys** are the row's, spelt the same in a call, a `batch` entry, a
   plan step, a generated Python function and an MCP tool. No key is a
-  Python keyword, so none needs another spelling there (`cls`, `start`,
-  `type`). Output shaping is one `view` object (`start`, `limit`, `match`,
+  Python keyword, so none needs another spelling there (`cls`, never
+  `class`). Output shaping is one `view` object (`start`, `limit`, `match`,
   `fields`, `nonzero`, `elements`); a verb takes only the view keys its row
   lists ([view](reference.md#view)).
 - **Values:** a string or number for one value; a list where an arg takes
@@ -49,15 +49,12 @@ a layout is one string.
   into it, `blocks` on one that holds the console for seconds by design
   (`run`, and a host's countdown capture: the core's and the pack's
   captures return at once).
-- **`status`** reports the agent's pid, ticks per second since attach or the
-  last status (at least 100 ms), the answering agent's build time, the
-  library `version`, `commit` (the git commit the console was built from:
-  12 hex digits, `-dirty` with local edits, `unknown` without git), replaced
-  agents, `host_thread` ([host thread](../hosting.md#host-thread)), `roots`,
-  `packs` (the engine packs the host offers; a pack's verbs are refused
-  without it) and `table_hash`. The hash changes when any verb's arguments
-  or result change, so a cached script or skill can tell it is stale. It
-  describes the console build; agent compatibility is the layout hash's job
+- **`status`** reports the agent and console (pid, ticks per second,
+  build, `version`, `commit`, `host_thread`, `game_thread`, `packs`,
+  `tool_packs`, `table_hash` and more: every key in the
+  [reference](reference.md#status)). `table_hash` changes when any verb's
+  arguments or result change, so a cached script or skill can tell it is
+  stale; agent compatibility is the layout hash's job
   ([protocol](../protocol.md#handshake)).
 - **One verb, one result type.** An arg may add optional keys and never
   changes a key's type (`census` with `diff` adds `before`; `sig-check`
@@ -104,12 +101,11 @@ a layout is one string.
 
 ## Agent and console
 
-- One console per agent: a second client never overwrites the first one's
-  request. A console that finds the agent taken asks again for up to 2 s,
-  so it runs as soon as a short call ends, then gives up: every verb but
-  `help` and `stats` is refused with an error of kind `busy`. Waits longer than a second print a
-  line to stderr each second saying whether the agent is ticking (the request
-  is running) or not.
+- One console per agent ([one client at a time](../protocol.md#handshake)).
+  A console that finds the agent taken asks again for up to 2 s, so it
+  runs as soon as a short call ends, then gives up with an error of kind
+  `busy`. Waits longer than a second print a line to stderr each second
+  saying whether the agent is ticking (the request is running) or not.
 - The console checks the agent's op list first and refuses ops the agent does
   not have.
 
@@ -131,7 +127,8 @@ request costs up to a host tick. The console cuts both:
   and prints one envelope with `rows` (each call's own envelope), `all_ok`,
   `same_tick`, `first_tick` and `last_tick`. A value read in the batch
   cannot feed a later call: every call carries literal values. Not allowed
-  inside: `help`, `status`, `stats`, `quit`, `batch`, `run`. Same tick is
+  inside: `help`, `status`, `stats`, `quit`, `batch`, `run`, and `each`
+  with `seconds`. Same tick is
   best effort: check `same_tick`. Each envelope carries its own `tick` (its
   first response's) and `last_tick` when its responses spanned ticks;
   `spans_ticks` lists (`index`, `command`) the calls during which the
@@ -139,29 +136,9 @@ request costs up to a host tick. The console cuts both:
   verbs always span ticks: `each`, `census`, `search`, `refs`, `xrefs` and
   `touches` scan over several. For values that must line up, use `get`, or
   a batch without those.
-- **`get` with `paths`** resolves reflected names (or readable names;
-  `"Owner:Field"` as a step where ambiguous) through the field tables,
-  descends into structs, follows object, class and weak object pointers,
-  and returns typed values: `rows` in the order asked, each `path`, `value`
-  and `address`, or `error` in the value's place (a failed path keeps its
-  row, so positions never shift; a name that is no field lists the closest
-  ones); `holder` (the object of the last field) only when the path
-  crossed a pointer to reach it, `truncated` only when true; plus
-  `same_tick`. Every path is resolved first (field tables and pointer hops,
-  which may span ticks), then the values are read back to back, each
-  guarded on its object; `same_tick` says whether those reads shared one
-  tick. `meta` adds each value's `type` and `hex`. Up to 16 paths of up to
-  8 steps. A dependent chain (read a pointer, read through it) only works
-  inside one call like this, where the console sees each response before
-  the next request.
-- **`get` filters** (no `paths`: every field): `view.match` (field name or
-  readable label, case-insensitive), `view.nonzero` (a bool tests its own
-  bit, not the byte it shares), `own` (only the fields the object's own
-  class declares, none it inherits), `mode` `changed` (against the
-  session's `mode` `snap` baseline, or a snapshot `file`; refused with
-  neither; rows add `before`; refused when the reflected field layout
-  differs from the baseline's). Filtered rows cost no pointer lookups or
-  array previews; the result adds `filtered` (`shown`, `total`).
+- **`get` with `paths`** reads several fields through pointers and
+  structs in one call, values read back to back; with no paths, `view` and
+  `own` filter every field ([Unreal fields](unreal-fields.md#get)).
 - **`"timing": true`** on any call adds `timing` to its envelope:
   `trips` (requests sent), `wait_ms` (time waiting for responses) and
   `total_ms`.
@@ -198,38 +175,14 @@ request costs up to a host tick. The console cuts both:
   A batch item past the budget gets its own digest; the batch's result
   goes to a file when any item may have changed state. How the MCP tools
   hand a digest on: [clients](../client.md#mcp-tools).
-- **Compact values.** A decoded struct prints as `{Name: value, ...}`,
-  nested structs the same way: `{"X": 1.5, "Y": -2, "Z": 3}`, with a
-  member's readable name where the [names file](unreal.md#readable-names) has one.
-  Members past the 16 shown are counted under `"..."`; a name taken twice
-  gets `@<offset>`. An FName is its text (`Name_N` for an instance,
-  `#index` when the pool has none), and a struct holding only a name (a
-  gameplay tag) is that name. This holds for every decoded value: `get`,
-  every field (values, `before`, previews), `entries`, `each`, the outputs
-  of a `call` with `params`. `get` and `each` values go further, as
-  returned arrays do ([named calls](unreal.md#named-calls)): arrays, sets
-  and maps inside them are read (up to 8 elements each, `view.elements` up
-  to 256, 3 deep, then `truncated`; a map as `{count, rows: [{key,
-  value}]}`, its header checked as `entries` checks it, else hex with
-  `container_error`), a tag container (every member an array of tags) is
-  the list of its own tags, text converts at any depth, and object, class
-  and weak pointers inside them are named (`{name, class, ref}`), up to 112
-  distinct per call in describe-many requests: past that a pointer stays
-  an address and the result counts `unnamed`. A weak pointer that no
-  longer resolves is `gone`, or `unverified` when the answer did not come
-  from the engine's thread. `get` names a top-level pointer on its row
-  instead.
-  **`"meta": true`** on a call (inside a `batch` per item, or on the batch
-  for all) restores the layout: a struct as `members` (`name`, `owner`,
-  `type`, `offset`, `size`, `value`) with `truncated`, plus `meta` (the
-  field's layout) on every-field `get` rows, `type` and `hex` on path rows,
-  `hex` on one-column `each` rows and `meta` (the parameter's layout) on
-  the outputs of a `call` with `params`. `get` with `mode` `types` is the
-  layout mode and has no compact form. JSON keys print sorted.
+- **Compact values.** Decoded values print compact (structs as
+  `{Name: value}`, names as text, objects named with their ref); `"meta":
+  true` on a call restores the layout
+  ([compact values](unreal-fields.md#compact-values)).
 - **Cache file.** `%TEMP%\reagentlive-<pid>.cache` keeps class refs, field
   tables, the loaded modules with their headers (exception directory and
   sections) and the
-  [census baseline](unreal.md#census-changes) between console runs. It belongs to
+  [census baseline](unreal-objects.md#census-changes) between console runs. It belongs to
   one agent instance (`Section::owner`): a restarted game or a new injection
   starts it fresh. A cached class ref is checked with one `describe` on first
   use in a run and dropped if the agent refuses it; a cached field table is
@@ -277,22 +230,18 @@ investigation.
 
 `<console> [pid] -c '{"verb": "find", "args": {"text": "PC_"}}'` attaches
 and runs the call. `-c` takes one call or a JSON list of calls, run in
-order; `-c @calls.jsonl` reads a file of one call (or list) per line.
+order, in ASCII only (escape other characters as `\u` in JSON, or use a
+file); `-c @calls.jsonl` reads a file of one call (or list) per line.
 Stdout is [JSON Lines](#json-lines). The exit code is 1 if any call was
 malformed or failed. Each run starts with the previous run's census
 baselines and last `get` `snap` from the [cache file](#fewer-round-trips)
-(same agent instance only; a snapshot over 1 MB stays in its run), so
-`mode` `snap` in one run and `mode` `changed` in the next work. A snapshot
-`file` (`{"verb": "get", "args": {"object": "0x1f2e3d4c50#123:4", "mode":
-"snap", "file": "before.snap"}}`, then the same with `"mode": "changed"`)
-keeps a baseline past the agent instance and beside a later snapshot.
-Literal refs always work. Without `-c`, send one JSON call (or list) per
+([across runs](capture.md)). Literal refs always work. Without `-c`, send one JSON call (or list) per
 stdin line. The console keeps the baseline until EOF or `quit`.
 
 Console arguments: `<console> [pid] [-c '{...}' | -c @<file>] [--names <file>] [--caller tool|script|shell] [--session <id>] [--no-usage] [--packs <list>]`.
 `--caller`, `--no-usage` and the session option (`<console> --session <id>`) are the
 [usage log](#usage-log-and-stats)'s. `--names <file>` loads a
-[names file](unreal.md#readable-names).
+[names file](unreal-fields.md#readable-names).
 
 **`--packs explore,native`** is a ceiling: the console runs only the verbs
 of those [tool packs](../tool-interface.md#tool-packs) (`explore` always;
@@ -319,7 +268,7 @@ Every call the console runs appends one line to `<console>.usage.jsonl`
 beside the console executable, so an agent can look back at what its
 session cost. Every path ends in the console (JSON calls on stdin or `-c`,
 the generated functions, the MCP tools), so one log covers them
-([design](../design.md#usage-log)).
+([design](../design/console-costs.md#usage-log)).
 
 - **A line holds facts about the call, never its values:** time, session,
   verb and origin, caller, the names of the keys given, a hash of the
@@ -348,25 +297,10 @@ the generated functions, the MCP tools), so one log covers them
 `{"verb": "stats"}` reports the session the console is in (with no
 target: the log's latest); with `session` (an id), one session of the log;
 with `all`, every session in the log, plus `never_called`, the verbs of
-this table none of them used. Ranked by output, largest first:
-
-| Key | Holds |
-|---|---|
-| `totals` | `calls` (what was sent: a batch's calls are inside its call), `in`, `out`, `out_by_caller` (`tool` is the context cost), `calls_by_pack` (every call, a batch's items too, by its verb's tool pack), `refused`, `digested` (results past the output budget), `saved` (what their digests kept out: full size less the digest), `ms` |
-| `rows` | per verb: `calls`, `out` and its `largest`, `ms`, `batched`, `digested` and `saved`, and the marks |
-| `largest` | the five largest single calls: verb, `keys`, output, caller, and `digest` (the full size) for one a digest stood in for |
-
-`stats` with `sessions` lists the log's sessions, newest first (up to 30),
-as `session_rows`: `session` (the id `session` takes), `since` and `until`
-(its first and last call), `callers`, `calls`, `out`, `tool_out`,
-`digested`, `saved` and `refused`; `totals` covers the whole log and
-`rows` is empty.
-
-| Mark | Counts calls that... |
-|---|---|
-| `unfiltered` | went to a verb that takes a `view`, `own` or `cls`, gave none of `view.match`, `view.nonzero`, `view.limit`, `own` or `cls` and printed whole (a digested call cost only its digest) |
-| `repeated` | sent an input already sent in the same session |
-| `refused`, `refused_by` | the console refused, by error kind (`schema`, `validation`, `agent`, `pack`...) |
+this table none of them used; with `sessions`, the log's sessions, newest
+first. Ranked by output, largest first, with per-verb marks
+(`unfiltered`, `repeated`, `refused`); every key and mark:
+[reference](reference.md#stats).
 
 The marks state what happened; what to do about them is the
 [`reagentlive` skill](../../.claude/skills/reagentlive/SKILL.md)'s. Sizes
@@ -379,9 +313,9 @@ the client's choice.
 Each call from `-c` or stdin emits one object with `command`, `ok` and
 either `result` or `error` ([envelopes](results.md#envelopes)). A result is
 checked against its verb's row before it is printed: one that does not match
-is an `internal` error, so what `help` shows for a verb is what arrives. Records are flushed immediately. Startup failures
-emit a `startup` error, and so does every verb but `help` and `stats` with
-no target (`busy` when another client holds the agent). Exit status is 1 if any call failed. Capture
+is an `internal` error, so what `help` shows for a verb is what arrives.
+Records are flushed immediately. Startup failures emit a `startup` error
+([no target](#one-shot-use)). Exit status is 1 if any call failed. Capture
 countdowns and start markers go to stderr.
 
 ```powershell

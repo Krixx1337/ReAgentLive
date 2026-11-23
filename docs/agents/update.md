@@ -121,7 +121,6 @@ python <dir>\src\reagentlive\frontends\python\reagentlive_gen.py --console <dir>
 | `skill_install` | Do |
 |---|---|
 | `junction` or `symlink` | nothing: the link points into the clone, and the client reads the skill each session |
-| `plugin` (a local marketplace, loaded in place) | ask the user to run `/reload-plugins` in Claude Code |
 | `copy` | copy it again as [agent setup](setup.md#6-install-the-skill) does; its snippet keeps `references/local-lessons.md` (the copy's file wins over the clone's). Set `skill_commit` in step 10. Offer the junction instead (setup step 6, option 1): later updates then need nothing here |
 | `instructions` (other agents) | nothing: the line points into the clone |
 
@@ -165,9 +164,7 @@ error means a target still runs the old DLL, not that the update failed.
 ## 8. Local lessons
 
 Read the user's lessons against the updated skill: the skill folder's
-`references/local-lessons.md`, or `%LOCALAPPDATA%\reagentlive\local-lessons.md`
-when the skill is a plugin installed from a remote marketplace (a cached
-copy under `~/.claude/plugins/cache`, never edited). No file: skip this
+`references/local-lessons.md`. No file: skip this
 step. Propose dropping each lesson the skill now
 covers, one line each; the user decides. How the file works:
 [the improvement guide](../../.claude/skills/reagentlive/references/improving.md#local-lessons).

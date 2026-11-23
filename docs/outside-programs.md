@@ -25,7 +25,7 @@ tick or two after the question.
 | The proxy needs | Where |
 |---|---|
 | Read, write, same-tick batches (held requests) | [protocol](protocol.md#exchange), [memory commands](commands/memory.md) |
-| Guarded writes; pins that hold a value every tick and expire on their own; trial writes that restore themselves | [memory commands](commands/memory.md) |
+| Guarded writes and `write`'s timed forms: `hold` (rewritten every tick until it expires) and `undo` (restores itself) | [memory commands](commands/memory.md) |
 | References that refuse a replaced object; engine calls | the [Unreal pack](commands/unreal.md) |
 | No code hooks, no threads of its own, no drawing (the opt-in pointer swaps: [design](design.md#principles)) | [design](design.md#principles) |
 | A client library the program links | [clients](client.md) |
@@ -39,8 +39,8 @@ JSON mode instead of linking the client, as the Python client does.
 - **Throughput.** About one request per host tick, with short held bursts,
   each response up to 4 KB ([limits](protocol.md#limits)). A program that
   reads many values every frame is unmeasured; measure before planning one.
-- **One client at a time.** A second one is refused as `busy`; the console
-  and an outside program cannot run together.
+- **One client at a time** ([protocol](protocol.md#handshake)): the
+  console and an outside program cannot run together.
 - **No drawing.** Visuals are drawn in the program's own window, never over
   the game.
 - **Engine calls need the game thread.** A host ticking elsewhere offers
@@ -55,7 +55,7 @@ JSON mode instead of linking the client, as the Python client does.
 |---|---|
 | Values that change over seconds: settings, economy, inventory, timers | Anything that tracks fast movement frame by frame |
 | Tools and dashboards in their own window | Overlays drawn over the game |
-| Holding a value with a pin, or one guarded write | Logic that must run inside a frame: the Draw tick (`game-thread`) puts requests on the game thread, but each still waits for a tick, so frame-exact logic stays in a mod |
+| Holding a value with `hold`, or one guarded write | Logic that must run inside a frame: the Draw tick (`game-thread`) puts requests on the game thread, but each still waits for a tick, so frame-exact logic stays in a mod |
 | Prototyping logic before it moves into a mod | |
 
 A mod that already works in-process gains little by moving out: "inject
@@ -75,5 +75,4 @@ Each waits for a real program that needs it:
   samples them every tick (`watch-start` is the start), and they expire when the
   client's heartbeat stops;
 - a second channel, so the console and a program run together: the core's
-  state moves into a per-channel context. The one case so far (a long
-  capture holding the console) was solved by `watch-start`.
+  state moves into a per-channel context.

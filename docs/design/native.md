@@ -135,7 +135,7 @@ answers what a native object is from live bytes, without a type system.
   A table is never inferred from neighbouring bytes.
 - **Pointer chains are a client library call**, so an outside program
   follows a chain of offsets the same way the console does; the console only reads
-  the `{"base", "chain"}` value. Writes, pins and trials refuse chains: a write goes where the
+  the `{"base", "chain"}` value. Writes, holds and undo writes refuse chains: a write goes where the
   caller read, never through pointers that may have moved since.
 - **Strings** (`read`'s `type` `cstr` or `wstr`) escape what they cannot print, so a dump
   never hides a byte.

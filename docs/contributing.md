@@ -105,7 +105,7 @@ block, its rows of the verb table and `status` line, which commands are its own,
 commands borrow (object guards, the owner check of `write`'s `undo`, `watch-start`'s field ranges,
 `peek`'s objects and names). `packs/ue/cli/console/internal_ue.h` is for
 `packs/ue/cli/console/` only. Why seams and not a pack interface:
-[design](design.md#source-layout).
+[design](design/architecture.md#source-layout).
 
 **Adding a pack** (id `<id>`):
 
@@ -113,7 +113,7 @@ commands borrow (object guards, the owner check of `write`'s `undo`, `watch-star
    its part of each layer.
 2. `packs/<id>/pack.cmake`: its agent and client targets (the agent one
    appended to `REAGENTLIVE_AGENT_TARGETS`) and the CLI lists the root
-   reads, `reagentlive_pack_syntax_sources`,
+   reads, `reagentlive_pack_call_sources`,
    `reagentlive_pack_console_sources`, `reagentlive_pack_console_link`.
    Copy `packs/ue/pack.cmake`.
 3. The next op slot: `op::PackSlot(n)` in its protocol header with a
@@ -122,17 +122,15 @@ commands borrow (object guards, the owner check of `write`'s `undo`, `watch-star
 4. Implement `console/pack.h` in `cli/console/pack.cpp`.
 5. Configure with `-DREAGENTLIVE_PACKS=<id>`. A console carries one pack;
    the second pack turns `pack.h` into a table first
-   ([design](design.md#source-layout)).
+   ([design](design/architecture.md#source-layout)).
 
 - The middle folders (`values/` to `code/`) may include each other and
   `call/`. Their headers are unit-tested in `tests/cli/`.
-- Hosts include only `console/console.h`, `call/build.h`,
-  `call/verb.h` (a row for each verb of their own) and
-  `results/schema.h` (typed results); a host lists its sources in
-  `REAGENTLIVE_HOST_SOURCES` so the layout test checks them.
+- Hosts include only the four headers [hosting](hosting.md#cmake-targets)
+  lists.
 - `code/` is the one feature-shaped folder: the decoders form a closed group
   with their own dependency (Zydis). Why layers and not feature folders:
-  [design](design.md#source-layout).
+  [design](design/architecture.md#source-layout).
 - A new area gets `call/build_<area>.cpp` and `console/<area>.cpp` (in
   `packs/<id>/cli/` when it belongs to a pack). It gets a new middle
   folder only once it has three headers of its own; until then they go in
@@ -141,49 +139,7 @@ commands borrow (object guards, the owner check of `write`'s `undo`, `watch-star
   `cli::sig`): folders are for finding files.
 
 Within a folder, files are split by subject so a change to one command loads
-one file:
-
-| Files | Holds |
-|---|---|
-| `call/verb.h`, `call/check.h`, `results/verbs.h`, `packs/ue/cli/results/verbs_ue.h` | the verb table: the row type and the arg vocabulary, a call's checks and refusals (schema, corrected example), the core's rows, the pack's rows |
-| `results/schema.h`, `results/docs.h` | typed result structs (one field list writes and describes the JSON), and the results page generated from the table |
-| `console/console.cpp` | the call reader (JSON calls from `-c`, a file and stdin), `help`, `stats` and the usage log's lines, the `Run` dispatcher for core ops, sessions, `batch`, the cache file, `RunConsole`, its busy wait and its no-target mode |
-| `console/output.cpp` | JSON records, the check of a result against its row, errors and refusals, `timing`, output budgets (the digest, the kept-results file), batch capture, each line's output size for the usage log |
-| `results/budget.h` | output budgets: the size profile of a result, the narrower call and the digest |
-| `console/memory.cpp` | `status`, read decoding, timed writes (`write`'s `undo` and `hold`, `writes`), captures (`watch-start`, its `file`), `peek` |
-| `console/code.cpp` | `disasm`, `xrefs`, `touches` and function bounds (the fast lane) |
-| `console/sig.cpp` | `sig-check` (one `pattern` or a `file`), `sig-bytes`: byte signatures against the live image |
-| `console/label_sigs.cpp`, `code/label_sign.h` | `labels-sign`, `labels-port`: signatures on a labels file's names, grown and ported |
-| `console/native.cpp` | `vtable` (and its `rtti`) and the region `read` and `peek` report (native objects) |
-| `console/pack.h`, `packs/ue/cli/console/pack.cpp` | the seam: what the core asks of the pack, and the pack's dispatcher (`find`, `call`, `census`...) |
-| `packs/ue/cli/console/members.cpp`, `packs/ue/cli/state/native_names.h` | native members: `label`, the native file and its checks |
-| `call/layout.h`, `values/layout_json.h` | typed layouts (`read`'s `type` as a layout, native member types) |
-| `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `get` with no paths and `--types` |
-| `packs/ue/cli/console/labels.cpp` | `export-labels` |
-| `packs/ue/cli/console/export.cpp` | `export-assets`: each object's `get` and table rows run as batch items, one file each |
-| `packs/ue/cli/console/capture.cpp` | snapshots (`get`'s `mode` `snap` and `changed`, their `file`) |
-| `packs/ue/cli/console/calls.cpp` | `func` (with its signature), typed calls |
-| `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each` values) and `view.fields`; `rows` |
-| `packs/ue/cli/console/text.cpp` | text values through the engine's converter |
-| `packs/ue/cli/console/query.cpp` | class lookup, `each`, `get`, `entries` |
-| `packs/ue/cli/console/script.cpp`, `packs/ue/cli/values/kismet.h` | `script`'s `decode`: the bytecode read and its operands named; the Kismet decoder and printer (pure, tested) |
-| `packs/ue/cli/state/cache_ue.h`, `packs/ue/cli/values/format_ue.h`, `packs/ue/cli/values/json_output.h`, `packs/ue/cli/results/` | the pack's cache block, property values as text and JSON, its result builders |
-| `call/command.h`, `call/values.h` | the built `Command` and its limits; numbers, refs, bytes and the typed JSON values (addresses, chains, paths) |
-| `call/build.cpp` | `Build` and `BuildCall` (declared in `build.h`): help, status, quit, stats, `batch`, then the areas below |
-| `call/build_memory.cpp`, `build_code.cpp`, `packs/ue/cli/call/build_unreal.cpp` | the builders of each area's verbs |
-| `packs/ue/agent_ue.cpp` | object lookup (`find`, `describe`, object reads, `name`) and the shared helpers with their caches |
-| `agent_ue_globals.cpp` | locating the globals and the object layout (stock shapes and probes, or the SDK's under `REAGENTLIVE_UE_SDK`); the off-thread gate (`PackReady`) |
-| `agent_ue_check.cpp` | the layout groups: each checked once on known objects before its ops run |
-| `agent_ue_census.cpp` | the cached table and pool scans: `census`, `name-find` |
-| `agent_ue_entries.cpp` | array previews and `entries` |
-| `agent_ue_reflect.cpp` | `call`, `func`, `funcs`, field tables, parameters, `enum` and the function lookup |
-| `agent_ue_scan.cpp` | the cached scans: `each`, `exec-entries` |
-| `agent_ue_script.cpp` | Blueprint bytecode: `script`, `refs` |
-| `agent_ue_calls.cpp` | the call recorder: `calls-start`, `calls-read`, `calls-stop` |
-| `agent_ue_index.cpp`, `class_index.h` | the class index `find`'s `cls` and `each` walk; the index itself (pure, tested) |
-| `engine_layout.h`, `engine_layout_sdk.h` | the one home of engine offsets (`StockUE5`, the profile groups), and the layout an SDK describes (`offsetof`) |
-| `globals.h`, `name_pool.h` | finding the object table and name pool; walking the pool's entry blocks (pure, tested) |
-| `host_draw.h`, `host_draw.cpp` | `reagentlive::ue-draw`: the game-thread tick through the viewport's Draw and the `game-thread` op |
+one file; each file's top comment says what it holds.
 
 - Shared helpers live in a `detail` namespace (console) or the pack's
   namespace, declared in an internal header (`console/internal.h`,
@@ -300,12 +256,17 @@ Check this table before adding a fact; if it has a home, link there.
 | Error kinds and their message templates | `ErrorKinds` in `call/refusals.h` (listed in [the reference](commands/reference.md#error-kinds)) | handlers (they name an `ErrorKind`) |
 | A verb's behaviour and guards | its page under `commands/` | skill (links only) |
 | Which Unreal commands need the game thread | [commands/unreal.md](commands/unreal.md#off-the-engines-thread) | everywhere else (links) |
-| Console mechanics: calls, refs, budgets, cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
+| Console mechanics: calls, refs, budgets (the default budget's size), cache, JSON Lines | [commands/console.md](commands/console.md) | client.md and skill (links) |
+| One client at a time; an agent taking over on re-inject | [protocol.md](protocol.md#handshake), [protocol.md](protocol.md#section) | elsewhere (links) |
+| The layout groups and their checks | [commands/unreal.md](commands/unreal.md#without-an-sdk) | design and skill (links) |
+| A `get` snapshot's baseline across runs | [commands/capture.md](commands/capture.md) | console.md (link) |
+| Labels files, their defaults and signatures | [commands/labels.md](commands/labels.md) | fast lane, IDA loader, skill (links) |
+| The IDA loader's behaviour | [commands/ida-loader.md](commands/ida-loader.md) | skill: the loop's steps, plus links |
 | Approval rules, evidence rules | the skill's `SKILL.md` | docs (links) |
 | Investigation method, pitfalls, per-question advice | the skill's `references/` | docs |
 | Hosting, CMake targets, the examples' internals, the host API | [hosting.md](hosting.md) | README (links) |
 | Wire format, op numbers, statuses, limits | [protocol.md](protocol.md) | elsewhere |
-| Why it is built this way, what was rejected | [design.md](design.md) | elsewhere |
+| Why it is built this way, what was rejected | [design.md](design.md) and its pages under `design/` | elsewhere |
 | Why the console, generated functions and MCP tools are shaped as they are | [tool-interface.md](tool-interface.md) | elsewhere |
 | Engine layout offsets | `packs/ue/engine_layout.h` (code) and [unreal.md](commands/unreal.md#without-an-sdk) | skill (links) |
 | What may come next, and what will not | [ideas.md](ideas.md) | elsewhere |

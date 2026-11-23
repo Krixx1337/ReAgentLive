@@ -9,7 +9,7 @@ an address is, and the strings it points to. They only read; names they
 report are hints to confirm, not proof.
 
 What the engine-agnostic side says about a native object, with no engine
-pack ([design](../design.md#native-objects)).
+pack ([design](../design/native.md#native-objects)).
 
 ```json
 {"verb": "vtable", "args": {"addr": "0x1f2e3d4c50", "rtti": true, "resolve": true}}
@@ -55,7 +55,7 @@ console; the agent only reads.
 ## Pointer chains
 
 An address may be a chain, `{"base": <addr>, "chain": [16, 8]}` (up to 16
-offsets), in `read`, `peek`, `vtable` and `disasm`. Each offset but the last
+offsets), in `read`, `peek`, `mem-snap`, `vtable` and `disasm`. Each offset but the last
 reads a pointer: base X with chain `[a, b]` is `*(X + a) + b`. A chain of
 one (`[a]`) follows no pointer, so it is refused rather than answered with
 the bytes at `X + a`: to read through the pointer at `X`, start with `0`

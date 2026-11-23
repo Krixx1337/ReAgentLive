@@ -6,8 +6,8 @@
 your AI agent (or you, at a console) asks it questions and gets answers from
 the live process in milliseconds. What it can do depends on your tier: raw
 memory and code in any process, objects by name in any UE5 (Unreal Engine 5)
-game, engine calls on the game's main thread. Pins and trial writes undo
-themselves, and every write asks you first.
+game, engine calls on the game's main thread. A write with `undo` restores
+itself, a `hold` stops by itself, and every write asks you first.
 
 Your agent can read code. It can't see what the game is doing right now.
 ReAgentLive closes that gap: you load it into the game with any DLL loader,
@@ -23,11 +23,11 @@ its tools; you can ask from a command line.
 | **T3** Game thread | Call the game's own functions | One command moves it onto the game's main thread |
 | **T2** Reflection | Read fields and values by name, from the engine's own type info | Any UE5 game, no dump |
 | **T1** Unreal located | Find objects by name; count instances of a class | Any UE5 game, no dump |
-| **T0** Core | Memory, code, signatures, trial writes | Any x64 process |
+| **T0** Core | Memory, code, signatures, writes that undo themselves | Any x64 process |
 
 Each rung adds to the one below. An *SDK dump* is a set of C++ headers a
 dumper tool generates from a game; a *signature* is a byte pattern that
-finds code; a *trial write* changes a value and restores it by itself.
+finds code.
 What each rung needs and what stops it: [tiers](docs/tiers.md).
 
 ## What it looks like
@@ -43,14 +43,15 @@ in the running game:
 | 2 | `ue_get` | your health: **87.5 / 100** |
 | 3 | `ue_each` | every soldier's health, read in the same tick |
 | 4 | `touches` | the one damage function that writes it |
-| 5 | `write` with `undo` | your health held at 1000 for 30 s, then restored *(asks you first)* |
+| 5 | `write` with `undo` | your health set to 1000, restored after 30 s *(asks you first)* |
 
 > **Agent:** Health is a float at `HealthComp+0x1A8`, written by one damage
-> function at `Game.exe+0x9A3F10`. Every soldier uses it. I held yours at
-> 1000 for 30 s, and the original came back on its own.
+> function at `Game.exe+0x9A3F10`. Every soldier uses it. I set yours to
+> 1000, and after 30 s the original came back on its own.
 
 A few seconds, with no dump to guess from, no rebuild, and nothing left
-changed. This is an example: the tools are real, and the game and its
+changed (a value the game rewrites in those 30 s ends `conflict` and is
+left as the game wrote it). This is an example: the tools are real, and the game and its
 names are made up. The tools are the agent's MCP tools (Model Context
 Protocol, how AI agents call tools); this run needs T3. Addresses come back
 as `module` + `rva` (module and offset), ready for IDA or Ghidra.
@@ -62,7 +63,7 @@ as `module` + `rva` (module and offset), ready for IDA or Ghidra.
 | "Where's the player's health?" | guesses from a dump (headers generated from the game), or you scan by hand in a memory scanner | finds the object and reads the field in the running game |
 | "What uses this string?" | waits hours for the disassembler's analysis to finish | every reference and the code around it, in milliseconds |
 | "Does this offset still work after the patch?" | rebuild, inject, hope | checks the offset and signature (a byte pattern that finds code) against live bytes |
-| "What if this flag were 1?" | a raw write, a crash, a restart | a trial write that restores itself |
+| "What if this flag were 1?" | a raw write, a crash, a restart | a `write` with `undo` that restores itself |
 
 ## Use cases
 
@@ -72,7 +73,7 @@ as `module` + `rva` (module and offset), ready for IDA or Ghidra.
   against the running game in one go, before you rebuild.
 - **Learn how a feature works.** Start from a string or an address and see
   its references and code from live bytes, with no full disassembly.
-- **Try a change safely.** Flip a flag or hold a value for 30 seconds; the
+- **Try a change safely.** Flip a flag for 30 seconds with `undo`; the
   original comes back by itself.
 - **Explore an Unreal Engine game with no dump.** List every object of a
   class, read their fields by name and, on the game thread, call the
@@ -118,7 +119,8 @@ Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/up
 ## Safe by default
 
 - **Writes check first:** a write is refused if the bytes changed.
-- **Changes expire:** pins and trial writes restore the original bytes.
+- **Changes expire:** a write with `undo` restores the original bytes; a
+  `hold` stops rewriting when it runs out.
 - **Your approval:** tools that write are marked, so your agent asks
   first.
 - **Stale objects:** a reference to an object that died is refused, not

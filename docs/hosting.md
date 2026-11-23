@@ -129,7 +129,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | Option or variable | Default | Effect |
 |---|---|---|
 | `REAGENTLIVE_CONSOLE` | `ON` | Defines `reagentlive::console`, which needs nlohmann/json and Zydis. Off: an agent-only host configures with no downloads |
-| `REAGENTLIVE_PACKS` | `ue` | The engine packs to define, by folder under `src/reagentlive/packs/`; each defines its targets, and the console and `reagentlive::cli` carry the listed one (one at most: configure fails on two, or on an unknown id). Empty: no pack targets, and the console's verb table, and so `help`, the generated functions and the MCP tools, hold core and host rows only; core verbs that need a pack (`trial`) are left out, an object-relative pin or watch is refused, `peek` names no objects. For a target that is not Unreal |
+| `REAGENTLIVE_PACKS` | `ue` | The engine packs to define, by folder under `src/reagentlive/packs/`; each defines its targets, and the console and `reagentlive::cli` carry the listed one (one at most: configure fails on two, or on an unknown id). Empty: no pack targets, and the console's verb table, and so `help`, the generated functions and the MCP tools, hold core and host rows only; `write`'s `undo` is refused (its owner check is the pack's), a `hold` or watch on an object is refused, `peek` names no objects. For a target that is not Unreal |
 | `REAGENTLIVE_BUILD_TESTS` | on when top-level | Builds the library's tests (label `reagentlive`) and the examples they test (`examples/unreal` with the Unreal pack); needs the console with the pack (they build the pack-less one beside it) |
 | `REAGENTLIVE_HOST_SOURCES` | empty | The host's files that include the console; the layout test checks them |
 | `REAGENTLIVE_FORBIDDEN_NAMES` | empty | Words the docs test refuses anywhere in the library (a host's and its game's names) |
@@ -167,9 +167,14 @@ compiles them with its own flags. Injected images often need special ones
 (static CRT, no thread-safe statics, no static TLS), and a prebuilt archive
 could disagree with them.
 
-A host's console includes only `frontends/cli/console/console.h` and
-`frontends/cli/call/build.h`; list those files in
-`REAGENTLIVE_HOST_SOURCES` ([options](#using-it-in-your-project)).
+A host's console includes only these headers, and lists the files that
+include them in `REAGENTLIVE_HOST_SOURCES` so the layout test checks them
+([options](#using-it-in-your-project)):
+
+- `frontends/cli/console/console.h`: `RunConsole` and `ConsoleConfig`;
+- `frontends/cli/call/build.h`: `Build` and `BuildCall`;
+- `frontends/cli/call/verb.h`: a row for each verb of its own;
+- `frontends/cli/results/schema.h`: typed results for those rows.
 
 ## The tick
 
@@ -231,10 +236,10 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   client's next request and run it in the same tick, bounded by the host's
   budgets ([protocol](protocol.md#exchange)).
 - **Injecting again into the same process** is handled: the newest agent
-  takes the section over (`Section::owner`) and earlier ones stop answering.
-  `status` reports the answering agent's build time and how many it
-  replaced. An agent its host has stopped no longer ticks: clear trials
-  before stopping it. This holds only for a build with the same protocol:
+  takes the section over ([takeover](protocol.md#section)). `status`
+  reports the answering agent's build time and how many it replaced. An
+  agent its host has stopped no longer ticks, so it restores nothing:
+  clear `undo` writes (`writes` with `clear`) before stopping it. This holds only for a build with the same protocol:
   after a protocol change the section keeps the old layout, so restart the
   process instead ([the update procedure](agents/update.md#7-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.
@@ -259,7 +264,7 @@ false`. Timed writes and captures act every host tick, as they always do.
 The kind is the host's statement; the core does not verify it. The pack's
 required thread check ([Unreal pack](commands/unreal.md)) remains the guard for
 engine calls. Nothing that works today is refused because of the kind.
-Why the kind is stated rather than detected: [design](design.md#unreal-pack).
+Why the kind is stated rather than detected: [design](design/unreal.md#decisions).
 
 ## Game-thread tick
 
@@ -269,7 +274,7 @@ a frame hook) a tick on the game thread with no per-build address: it finds
 the game viewport client with `FirstLiveInstance` and points its Draw
 interface at a private copy of the vtable with Draw swapped. What the
 command does and refuses: [`game-thread`](commands/unreal.md); why this
-way: [design](design.md#a-game-thread-tick-through-the-viewports-draw).
+way: [design](design/unreal.md#a-game-thread-tick-through-the-viewports-draw).
 The host API, as `examples/unreal/host.cpp` uses it:
 
 | Call | When | Does |
@@ -331,7 +336,7 @@ static tool's `export_names` should; `disasm`'s `save` reads it with the
 console's derived `<console>.labels.jsonl`. Give a path under version
 control (absolute, or relative to the console exe) so names survive a clean
 build and travel with the project; leave it empty to keep everything in the
-console's file ([labels](commands/unreal.md#labels-for-a-static-tool)).
+console's file ([labels](commands/labels.md#labels-files)).
 
 ## AI agents
 

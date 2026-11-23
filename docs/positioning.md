@@ -20,27 +20,6 @@ when a feature ships.
 ReAgentLive is a live, in-process probe that lets an AI agent investigate a
 running game safely and in real time.
 
-## Short description
-
-ReAgentLive is a small agent that runs inside the game process: built into
-your own mod, or loaded by a small host of its own beside a tool that works
-from outside. An AI drives it through a console to find objects, read and follow live data, test changes
-that undo themselves, and check its conclusions against the running game.
-Every answer comes from one moment in time, every write is guarded, and
-nothing waits for a disassembler to finish analysing. It pairs with static
-tools rather than replacing them: ReAgentLive answers "what is happening right
-now", they answer "what does this code do".
-
-Three words: **live, safe, immediate.**
-
-## End goal
-
-ReAgentLive is the live, in-process leg of an AI's reversing kit. It answers
-"what is true in the running game right now, and is it safe to try this?",
-and hands everything else to a neighbouring tool in a form that tool can
-use. It is a good neighbour, not a replacement: it does not grow into a
-second scanner, debugger or instrumentation framework.
-
 ## What is unique
 
 No single one of these is new. The combination is.
@@ -49,7 +28,7 @@ No single one of these is new. The combination is.
 |---|---|
 | **Runs inside the process**, on a thread its host trusts, with no debugger attached and no code hooks | A debugger, a hooking framework, or reading from outside the process |
 | **Tick-accurate:** everything in one answer comes from the same moment | Torn reads from outside, or polling |
-| **Safe by construction:** references that go stale safely, guarded writes, trial writes that restore themselves | Raw write and code-injection tools handed to an agent |
+| **Safe by construction:** references that go stale safely, guarded writes, writes that restore themselves (`undo`) | Raw write and code-injection tools handed to an agent |
 | **Shaped for an AI's costs:** few commands, whole answers, filtered output, state kept between runs | Large tool surfaces that fill an agent's context before doing anything |
 | **Immediate:** no database, no hours of analysis | Static tools need their analysis first |
 | **Reflection and raw memory in one tool** | One or the other |
@@ -67,7 +46,7 @@ ReAgentLive is one tool in a kit, and says so.
   label file a static tool imports.
 
 The rule and its table are in
-[design](design.md#place-among-other-tools).
+[design](design/architecture.md#place-among-other-tools).
 
 ### Pairings
 
@@ -85,17 +64,12 @@ this list.
 
 - **Verification:** checking a static conclusion against the live process
   cheaply: a signature is unique, an offset is right, a label matches.
-- **Safe experiments:** guarded writes and trials that undo themselves.
+- **Safe experiments:** guarded writes that undo themselves.
 - **Tick-accurate state:** same-moment reads on the engine's thread.
 - **Handoffs:** addresses and names in a neutral form another tool loads.
 - **Nothing to install:** no debugger attached, no driver, no outside
   process handle. Fewer moving parts. This is a statement about setup, not
   about protected software; see "What it is not".
-
-A minimal narrowing scan over one range (`mem-snap`, `mem-diff`) is built:
-an AI agent cannot drive a scanner's window. So is a record-only call
-probe for reflected functions (`calls-start`): it swaps one `UFunction`
-pointer, never code, and leaves native calls to an instrumentation tool.
 
 ## Ways to host it
 
@@ -167,9 +141,10 @@ hidden: see [what it is not](#what-it-is-not).
 - **Identity, not just addresses.** An object reference carries its table
   slot and serial, so a replaced object is refused instead of written
   into.
-- **Changes that end on their own.** Pins expire; a trial write restores
-  the original bytes when it expires or is cleared, and stops writing as
-  soon as its owner is replaced.
+- **Changes that end on their own.** A write with `undo` restores the
+  original bytes when it expires or is cleared, and is abandoned as soon
+  as its owner is replaced; a `hold` stops rewriting when it expires or
+  its object is replaced.
 - **Engine calls only on the game thread.** A host that ticks elsewhere
   gets memory commands and, if it opts in, object reads; engine calls are
   refused until the tick is on the game thread
@@ -204,40 +179,11 @@ hidden: see [what it is not](#what-it-is-not).
 
 | If you want | ReAgentLive offers |
 |---|---|
-| To see what a game is doing right now | find, dump, follow paths, read containers, sample every tick |
-| To test an idea without rebuilding | guarded writes, pins, trial writes that undo themselves, engine calls |
+| To see what a game is doing right now | `find`, `get`, follow paths, read containers, sample every tick |
+| To test an idea without rebuilding | guarded writes, `hold`, writes that undo themselves, engine calls |
 | To understand code without waiting | the fast lane: instructions, references and signature checks at one address |
 | To work with a static tool | addresses both ways, live values for unnamed globals, exported names |
 | To let an AI do the above | one console, JSON in and out, a Python client, a skill that teaches the method |
 
 **Fast lane** is the name for one capability only: one-address questions
 answered from live bytes with no database. Keep it for that.
-
-## Status against this description
-
-Shipped: the in-process agent, tick-accurate reads, guarded writes and
-trials, reflection commands for Unreal, the address bridge and label
-export, the fast lane (`disasm`, `xrefs`, `sig-check`;
-[design](design.md#fast-lane)), the AI-facing console and Python client.
-
-Native objects without an engine pack (`vtable`, pointer chains, strings,
-regions; [design](design.md#native-objects)) have shipped too, and so has
-Unreal with no dump (every op, each layout group checked on known objects)
-with a game-thread tick for hosts that tick elsewhere (`game-thread`).
-Planned,
-so not yet true: calling native functions
-([backlog](ideas.md#17--call-native-caution)). Use the pitch above in public only for
-what has shipped.
-
-## Before a public release
-
-- ✅ A licence: MIT, and every dependency is MIT too (README).
-- ✅ A benefits-first README with an [agent setup](agents/setup.md) prompt
-  an AI agent follows on its own.
-- What lets someone else use the core: the host and client guides and both
-  example hosts exist ([hosting](hosting.md), [clients](client.md)); still
-  missing is a minimal client example ([backlog](ideas.md#20--example-client)).
-- ✅ A plain statement of the [safety model](#safety-model).
-- A plain statement of intended use (a development tool).
-- The docs stay free of any one game; the `reagentlive.docs` test checks
-  that no host or game name appears.

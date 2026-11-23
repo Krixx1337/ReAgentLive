@@ -202,16 +202,7 @@ if (Test-Path $link) {
    Then set `skill_install` to `symlink` in the record (step 10), also
    when the record was already written.
 
-3. **Local plugin** (`plugin`): reserved until the repo ships
-   `<dir>\.claude-plugin\marketplace.json`; skip it while that file is
-   absent. When present: ask the user to run `/plugin marketplace add <dir>`
-   in Claude Code and install the plugin it lists. It loads in place from
-   the clone, named `reagentlive:reagentlive`; updates need
-   `/reload-plugins`. Set `skill_install` to `plugin` in the record. (A
-   plugin from a remote marketplace is a cached copy under
-   `~/.claude/plugins/cache`, never edited; its lessons live at
-   `%LOCALAPPDATA%\reagentlive\local-lessons.md`. Setup does not offer it.)
-4. **Copy** (`copy`), the last resort:
+3. **Copy** (`copy`), the last resort:
    `Copy-Item $skill $link -Recurse` (it takes a moved
    `local-lessons.md` along). A copy does not follow the clone; record its commit (`skill_commit`,
    `git -C <dir> rev-parse --short=12 HEAD`) so the skill can tell when it
@@ -319,7 +310,7 @@ Ask the user: "Do you use ReAgentLive as a user or as a developer?"
 
 | Answer | `improvement` | The skill may |
 |---|---|---|
-| user (the default, also when unsure) | `user` | write one file only: its git-ignored `references/local-lessons.md` (`%LOCALAPPDATA%\reagentlive\local-lessons.md` for a remote plugin's cached copy); anything else (docs or code problems, host notes, findings) becomes a suggestion or issue text the user may act on |
+| user (the default, also when unsure) | `user` | write one file only: its git-ignored `references/local-lessons.md`; anything else (docs or code problems, host notes, findings) becomes a suggestion or issue text the user may act on |
 | developer | `dev` | propose changes to the skill, docs and ReAgentLive code; code changes on a branch with the build and tests run, never committed unasked |
 | neither ("off", "no") | `off` | nothing |
 
@@ -334,7 +325,7 @@ One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 | `examples` | the example folders built: `["own_thread"]`, `["unreal"]` or both |
 | `client` | `claude-code`, `codex`, `cursor`, `copilot` or the client's name |
 | `python_functions` | `true` when step 5 ran |
-| `skill_install` | `junction`, `symlink`, `plugin`, `copy` (step 6), or `instructions` for an instructions line |
+| `skill_install` | `junction`, `symlink`, `copy` (step 6), or `instructions` for an instructions line |
 | `skill_commit` | copy installs only: the commit copied |
 | `improvement` | `user`, `dev` or `off` (step 9) |
 | `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [the update procedure](update.md) sets it to the new commit |

@@ -25,12 +25,19 @@ by name and never opens the target process itself.
 | `heartbeat` | agent | incremented every `Tick`; a client derives the tick rate |
 | `requestSeq` | client | `RequestWriting` (0) while it writes `request`, then the next number (never 0) |
 | `responseSeq` | agent | set to the handled `requestSeq` after writing `response` |
-| `owner` | agent | id of the agent instance that answers; a newer agent of the same protocol in the same process takes over and the older one stops ticking, after restoring its active trials once under their guards |
+| `owner` | agent | id of the agent instance that answers (see takeover below) |
 | `takeovers` | agent | how many agents in this process were replaced |
+| `hostThread` | agent | the thread the host ticks on, as it declared it (`HostThread`: engine, borrowed or own); unset is refused at open |
 | `build` | agent | the loaded build as the host names it (`Host::build`, such as the image's link time), else the agent library's compile time, which an incremental build can leave stale (text, up to 47 characters) |
 | `request`, `response` | client, agent | one slot each |
 
 Sequence, heartbeat, owner and takeovers fields are accessed only through `std::atomic_ref`.
+
+**Takeover on re-inject.** A second agent in the same process (the host
+injected again) opens the same section, writes its own `owner` and
+answers from then on. The earlier one sees another owner, restores its
+active `undo` writes once under their guards and stops ticking; a capture
+it ran ends with it.
 
 ## Exchange
 
@@ -74,11 +81,19 @@ read response                              request held? wait for the next one (
 The client refuses a section whose `magic` (`DVLK`) is not set or whose
 `layout` differs from its own sum. The sum takes in the size of every struct
 that crosses the section (requests, responses and every row or spec packed
-into `data`), so a client built before one changed is refused instead of
-misreading it; a new wire struct is added to `LayoutCore` or the pack's
-`LayoutPart`. There is no versioning: build agent and client from the same
-source. The `ops` list tells a client which commands this
-agent has, so frontends can refuse the rest locally.
+into `data`) and `ProtocolRevision`, which is bumped when a field's meaning
+changes but no size does. So a client built before a change is refused
+instead of misreading it; a new wire struct is added to `LayoutCore` or the
+pack's `LayoutPart`. Build agent and client from the same source.
+
+**One client at a time.** A client that attaches creates the named mutex
+`<section>-client`; while another client holds it, the attach is refused
+as `Busy` (two clients would overwrite each other's request). Windows
+closes it when the client exits. The console waits up to 2 s before it
+reports `busy`.
+
+The `ops` list tells a client which commands this agent has, so frontends
+can refuse the rest locally.
 
 ## Ops
 
@@ -102,12 +117,12 @@ stays inside its slot.
 | `write` | 2 | core |
 | `modules` | 3 | core |
 | `read-batch` | 4 | core |
-| `search` (with `SearchJobStart`, `SearchJobStatus`, `SearchJobStop`: the search job, response `SearchJobInfo` then hits; `protocol.h`) | 5 | core |
-| `pin` | 6 | core |
-| `watch` (start, read, stop, info, roots; interval and followed root in `WatchSpec`, `protocol.h`; each range's `note` is the client's, kept and returned by info, never read by the agent) | 7 | core |
-| `trial` | 8 | core |
-| `xrefs` (relative-reference scan; request fields in `protocol.h`) | 9 | core |
-| `region` (one `VirtualQuery`; response `RegionInfo`) | 10 | core |
+| `search` (and the search job) | 5 | core |
+| `pin` (`write`'s `hold`) | 6 | core |
+| `watch` (start, read, stop, info, roots) | 7 | core |
+| `trial` (`write`'s `undo`) | 8 | core |
+| `xrefs` | 9 | core |
+| `region` | 10 | core |
 | `find` | 256 | Unreal pack |
 | `fields` | 257 | Unreal pack |
 | `call` | 258 | Unreal pack |
@@ -131,43 +146,50 @@ stays inside its slot.
 | `game-thread` | 278 | Unreal pack, hosts that link `reagentlive::ue-draw` |
 
 Ops not in the host's command table are answered with `unsupported op`.
-Adding an op does not change the layout sum: the `ops` list advertises it,
-and an older agent answers `unsupported op`.
+Adding an op does not change the layout sum: the `ops` list advertises it.
 
-`game-thread` takes its action in `request.flags` (`GameThreadAction`:
-0 status, 1 on, 2 off; no data) and answers a `GameThreadState`: the mode
-(`GameThreadMode`: off, waiting, conflict, on, stopped), the game thread's
-id, the viewport client, its Draw interface's own table, the game's Draw,
-and the state as one line of text (0 for what is not known yet).
+**Each op's fields** (what `address`, `args`, `length`, `flags`, `text`
+and `data` carry, and what `detail` packs) are written once, in the
+comment beside the op's constant: `core/protocol.h` for core ops,
+`packs/ue/protocol_ue.h` for the Unreal pack's. What the comments do not
+show in one place:
 
-`read-batch` takes the range count in `length` and that many `ReadSpan`
-records in `data`. A successful response carries the execution heartbeat
-in `detail`. Response data starts with one `Status` per range, followed
-by the byte ranges in request order. Failed ranges occupy their requested
-length and contain zero bytes.
-
-`funcs` takes an object or class ref, an optional substring in `text`, and
-the match offset in `length`. It returns `FunctionNameEntry` rows and a
-next-page cursor in `detail` (zero on the last page). Rows from the class
-chain come first, then rows from implemented native interfaces with
-`interface` 1 and the interface as `owner`.
-
-Function parameters takes the UFunction address from `func` and a page
-offset in `length`. It returns a fields page (below) of parameters only.
-A record's `flags` carry `ParameterFlag` bits (`Const` for `ConstParm`; a const
-reference is an input, `ue::InputParameter`). `detail` packs the total parameter
-count in the low 32 bits and the block size in the high 32 bits (`fields`
-puts the listed type's object-table index there, so a client cache knows whose
-table a page belongs to: an instance lists its class's). Named calls
-use the existing `call` op after packing the block on the client, with the
-inspected UFunction address in `args[1]`. The agent refuses if resolution
-produces a different function. Raw calls leave `args[1]` zero.
+- **Paged scans** (`find`, `census`, `each`, Exec entries) pack the total
+  and the next cursor into `detail` (`FindDetail`). Only the first page
+  scans the whole table; later pages come from the cursor or the agent's
+  kept result. `find` takes `FindExact` (1: the whole name, stop at the
+  first match) and `FindLive` (2: live instances only, no class default
+  or archetype objects); any other flag is a bad request.
+- **The object filter** (`find`, `each`, `census`): `data` holds the class
+  name, then optionally an outer's name text (under 64 bytes) or an outer
+  object; an object passes when an outer up its chain, at most 16 steps,
+  is that object or has a name containing the text, any case. An outer
+  object that is gone is refused before the scan.
+- **Fields pages** (`fields`, function parameters): a `FieldsPageHeader`,
+  that many `FieldRecord`s (44 bytes: offset, size, element size, stride,
+  a map value's offset and size, bool mask, parameter flags, two struct
+  ref numbers and eight string offsets: name, type, owner, element type,
+  struct name, value type, value struct name and subtype), the page's
+  struct refs (each once), then a table of NUL-terminated strings, each
+  once. Names travel whole: a field whose strings no longer fit ends the
+  page. `FieldsPageWriter` and `ReadFieldsPage` (`protocol_ue.h`) build
+  and check a page; the client refuses a page whose offsets or ref
+  numbers fall outside it. A map or set's layout comes from the property
+  itself (`FScriptMapLayout`, `FScriptSetLayout` in `engine_layout.h`),
+  checked by `ContainerLayoutValid`; a failed check leaves `stride` 0.
+- **Named calls** pack the parameter block on the client and send it with
+  the inspected UFunction in `args[1]`; the agent refuses if resolution
+  gives another function. `CallPure` (2) refuses, before calling, a
+  function that is neither const nor blueprint-pure or whose outputs own
+  memory. A fault inside `ProcessEvent` answers `access faulted`.
+- **`game-thread`** takes its action in `flags` (0 status, 1 on, 2 off)
+  and answers a `GameThreadState`.
 
 ## Request and response
 
 | Request field | Use |
 |---|---|
-| `op`, `flags` | operation; op-specific flags (`each`: reuse) |
+| `op`, `flags` | operation; op-specific flags |
 | `address` | memory or object address |
 | `args[2]` | op-specific numbers (Unreal refs: `args[0]` = table index low, serial high) |
 | `length` | byte count, or an op-specific number (page start for `modules` and `fields`) |
@@ -198,131 +220,18 @@ produces a different function. Raw calls leave `args[1]` zero.
 
 Packs reuse these codes and explain in `reason`; they never add codes.
 
-Object range reads use the full Unreal ref in `address` and `args[0]`,
-the byte offset in `args[1]` and the byte count in `length`. The response
-contains the copied bytes. The supported-op list advertises the handler.
-
-`find` takes the name substring in `text`, an optional NUL-terminated class
-name in `data` (`length` includes the terminator) and the starting slot in
-`args[1]`, where scanning starts. `detail` packs the total (low 32 bits) and
-the slot of the first match not returned (high 32 bits, 0 when none). Only
-the first page (slot 0) scans the whole table and counts the total; later
-pages report 0 and stop at the first match past a full page. `flags` =
-`FindExact` (1): the whole name equals `text` (case-sensitive, `text`
-required) and the scan stops at the first match, total 0 and next = the
-slot after it. Any other flag is a bad request. An agent built before the
-flag ignores it.
-
-**The object filter** (`find`, `each`, `census`): `data` holds the class
-name and NUL (the class may be empty for `find` and `census`), then
-optionally an outer's name text and NUL (under 64 bytes), then, with an
-outer object, its slot and serial (two int32); `address` holds the outer
-object (0: none; without slot and serial, an address the agent identifies).
-The agent refuses an outer object that is gone (`NotFound`) before it
-scans. An object passes when an outer up its chain, at
-most 16 steps, is that object or has a name containing the text, any case.
-Every `FindEntry` (find, describe, describe many) carries `outer`, the
-object's own outer as a ref, zero for a package.
-
-`call` takes `flags` `CallRelease` (1, drop the kept block) and `CallPure`
-(2: refuse, before calling, a function that is neither const nor
-blueprint-pure or whose outputs own memory). A call that raises an access
-fault inside `ProcessEvent` answers `Faulted`, `detail` = the object.
-
-`census` takes an optional class name in `data` as for `find`, empty `text`,
-and the first row of the page in `args[1]`. The response holds
-`CensusEntry` rows (class ref, count, up to three sample refs, name), most
-instances first; `detail` = `FindDetail(class count, next row or 0)`. The
-agent keeps the last result: a page past row 0 of the same filter comes from
-it, row 0 always rescans.
-
-`name-find` takes the substring in `text` and the comparison index to resume
-at in `args[1]`. The response packs an int32 index and a NUL-terminated name
-(cut at 200 characters) per match; `detail` is the next cursor, 0 when the
-pool is done.
-
-`each` takes the class name in `data` and the first row in `args[1]`. Field
-mode: empty `text`, `args[0]` = offset | size << 32. Call mode: the function
-in `text` and the parameter block size in `args[0]`. `flags` bit 0 reuses the
-instance list of the previous `each` of the same class. Rows are a `Ref` and
-the value padded to 8 bytes (`EachStride`); `detail` = `FindDetail(rows, next
-row or 0)`; `reason` is `capped` when more instances matched than 1024. Pages
-past row 0 come from the cached rows of the same query.
-
-`describe` takes a full ref, an address-only ref (index -1), or a weak ref
-(address zero, nonnegative index and positive serial). The response contains
-one `FindEntry`; `detail` is the size of the object's class (0 when unknown),
-which covers native members past the last reflected field.
-
-Describe many takes 1..28 refs of any of those forms in `data` (`length` =
-16 per ref) and returns one `FindEntry` per ref in order, zeroed for a ref
-that is gone or not an object; `detail` counts the ones found. `get` uses it
-for its field pointers and again for its array elements.
-
-`entries` takes the object ref, `args[1]` = the field offset in the low 32
-bits and the first index (arrays) or slot (sets, maps) in the high 32,
-`length` = the element stride and `flags` = `ContainerKind` (1 array, 2 set,
-3 map). In one tick it reads the header and as many elements as fit 4 KB:
-arrays from the index, sets and maps as whole allocated slots from the slot.
-A set or map header (`SparseHeader`, UE5's `TSparseArray`: data, slot count
-and capacity, a bit array with four inline words, the free list) must pass
-`SparseHeaderValid`, and its allocation bits must count the slot count minus
-the free count, or it is refused. `detail` is `FindDetail(elements or
-occupied slots, next index or slot, 0 when done)`.
-
-Exec entries takes the first row in `args[1]` (address and `length` zero). Its
-first page scans the object table, 1 ms per tick like `census`, for native
-functions (`FUNC_Native`, with an exec thunk of their own) and caches them;
-later pages come from that scan. Rows are `ExecEntry` (`exec`, `owner`,
-`name`; zeroed when the function is gone), 30 per page; `detail` is
-`FindDetail(rows, next row or 0)`. For labelling code in a static-analysis
-tool.
-
-`func` takes an object or class ref and exact function name in `text`, with
-an optional declaring class before a colon. `length` is zero. The response
-contains one `FunctionEntry` with both addresses, raw function flags and the
-exec entry's executable-page check. Module and RVA display use `modules`.
-
-`name` carries up to 128 int32 FName comparison indices in `data` (`length` =
-4 x count). The response packs one NUL-terminated base name per index, empty
-when the index cannot be decoded (decoding is fault-guarded), and `detail`
-counts the names returned, fewer when the response fills.
-
-Array preview uses the object ref, array header offset in `args[1]`, and
-element stride in `length`. The response contains the bounded prefix and
-reports the current element count in `detail`.
-
-**Fields pages** (`fields`, parameters): a `FieldsPageHeader` (record
-count, ref count, string table bytes), that many `FieldRecord`s (44 bytes:
-offset, size, element size, map and set layout, bool mask, parameter flags,
-two ref numbers and seven string offsets), the page's struct refs (each
-once; a record names one by number, 0 for none), then a table of
-NUL-terminated strings, each once (offset 0 is the empty string). Names
-travel whole: a field whose strings no longer fit ends the page, and the
-client asks for the next page from the count it has. `FieldsPageWriter` and
-`ReadFieldsPage` (`protocol_ue.h`) build and check a page; the client
-refuses a page whose offsets or ref numbers fall outside it. The layout hash
-includes both struct sizes, so a console and agent from different revisions
-refuse each other. For a single struct field or an array of structs, a
-record carries the struct object's ref and name; `get` with `mode` `types` on that ref lists
-its members.
-
-For a map or set, a record carries the key (a set's element) in the
-element members, a map's value type, size, offset and struct, and the
-element's `stride` (key, value and the two `int32` hash links). The layout
-comes from the property itself: UE5's `FScriptMapLayout` at `mapLayout`
-or `FScriptSetLayout` at `setLayout` of the engine layout
-(`engine_layout.h`), not from an SDK, which does not describe them. `ContainerLayoutValid` checks every
-layout (key at 0, the value after it, adjacent hash links, the stride at
-most 512 bytes); a failed check leaves `stride` 0 and the console shows the
-raw header.
-
 ## Limits
+
+The constants are in `protocol.h` and `protocol_ue.h`.
 
 | Limit | Value |
 |---|---|
-| Read | 4096 bytes |
+| Read | 4096 bytes; `read-batch` 8 ranges |
 | Write | 256 bytes |
+| Hold (`pin`) | 8 at once, 64 bytes each, up to 60 s |
+| Undo (`trial`) | 8 at once, 64 bytes each, up to 60 s; with a guarded object, the address within 4 KB after it |
+| Watch | 8 ranges of up to 512 bytes, a 2 KB row, a 4 MB buffer; every tick up to 30 s, with an interval up to 1 h |
+| Search | a 64-byte pattern; 512 hits per page |
 | Modules | 64 per page |
 | Reason | 64 bytes |
 | Text | 128 bytes |
@@ -330,6 +239,10 @@ raw header.
 | Unreal find results | 24 per page, plus the total and the next cursor (`FindDetail`); class name under 128 characters |
 | Unreal fields | as many as one 4 KB page holds (records, refs and strings; up to 92); page start ≤ 16384 |
 | Unreal array preview | up to 8 elements of up to 512 bytes each, at most 4096 bytes in all |
+| Unreal describe many | 28 refs |
 | Unreal census | 30 classes per page; 3 samples per class |
 | Unreal name-find | 64 names per page; names cut at 200 characters |
+| Unreal name | 128 indices |
 | Unreal each | 1024 instances; values 1..64 bytes |
+| Unreal call recorder | 8 recordings, 256 rows each, 1 KiB blocks, up to 60 s |
+| Unreal script | 1 MiB of bytecode |
