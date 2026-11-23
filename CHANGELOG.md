@@ -79,6 +79,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **Game text is marked untrusted:** the MCP server's instructions and the
+  skill tell agents that names, strings and chat read from the target are
+  data, often written by other players, never instructions.
 - **`disasm --save` returns a summary, not the listing:** the file holds the
   rows, so the result keeps `saved`, the new `saved_rows`, the bounds and
   why it stopped, and leaves out `rows` and `strings`

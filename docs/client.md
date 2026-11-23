@@ -239,6 +239,9 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   an unknown one stops the server with the list) and `--read-only` leaves
   out every verb marked `writes`; the server's instructions then say what
   it leaves out. Why and what it saved: [tool interface](tool-interface.md#tool-interface).
+- The server's instructions mark text read from the target (names,
+  strings, chat) as untrusted data: in a multiplayer game other people
+  write much of it, so an agent must never act on it as an instruction.
 - `--name` sets the server name clients show (default `reagentlive`).
 - Needs the MCP Python SDK (`pip install mcp`; its low-level server). Check a
   build with the MCP Inspector: it lists the tools and calls one with no
