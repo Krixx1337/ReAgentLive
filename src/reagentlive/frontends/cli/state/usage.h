@@ -27,6 +27,12 @@ struct UsageLine {
     std::string refused;                // The error's kind; empty when ok.
     double ms = 0;
     bool batch = false;                 // Ran inside a batch.
+    // The call's max_chars when it set one (big: 0), else the cap a digest
+    // stood for; nullopt otherwise.
+    std::optional<uint64_t> cap;
+    // Of the narrowing args' values (results/budget.h Narrowing, by path);
+    // empty when the call gave none: a digest's follow-through compares it.
+    std::string narrow;
 };
 constexpr uint64_t UsageCap = uint64_t{4} << 20; // Bytes; past it, the oldest sessions go at console start.
 constexpr size_t MaxUsageVerb = 40;                 // An unknown verb is kept this long at most.
@@ -47,6 +53,8 @@ inline std::string UsageText(const UsageLine& line) {
     if (!line.refused.empty()) json["refused"] = line.refused;
     if (line.batch) json["batch"] = true;
     if (line.digest) json["digest"] = line.digest;
+    if (line.cap) json["cap"] = *line.cap;
+    if (!line.narrow.empty()) json["narrow"] = line.narrow;
     return json.dump(-1, ' ', true, Json::error_handler_t::replace);
 }
 
@@ -76,6 +84,8 @@ inline std::optional<UsageLine> ParseUsageLine(std::string_view text) {
         if (key.is_string()) line.keys.push_back(key.get<std::string>());
     str("refused", line.refused);
     number("digest", line.digest);
+    if (uint64_t cap = 0; number("cap", cap)) line.cap = cap;
+    str("narrow", line.narrow);
     line.batch = json.contains("batch") && json["batch"].is_boolean() && json["batch"].get<bool>();
     return line;
 }

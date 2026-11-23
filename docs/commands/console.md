@@ -314,6 +314,13 @@ the generated functions, the MCP tools), so one log covers them
   its calls wherever they ran (its own `batched` says how many inside). A `run`
   plan's steps are lines of their own too, so a failed step (or a failed
   item of a batch step) counts in the session's `refused`.
+- **Digest follow-through:** after a digest, the same verb's next call in
+  the session counts as `followed` when it changed the values of the
+  verb's narrowing args (the digest's `narrow`, such as `view.limit`) and
+  as `raised` when it only raised `max_chars` or set `big`. A line keeps
+  `narrow` (a hash of those values) and `cap` (the `max_chars` it set, or
+  the one its digest stood for) for this. A verb with many `raised` and
+  few `followed` needs a better filter or default.
 - **`unfiltered`** marks only a call that printed past 2000 characters
   with none of its verb's filters; `get`'s `paths` is one (it picks what
   is read), whatever the size.

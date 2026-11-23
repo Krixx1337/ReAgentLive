@@ -242,7 +242,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python (tests/table is a tool they use).
     add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/call_tests.cpp tests/cli/format_tests.cpp
         tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp
-        tests/cli/budget_tests.cpp tests/cli/kismet_tests.cpp)
+        tests/cli/budget_tests.cpp tests/cli/kismet_tests.cpp tests/cli/usage_tests.cpp)
     target_link_libraries(reagentlive-cli-tests PRIVATE reagentlive-cli reagentlive-doctest nlohmann_json::nlohmann_json Zydis)
     # Args::At throws on a key the verb's row lacks (call/verb.h): in the test
     # builds only, so a builder reading a renamed or misspelt key fails a test.

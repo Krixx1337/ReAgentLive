@@ -39,6 +39,9 @@ struct UsageVerb {
     uint64_t calls = 0, out = 0, largest = 0;
     double ms = 0;
     std::optional<uint64_t> batched, unfiltered, repeated, refused, digested, saved;
+    // After a digest, the verb's next call: one that changed its narrowing
+    // args (followed) or only raised max_chars (raised).
+    std::optional<uint64_t> followed, raised;
     std::optional<std::map<std::string, uint64_t>> refusedBy;
     template<class V> static void Describe(V& v) {
         v("verb", &UsageVerb::verb);
@@ -54,6 +57,8 @@ struct UsageVerb {
         v("refused_by", &UsageVerb::refusedBy);
         v("digested", &UsageVerb::digested);
         v("saved", &UsageVerb::saved);
+        v("followed", &UsageVerb::followed);
+        v("raised", &UsageVerb::raised);
     }
 };
 struct UsageCall {
@@ -174,6 +179,7 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
     std::set<std::pair<std::string, std::string>> seen;   // (session, hash)
     std::set<std::string> sessions;
     std::vector<const UsageLine*> calls;
+    std::map<std::pair<std::string, std::string>, const UsageLine*> digestOf;  // (session, verb): its last digest.
     const auto bump = [](std::optional<uint64_t>& count) { count = count.value_or(0) + 1; };
     for (const auto& line : lines) {
         if (!all && line.session != *session) continue;
@@ -193,6 +199,14 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
             ++(*row.refusedBy)[line.refused.empty() ? "error" : line.refused];
         }
         if (!seen.insert({line.session, line.hash}).second) bump(row.repeated);
+        // The call after a digest on the same verb: did it narrow, or only raise the cap?
+        if (const auto pending = digestOf.find({line.session, line.verb}); pending != digestOf.end()) {
+            const UsageLine& digested = *pending->second;
+            if (!line.narrow.empty() && line.narrow != digested.narrow) bump(row.followed);
+            else if (line.cap && (!*line.cap || *line.cap > digested.cap.value_or(0))) bump(row.raised);
+            digestOf.erase(pending);
+        }
+        if (line.digest) digestOf[{line.session, line.verb}] = &line;
         const uint64_t saved = line.digest > line.out ? line.digest - line.out : 0;
         if (line.digest) {
             bump(row.digested);

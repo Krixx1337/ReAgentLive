@@ -104,6 +104,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **`usage` shows digest follow-through:** per verb, `followed` (the next
+  call changed its narrowing args) and `raised` (it only raised
+  `max_chars`), so verbs that need better filters stand out.
 - **A session context limit:** `--context-limit <chars>` (console and MCP
   adapter; default 400,000, `0` none) is a soft limit on what a tool
   caller's session puts into an agent's context. Past it every envelope

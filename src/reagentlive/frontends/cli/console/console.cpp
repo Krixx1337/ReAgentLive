@@ -366,6 +366,16 @@ struct UsageScope {
                 if (given(callArgs[key], std::string(field.key))) record.keys.push_back(key + "." + std::string(field.key));
             if (!callArgs[key].is_object() || callArgs[key].empty()) record.keys.push_back(key);
         }
+        // The narrowing args' values, for a digest's follow-through (usage).
+        Json narrow = Json::object();
+        for (const auto& path : budget::NarrowingArgs(*verb)) {
+            const size_t dot = path.find('.');
+            const Json* value = callArgs.is_object() && callArgs.contains(path.substr(0, dot)) ? &callArgs[path.substr(0, dot)] : nullptr;
+            if (value && dot != std::string::npos)
+                value = value->is_object() && value->contains(path.substr(dot + 1)) ? &(*value)[path.substr(dot + 1)] : nullptr;
+            if (value && !value->is_null()) narrow[path] = *value;
+        }
+        if (!narrow.empty()) record.narrow = UsageHash(narrow.dump(-1, ' ', true, Json::error_handler_t::replace));
         // A program's own reads of the table and its quit are not the agent's calls.
         const auto has = [&](const char* key) { return std::ranges::find(record.keys, key) != record.keys.end(); };
         skip = record.verb == "quit" || (record.verb == "help" && (has("json") || has("hash")));
@@ -380,6 +390,7 @@ struct UsageScope {
         record.caller = session.usage.caller;
         record.out = line.out > line.inner ? line.out - line.inner : 0;
         record.digest = line.digest;
+        if (line.digest && !record.cap) record.cap = session.input.maxChars;
         record.ok = line.ok;
         record.refused = line.refused;
         record.ms = std::chrono::duration<double, std::milli>(Clock::now() - began).count();
@@ -548,6 +559,8 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
         session.input = std::move(line);
     }
     UsageScope usage(session, input.original, inBatch);
+    if (input.big) usage.record.cap = 0;
+    else if (input.maxChars) usage.record.cap = *input.maxChars;
     if (!input.problem.empty()) {
         usage.Describe("call", Json());
         JsonError(session, "call", ErrorKind::Schema, input.problem);
