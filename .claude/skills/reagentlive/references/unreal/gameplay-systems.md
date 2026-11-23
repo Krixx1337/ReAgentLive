@@ -96,7 +96,7 @@
   client; an empty list there is not evidence of nothing.
 - Replicated state of other players often sits in a component's array
   (`each <Component> <Array>`): one table, cheaper than a getter per actor.
-- Before trusting a design doc's formula, run `script` on the Blueprint
-  function that applies it: it lists the properties and calls it combines.
+- Before trusting a design doc's formula, run `script --decode` on the
+  Blueprint function that applies it and read the formula from its statements.
 - One asset's subobjects (the bodies of one physics asset, the parts of one
   mesh): `each <Class> <Field> --outer <asset>`, not the whole class.

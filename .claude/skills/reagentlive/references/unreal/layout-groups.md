@@ -31,6 +31,7 @@ From any `ChildProperties` pointer (an `FField`):
 | Member | Known answer |
 |---|---|
 | `FField.ClassPrivate` | a pointer to an `FFieldClass` whose `Name` is `FloatProperty` / `DoubleProperty` (for `Vector.X`) |
+| `FField.Owner` | a pointer with bit 0 set (a `UObject` owner): clear it and `describe` gives `Vector` |
 | `FField.Next` | `Vector.X` → `Y` → `Z` → null |
 | `FField.Name` | an `FName` that decodes to `X` |
 | `FFieldClass.Name` | at 0 in `FFieldClass` |

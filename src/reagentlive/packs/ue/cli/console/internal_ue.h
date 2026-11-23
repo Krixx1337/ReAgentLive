@@ -160,4 +160,6 @@ private:
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
 // calls-start, calls-read, calls-stop (the agent's call recorder).
 void RunCalls(Session& session, const Command& command, std::string_view jsonCommand);
+// script --decode: the bytecode as statements, named console-side (no game thread).
+void RunScriptDecode(Session& session, const Command& command, std::string_view jsonCommand);
 }

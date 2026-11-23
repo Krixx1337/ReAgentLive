@@ -216,9 +216,15 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {}, Of<shape::Func>, parse::Func,
             "params lists the parameters in block order (direction in, out, in ref, in/out ref or return) and block_size "
             "is the call block's size; reading them needs the game thread, so without it params_error says why instead."},
-        {"script", "ue", ToolPack::Explore, "a Blueprint function's bytecode: the names, functions and properties it uses",
+        {"script", "ue", ToolPack::Explore, "a Blueprint function's bytecode: the names, functions and properties it uses; --decode: as statements",
             {{"object", "object|Class", One, "str", objectOrClass}, {"function", "[Owner:]Function", One, "str", function}},
-            {}, Of<shape::Script>, parse::Script, "Each entry is read right after its opcode and confirmed live."},
+            {{"--decode", Takes::Nothing, "bool", "", "read the bytecode as statements with their offsets"},
+             {"--entry", Takes::One, "int", "offset", "with --decode: one uber-graph event, from this offset to its return, pop or goto"}},
+            Of<shape::Script>, parse::Script,
+            "Each entry is read right after its opcode and confirmed live. --decode reads every expression instead (no "
+            "game thread): statements, the lists from the decoded operands, properties by their readable name (raw: the "
+            "reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it "
+            "(stopped). An uber graph adds events: each event's entry offset, from the calls that enter it."},
         {"enum", "ue", ToolPack::Explore, "an enum's names and values, in order",
             {{"enum", "object|Enum", One, "str", "an enum object ($N, a literal ref, an address), or an enum by name"}},
             {}, Of<shape::Enum>, parse::Enum,

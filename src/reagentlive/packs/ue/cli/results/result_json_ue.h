@@ -469,11 +469,32 @@ struct ScriptProperty {
     uint32_t count = 0;
     Addr address;
     std::string property;
+    std::optional<std::string> raw; // --decode: the reflected name where `property` shows a readable one.
     template<class V> static void Describe(V& v) {
         v("offset", &ScriptProperty::offset);
         v("count", &ScriptProperty::count);
         v("address", &ScriptProperty::address);
         v("property", &ScriptProperty::property);
+        v("raw", &ScriptProperty::raw);
+    }
+};
+// script --decode: one statement (a top-level expression) and its opcode's Script.h name.
+struct ScriptStatement {
+    HexNum offset;
+    std::string op, text;
+    template<class V> static void Describe(V& v) {
+        v("offset", &ScriptStatement::offset);
+        v("op", &ScriptStatement::op);
+        v("text", &ScriptStatement::text);
+    }
+};
+// script --decode of an uber graph: where an event enters it (script --entry).
+struct ScriptEvent {
+    HexNum offset;
+    std::string event;
+    template<class V> static void Describe(V& v) {
+        v("offset", &ScriptEvent::offset);
+        v("event", &ScriptEvent::event);
     }
 };
 struct Script {
@@ -483,6 +504,9 @@ struct Script {
     std::vector<ScriptName> names;
     std::vector<ScriptFunction> functions;
     std::vector<ScriptProperty> properties;
+    std::optional<std::vector<ScriptStatement>> statements;
+    std::optional<std::vector<ScriptEvent>> events;
+    std::optional<std::string> stopped; // --decode stopped early: why ("unknown 0xNN at +0xOFF").
     template<class V> static void Describe(V& v) {
         v("ref", &Script::ref);
         v("function", &Script::function);
@@ -490,6 +514,9 @@ struct Script {
         v("names", &Script::names);
         v("functions", &Script::functions);
         v("properties", &Script::properties);
+        v("statements", &Script::statements);
+        v("events", &Script::events);
+        v("stopped", &Script::stopped);
     }
 };
 struct RefsRow {

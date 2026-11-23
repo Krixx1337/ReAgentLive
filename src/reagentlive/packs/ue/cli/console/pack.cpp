@@ -97,6 +97,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
     }
     if (command.kind == Kind::Dump) return PrintDump(session, ue::GetRef(request), refs, structs, command, baseline);
     if (command.kind == Kind::Script) {
+        if (command.decode) return RunScriptDecode(session, command, jsonCommand);
         if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, "unsupported", "agent does not support script");
         const auto object = ue::GetRef(request);
         auto function = ue::Function(client, object, request.text);

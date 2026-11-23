@@ -124,16 +124,16 @@ No `function`, not `pointer`: likely chance bytes. Every table: a script.
 
 ## Reading Blueprint logic
 
-- **What a Blueprint function really reads:** `script <obj|class> <Fn>`
-  (names, calls and properties, confirmed live). A native function has no
-  bytecode.
+- **What a Blueprint function computes:** `script <obj|class> <Fn> --decode`
+  gives its statements with offsets; read the formula there, never by hand
+  from the raw bytes. Without `--decode`, `script` lists only names, calls
+  and properties. A native function has no bytecode.
+- **Event graphs:** decode `ExecuteUbergraph_<Class>` once for its entry
+  list, then `--entry <offset>` per event of interest.
+- If the decode reports it stopped, the statements before the stop are
+  sound; read past it by hand only around the offset it names.
 - **Which Blueprints read a value:** `refs <tag text>` or `refs #<index>`,
-  then `script` on each hit.
-- `script` is an anchored scan, not a disassembler. To prove a returned
-  value is used unchanged, read the bytecode near the end by hand: the
-  function's script array (`Script` in the engine layout,
-  `src/reagentlive/packs/ue/engine_layout.h`); look for `EX_Let` 0x0F,
-  `EX_LocalOutVariable` 0x48, `EX_Cast` 0x38.
+  then `script --decode` on each hit.
 - With an SDK dump: the parameter struct's `CallFunc_*` locals name every
   call the function makes (any math node in between shows); `grep` the
   SDK `*_parameters.hpp` for `CallFunc_FindAttribute_ReturnValue` to list

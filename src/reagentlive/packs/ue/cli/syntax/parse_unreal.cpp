@@ -224,8 +224,18 @@ Parsed Func(const Args& args, const ParseContext& context) {
 }
 
 // script <object|class> <[Owner:]Function>: a Blueprint function's bytecode.
+// --decode reads it as statements; --entry <offset> one uber-graph event.
 Parsed Script(const Args& args, const ParseContext& context) {
-    return FunctionTarget(args, context, ue::op::Function, Kind::Script);
+    auto command = FunctionTarget(args, context, ue::op::Function, Kind::Script);
+    if (!command) return command;
+    command->decode = args.Has("--decode");
+    if (args.Has("--entry")) {
+        uint64_t entry = 0;
+        if (!command->decode) return Fail("--entry needs --decode");
+        if (!Number(args.Value("--entry"), entry) || entry >= ue::MaxScriptBytes) return Fail("--entry is a bytecode offset");
+        command->entry = static_cast<uint32_t>(entry);
+    }
+    return command;
 }
 
 // enum <object|Enum>: an enum's names and values.

@@ -164,6 +164,13 @@ TEST_CASE("func --script and refs parse to their kinds") {
     CHECK(parsed->kind == Kind::Script);
     CHECK(std::string_view(parsed->request.text) == "Owner:GetSpeed");
     CHECK_FALSE(Parse("func $1 Owner:GetSpeed --script", TwoRefs).has_value());
+    CHECK_FALSE(parsed->decode);
+    parsed = Parse("script $1 Owner:GetSpeed --decode --entry 0x58", TwoRefs);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->decode);
+    CHECK(parsed->entry == 0x58u);
+    CHECK_FALSE(Parse("script $1 Owner:GetSpeed --entry 0x58", TwoRefs).has_value());
+    CHECK_FALSE(Parse("script $1 Owner:GetSpeed --decode --entry x", TwoRefs).has_value());
     parsed = Parse("refs #145935", NoRefs);
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Refs);
@@ -317,7 +324,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"trace", {"trace 0,0,0 1,1,1 --ignore $1"}},
         {"describe", {"describe $1"}},
         {"func", {"func $1 GetHealth"}},
-        {"script", {"script $1 Tick"}},
+        {"script", {"script $1 Tick", "script $1 Tick --decode", "script Pawn ExecuteUbergraph_Pawn --decode --entry 0x1c"}},
         {"enum", {"enum EMode"}},
         {"refs", {"refs Health", "refs #42"}},
         {"funcs", {"funcs $1", "funcs Pawn Get --start 4"}},

@@ -23,7 +23,8 @@ struct EngineLayout {
     // class: UClass. interfaces: TArray of {UClass*, int32 PointerOffset, bool}.
     int32_t castFlags, defaultObject, interfaces;
     // field: FField and FFieldClass; UField::Next for the UFunction chain.
-    int32_t fieldClass, fieldNext, fieldName, fieldClassName, fieldClassCastFlags, uFieldNext;
+    // FField::Owner is an FFieldVariant: one pointer, bit 0 set when it is a UObject.
+    int32_t fieldClass, fieldOwner, fieldNext, fieldName, fieldClassName, fieldClassCastFlags, uFieldNext;
     // property: FProperty.
     int32_t arrayDim, elementSize, propertyFlags, propertyOffset;
     // typed: FBoolProperty's FieldSize, ByteOffset, ByteMask, FieldMask bytes
@@ -58,7 +59,7 @@ inline constexpr EngineLayout StockUE5 = {
     .nameNumber = 0x04,
     .superStruct = 0x40, .children = 0x48, .childProperties = 0x50, .structSize = 0x58, .script = 0x60,
     .castFlags = 0xD8, .defaultObject = 0x110, .interfaces = 0x1E0,
-    .fieldClass = 0x08, .fieldNext = 0x18, .fieldName = 0x20, .fieldClassName = 0x00, .fieldClassCastFlags = 0x18,
+    .fieldClass = 0x08, .fieldOwner = 0x10, .fieldNext = 0x18, .fieldName = 0x20, .fieldClassName = 0x00, .fieldClassCastFlags = 0x18,
     .uFieldNext = 0x28,
     .arrayDim = 0x30, .elementSize = 0x34, .propertyFlags = 0x38, .propertyOffset = 0x44,
     .boolBase = 0x70, .structStruct = 0x70, .arrayInner = 0x78, .setElement = 0x70, .mapKey = 0x70, .mapValue = 0x78,
@@ -108,6 +109,7 @@ inline constexpr Member Members[] = {
     {"class", "ClassDefaultObject", &EngineLayout::defaultObject},
     {"interface", "Interfaces", &EngineLayout::interfaces},
     {"field", "FField.ClassPrivate", &EngineLayout::fieldClass},
+    {"field", "FField.Owner", &EngineLayout::fieldOwner},
     {"field", "FField.Next", &EngineLayout::fieldNext},
     {"field", "FField.Name", &EngineLayout::fieldName},
     {"field", "FFieldClass.Name", &EngineLayout::fieldClassName},

@@ -128,6 +128,10 @@ struct Command {
     // calls-read's cursor; calls-start's request carries the object, the
     // function, the milliseconds (args[0]) and the object filter (args[1]).
     uint64_t callsSlot = 0, callsAfter = 0;
+    // script --decode: the bytecode as statements; --entry: from this offset
+    // to the event's end (an uber-graph entry).
+    bool decode = false;
+    std::optional<uint32_t> entry;
 };
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).

@@ -73,6 +73,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Blueprint logic as statements:** `script <obj|Class> <Fn> --decode`
+  decodes the Kismet bytecode into readable statements with byte offsets
+  (`if !(Speed > Limit) goto +0x58`), names properties by their readable
+  names and needs no game thread; on an uber graph it lists each event's
+  entry offset, and `--entry <offset>` reads one event alone
+  ([Unreal pack](docs/commands/unreal.md)).
 - **IDA loader types and pseudocode files:** `decompile_to` writes a `.c`
   file per function with a grep summary, `import_layouts` turns a
   `layout-export --closure` file into local types and `apply_this` types

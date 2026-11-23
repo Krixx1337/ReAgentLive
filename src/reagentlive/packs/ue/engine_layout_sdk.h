@@ -23,6 +23,7 @@ consteval EngineLayout SdkLayout() {
     out.castFlags = at(offsetof(SDK::UClass, CastFlags));
     out.defaultObject = at(offsetof(SDK::UClass, ClassDefaultObject));
     out.fieldClass = at(offsetof(SDK::FField, ClassPrivate));
+    out.fieldOwner = at(offsetof(SDK::FField, Owner));
     out.fieldNext = at(offsetof(SDK::FField, Next));
     out.fieldName = at(offsetof(SDK::FField, Name));
     out.fieldClassName = at(offsetof(SDK::FFieldClass, Name));

@@ -36,9 +36,6 @@
   trailing padding.
 - "Where does this anim-graph input come from?": `__CustomProperty_<Pin>_<GUID>`
   fields feed a node (often a Control Rig). `find <GUID>` gives its
-  `EvaluateGraphExposedInputs` function. `script` on it first; for the raw
-  bytecode, its script array (`Script` in the engine layout,
-  `src/reagentlive/packs/ue/engine_layout.h`) calls the ubergraph at an
-  entry offset (`0x46 <func> 0x1d <int32>`). Read the ubergraph bytecode
-  there and resolve the pointer operands by the layout's `FField.Name` and
-  property `Offset`; `01` = instance variable, `00` = local, `0f` = assign.
+  `EvaluateGraphExposedInputs` function. `script --decode` on it: it calls
+  the uber graph at an entry offset; `script --decode --entry <offset>` on
+  the uber graph reads that event.
