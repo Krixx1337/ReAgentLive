@@ -151,20 +151,20 @@ struct CheckResult {
     size_t anchorHits = 0;
     std::optional<size_t> reference;     // The match others are compared with: the expected one, else the first.
     std::optional<size_t> uniqueAtLength; // Several matches, all diverging: the length that separates them.
-    // With --expect (no resolve) and no match there: the fixed bytes that
+    // With `expect` (no resolve) and no match there: the fixed bytes that
     // differ at expect + offset; nullopt when those bytes are unreadable.
     std::optional<std::vector<Mismatch>> mismatches;
     bool compared = false;               // mismatches was attempted.
     std::vector<AddressField> warnings;  // Fixed fields at the reference (or expect) that hold an address.
     // Pattern bytes the console's decoder read the warnings from (with
-    // --expect, from the instruction boundary there); nullopt: the byte
+    // `expect`, from the instruction boundary there); nullopt: the byte
     // heuristic alone.
     std::optional<size_t> decoded;
     std::optional<bool> resolves;        // With an expect.
 };
 
 // Runs checks against one agent, sharing anchor searches between checks
-// (sig --check --file): one search per module and anchor.
+// (sig-check with `file`): one search per module and anchor.
 class Checker {
 public:
     Checker(SearchFn search, ReadFn read, std::span<const Module> modules)

@@ -1,4 +1,4 @@
-// reagentlive CLI console: JSON output: records, errors, --timing, output budgets and batch capture.
+// reagentlive CLI console: JSON output: records, errors, `timing`, output budgets and batch capture.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

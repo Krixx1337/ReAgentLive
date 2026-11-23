@@ -3,7 +3,7 @@
 // A names file has one field per line, whitespace-separated:
 //   <Owner> <offset> <size> <boolMask> <Name>
 // Owner is the reflected class or struct name (no C++ prefix). Offset and
-// mask as `get --types` reports them (bools: the byte holding the bit and its
+// mask as `get` with `mode` `types` reports them (bools: the byte holding the bit and its
 // mask, 0 otherwise). Size 0 matches any size. A trailing '?' on Name marks
 // an unconfirmed name. Blank lines and '#' comments are ignored.
 #pragma once

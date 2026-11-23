@@ -92,7 +92,7 @@ public:
         return out;
     }
 
-    // What `--fields` can name under the main list, and the characters each
+    // What `view.fields` can name under the main list, and the characters each
     // takes over all rows: member paths as RowReader reads them (an array's
     // header and the `rows` level of nested arrays dropped). Sorted by path.
     std::map<std::string, size_t> Fields() const {

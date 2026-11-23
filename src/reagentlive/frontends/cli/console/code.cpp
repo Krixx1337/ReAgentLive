@@ -121,7 +121,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     uint64_t address = command.request.address;
     auto function = FunctionAt(session, address);
     if (!function) return JsonError(session, jsonCommand, ErrorKind::Unwind, function.error());
-    // --function with no entry holding the address (a leaf function, or an
+    // `function` with no entry holding the address (a leaf function, or an
     // image whose directory leaves code out): walk from the address instead.
     const bool walk = command.function && !*function;
     if (command.function && *function && !command.resume) address = (*function)->range.start;
@@ -422,7 +422,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         data = std::move(kept);
         for (auto& run : tableRuns) data.push_back(std::move(run));
     }
-    // --labels, else the console's labels file and the host's names file,
+    // `save.labels`, else the console's labels file and the host's names file,
     // those that exist: the names this build's rows give, by address (the
     // highest-ranked row per address).
     std::map<uint64_t, std::string> labels;

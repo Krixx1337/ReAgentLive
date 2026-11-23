@@ -1,4 +1,4 @@
-// reagentlive CLI console: script --decode, a Blueprint function's bytecode as
+// reagentlive CLI console: script with `decode`, a Blueprint function's bytecode as
 // statements. The bytes are read through plain memory reads and decoded here
 // (values/kismet.h); the operands are named with describe, name and FField
 // reads, none of which needs the game thread.

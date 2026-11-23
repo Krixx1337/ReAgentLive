@@ -9,7 +9,7 @@
 #include "reagentlive/packs/ue/client_ue.h"
 
 namespace reagentlive::cli::watch_field {
-// The read --type element of a scalar property of `size` bytes; empty when
+// The read with `type` element of a scalar property of `size` bytes; empty when
 // it has none (strings, names, containers: watched as raw bytes).
 inline std::string_view ScalarType(std::string_view type, uint32_t size) {
     if (type == "FloatProperty" && size == 4) return "f32";

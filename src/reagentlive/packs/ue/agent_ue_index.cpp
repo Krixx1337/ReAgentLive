@@ -1,5 +1,5 @@
 // reagentlive Unreal pack: the class index over the located object table
-// (class_index.h), for find --cls and each. SDK-free (reagentlive::ue-base).
+// (class_index.h), for find with `cls` and each. SDK-free (reagentlive::ue-base).
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

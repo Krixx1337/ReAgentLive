@@ -270,7 +270,7 @@ void RunRows(Session& session, const Command& command, StructCache& structs, std
     if (!read) return CommandError(session, jsonCommand, read.error());
     auto names = RowNames(client, *read);
     if (!names) return CommandError(session, jsonCommand, names.error());
-    // --match on the names, before paging.
+    // `view.match` on the names, before paging.
     std::vector<MapRow> rows;
     std::vector<std::string> rowNames;
     for (size_t i = 0; i < read->size(); ++i)

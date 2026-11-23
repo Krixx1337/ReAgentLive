@@ -1,6 +1,6 @@
 // reagentlive CLI: a raw memory range kept between runs (mem-snap) and the
 // typed comparison against it (mem-diff): changed, unchanged, increased or
-// decreased per aligned element, and with --keep a narrowing set of candidates
+// decreased per aligned element, and with `keep` a narrowing set of candidates
 // that later diffs compare alone. Pure: streams in and out, no files opened.
 #pragma once
 #include <algorithm>
@@ -26,7 +26,7 @@ struct Snapshot {
     uint32_t owner = 0;         // The agent instance it was read from; another one's is stale.
     uint64_t tick = 0;
     std::vector<uint8_t> bytes;
-    // Offsets still in the running after a --keep diff, with the element type
+    // Offsets still in the running after a `keep` diff, with the element type
     // they were narrowed under; empty with no type: every element.
     std::string type;
     std::vector<uint32_t> candidates;
@@ -100,7 +100,7 @@ inline std::optional<int> OrderOf(std::string_view type, const uint8_t* before, 
 
 struct Diff {
     uint64_t compared = 0, matched = 0;
-    std::vector<uint32_t> offsets;   // Every match, for --keep.
+    std::vector<uint32_t> offsets;   // Every match, for `keep`.
 };
 
 // Elements of `size` bytes every `size` bytes from the start (or the snapshot's candidates)

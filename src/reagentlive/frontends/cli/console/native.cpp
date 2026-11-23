@@ -1,5 +1,5 @@
 // reagentlive CLI console: native objects without an engine pack. vtable (slots
-// read from live bytes, code decided by the module's section table; --rtti
+// read from live bytes, code decided by the module's section table; `rtti`
 // the MSVC type information) and the region an address lies in (the agent's
 // VirtualQuery, named here) for read and peek.
 #include <algorithm>

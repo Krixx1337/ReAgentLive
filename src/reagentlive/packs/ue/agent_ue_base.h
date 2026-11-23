@@ -99,7 +99,7 @@ bool ClassMatches(const Object* object, std::string_view wanted, std::string& sc
 // The class or a parent class is named `wanted` (any case).
 bool ClassNamed(const Object* type, std::string_view wanted, std::string& scratch);
 void ResetClassCache();
-// The class index (class_index.h, agent_ue_index.cpp) find --cls and each walk:
+// The class index (class_index.h, agent_ue_index.cpp) find with `cls` and each walk:
 // StartClassIndex on a query's first tick, then ClassIndexReady each tick
 // until true (false: out of this tick's budget), then NextIndexed gives the
 // candidate slots in order; each still gets the full checks. False from

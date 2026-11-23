@@ -14,7 +14,7 @@
 //
 // A struct used by several verbs names itself with
 // `static constexpr std::string_view TypeName = "Chain";` (a pack's carry its
-// prefix: "ue.Name"): help --json then lists it once under `types`.
+// prefix: "ue.Name"): help with `json` then lists it once under `types`.
 #pragma once
 #include <cinttypes>
 #include <compare>
@@ -231,10 +231,10 @@ inline void CollectNamed(const Type& type, NamedTypes& out, bool top = false) {
     for (const auto& field : type.fields) CollectNamed(field.type, out);
 }
 
-// The type for programs (`help --json`): scalars by name, {"enum": [...]},
+// The type for programs (`help` with `json`): scalars by name, {"enum": [...]},
 // {"list": T} (with "nullable": true), {"map": T},
 // {"struct": {key: {"type": T, "optional": true}}}, {"named": "Chain"} for a
-// named type (help --json's `types` holds it). `full`: the outermost one's
+// named type (help with `json`'s `types` holds it). `full`: the outermost one's
 // definition even when it is named.
 inline Json TypeJson(const Type& type, bool full = false) {
     if (!type.name.empty() && !full) return {{"named", type.name}};

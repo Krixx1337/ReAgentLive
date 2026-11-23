@@ -1,4 +1,4 @@
-// reagentlive CLI console: field tables, struct layouts, and get with no paths (every field, or --types).
+// reagentlive CLI console: field tables, struct layouts, and get with no paths (every field, or `mode` `types`).
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -105,7 +105,7 @@ std::optional<Json> SparseValue(std::span<const uint8_t> bytes) {
 }
 }
 
-// --own: the class whose fields are kept: the named class, else the instance's.
+// `own`: the class whose fields are kept: the named class, else the instance's.
 Result<std::string> OwnClass(Session& session, const Ref& object, const Command& command) {
     if (!command.className.empty()) return command.className;
     auto described = ue::Describe(session.client, object);
@@ -183,7 +183,7 @@ Result<ue::ArrayPreview> PreviewElements(Client& client, const Ref& object, cons
 }
 
 // Fields plus their current values, every value through the shared reader.
-// Filters (--match, --nonzero, --changed, --own) drop rows before any lookup for them.
+// Filters (`view.match`, `view.nonzero`, `mode` `changed`, `own`) drop rows before any lookup for them.
 void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, StructCache& structs, const Command& command,
                const std::optional<Snapshot>& sessionBaseline) {
     Client& client = session.client;
@@ -202,7 +202,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     const auto sorted = SortedByOffset(std::move(*fields));
     if (baseline && sorted != baseline->fields)
         return JsonError(session, "get", ErrorKind::Snapshot, "reflected field layout changed; take a new snapshot");
-    // --own: the class that declares the kept fields; an instance's is looked up.
+    // `own`: the class that declares the kept fields; an instance's is looked up.
     std::string ownClass;
     if (command.own) {
         auto own = OwnClass(session, object, command);
@@ -237,7 +237,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         shown += keep[i];
     }
 
-    // Top-level arrays, sets and maps: their first elements (--elements, else
+    // Top-level arrays, sets and maps: their first elements (`view.elements`, else
     // the preview's 8), read once and printed beside the header.
     const uint32_t previewCount = command.elements ? command.elements : RowReader::PreviewNested;
     struct Preview {
@@ -411,7 +411,7 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
         result.rows.push_back(std::move(row));
     }
     SortRowsByOffset(result.rows);
-    // --nonzero also leaves out the zero members inside the values it keeps, as get and each do.
+    // `view.nonzero` also leaves out the zero members inside the values it keeps, as get and each do.
     if (command.nonzero)
         for (auto& row : result.rows)
             if (row.value) KeepNonZero(*row.value);

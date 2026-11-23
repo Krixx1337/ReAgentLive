@@ -25,7 +25,7 @@ constexpr size_t StubBytes = 16;           // Read per hop to decode one instruc
 struct Slot {
     size_t slot = 0;
     uint64_t target = 0;
-    std::optional<uint64_t> body;   // --resolve: where a jump stub leads.
+    std::optional<uint64_t> body;   // `resolve`: where a jump stub leads.
     bool operator==(const Slot&) const = default;
 };
 struct Slots {
@@ -54,7 +54,7 @@ inline Slots ReadSlots(std::span<const uint8_t> bytes, size_t count, const std::
 }
 
 // The address each slot's target leads to through unconditional direct
-// jumps (at most dis::MaxFollow), as `disasm --follow` would end; set only
+// jumps (at most dis::MaxFollow), as `disasm` with `follow` would end; set only
 // where a jump was taken. One read per hop, MaxBatchReads per request.
 inline std::expected<void, std::string> ResolveBodies(const ReadFn& read, std::vector<Slot>& slots) {
     std::vector<uint64_t> at(slots.size());
@@ -86,7 +86,7 @@ inline std::expected<void, std::string> ResolveBodies(const ReadFn& read, std::v
     return {};
 }
 
-// Text read with --type cstr|wstr: up to the terminator, or every byte read
+// Text read with `type` cstr|wstr: up to the terminator, or every byte read
 // when there is none (`terminated` false). Unprintable characters are
 // escaped (\n, \t, \r, \\, \xNN; wide: \uNNNN), never dropped.
 struct Decoded { std::string text; size_t length = 0; bool terminated = false; };

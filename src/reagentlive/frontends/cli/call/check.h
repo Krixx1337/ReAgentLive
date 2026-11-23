@@ -335,7 +335,7 @@ inline Json ExampleCall(const Verb& verb, const Json& given = Json(), std::strin
     return {{"verb", verb.name}, {"args", std::move(args)}};
 }
 
-// An argument as help --json lists it.
+// An argument as help with `json` lists it.
 inline Json ArgJson(const Arg& arg) {
     Json out = {{"key", arg.key}, {"type", arg::Enum(arg.type) ? std::string_view("str") : arg.type}};
     if (arg.required) out["required"] = true;

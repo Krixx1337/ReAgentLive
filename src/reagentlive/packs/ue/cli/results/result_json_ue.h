@@ -53,7 +53,7 @@ struct Funcs {
     }
 };
 
-// A reflected field's layout, as get --types, get --meta and func's params list it.
+// A reflected field's layout, as get with `mode` `types`, get with `meta` and func's params list it.
 struct FieldInfo {
     static constexpr std::string_view TypeName = "ue.FieldInfo";
     std::string name, owner, type;
@@ -127,13 +127,13 @@ struct Preview {
 };
 // get's row, one type for its three modes:
 // - every field (no paths): name (the readable one where recovered, `raw`
-//   the reflected one beside it), offset, value; `before` with --changed,
+//   the reflected one beside it), offset, value; `before` with `mode` `changed`,
 //   `object` for a pointer, `preview` for a container; the layout is `meta`
-//   with --meta.
+//   with `meta`.
 // - paths: `path` as asked, value, `address` (with module and rva), `holder`
-//   when a pointer led there; `type` and `hex` with --meta; a failed path
+//   when a pointer led there; `type` and `hex` with `meta`; a failed path
 //   keeps its place with `error`.
-// - --types: name, raw, owner, type, offset, size and the container's parts; no value.
+// - `mode` `types`: name, raw, owner, type, offset, size and the container's parts; no value.
 // `native` marks a member from the native file (`stale`: labelled under
 // another build); `truncated` only when true.
 struct GetRow {
@@ -215,8 +215,8 @@ struct SnapInfo {
     }
 };
 // get: `same_tick` (paths) covers the value reads, not the lookups before
-// them; `truncated` and `capped` (every field, --types) say whether the rows
-// are complete; `snap` answers --snap.
+// them; `truncated` and `capped` (every field, `mode` `types`) say whether the rows
+// are complete; `snap` answers `mode` `snap`.
 struct Get {
     RefId ref;
     std::vector<GetRow> rows;
@@ -356,7 +356,7 @@ struct Entries {
 
 // rows: a data table's rows, decoded with its RowStruct.
 // A data table's row (value: its RowStruct decoded), or a curve table's
-// curve (keys; value only with --at, the curve evaluated there).
+// curve (keys; value only with `at`, the curve evaluated there).
 struct TableRow {
     std::string name;
     Addr address;
@@ -378,7 +378,7 @@ struct Rows {
     std::optional<std::string> rowStruct;   // A data table.
     std::optional<RefId> rowStructRef;
     std::optional<std::string> curve;       // A curve table: simple or rich.
-    std::optional<double> at;               // --at: the time each value is for.
+    std::optional<double> at;               // `at`: the time each value is for.
     uint64_t total = 0;
     std::vector<TableRow> rows;
     uint32_t from = 0;
@@ -469,7 +469,7 @@ struct ScriptProperty {
     uint32_t count = 0;
     Addr address;
     std::string property;
-    std::optional<std::string> raw; // --decode: the reflected name where `property` shows a readable one.
+    std::optional<std::string> raw; // `decode`: the reflected name where `property` shows a readable one.
     template<class V> static void Describe(V& v) {
         v("offset", &ScriptProperty::offset);
         v("count", &ScriptProperty::count);
@@ -478,7 +478,7 @@ struct ScriptProperty {
         v("raw", &ScriptProperty::raw);
     }
 };
-// script --decode: one statement (a top-level expression) and its opcode's Script.h name.
+// script with `decode`: one statement (a top-level expression) and its opcode's Script.h name.
 struct ScriptStatement {
     HexNum offset;
     std::string op, text;
@@ -488,7 +488,7 @@ struct ScriptStatement {
         v("text", &ScriptStatement::text);
     }
 };
-// script --decode of an uber graph: where an event enters it (script --entry).
+// script with `decode` of an uber graph: where an event enters it (script with `entry`).
 struct ScriptEvent {
     HexNum offset;
     std::string event;
@@ -548,12 +548,12 @@ struct Refs {
 // each: a table, one row per live instance with a value per column, in the
 // columns' order. A call's value is its return value, or {return, outputs}.
 // A cell that failed is null, with an `errors` entry naming its row and
-// column. With --seconds (one column) also the polls and the changes seen.
+// column. With `seconds` (one column) also the polls and the changes seen.
 struct EachRow {
     RefId ref;
     std::optional<std::string> name; // The instance's object name (absent when it was gone).
     std::vector<Json> values;
-    std::optional<HexBytes> hex;    // --meta, one column read in the instance: its bytes.
+    std::optional<HexBytes> hex;    // `meta`, one column read in the instance: its bytes.
     template<class V> static void Describe(V& v) {
         v("ref", &EachRow::ref);
         v("name", &EachRow::name);
@@ -613,7 +613,7 @@ struct Each {
     std::optional<uint64_t> polls;
     std::optional<std::vector<EachChange>> changes;
     std::optional<std::string> pollError;
-    std::optional<uint64_t> matched, omitted; // --where: instances that matched; past --limit: rows not shown.
+    std::optional<uint64_t> matched, omitted; // `where`: instances that matched; past `view.limit`: rows not shown.
     std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("class", &Each::className);
@@ -641,7 +641,7 @@ struct CallOutput {
     std::string name, direction;
     Json value;
     bool truncated = false;
-    std::optional<FieldInfo> meta;      // --meta: the parameter's layout.
+    std::optional<FieldInfo> meta;      // `meta`: the parameter's layout.
     template<class V> static void Describe(V& v) {
         v("name", &CallOutput::name);
         v("direction", &CallOutput::direction, "out|return");
@@ -659,7 +659,7 @@ struct Call {
     std::optional<std::string> keptReason;
     std::optional<std::vector<CallOutput>> outputs;
     std::optional<bool> truncated;
-    // --dry: the function's native entry and whether it is const or pure.
+    // `dry`: the function's native entry and whether it is const or pure.
     std::optional<Addr> exec;
     std::optional<bool> pure;
     std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
@@ -732,7 +732,7 @@ struct Trace {
         v("item", &Trace::item);
     }
 };
-// calls-start: the recording armed (or with --dry, what would be swapped).
+// calls-start: the recording armed (or with `dry`, what would be swapped).
 struct CallsStart {
     std::string function;
     uint32_t slot = 0;
@@ -812,7 +812,7 @@ struct LayoutExport {
     std::string path;
     uint64_t classes = 0, structs = 0, enums = 0, fields = 0;
     std::optional<std::vector<std::string>> missing;
-    std::optional<bool> capped;     // --closure stopped at the type cap.
+    std::optional<bool> capped;     // `closure` stopped at the type cap.
     template<class V> static void Describe(V& v) {
         v("path", &LayoutExport::path);
         v("classes", &LayoutExport::classes);
@@ -995,7 +995,7 @@ inline shape::FieldInfo MakeFieldInfo(const NativeMember& member) {
     return info;
 }
 
-// get --types: a row from a field's layout; `readable` is the recovered
+// get with `mode` `types`: a row from a field's layout; `readable` is the recovered
 // name, shown as name with the reflected one as raw.
 inline shape::GetRow MakeTypeRow(const shape::FieldInfo& info, std::string_view readable) {
     shape::GetRow row;
@@ -1026,7 +1026,7 @@ inline shape::GetRow MakeNativeTypeRow(const NativeMember& member, bool stale) {
     return row;
 }
 
-// get --types: `label(field)` is the readable name shown beside an obfuscated one.
+// get with `mode` `types`: `label(field)` is the readable name shown beside an obfuscated one.
 template<class LabelOf>
 shape::Get MakeTypes(const Ref& ref, std::span<const ue::Field> sorted, const LabelOf& label) {
     shape::Get out;

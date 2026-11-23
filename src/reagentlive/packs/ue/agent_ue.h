@@ -34,7 +34,7 @@ struct Context {
     // its read, and values may still be torn. Calls, params, each, script,
     // refs, exec entries and the recorder stay refused (docs/commands/unreal.md).
     bool offThreadReads = false;
-    // Optional: microseconds of each tick an object-table scan (find --cls,
+    // Optional: microseconds of each tick an object-table scan (find with `cls`,
     // census, each, refs, exec entries) may spend; 0 is 1000. More is fewer
     // ticks per scan and a longer stall in each; at most MaxScanMicroseconds.
     uint32_t scanMicroseconds = 0;

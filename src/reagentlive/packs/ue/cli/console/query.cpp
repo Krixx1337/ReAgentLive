@@ -375,7 +375,7 @@ PathTarget ResolvePath(Session& session, StructCache& structs, Ref object, std::
     return out;
 }
 
-// The text each --where matches: a string, a name's or a text's string, else the JSON.
+// The text each with `where` matches: a string, a name's or a text's string, else the JSON.
 std::string MatchText(const Json& value) {
     if (value.is_string()) return value.get<std::string>();
     if (value.is_object())
@@ -410,7 +410,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     const auto fail = [&](std::string message) { JsonError(session, jsonCommand, ErrorKind::Validation, message); };
     auto type = ResolveClass(session, command.className);
     if (!type) return CommandError(session, jsonCommand, type.error());
-    // --where's field is read as one more column, hidden unless asked for.
+    // `where`'s field is read as one more column, hidden unless asked for.
     std::vector<std::string> paths = command.fields;
     std::optional<size_t> whereColumn;
     if (!command.whereField.empty()) {
@@ -432,7 +432,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     bool truncated = false;
     refs.clear();
 
-    // --seconds: the one column polled again until the deadline, its changes reported.
+    // `seconds`: the one column polled again until the deadline, its changes reported.
     const auto watch = [&](ue::EachQuery query, const std::optional<ue::Field>& field, const ue::Signature& signature,
                            std::vector<std::pair<Ref, std::vector<uint8_t>>> last) {
         std::vector<shape::EachChange> changes;
@@ -652,7 +652,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             }
     }
     // Every value through the decoder (nested containers, tag lists, text
-    // and pointers at any depth; --meta the reflected layout).
+    // and pointers at any depth; `meta` the reflected layout).
     RowReader reader(session, structs, command.elements ? command.elements : RowReader::PreviewNested);
     reader.Meta(session.meta);
     for (const auto& row : cells)
@@ -699,7 +699,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     if (omittedRows) record.omitted = omittedRows;
     record.mode = "field";
     record.capped = capped;
-    // Container elements are read per instance after the pass (--meta prints headers only).
+    // Container elements are read per instance after the pass (`meta` prints headers only).
     const bool elements = !session.meta && std::ranges::any_of(columns, [](const PathTarget& column) {
         return column.field.type == "ArrayProperty" || IsContainer(column.field.type); });
     record.sameTick = passes.size() == 1 && !pointers && !elements;

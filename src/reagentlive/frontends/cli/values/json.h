@@ -1,4 +1,4 @@
-// reagentlive CLI: the JSON type every result uses, numbers from raw bytes, and --nonzero.
+// reagentlive CLI: the JSON type every result uses, numbers from raw bytes, and `view.nonzero`.
 #pragma once
 #include <charconv>
 #include <cmath>
@@ -32,7 +32,7 @@ template<class T> Json JsonNumber(std::span<const uint8_t> bytes) {
     else return number;
 }
 
-// --nonzero on a decoded value: leaves out the zero members of its structs,
+// `view.nonzero` on a decoded value: leaves out the zero members of its structs,
 // at any depth (0, false, null, "", the name None, an empty list or array,
 // a struct left with none). Elements stay, so a list keeps its positions; an
 // element whose members were all zero says so, {"zeroed": N}, so it does not
@@ -66,7 +66,7 @@ inline bool DropZero(Json& value) {
     }
     return value.empty();
 }
-// --nonzero on a whole value (a cell, a row's value, an output): as DropZero,
+// `view.nonzero` on a whole value (a cell, a row's value, an output): as DropZero,
 // and a struct the filter emptied is {"zeroed": N} rather than {}.
 inline void KeepNonZero(Json& value) {
     const size_t members = value.is_object() ? value.size() : 0;

@@ -26,7 +26,7 @@ inline bool LabelField(std::string_view key) {
 }
 
 // Which row keeps an RVA that two rows share: a name a person gave in the
-// static tool (user), what the reader confirmed (peek --label), then
+// static tool (user), what the reader confirmed (peek with `label`), then
 // reflected names, then names derived from layouts.
 inline int LabelRank(std::string_view kind) {
     return kind == "user" ? 0 : kind == "global" ? 1 : kind == "exec" ? 2 : kind == "interface" ? 3 : 4;

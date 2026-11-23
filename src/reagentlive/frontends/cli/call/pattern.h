@@ -95,7 +95,7 @@ inline std::expected<Pattern, std::string> ParsePattern(std::string_view text) {
     return pattern;
 }
 
-// Every byte fixed (sig --bytes).
+// Every byte fixed (sig-bytes).
 inline Pattern FromBytes(std::span<const uint8_t> bytes) {
     return {std::vector<uint8_t>(bytes.begin(), bytes.end()), std::vector<bool>(bytes.size(), true)};
 }

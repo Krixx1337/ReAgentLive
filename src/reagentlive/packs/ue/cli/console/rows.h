@@ -1,6 +1,6 @@
 // reagentlive CLI console, Unreal pack: rows of structs read from engine
 // memory and decoded with their reflected struct (a call's returned arrays,
-// a data table's rows), and the --fields tree that picks their members.
+// a data table's rows), and the `view.fields` tree that picks their members.
 // For packs/ue/cli/console/ only.
 #pragma once
 #include <algorithm>
@@ -20,7 +20,7 @@
 #include "reagentlive/packs/ue/cli/console/internal_ue.h"
 
 namespace reagentlive::cli::detail {
-// --fields a,b.c as a tree: the members kept at one level, each with the
+// `view.fields` a,b.c as a tree: the members kept at one level, each with the
 // paths kept below it (empty: all of it).
 struct RowPaths {
     std::vector<std::string> names;
@@ -104,7 +104,7 @@ inline ue::Field Element(const ue::Field& array) {
 // twice: once collecting names, texts and pointers, once with them resolved
 // (Resolve between); element reads are cached between the two. A verb adds
 // its values, calls Resolve once and prints them: it never looks up names,
-// texts or pointers for a value itself. --meta is a style of the same reader.
+// texts or pointers for a value itself. `meta` is a style of the same reader.
 class RowReader {
 public:
     static constexpr uint32_t MaxNested = 256;    // Elements per nested array in rows.
@@ -119,7 +119,7 @@ public:
 
     // Top-level pointer fields stay addresses: get names them on its rows.
     void KeepTopPointers() { topPointers_ = false; }
-    // --meta: a value in its reflected layout (members with their layout, a
+    // `meta`: a value in its reflected layout (members with their layout, a
     // name's index and number, a text with how it was read), not compact.
     void Meta(bool meta) { meta_ = meta; }
     // Values copied earlier (dump's `before`, a recorded call's block): the

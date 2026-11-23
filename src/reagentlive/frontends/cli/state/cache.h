@@ -32,7 +32,7 @@ struct CacheData {
     std::vector<Module> modules;                                    // Exe first.
     std::vector<std::pair<uint64_t, image::Layout>> layouts;        // Module headers by module base.
     std::vector<CachePack> packs;
-    std::string watchFile;                                          // watch-start --file.
+    std::string watchFile;                                          // watch-start with `file`.
 };
 constexpr std::string_view CacheHeader = "reagentlive cache 11";
 constexpr size_t MaxCachedModules = 1024, MaxCachedPackLines = size_t{1} << 22;

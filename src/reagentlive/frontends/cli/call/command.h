@@ -28,7 +28,7 @@ struct Command {
     std::vector<std::string> fields;
     std::vector<ReadSpan> reads;
     std::vector<uint32_t> watchTypes; // watch-start: per range in `reads`, its element type (WatchTypeCode), 0 = raw.
-    // watch-start: ranges named as <object>.<Field[.Field]>, resolved through the pack
+    // watch-start: ranges given as {"object", "field"}, resolved through the pack
     // before the start; `range` is the index into `reads` they fill.
     struct WatchField { size_t range; Ref object; std::string path; };
     std::vector<WatchField> watchFields;

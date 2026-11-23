@@ -89,7 +89,7 @@ struct StatsSession {
     }
 };
 // stats: this session (the latest in the log when no target is attached),
-// or with --all every session the log holds and the verbs none called.
+// or with `all` every session the log holds and the verbs none called.
 struct Stats {
     std::optional<std::string> session;
     std::optional<uint64_t> sessions;
@@ -123,7 +123,7 @@ inline bool IsFilter(std::string_view key) {
 }
 constexpr size_t StatsLargestCalls = 5;
 
-// `session` nullopt: every session (--all). `verbs`: the console's table, for
+// `session` nullopt: every session (`all`). `verbs`: the console's table, for
 // the unfiltered mark and the verbs never called.
 inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optional<std::string>& session,
                              std::span<const Verb> verbs) {
@@ -249,7 +249,7 @@ inline shape::Stats MakeSessionList(std::span<const UsageLine> lines, std::span<
     return stats;
 }
 
-// What `stats` asked for: --all, --sessions, --session <id>, or the current
+// What `stats` asked for: `all`, `sessions`, one `session`, or the current
 // session (`current`; nullopt with no target: the log's latest).
 struct StatsQuery {
     bool all = false, sessions = false;

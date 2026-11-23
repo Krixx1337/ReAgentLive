@@ -1,4 +1,4 @@
-// reagentlive CLI console: snapshots, the get --snap baseline get --changed compares with.
+// reagentlive CLI console: snapshots, the get with `mode` `snap` baseline get with `mode` `changed` compares with.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -84,14 +84,14 @@ Result<std::vector<uint8_t>> ReadObjectBytes(Client& client, const Ref& object, 
     return bytes;
 }
 
-// get --snap: the baseline get --changed compares against; with a file, also saved there for a later run.
+// get with `mode` `snap`: the baseline get with `mode` `changed` compares against; with a file, also saved there for a later run.
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand) {
     Client& client = session.client;
     auto fields = ObjectFields(session, object);
     if (!fields) return CommandError(session, jsonCommand, fields.error());
     auto sorted = SortedByOffset(std::move(*fields));
-    // Native members past the last reflected field, so get --changed can compare them.
+    // Native members past the last reflected field, so get with `mode` `changed` can compare them.
     size_t end = DumpEnd(sorted);
     for (const auto& check : NativeMembers(session, object, sorted, true).shown)
         end = std::max(end, std::min<size_t>(size_t{check.member->field.offset} + check.member->field.Size(), MaxDumpBytes));

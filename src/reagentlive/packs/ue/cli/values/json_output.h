@@ -29,7 +29,7 @@ inline Json FieldMetadata(const ue::Field& field) {
 }
 
 // How decoded values print. Compact (the default): a struct is {Name: value}
-// with readable names where the names file has them. `meta` (`--meta`): a
+// with readable names where the names file has them. `meta` (the call's flag): a
 // struct is {members: [{name, owner, type, offset, size, value}], truncated},
 // for when the layout itself is the question.
 struct ValueStyle {
@@ -53,9 +53,9 @@ inline std::string NameText(std::string_view name, uint32_t number) {
     return number ? std::string(name) + "_" + std::to_string(number - 1) : std::string(name);
 }
 
-// Compact values (no --meta): an FName is its text ("#index" when the pool
+// Compact values (no `meta`): an FName is its text ("#index" when the pool
 // has none), and a struct holding only a name (a gameplay tag) is that name.
-// --meta keeps {index, number, name} and the struct's members.
+// `meta` keeps {index, number, name} and the struct's members.
 template<class StructLookup, class NameLookup>
 Json JsonFieldValue(const ue::Field& field, std::span<const uint8_t> bytes, StructLookup& structs,
                     const NameLookup& names, bool& truncated, const ValueStyle& style = {}, unsigned depth = 0) {

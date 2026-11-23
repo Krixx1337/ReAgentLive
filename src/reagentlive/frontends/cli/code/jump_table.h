@@ -1,5 +1,5 @@
 // reagentlive CLI: switch jump tables in listed x64 code, for saves
-// (`disasm --save`). The MSVC form, and the table-relative form some
+// (`disasm` with `save`). The MSVC form, and the table-relative form some
 // compilers emit, end in an indirect jump through a register:
 //
 //   cmp   idx, N ; ja default          (jae: N cases; or the inverted

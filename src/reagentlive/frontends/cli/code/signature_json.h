@@ -1,5 +1,5 @@
 // reagentlive CLI: sig results as typed structs and the lines of a patterns
-// file (sig-check --file). No I/O; the conventions are in results/result_json.h.
+// file (sig-check with `file`). No I/O; the conventions are in results/result_json.h.
 #pragma once
 #include <algorithm>
 #include <cstdint>
@@ -70,7 +70,7 @@ struct SigMismatch {
 };
 // sig-check: the pattern in both forms, the module it was checked in, its
 // matches (`total`; `rows` shows the first MaxShownHits) and what to change.
-// Optional keys only where they apply: expect and resolves with --expect,
+// Optional keys only where they apply: expect and resolves with `expect`,
 // mismatches when the expected address holds no match (mismatch_error when
 // its bytes are unreadable), unique_at_length for several matches that all diverge.
 struct SigCheck {
@@ -123,7 +123,7 @@ struct SigFileRow {
         v("error", &SigFileRow::error);
     }
 };
-// sig-check --file: one row per signature; `winner` is the line of the first that holds.
+// sig-check with `file`: one row per signature; `winner` is the line of the first that holds.
 struct SigFile {
     std::string file;
     std::optional<uint64_t> winner;
@@ -136,7 +136,7 @@ struct SigFile {
         v("lines", &SigFile::lines);
     }
 };
-// sig-check's result: one signature's check, or with --file a file's.
+// sig-check's result: one signature's check, or with `file` a file's.
 struct SigCheckResult {
     std::optional<SigCheck> check;
     std::optional<SigFile> file;

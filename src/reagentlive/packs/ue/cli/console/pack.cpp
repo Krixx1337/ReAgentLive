@@ -36,9 +36,9 @@ bool HasUnreal(const Client& client) {
     return false;
 }
 
-// census, or census --diff: only the classes whose count differs from the
-// last census under the same --cls. Either way the new census becomes the
-// baseline; --match and --limit only shape what is printed.
+// census, or census with `diff`: only the classes whose count differs from the
+// last census under the same `cls`. Either way the new census becomes the
+// baseline; `view.match` and `view.limit` only shape what is printed.
 void RunCensus(Session& session, const Command& command, std::vector<Ref>& refs, std::string_view jsonCommand) {
     const Request& request = command.request;
     const std::string className(request.length ? reinterpret_cast<const char*>(request.data) : "");
@@ -171,7 +171,7 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
             {command.outerText, command.outerRef}};
         auto found = ue::Find(client, request.text, options);
         if (!found) return CommandError(session, jsonCommand, found.error());
-        // --limit: more pages until N rows or the end, then cut at N; the
+        // `view.limit`: more pages until N rows or the end, then cut at N; the
         // cursor goes on from the slot after the last row kept.
         if (command.limit) {
             for (auto more = options; found->objects.size() < command.limit && found->next;) {

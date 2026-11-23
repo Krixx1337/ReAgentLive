@@ -30,7 +30,7 @@ namespace schema {
 //   {k: T, k?: T}  an object; `?` marks a key that is omitted when it does not apply
 //   value   game data: dynamic, shaped by what was read
 struct Field;
-//   Name    a named type: help --json lists it once under `types`, a pack's
+//   Name    a named type: help with `json` lists it once under `types`, a pack's
 //           under its own prefix (ue.Name); a struct names itself with TypeName.
 struct Type {
     enum class Kind { Bool, U32, U64, I32, I64, F64, Str, Addr, Hex, Bytes, Ref, Value, Enum, List, Map, Struct };

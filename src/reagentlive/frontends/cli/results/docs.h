@@ -1,5 +1,5 @@
 // reagentlive CLI: docs/commands/results.md as text, generated from what
-// `help --json` prints (the verb table), so the page cannot drift from the
+// `help` with `json` prints (the verb table), so the page cannot drift from the
 // console. tests/table writes it and a test fails when the file is stale. Pure.
 #pragma once
 #include <functional>
@@ -29,7 +29,7 @@ inline std::string Signature(const Json& row) {
 
 // docs/commands/reference.md: every verb in full (args with their help, the
 // result, notes and an example call), the general notes, the shared view
-// keys and the error kinds. `table` is `help --json`; `extra` holds what the
+// keys and the error kinds. `table` is `help` with `json`; `extra` holds what the
 // table does not: {notes: [str], view: [arg], errors: [{kind, meaning, message}]}.
 inline std::string ReferenceMarkdown(const Json& table, const Json& extra) {
     const auto cell = [](std::string text) {
@@ -102,7 +102,7 @@ inline std::string ReferenceMarkdown(const Json& table, const Json& extra) {
     return out;
 }
 
-// `table`: the result of `help --json` ({rows: [{verb, origin, summary, args, result, ...}], types, origins}).
+// `table`: the result of `help` with `json` ({rows: [{verb, origin, summary, args, result, ...}], types, origins}).
 // Headings are the origins' own titles: this file names no pack.
 inline std::string ResultsMarkdown(const Json& table) {
     const auto cell = [](std::string text) {

@@ -50,7 +50,7 @@ struct InstructionField {
 struct Instruction {
     Addr address;
     Location where;
-    std::optional<HexBytes> bytes;       // Absent in a whole-function listing without --meta.
+    std::optional<HexBytes> bytes;       // Absent in a whole-function listing without `meta`.
     std::string text;
     std::optional<Addr> target;
     Location targetWhere;
@@ -135,7 +135,7 @@ struct SkippedCall {
         v("why", &SkippedCall::why);
     }
 };
-// disasm --save: a switch found in the saved code: its indirect jump, its
+// disasm with `save`: a switch found in the saved code: its indirect jump, its
 // table (saved as data) and the distinct targets the table gives.
 struct JumpTable {
     Addr jump, table;
@@ -157,8 +157,8 @@ struct SavedLayouts {
     }
 };
 // disasm: the rows, how many bytes they cover, why the listing stopped
-// (`next` where a count or byte limit cut it), the hops --follow took, the
-// function entry holding the first address, and with --function the strings
+// (`next` where a count or byte limit cut it), the hops `follow` took, the
+// function entry holding the first address, and with `function` the strings
 // the rows reference.
 struct Disasm {
     Addr address;
@@ -168,14 +168,14 @@ struct Disasm {
     std::optional<Addr> next;
     std::vector<Instruction> rows;
     std::optional<std::vector<DisasmString>> strings;
-    std::optional<std::string> saved;    // --save: the file written; rows and strings are left out.
-    std::optional<uint64_t> savedRows;   // --save: the instructions the file holds.
+    std::optional<std::string> saved;    // `save`: the file written; rows and strings are left out.
+    std::optional<uint64_t> savedRows;   // `save`: the instructions the file holds.
     std::optional<std::vector<SavedFunction>> functions; // callees: each saved function, the first included.
     std::optional<std::vector<SkippedCall>> skipped;     // callees: call targets the depth or a cap left out.
-    std::optional<std::vector<SavedFunction>> chunks;    // --save: each chunk saved with its function.
-    std::optional<std::vector<JumpTable>> tables;        // --save: the switches whose targets were followed.
-    std::optional<std::vector<Addr>> jumpoutsLeft;       // --save: the function's jump targets still unsaved.
-    std::optional<bool> capped;                          // --save: chunks stopped at the cap.
+    std::optional<std::vector<SavedFunction>> chunks;    // `save`: each chunk saved with its function.
+    std::optional<std::vector<JumpTable>> tables;        // `save`: the switches whose targets were followed.
+    std::optional<std::vector<Addr>> jumpoutsLeft;       // `save`: the function's jump targets still unsaved.
+    std::optional<bool> capped;                          // `save`: chunks stopped at the cap.
     std::optional<SavedLayouts> layouts;                 // save: layout rows for the saved methods' classes.
     std::optional<AddressRange> piece;   // A walk from inside unlisted code: the piece holding the address.
     std::optional<FunctionBounds> function;
@@ -224,7 +224,7 @@ struct XrefRow {
     }
 };
 // xrefs: hits per kind over every hit, and the rows (unknown ones only with
-// --all). Each row locates the instruction where the kind fixes it, else the field.
+// `all`). Each row locates the instruction where the kind fixes it, else the field.
 struct Xrefs {
     Addr address;
     Location where;
@@ -268,7 +268,7 @@ struct RttiType {
         v("decorated", &RttiType::decorated);
     }
 };
-// vtable --rtti: the class an MSVC object's run-time type information names.
+// vtable with `rtti`: the class an MSVC object's run-time type information names.
 struct VtableRtti {
     Addr locator;
     std::string name, decorated;
@@ -287,7 +287,7 @@ struct VtableRtti {
     }
 };
 
-// vtable: the object (or the table itself with --table), the table pointer
+// vtable: the object (or the table itself with `table`), the table pointer
 // (absent when the qword there points into no module: `found` holds it), and
 // the slots up to the first entry that is not code.
 struct Vtable {
@@ -393,9 +393,9 @@ inline std::optional<shape::FunctionBounds> MakeFunction(const std::optional<unw
     return bounds;
 }
 
-// Compact unless `full` (--meta): no `fields`, and no module name the listing
+// Compact unless `full` (`meta`): no `fields`, and no module name the listing
 // already gives (the row's own, or a target's in the same module). `whole`
-// (a --function listing without --meta) also drops bytes.
+// (a `function` listing without `meta`) also drops bytes.
 inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span<const Module> modules, bool full = true,
                                           bool whole = false) {
     shape::Instruction out;
@@ -426,7 +426,7 @@ inline shape::Instruction MakeInstruction(const dis::Instruction& row, std::span
     return out;
 }
 
-// `whole`: a --function listing. Without `full` its rows lose bytes and,
+// `whole`: a `function` listing. Without `full` its rows lose bytes and,
 // past the first, their rva; it adds the strings summary either way.
 inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
                                 const std::optional<unwind::Function>& function, std::span<const Module> modules,
@@ -459,7 +459,7 @@ inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
     return out;
 }
 
-// disasm --save: the file holds the listing, so the result keeps what it says
+// disasm with `save`: the file holds the listing, so the result keeps what it says
 // about it (bounds, size, why it stopped, the instruction count) and no rows.
 inline void KeepSaveSummary(shape::Disasm& out, std::string file) {
     out.savedRows = out.rows.size();

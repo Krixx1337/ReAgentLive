@@ -1,6 +1,6 @@
 // reagentlive CLI: the verb table's core rows (call/verb.h): what each core
 // verb takes and returns. The checks of a JSON call (call/check.h), `help`,
-// `help --json`, the generated docs/commands/results.md and the Python
+// `help` with `json`, the generated docs/commands/results.md and the Python
 // client's strict results all read these rows. The Unreal pack's rows are in
 // packs/ue/cli/results/verbs_ue.h.
 #pragma once
@@ -330,7 +330,7 @@ inline shape::HelpRow MakeHelpRow(const Verb& verb, bool detail, bool machine, s
     return row;
 }
 
-// help --json: every row in full, the named types once, each origin's
+// help with `json`: every row in full, the named types once, each origin's
 // title and the tool packs. Its text is what `table_hash` hashes.
 inline shape::Help MakeHelpTable(std::span<const Verb> verbs, std::span<const Origin> origins) {
     shape::Help help;
@@ -357,7 +357,7 @@ inline std::vector<shape::HelpRow> HelpByPack(std::span<const Verb> verbs) {
     return rows;
 }
 
-// FNV-1a of the whole table as help --json prints it: changes when any
+// FNV-1a of the whole table as help with `json` prints it: changes when any
 // verb's args or result change.
 inline std::string TableHash(std::span<const Verb> verbs, std::span<const Origin> origins) {
     const std::string text = ToJson(MakeHelpTable(verbs, origins)).dump();

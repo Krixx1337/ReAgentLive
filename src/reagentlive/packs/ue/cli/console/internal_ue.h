@@ -68,8 +68,8 @@ struct PackState {
     // match the cached table; only the remaining pages are skipped.
     std::unordered_map<int32_t, FieldList> tables;
     std::vector<ClassRef> classRefs;
-    std::optional<CensusBaseline> census;   // The last census: census --diff's baseline, census --start's rows.
-    std::optional<CensusBaseline> censusBefore; // The census before it, for census --changed --start.
+    std::optional<CensusBaseline> census;   // The last census: census with `diff`'s baseline, census with `view.start`'s rows.
+    std::optional<CensusBaseline> censusBefore; // The census before it, for a later page (`view.start`) of census with `diff`.
     std::vector<ClassRef> defaultObjects;  // Default__ objects by exact name, for the session (DefaultObject).
     std::unordered_map<std::string, int32_t> nameIndices; // Pooled names by lowercase text, for the session (NameIndex).
 
@@ -93,7 +93,7 @@ inline const std::vector<ue::Field>* StructCache::operator()(const Ref& type) {
 
 size_t DumpEnd(std::span<const ue::Field> fields);
 std::span<const uint8_t> FieldBytes(std::span<const uint8_t> bytes, const ue::Field& field);
-// get --types: the layout; --match keeps names or readable labels containing it, --own the class's own.
+// get with `mode` `types`: the layout; `view.match` keeps names or readable labels containing it, `own` the class's own.
 void PrintTypes(Session& session, const Ref& object, const Command& command, std::string_view jsonCommand);
 void RememberRef(std::vector<Ref>& refs, const Ref& object);
 Ref PointerRef(std::string_view type, std::span<const uint8_t> bytes);
@@ -104,10 +104,10 @@ Result<std::vector<uint8_t>> ReadObjectBytes(Client& client, const Ref& object, 
 void Snap(Session& session, const Ref& object, const std::string& path, std::optional<Snapshot>& baseline,
           std::string_view jsonCommand);
 shape::Call MakeCall(const Request& request, std::span<const uint8_t> block, const char* mode, bool kept);
-// call --dry: the block that would be sent, with the function's native entry and whether it is const or pure.
+// call with `dry`: the block that would be sent, with the function's native entry and whether it is const or pure.
 shape::Call MakeDryCall(const Request& request, std::span<const uint8_t> block, const ue::FunctionInfo& function);
 void PrintFunction(Session& session, const Ref& ref, std::string_view name, std::string_view jsonCommand);
-// A typed call (or with --dry its block only); the request's flags go to the agent (CallPure).
+// A typed call (or with `dry` its block only); the request's flags go to the agent (CallPure).
 void RunTypedCall(Session& session, const Command& command, const ue::FunctionInfo& function,
                   const ue::Signature& signature, StructCache& structs,
                   std::string_view jsonCommand);
@@ -122,7 +122,7 @@ Result<shape::GameThread> SendGameThread(Session& session, const Request& reques
 // rows: a data table's RowMap, each row decoded with its RowStruct.
 void RunRows(Session& session, const Command& command, StructCache& structs, std::string_view jsonCommand);
 void RunExportLabels(Session& session, const Command& command, std::string_view jsonCommand);
-// export-assets: each object's get --nonzero and a table's rows, a file each (export.cpp).
+// export-assets: each object's get with `view.nonzero` and a table's rows, a file each (export.cpp).
 void RunExportAssets(Session& session, const Command& command, std::string_view jsonCommand);
 // layout-export and layout-check (command.target "export" or "check").
 void RunLayout(Session& session, const Command& command, std::string_view jsonCommand);
@@ -162,6 +162,6 @@ private:
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
 // calls-start, calls-read, calls-stop (the agent's call recorder).
 void RunCalls(Session& session, const Command& command, std::string_view jsonCommand);
-// script --decode: the bytecode as statements, named console-side (no game thread).
+// script with `decode`: the bytecode as statements, named console-side (no game thread).
 void RunScriptDecode(Session& session, const Command& command, std::string_view jsonCommand);
 }

@@ -313,7 +313,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
 
 // Commands that make several round trips run held, so they finish in as few
 // host ticks as the agent's budget allows. Single requests and timed loops
-// (each --seconds) do not: a hold would only add one wait.
+// (each with `seconds`) do not: a hold would only add one wait.
 bool Held(const Command& command) {
     if (command.kind == Kind::Peek) return true;
     // read: the bytes, then the region they lie in.
@@ -508,7 +508,7 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
 // One command line; true on quit. Inside a batch the batch's hold covers it.
 bool Execute(Session& session, const InputLine& input, bool inBatch) {
     Client& client = session.client;
-    // --meta covers this line (a batch's covers its items); the previous state
+    // `meta` covers this line (a batch's covers its items); the previous state
     // returns after it, and so does the row a batch runs under.
     // A batch item that may have changed state keeps the batch's result in a
     // file too.

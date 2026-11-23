@@ -48,7 +48,7 @@ NativeShown NativeMembers(Session& session, const Ref& object, std::span<const u
     return out;
 }
 
-// label <object|Class> <offset> <type>[n] <Name>: appends one member to the
+// label (`object` or a class, `offset`, `type`, `name`): appends one member to the
 // native file, checked against the reflected layout first.
 void RunLabel(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;

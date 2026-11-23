@@ -1,4 +1,4 @@
-// reagentlive Unreal pack: the class index find --cls and each walk instead of
+// reagentlive Unreal pack: the class index find with `cls` and each walk instead of
 // the whole object table (pure, tested). Per table slot it keeps the object
 // last seen there and that object's class. Each query starts with a pass that
 // compares every slot's pointer with the kept one and reads the header of a

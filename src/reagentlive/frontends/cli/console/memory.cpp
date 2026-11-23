@@ -77,7 +77,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     Emit(session, jsonCommand, std::move(result));
 }
 
-// read --type: the bytes as a list of one element type.
+// read with `type`: the bytes as a list of one element type.
 std::vector<Json> DecodeValues(const std::vector<uint8_t>& bytes, std::string_view type) {
     std::vector<Json> values;
     const size_t size = ElementSize(type);
@@ -121,7 +121,7 @@ shape::Write TimedResult(Session& session, shape::TimedWrite row, uint32_t lengt
 }
 }
 
-// write --hold: a pin the agent writes every tick.
+// write with `hold`: a pin the agent writes every tick.
 void RunPin(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Pin)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support hold");
@@ -178,7 +178,7 @@ shape::TimedWrite MakeTrial(const TrialState& trial) {
 }
 }
 
-// write --undo: a trial the agent restores.
+// write with `undo`: a trial the agent restores.
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Trial)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support undo");
@@ -206,7 +206,8 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
     Emit(session, jsonCommand, TimedResult(session, MakeTrial(*trial), request.length));
 }
 
-// writes [clear [undo:N|hold:N]]: every timed write, --undo ones first; clear ends them.
+// writes: every timed write, `undo` ones first; `clear` ends them (all, or the
+// one `id` names: undo:N or hold:N).
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     const bool trials = client.Supports(op::Trial), pins = client.Supports(op::Pin);
@@ -322,7 +323,7 @@ void ReduceRows(Shape& result, bool all) {
     if (dropped) result.dropped = dropped;
 }
 
-// watch-start --file: the ranges as the first line, then one line per sample.
+// watch-start with `file`: the ranges as the first line, then one line per sample.
 bool WriteCapture(const std::string& path, const std::vector<shape::WatchRange>& ranges,
                   std::span<const shape::WatchSample> rows) {
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
@@ -363,7 +364,7 @@ void PrintCapture(Session& session, std::string_view jsonCommand, bool all) {
 void RunWatch(Session& session, const Command& original, std::string_view jsonCommand) {
     Client& client = session.client;
     Command command = original;
-    // <object>.<Field> ranges: place, size and type from reflection; guarded on the field's object.
+    // {"object", "field"} ranges: place, size and type from reflection; guarded on the field's object.
     for (const auto& field : command.watchFields) {
         auto range = PackWatchField(session, field.object, field.path);
         if (!range) return JsonError(session, jsonCommand, ErrorKind::Validation, range.error());

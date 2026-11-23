@@ -5,7 +5,7 @@
 //
 // Conventions every result follows:
 //   rows          the result's list.           total        how many there are in all, when rows may show fewer.
-//   from, next_cursor   a page: where it began, and what to pass as --start for the next (absent when done).
+//   from, next_cursor   a page: where it began, and what to pass as `view.start` for the next (absent when done).
 //   capped        rows were cut at a hard limit; there is no cursor.
 //   truncated     a value in the result is incomplete.
 //   module, rva   beside an address inside a loaded module (absent elsewhere), so it opens in a static tool.
@@ -172,9 +172,9 @@ struct Read {
     uint64_t size = 0;
     HexBytes hex;
     std::optional<ReadViews> views;
-    std::optional<std::vector<Json>> values;    // --type <type>: one per element.
+    std::optional<std::vector<Json>> values;    // `type` an element type: one per element.
     std::optional<Json> layout;                 // type "<layout>": {name: value}.
-    std::optional<std::string> text;            // --type cstr|wstr.
+    std::optional<std::string> text;            // `type` cstr or wstr.
     std::optional<uint64_t> length;
     std::optional<bool> terminated;
     std::optional<Region> region;
@@ -194,10 +194,10 @@ struct Read {
         v("chain", &Read::chain);
     }
 };
-// A timed write, as write --undo and --hold answer it and writes lists it.
-// `id` is undo:N (--undo: the agent restores it) or hold:N (--hold: rewritten
-// every tick). An --undo write adds what it restores (`original`), its owner
-// and the tick memory changed; a --hold one whether it is guarded on an
+// A timed write, as write with `undo` and `hold` answer it and writes lists it.
+// `id` is undo:N (`undo`: the agent restores it) or hold:N (`hold`: rewritten
+// every tick). An `undo` write adds what it restores (`original`), its owner
+// and the tick memory changed; a `hold` one whether it is guarded on an
 // object and how often it wrote.
 struct TimedWrite {
     static constexpr std::string_view TypeName = "TimedWrite";
@@ -244,7 +244,7 @@ struct Write {
     Addr address;
     Location where;
     uint64_t size = 0;
-    std::optional<TimedWrite> timed;    // --undo, --hold.
+    std::optional<TimedWrite> timed;    // `undo`, `hold`.
     template<class V> static void Describe(V& v) {
         v("address", &Write::address);
         v.flat("", &Write::where);
@@ -372,7 +372,7 @@ struct WatchCapture {
     std::optional<uint64_t> samples, dropped; // See WatchChanges.
     std::optional<std::vector<WatchGap>> gaps;
     std::optional<std::vector<WatchSummary>> summary;
-    std::optional<std::string> file;    // watch-start --file: where every sample went.
+    std::optional<std::string> file;    // watch-start with `file`: where every sample went.
     template<class V> static void Describe(V& v) {
         v("running", &WatchCapture::running);
         v("stopped", &WatchCapture::stopped, WatchStops);
@@ -394,7 +394,7 @@ struct WatchCapture {
 // differs from the one before it (a value, or lost, resumed or a new root),
 // and the last. Every transition keeps its time. Past `limit` rows the middle
 // is dropped, half the limit kept from each end, and `dropped` counts it; the
-// summary still covers every sample. `--all` skips this. Pure; tested.
+// summary still covers every sample. `all` skips this. Pure; tested.
 constexpr size_t MaxWatchChangeRows = 200;
 inline std::vector<WatchSample> WatchChanges(std::span<const WatchSample> rows, size_t limit, uint64_t& dropped) {
     dropped = 0;
@@ -659,7 +659,7 @@ struct HelpRow {
         v("type", &HelpRow::type);
     }
 };
-// help --json: a named type's notation and its type for programs.
+// help with `json`: a named type's notation and its type for programs.
 struct HelpType {
     std::string notation;
     Json type;
@@ -675,7 +675,7 @@ struct HelpOrigin {
         v("title", &HelpOrigin::title);
     }
 };
-// help --json: a tool pack, the workflow its verbs serve (rows carry `pack`).
+// help with `json`: a tool pack, the workflow its verbs serve (rows carry `pack`).
 struct HelpPack {
     std::string pack, job;
     template<class V> static void Describe(V& v) {

@@ -1,5 +1,5 @@
 // reagentlive CLI: census results, their name filter and the comparison with the
-// last census (`census --diff`). Built from client results only (no I/O),
+// last census (`census` with `diff`). Built from client results only (no I/O),
 // so tests pin the comparison and the result keys.
 #pragma once
 #include <algorithm>
@@ -25,10 +25,10 @@ struct CensusClass {
     std::vector<Ref> samples = {};
     bool operator==(const CensusClass&) const = default;
 };
-// A census's rows (all of them, before --match and --limit), kept for the
+// A census's rows (all of them, before `view.match` and `view.limit`), kept for the
 // console run and in the cache file: the last one is the baseline for
-// census --diff and the rows `--start` pages through; the one before it is what
-// a later page of census --diff compares with. Tagged with the --cls filter it
+// census with `diff` and the rows `view.start` pages through; the one before it is what
+// a later page of census with `diff` compares with. Tagged with the `cls` filter it
 // was taken with (empty: the whole table).
 struct CensusBaseline {
     std::string filter;
@@ -107,7 +107,7 @@ inline std::pair<size_t, size_t> CensusSlice(size_t rows, CensusPage page) {
 }
 
 namespace shape {
-// A class's row: its live count; with --diff also the count before (count is after).
+// A class's row: its live count; with `diff` also the count before (count is after).
 struct CensusRow {
     std::string className;
     RefId ref;
@@ -130,7 +130,7 @@ struct CensusBefore {
     }
 };
 // census: `classes` and `instances` cover the whole census; `total` counts
-// the rows left after --match, of which a page shows some. --diff: the rows
+// the rows left after `view.match`, of which a page shows some. `diff`: the rows
 // are the classes whose count differs from the census before, and `before`
 // gives that census's counts.
 struct Census {

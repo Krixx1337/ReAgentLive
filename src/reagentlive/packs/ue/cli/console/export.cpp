@@ -1,5 +1,5 @@
 // reagentlive CLI console: export-assets, each object of some classes into
-// its own file (its get --nonzero, and a table's rows), for reading offline.
+// its own file (its get with `view.nonzero`, and a table's rows), for reading offline.
 #include <algorithm>
 #include <filesystem>
 #include <fstream>

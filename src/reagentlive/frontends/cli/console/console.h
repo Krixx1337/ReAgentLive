@@ -26,7 +26,7 @@ struct ConsoleConfig {
     // when present. "--names <file>" overrides it and must exist.
     std::wstring_view namesFile = {};
     // Where names people confirm go (labels format: `user` rows from a static
-    // tool, `global` rows from peek --label): absolute, or relative to the
+    // tool, `global` rows from peek with `label`): absolute, or relative to the
     // console exe. A host keeps it under version control; derived names stay
     // in the console's own <console>.labels.jsonl. Empty: that file holds both.
     std::wstring_view labelsFile = {};

@@ -1,5 +1,5 @@
-// reagentlive CLI: functions saved for a static tool (`disasm --function
-// --save <file> [--callees]`). JSON lines: one `function` row per saved
+// reagentlive CLI: functions saved for a static tool (`disasm` with
+// `function` and `save.file`, optionally `save.callees`). JSON lines: one `function` row per saved
 // function (module, size, timestamp, bounds), `code` and `data` rows (live
 // bytes at their addresses, never overlapping), `name` rows (the functions,
 // imports, call targets and labelled globals), and `chunk` rows (a
@@ -60,7 +60,7 @@ inline std::vector<Range> DataRanges(std::span<const dis::Instruction> rows, con
     return Merge(std::move(ranges));
 }
 
-// The listed code as contiguous runs (a --follow hop starts a new run).
+// The listed code as contiguous runs (a `follow` hop starts a new run).
 inline std::vector<std::pair<uint64_t, std::vector<uint8_t>>> CodeRuns(std::span<const dis::Instruction> rows) {
     std::vector<std::pair<uint64_t, std::vector<uint8_t>>> runs;
     for (const auto& row : rows) {
@@ -109,7 +109,7 @@ inline std::vector<std::pair<uint64_t, std::vector<uint8_t>>> Uncovered(
 }
 
 // Direct calls in the rows to other code in the module, in call order, each
-// once: what --callees saves besides the function (`self`).
+// once: what `save.callees` saves besides the function (`self`).
 inline std::vector<uint64_t> Callees(std::span<const dis::Instruction> rows, const Module& module, uint64_t self) {
     std::vector<uint64_t> out;
     for (const auto& row : rows) {
@@ -138,7 +138,7 @@ inline std::vector<uint64_t> Jumps(std::span<const dis::Instruction> rows) {
 
 // Unconditional direct jump targets in the rows, in order, each once, that
 // lie in the module but outside every range in `held` [start, end): tail
-// calls (MSVC's `jmp` to another function), which --callees saves like calls.
+// calls (MSVC's `jmp` to another function), which `save.callees` saves like calls.
 inline std::vector<uint64_t> TailJumps(std::span<const dis::Instruction> rows, const Module& module,
                                        std::span<const Range> held) {
     std::vector<uint64_t> out;

@@ -29,7 +29,7 @@
 namespace reagentlive::cli::detail {
 using Clock = std::chrono::steady_clock;
 
-// --timing: client counters and clock at the start of the command.
+// `timing`: client counters and clock at the start of the command.
 struct Timing {
     const Client* client;
     ClientStats start;
@@ -77,11 +77,11 @@ struct Session {
     bool failed = false;                    // Any error in one-shot mode makes the exit code 1.
     std::vector<Json>* capture = nullptr;   // batch: records collected instead of printed.
     std::optional<Timing> timing;
-    bool meta = false;                      // --meta: struct values with their member layout.
+    bool meta = false;                      // `meta`: struct values with their member layout.
     std::optional<shape::Chain> chain;      // The pointer chain this command resolved; added to its result.
     std::vector<Verb> verbs;                // The verb table: core, pack and host rows.
-    std::vector<Origin> origins;            // The core's, the pack's and the host's: help --json titles.
-    std::string tableHash;                  // Of the whole table (status, help --json).
+    std::vector<Origin> origins;            // The core's, the pack's and the host's: help with `json` titles.
+    std::string tableHash;                  // Of the whole table (status, help with `json`).
     ToolPackSet toolPacks = AllToolPacks;   // --packs: the verbs this console runs; others are refused (kind pack).
     const Verb* current = nullptr;          // The row of the line being run; its result type checks what is printed.
     Beat lastBeat{};
@@ -101,10 +101,10 @@ struct Session {
     std::filesystem::path results;          // Whole results of lines that must not run again; empty: none.
     // <console>.labels.jsonl: the derived names export-labels writes when
     // given no file. `hostLabels`: the host's file for names people confirm
-    // (ConsoleConfig::labelsFile), where peek --label writes; empty: `labels`.
-    // disasm --save reads both.
+    // (ConsoleConfig::labelsFile), where peek with `label` writes; empty: `labels`.
+    // disasm with `save` reads both.
     std::filesystem::path labels, hostLabels;
-    std::string watchFile;                  // watch-start --file: where watch-read and watch-stop write every sample.
+    std::string watchFile;                  // watch-start with `file`: where watch-read and watch-stop write every sample.
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}
 };

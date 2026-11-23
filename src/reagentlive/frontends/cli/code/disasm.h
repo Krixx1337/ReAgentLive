@@ -23,7 +23,7 @@
 namespace reagentlive::cli::dis {
 using ReadFn = sig::ReadFn;
 constexpr size_t MaxBytes = 512, DefaultCount = 24;
-// --function lists the whole function, up to these; a cut listing gives `next`.
+// `function` lists the whole function, up to these; a cut listing gives `next`.
 constexpr size_t MaxFunctionInstructions = MaxFunctionDisasm, MaxFunctionBytes = 0x4000;
 constexpr size_t ReadChunk = MaxRead - sizeof(Status); // Bytes per read request.
 constexpr size_t MaxFollow = 3;     // Unconditional direct jumps stepped through per listing.
@@ -50,7 +50,7 @@ struct Instruction {
     std::vector<Field> fields;
     std::optional<uint64_t> absolute; // A 64-bit immediate (mov r64, imm64).
     bool ends = false;                // Return or unconditional jump: straight-line code stops.
-    bool directJump = false;          // Unconditional jump with a relative target (--follow steps through).
+    bool directJump = false;          // Unconditional jump with a relative target (`follow` steps through).
     std::optional<std::string> string; // Text at a RIP-relative target, cut at MaxString.
     bool wide = false;                // string was UTF-16.
     std::optional<std::string> import; // An import-table slot target: the DLL and function it holds.
@@ -197,7 +197,7 @@ struct End {
 };
 struct Hop { uint64_t from, to; };
 // The end of straight-line code for an address (its function entry's end),
-// or nullopt for no bound; only with --function.
+// or nullopt for no bound; only with `function`.
 using BoundFn = std::function<std::optional<uint64_t>(uint64_t address)>;
 struct Options {
     size_t count = DefaultCount;  // 1..MaxFunctionInstructions.

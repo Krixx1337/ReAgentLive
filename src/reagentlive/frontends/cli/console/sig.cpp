@@ -16,7 +16,7 @@
 
 namespace reagentlive::cli::detail {
 namespace {
-// The module a signature is for: --module names any loaded one (one loaded
+// The module a signature is for: `module` names any loaded one (one loaded
 // since the list was read is found by one re-read); without it, the exe.
 const Module* SigModule(Session& session, const std::string& name) {
     if (name.empty()) {
@@ -75,7 +75,7 @@ sig::ReadFn AgentRead(Session& session) {
 }
 
 namespace {
-// With --expect (no --resolve) the match starts at an instruction boundary
+// With `expect` (no `resolve`) the match starts at an instruction boundary
 // the reader gave: warnings come from decoding the live bytes there, the
 // byte heuristic only past where decoding stops.
 std::expected<void, std::string> DecodeWarnings(Session& session, const sig::Check& check, sig::CheckResult& result) {
