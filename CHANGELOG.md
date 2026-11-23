@@ -104,6 +104,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **`usage` against a baseline:** `save` writes a session's report to a
+  file; `baseline` compares a session with it and lists what got worse
+  (and better): calls, refusals by kind, context, digests and time per
+  verb.
 - **`usage` with `advice`:** the verbs most often digested or unfiltered,
   each with a proposed smaller default `view.limit` or a hint for its row
   or help. A report: nothing changes by itself.

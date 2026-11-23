@@ -350,7 +350,11 @@ with `all`, every session in the log, plus `never_called`, the verbs of
 this table none of them used; with `sessions`, the log's sessions, newest
 first; with `advice`, also the verbs most often digested or unfiltered,
 each with a proposed smaller default `view.limit` or a one-line hint for
-its row or help (a report: nothing changes by itself). Ranked by output,
+its row or help (a report: nothing changes by itself). `save` writes one
+session's report to a file; `baseline` compares this session (or
+`session`) with such a file and lists in `compare` what got worse and
+better: totals, refusals by kind, and each verb's calls, refusals,
+digests and time per call. Ranked by output,
 largest first, with per-verb marks
 (`unfiltered`, `repeated`, `refused`); every key and mark:
 [reference](reference.md#usage).

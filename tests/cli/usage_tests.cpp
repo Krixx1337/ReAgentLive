@@ -293,3 +293,36 @@ TEST_CASE("usage advice: verbs often digested or unfiltered, with a smaller defa
     // Without advice: no list.
     CHECK_FALSE(UsageFor(lines, AllVerbs(), {}, std::string("s"))->advice.has_value());
 }
+
+TEST_CASE("usage baseline: what got worse and better against a saved report") {
+    const Json before = Json::parse(R"({"totals": {"calls": 10, "refused": 1, "digested": 2, "ms": 1000,
+        "out_by_caller": {"tool": 50000}}, "rows": [
+        {"verb": "find", "calls": 4, "ms": 400, "refused": 1, "refused_by": {"schema": 1}},
+        {"verb": "get", "calls": 6, "ms": 600, "digested": 2}]})");
+    const Json after = Json::parse(R"({"totals": {"calls": 14, "refused": 3, "digested": 1, "ms": 1050},
+        "context": {"chars": 80000, "limit": 400000, "over": false}, "rows": [
+        {"verb": "find", "calls": 4, "ms": 1200, "refused": 3, "refused_by": {"schema": 2, "pack": 1}},
+        {"verb": "get", "calls": 6, "ms": 600, "digested": 1},
+        {"verb": "census", "calls": 4, "ms": 40}]})");
+    const auto compare = CompareUsage(before, after, "base.json");
+    Checked(compare);
+    CHECK(compare.baseline == "base.json");
+    const auto has = [](const std::vector<shape::UsageChange>& list, std::string what, std::optional<std::string> verb) {
+        return std::ranges::any_of(list, [&](const shape::UsageChange& c) { return c.what == what && c.verb == verb; });
+    };
+    CHECK(has(compare.worse, "calls", std::nullopt));
+    CHECK(has(compare.worse, "refused", std::nullopt));
+    CHECK(has(compare.worse, "context", std::nullopt));             // Total tool output: 50000 then 80000.
+    CHECK(has(compare.worse, "refused_by.schema", std::nullopt));
+    CHECK(has(compare.worse, "refused_by.pack", std::nullopt));
+    CHECK(has(compare.worse, "ms_per_call", std::string("find")));   // 100 ms a call, then 300.
+    CHECK(has(compare.worse, "calls", std::string("census")));       // New: from none.
+    CHECK_FALSE(has(compare.worse, "ms", std::nullopt));             // 5% slower: noise.
+    CHECK(has(compare.better, "digested", std::nullopt));
+    CHECK(has(compare.better, "digested", std::string("get")));
+    CHECK_FALSE(compare.worse.front().verb.has_value());             // Totals first.
+    // baseline and save take one session's report.
+    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"all": true, "baseline": "b.json"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"sessions": true, "save": "b.json"}})").has_value());
+    CHECK(Call(R"({"verb": "usage", "args": {"session": "s", "baseline": "b.json", "save": "c.json"}})").has_value());
+}

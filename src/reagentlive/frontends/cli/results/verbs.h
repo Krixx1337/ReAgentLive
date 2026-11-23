@@ -42,7 +42,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"all", "bool", "every session in the log, and the verbs none called"},
              {"sessions", "bool", "the log's sessions, newest first: one row each"},
              {"session", "str", "one session from the log, by its id"},
-             {"advice", "bool", "verbs often digested or unfiltered, with a proposed default view.limit or a hint"}},
+             {"advice", "bool", "verbs often digested or unfiltered, with a proposed default view.limit or a hint"},
+             {"baseline", "file", "a report save wrote: what got worse (and better) against it"},
+             {"save", "file", "write this report to a file, a baseline for a later session"}},
             Of<shape::UsageReport>, build::Usage,
             "From the usage log beside the console; works with no target (then: the log's latest session). calls "
             "counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a "
@@ -61,7 +63,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             "one line. Nothing stops: max_chars stays the per-result cap. advice lists verbs with at least two digested "
             "or unfiltered calls (or half their calls), most first: limit proposes a smaller default view.limit "
             "(the default scaled to what the cap held of the largest digested result), hint one line on what else "
-            "to change in the row or its help. A report: nothing changes by itself."},
+            "to change in the row or its help. A report: nothing changes by itself. save writes the report (JSON) and "
+            "answers saved; baseline compares this session with such a file: compare.worse and compare.better list the "
+            "figures that moved (totals calls, refused, digested, context and ms; refused_by.<kind>; per verb calls, "
+            "refused, digested and ms_per_call), totals first, largest move first. A count is worse when it grew, "
+            "time when it grew by a quarter and past noise (100 ms in all, 50 ms a call). baseline and save take one "
+            "session (session, or none for this one), never all or sessions."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
             {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,

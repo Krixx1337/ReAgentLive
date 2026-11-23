@@ -119,6 +119,29 @@ struct UsageAdvice {
         v("hint", &UsageAdvice::hint);
     }
 };
+// usage with baseline: one figure that moved against the saved report.
+struct UsageChange {
+    std::string what;                   // calls, refused, digested, context, ms, refused_by.<kind>, ms_per_call.
+    std::optional<std::string> verb;    // A verb's figure; absent for the session's totals.
+    double before = 0, after = 0;
+    template<class V> static void Describe(V& v) {
+        v("what", &UsageChange::what);
+        v("verb", &UsageChange::verb);
+        v("before", &UsageChange::before);
+        v("after", &UsageChange::after);
+    }
+};
+struct UsageCompare {
+    std::string baseline;               // The file compared against.
+    uint64_t checked = 0;               // Figures compared.
+    std::vector<UsageChange> worse, better;
+    template<class V> static void Describe(V& v) {
+        v("baseline", &UsageCompare::baseline);
+        v("checked", &UsageCompare::checked);
+        v("worse", &UsageCompare::worse);
+        v("better", &UsageCompare::better);
+    }
+};
 // usage with sessions: one session of the log.
 struct UsageSession {
     std::string session, since, until;  // Its first and last call.
@@ -150,6 +173,8 @@ struct UsageReport {
     std::optional<std::vector<UsageSession>> sessionRows;
     std::optional<UsageContext> context;
     std::optional<std::vector<UsageAdvice>> advice;
+    std::optional<std::string> saved;           // save: the file this report went to.
+    std::optional<UsageCompare> compare;        // baseline: what moved against it.
     template<class V> static void Describe(V& v) {
         v("session", &UsageReport::session);
         v("sessions", &UsageReport::sessions);
@@ -161,6 +186,8 @@ struct UsageReport {
         v("session_rows", &UsageReport::sessionRows);
         v("context", &UsageReport::context);
         v("advice", &UsageReport::advice);
+        v("saved", &UsageReport::saved);
+        v("compare", &UsageReport::compare);
     }
 };
 }
@@ -343,6 +370,81 @@ inline std::vector<shape::UsageAdvice> MakeAdvice(std::span<const UsageLine> lin
         out.push_back(std::move(advice));
     }
     std::ranges::stable_sort(out, std::greater{}, [](const shape::UsageAdvice& a) { return a.digested + a.unfiltered; });
+    return out;
+}
+
+// usage with baseline: a report (as save wrote it) against this one. Counts
+// are worse when they grew; time when it grew by a quarter and more than
+// noise (100 ms in all, 50 ms a call). Totals first, then refusals by kind,
+// then each verb either report has; within each, the largest move first.
+inline shape::UsageCompare CompareUsage(const Json& before, const Json& after, std::string baseline) {
+    shape::UsageCompare out;
+    out.baseline = std::move(baseline);
+    const auto number = [](const Json& object, std::string_view key) {
+        if (!object.is_object()) return 0.0;
+        const auto found = object.find(key);
+        return found != object.end() && found->is_number() ? found->get<double>() : 0.0;
+    };
+    std::vector<shape::UsageChange> worse, better;
+    const auto count = [&](std::string what, std::optional<std::string> verb, double was, double now) {
+        ++out.checked;
+        if (now > was) worse.push_back({std::move(what), std::move(verb), was, now});
+        else if (now < was) better.push_back({std::move(what), std::move(verb), was, now});
+    };
+    const auto time = [&](std::string what, std::optional<std::string> verb, double was, double now, double noise) {
+        ++out.checked;
+        if (now > was * 1.25 && now - was > noise) worse.push_back({std::move(what), std::move(verb), was, now});
+        else if (was > now * 1.25 && was - now > noise) better.push_back({std::move(what), std::move(verb), was, now});
+    };
+    const auto tool = [&](const Json& report) {
+        if (report.contains("context") && report["context"].is_object()) return number(report["context"], "chars");
+        return report.contains("totals") ? number(report["totals"].value("out_by_caller", Json::object()), "tool") : 0.0;
+    };
+    const Json& was = before.value("totals", Json::object());
+    const Json& now = after.value("totals", Json::object());
+    for (const char* key : {"calls", "refused", "digested"}) count(key, std::nullopt, number(was, key), number(now, key));
+    count("context", std::nullopt, tool(before), tool(after));
+    time("ms", std::nullopt, number(was, "ms"), number(now, "ms"), 100);
+    const auto rowsOf = [](const Json& report) {
+        std::map<std::string, Json> rows;
+        if (report.contains("rows") && report["rows"].is_array())
+            for (const auto& row : report["rows"])
+                if (row.is_object() && row.contains("verb") && row["verb"].is_string()) rows[row["verb"].get<std::string>()] = row;
+        return rows;
+    };
+    const auto wasRows = rowsOf(before), nowRows = rowsOf(after);
+    // Refusals by kind over every verb.
+    std::map<std::string, std::pair<double, double>> kinds;
+    for (const auto& [rows, side] : {std::pair{&wasRows, 0}, std::pair{&nowRows, 1}})
+        for (const auto& [verb, row] : *rows)
+            if (row.contains("refused_by") && row["refused_by"].is_object())
+                for (const auto& [kind, n] : row["refused_by"].items())
+                    (side ? kinds[kind].second : kinds[kind].first) += n.is_number() ? n.get<double>() : 0;
+    for (const auto& [kind, pair] : kinds) count("refused_by." + kind, std::nullopt, pair.first, pair.second);
+    std::set<std::string> verbs;
+    for (const auto& [verb, row] : wasRows) verbs.insert(verb);
+    for (const auto& [verb, row] : nowRows) verbs.insert(verb);
+    const Json none = Json::object();
+    for (const auto& verb : verbs) {
+        const Json& a = wasRows.contains(verb) ? wasRows.at(verb) : none;
+        const Json& b = nowRows.contains(verb) ? nowRows.at(verb) : none;
+        for (const char* key : {"calls", "refused", "digested"}) count(key, verb, number(a, key), number(b, key));
+        const double callsA = number(a, "calls"), callsB = number(b, "calls");
+        if (callsA && callsB)
+            time("ms_per_call", verb, number(a, "ms") / callsA, number(b, "ms") / callsB, 50);
+    }
+    const auto byMove = [](const shape::UsageChange& c) { return c.after > c.before ? c.after - c.before : c.before - c.after; };
+    const auto order = [&](std::vector<shape::UsageChange>& list) {
+        // Totals before verbs; within each, the largest move first.
+        std::ranges::stable_sort(list, [&](const shape::UsageChange& x, const shape::UsageChange& y) {
+            if (x.verb.has_value() != y.verb.has_value()) return !x.verb.has_value();
+            return byMove(x) > byMove(y);
+        });
+    };
+    order(worse);
+    order(better);
+    out.worse = std::move(worse);
+    out.better = std::move(better);
     return out;
 }
 

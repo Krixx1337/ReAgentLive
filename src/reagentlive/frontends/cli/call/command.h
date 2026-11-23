@@ -77,6 +77,7 @@ struct Command {
     bool hashOnly = false;
     bool listSessions = false;  // usage sessions; session <id> is `target`.
     bool advice = false;        // usage advice: verbs often digested or unfiltered, with a proposed change.
+    std::string baseline;       // usage baseline: a saved report to compare with. usage save: `file`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     bool capped = false;        // sig-bytes: the length asked passed sig::MaxPattern and was cut to it.
     sig::Pattern pattern;

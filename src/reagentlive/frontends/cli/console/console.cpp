@@ -82,8 +82,25 @@ std::expected<shape::UsageReport, std::string> BuildUsage(const std::filesystem:
                                                     const Command& command, std::optional<std::string> current,
                                                     uint64_t contextLimit) {
     const auto lines = path.empty() ? std::vector<UsageLine>{} : ParseUsage(ReadFile(path));
-    return UsageFor(lines, verbs, {command.all, command.listSessions, command.advice, command.target, contextLimit},
-                    std::move(current));
+    auto report = UsageFor(lines, verbs, {command.all, command.listSessions, command.advice, command.target, contextLimit},
+                           std::move(current));
+    if (!report) return report;
+    Json baseline;
+    if (!command.baseline.empty()) {
+        std::ifstream in{std::filesystem::path(command.baseline), std::ios::binary};
+        if (!in) return std::unexpected("baseline: cannot read " + command.baseline);
+        baseline = Json::parse(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>(), nullptr, false);
+        if (baseline.is_discarded() || !baseline.is_object() || !baseline.contains("totals") || !baseline.contains("rows"))
+            return std::unexpected("baseline: " + command.baseline + " is no usage report (write one with save)");
+    }
+    if (!command.file.empty()) {
+        std::ofstream out{std::filesystem::path(command.file), std::ios::binary | std::ios::trunc};
+        out << ToJson(*report).dump(1, ' ', true, Json::error_handler_t::replace) << '\n';
+        if (!out) return std::unexpected("save: cannot write " + command.file);
+        report->saved = command.file;
+    }
+    if (!command.baseline.empty()) report->compare = CompareUsage(baseline, ToJson(*report), command.baseline);
+    return report;
 }
 }
 

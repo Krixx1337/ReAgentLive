@@ -128,8 +128,14 @@ Parsed Usage(const Args& args, const ParseContext&) {
     command.listSessions = args.Has("sessions");
     command.target = args.Str("session");
     command.advice = args.Has("advice");
+    command.baseline = args.Str("baseline");
+    command.file = args.Str("save");
     if (command.all + command.listSessions + !command.target.empty() > 1)
         return Fail("all, sessions and session are one at a time");
+    if ((command.all || command.listSessions) && !command.baseline.empty())
+        return Fail("baseline compares one session: give session, or nothing for this one");
+    if ((command.all || command.listSessions) && !command.file.empty())
+        return Fail("save keeps one session's report: give session, or nothing for this one");
     return command;
 }
 
