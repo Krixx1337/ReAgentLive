@@ -41,9 +41,8 @@ once `get Vector --types` answers. `host_thread: engine`: T3. Real serials (not 
 
 ## Rules
 
-- Reads need no approval: every verb `help` does not mark `writes`, `each`
-  over field paths, and pure getters through `call-pure` or an `each`
-  column (say what you call).
+- Reads need no approval: every verb `help` does not mark `writes`, and
+  pure getters through `call-pure` (`--each` over a class; say what you call).
 - Except the first call on a new host or in a new game (the known-answer
   call, `call-pure` included): ask first, since a wrong engine layout can
   crash the game.
@@ -67,7 +66,10 @@ once `get Vector --types` answers. `host_thread: engine`: T3. Real serials (not 
 
 MCP tools are the default. Python when the next step is a loop or a
 computation over results. The console when MCP is absent or for a human.
-Mapping, gaps and what MCP leaves out: load `references/interfaces.md`.
+Tools come in packs (`explore` always on): enable `native` or `observe`
+with the `packs` tool when the task needs them; a refusal of kind `pack`
+outside the ceiling is the user's to lift. Mapping, packs, gaps and what
+MCP leaves out: load `references/interfaces.md`.
 
 ## Load when
 
@@ -76,7 +78,7 @@ Mapping, gaps and what MCP leaves out: load `references/interfaces.md`.
 | need the verb for a task, or one you have not used this session | [references/commands-by-task.md](references/commands-by-task.md) |
 | start an investigation, or a capture shows no change | [references/workflow.md](references/workflow.md) |
 | plan more than a few calls, see a `digest`, or end a session | [references/efficiency.md](references/efficiency.md) |
-| choose MCP, Python or the console, loop over many objects (`each` first), or need a verb's tool or function name | [references/interfaces.md](references/interfaces.md) |
+| choose MCP, Python or the console, loop over many objects (`each` first), need a verb's tool or function name, or a tool is missing or refused as `pack` | [references/interfaces.md](references/interfaces.md) |
 | drive the console or Python by hand: quoting, parsing JSON Lines, generating the module | [references/console-driving.md](references/console-driving.md) |
 | sample a value over time, record a function's calls, or see what changes across an action (one that resets at once, like a jump, too) | [references/capture-and-timing.md](references/capture-and-timing.md) |
 | send any `call` (pure getters too) or `write` (`--undo`, `--hold`) | [references/calls-and-writes.md](references/calls-and-writes.md) |

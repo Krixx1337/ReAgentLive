@@ -37,6 +37,19 @@ Current behaviour lives in the [command pages](INDEX.md#commands),
   copy of its interface vtable
   ([decision](#a-game-thread-tick-through-the-viewports-draw)). Code, the
   game's own vtables and imports are never written by either.
+- **One safety boundary, set by a person, held by the console.** Every
+  verb that writes the target or calls into it carries `writes` and sits
+  in the `modify` [tool pack](tool-interface.md#tool-packs); the mark is
+  exact per verb, so a read-only verb has no argument form that writes or
+  calls (`each` reads; its getter form is `call-pure --each`). The
+  console's `--packs` is the ceiling: a verb past it is refused (kind
+  `pack`), `batch` items included, whichever frontend sent it. The MCP
+  adapter and the Python session pass their ceiling on, so one check
+  covers every path; the agent may enable packs inside it at run time, never
+  widen it. Rejected: the guard only in the adapter (a script's session
+  ran most calls and nothing stopped a `write` typed by mistake), and a
+  mark that depends on arguments (a verb's mark is what a client prompts
+  on, before it sees arguments).
 - **Extensible by static tables, not plugins:** agent handlers and CLI verbs
   are constant arrays; op ranges separate core, packs and games.
 - **One command layer:** the console. It sits on the C++ client API,

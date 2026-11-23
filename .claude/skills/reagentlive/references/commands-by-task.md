@@ -23,7 +23,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | FName index to text / text to index | `name` / `name-find` |
 | An object's layout / its values | `get --types` / `get` (filter it, or name paths) |
 | Typed values along pointer and struct paths, one moment | `get` |
-| One table over every instance of a class (one tick, one call) | `each` |
+| One table over every instance of a class (one tick, one call) | `each` (fields), `call-pure <Class> <Getter> --each` (a getter) |
 | Elements of an array, set or map | `entries` |
 | A data table's rows | `rows` |
 | What a byte or enum field's number means | `enum` |

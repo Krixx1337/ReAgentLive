@@ -10,7 +10,7 @@
   rows' samples are only new for classes absent before (else `find --cls`).
   Objects living a tick or two fall between censuses: capture them, or
   `each --seconds`.
-- "Which instance has state X?": `each <Class> <Owner:PureGetter>`; add
+- "Which instance has state X?": `call-pure <Class> <Owner:PureGetter> --each`; add
   `--seconds N` while the user acts to see which rows flip.
 
 ## Gameplay tags

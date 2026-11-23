@@ -12,7 +12,7 @@ console (`docs/commands/console.md`).
 | One lookup, read, describe, or a few calls | MCP tool |
 | Reads that must share a tick | MCP `batch` (or `get`); check `same_tick` |
 | A result came back as a `digest` | the call its `next` names, or `budget` for what `next` cannot narrow |
-| One value or getter across every instance of one class (T3) | `each`: one call, one tick, the whole table; Python only when `each` cannot express it (several classes, logic beyond a table) |
+| Fields or a getter across every instance of one class (T3) | `each` (fields) or `call-pure <Class> <Getter> --each`: one call, one tick, the whole table; Python only when neither can express it (several classes, logic beyond a table) |
 | The next step loops, compares, intersects, sweeps instances or diffs many objects | Python: generated functions on a `Session`; print only the summary |
 | One step's output feeds the next more than twice | Python |
 | A capture over seconds | `watch-start`, then `watch-read` / `watch-stop` (MCP or Python) |
@@ -24,6 +24,29 @@ console (`docs/commands/console.md`).
 Rule: MCP first; Python when the next step is a loop or a computation over
 results; the console when MCP is absent or for a human. The C++ client is
 for building tools, not for investigating.
+
+## Tool packs
+
+| Job | Pack | Holds |
+|---|---|---|
+| Find objects, read fields, data, names, memory | `explore` (always on) | `find`, `get`, `each`, `rows`, `name-find`, `read`, `peek`... |
+| Read code, signatures, labels across builds | `native` | `disasm`, `xrefs`, `vtable`, `sig-check`, `labels-sign`... |
+| Watch over time without changing anything | `observe` | `watch-start`, `census`, `mem-snap`, `trace`, `call-pure` |
+| Change the target or call into it | `modify` | `write`, `call`, `calls-start`, `game-thread`... |
+
+`help` groups verbs by pack (`help --json`: each row's `pack`).
+
+- **MCP:** `packs` lists each pack, its state and its tools; enable one
+  before the first call that needs it (`{"action": "enable", "pack":
+  "native"}`) and the tool list refreshes. `outside` is the ceiling the
+  user set when starting the server: never work around it; ask the user,
+  who restarts it with the pack in `--allow`.
+- **A refusal of kind `pack`** (console, Python, a `batch` item): the verb
+  is past that console's `--packs`. Same rule: enable inside the ceiling,
+  ask the user past it.
+- **Python:** `Session(console, packs=['explore', 'native', 'observe'])`
+  for a script that must not change the target; add `modify` only for an
+  approved write.
 
 ## Naming rule
 
@@ -78,6 +101,8 @@ for building tools, not for investigating.
 - Blocking verbs (a host's) are callable and block the script for their
   duration; `s.watch(seconds, ranges)` is a blocking capture. `Session` has no timeout: a call waits until the console
   answers or exits.
+- Start a read-only script's session with its packs (Tool packs above):
+  a typo then cannot reach a write.
 - `caller='tool'` when you read every result yourself; the default
   `script` keeps a script's output apart in `stats`.
 

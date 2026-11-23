@@ -293,7 +293,56 @@ pack, sized so a normal question stays inside the default ones:
 |---|---|---|
 | `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, functions' metadata, memory reads |
 | `native` | read code and keep names across builds | disassembly, references, signatures, labels, layout files |
-| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure` |
+| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure` (and its `--each` form) |
 | `modify` | change the target or call into it | `write`, `writes`, `call`, `release`, the call recorder, `game-thread` |
 
-`help --json` is the list's source (each row's `pack`).
+`help --json` is the list's source (each row's `pack`); membership is a
+one-line change in the row.
+
+- **Exact marks first.** A verb's mark is per verb, so risk must be too:
+  `each` reads fields only and its function form is `call-pure <Class>
+  <Function> --each`; `status` reads the game-thread mode and
+  `game-thread` keeps only `on` and `off`. A test parses every form of
+  every verb outside `modify` and checks none writes or calls (a `trace`
+  calls a line trace that changes no state; a `batch`'s items are checked
+  as their own verbs).
+- **The invariant:** a verb marked `writes` is in `modify`; `explore`,
+  `native` and `observe` hold none. `calls-read` and `calls-stop` are
+  read or restore only, but live with their recorder.
+- **One ceiling, in the console.** `--packs` on the console
+  ([console](commands/console.md#one-shot-use)) refuses a verb of any
+  other pack with kind `pack`, `batch` items included. The MCP adapter
+  gives every console it starts its ceiling (`--packs` and `--allow`
+  together), the Python session its `packs=`, so the boundary holds
+  whichever frontend sends the call. A person at the keyboard gets all
+  four by default.
+- **Runtime enable inside the ceiling.** The adapter serves `--packs`
+  (default `explore`) and a `packs` tool, always on and read-only, that
+  lists the packs and enables or disables one within `--allow`, telling
+  the client the list changed. `modify` is reachable only when the person
+  starting the server names it.
+- **`call-pure` keeps one result type** for its two forms: every key of a
+  call and of `each`'s table, all optional but `mode`. A second verb would
+  have kept the shapes apart, but the class-wide call is the same check
+  (const or pure, plain outputs) as one call, and one verb keeps one
+  approval rule.
+
+Measured on one host's console (52 verbs, two host ones; tool JSON as
+the adapter builds it: name, description, input schema and compact
+output schema, plus the `packs` tool):
+
+| Served | Tools | Characters |
+|---|---|---|
+| every pack | 51 | about 73,000 |
+| `explore`, `native`, `observe` | 43 | about 61,000 |
+| `explore`, `native` | 35 | about 47,000 |
+| `explore` | 22 | about 26,000 |
+
+| Rejected | Why |
+|---|---|
+| Two servers, read-only and writing | cuts the list by a fifth only, and a read-only server still loads every research tool it never calls; its safety idea is the ceiling here |
+| Eight to ten fine packs (objects, code, signatures, names, captures...) | a normal question crosses three or four; the agent spends turns enabling |
+| One dispatcher tool (`run` and `help`) | one tool cannot be both read-only and destructive, and with no schemas more calls fail on syntax |
+| Client-side deferral of schemas only | client-specific, and no safety gain |
+| Enabling single verbs | packs are the unit; anything finer is the fine-packs design again |
+| A pack per engine | `origin` stays the code owner and the tool prefix; another engine pack reuses the same four workflow packs |

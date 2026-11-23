@@ -8,9 +8,10 @@ console (`docs/commands/console.md#usage-log-and-stats`).
 - Fewer tool calls beat faster ones: put everything the next decision
   needs in one `batch` or one `get` with several paths.
 - `each` scans once: ask for every column in one call.
-- A loop, sweep or comparison over many results: `each` when it is one
-  class (one tick, one call); else one Python script that prints a
-  summary, not N tool calls.
+- A loop, sweep or comparison over many results: `each` (or
+  `call-pure --each` for a getter) when it is one class (one tick, one
+  call); else one Python script that prints a summary, not N tool calls.
+- Enable a pack once, when the task first needs it; leave the rest off.
 - A bare class name costs one table scan the first time per agent; a
   literal ref never scans. Keep refs from earlier results.
 
