@@ -31,6 +31,7 @@ struct EachState {
     uint32_t rowCount = 0;
     int32_t cursor = 0;
     bool listed = false, capped = false, ready = false;
+    bool indexing = false, indexed = false; // The class index (FindBody's).
 };
 EachState* g_each;
 
@@ -146,8 +147,9 @@ Progress Each(const Request& request, Response& response, bool first, const Host
                 state.className = filter;
                 state.instances.clear();
             } catch (...) { Refuse(response, Status::Refused, "out of memory"); return Progress::Done; }
-            state.listed = state.capped = false;
+            state.listed = state.capped = state.indexed = false;
             state.cursor = 0;
+            state.indexing = StartClassIndex(className);
             ResetClassCache();
         }
     }
@@ -155,10 +157,16 @@ Progress Each(const Request& request, Response& response, bool first, const Host
     try {
         if (!state.listed) {
             Budget budget;
+            ForgetRegions();
+            if (state.indexing) {
+                if (!ClassIndexReady(budget)) return Progress::Continue;
+                state.indexing = false;
+                state.indexed = true;
+            }
             const int32_t count = TableNum();
-            g_region = {};
             std::string scratch;
-            for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {
+            const auto next = [&state, count](int32_t slot) { return state.indexed ? NextIndexed(slot, count) : slot; };
+            for (unsigned checked = 0; (state.cursor = next(state.cursor)) < count; ++state.cursor, ++checked) {
                 if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
                 Object* object = TableObject(state.cursor);
                 if (!object || !HeaderReadable(object) || ObjectIndex(object) != state.cursor || Template(object) ||
@@ -234,7 +242,7 @@ Progress ExecEntries(const Request& request, Response& response, bool first, con
     }
     auto& state = *g_exec;
     Budget budget;
-    g_region = {};
+    ForgetRegions();
     try {
         const int32_t count = TableNum();
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {

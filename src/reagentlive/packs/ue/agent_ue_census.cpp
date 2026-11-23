@@ -90,7 +90,7 @@ Progress CensusBody(const Request& request, Response& response, bool first, cons
     auto& state = *g_census;
     Budget budget;
     const int32_t count = TableNum();
-    g_region = {};
+    ForgetRegions();
     std::string scratch;
     try {
         for (unsigned checked = 0; state.cursor < count; ++state.cursor, ++checked) {

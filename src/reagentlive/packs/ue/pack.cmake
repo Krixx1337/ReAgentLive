@@ -25,7 +25,8 @@ target_sources(reagentlive-ue-base INTERFACE "${reagentlive_ue_dir}/agent_ue.cpp
     "${reagentlive_ue_dir}/agent_ue_census.cpp" "${reagentlive_ue_dir}/agent_ue_globals.cpp"
     "${reagentlive_ue_dir}/agent_ue_check.cpp" "${reagentlive_ue_dir}/agent_ue_entries.cpp"
     "${reagentlive_ue_dir}/agent_ue_reflect.cpp" "${reagentlive_ue_dir}/agent_ue_scan.cpp"
-    "${reagentlive_ue_dir}/agent_ue_script.cpp" "${reagentlive_ue_dir}/agent_ue_calls.cpp")
+    "${reagentlive_ue_dir}/agent_ue_script.cpp" "${reagentlive_ue_dir}/agent_ue_calls.cpp"
+    "${reagentlive_ue_dir}/agent_ue_index.cpp")
 target_link_libraries(reagentlive-ue-base INTERFACE reagentlive-core)
 set_property(GLOBAL APPEND PROPERTY REAGENTLIVE_AGENT_TARGETS reagentlive-ue-base)
 

@@ -257,7 +257,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     set_target_properties(reagentlive-core-console PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
     target_compile_options(reagentlive-core-console PRIVATE /W4 /WX /EHsc)
     add_executable(reagentlive-ue-tests tests/ue/main.cpp tests/ue/protocol_tests.cpp tests/ue/globals_tests.cpp
-        tests/ue/layout_tests.cpp)
+        tests/ue/layout_tests.cpp tests/ue/index_tests.cpp)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
         tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp)

@@ -37,10 +37,13 @@ private:
 
 template<class Text> std::string_view View(const Text& text) { return {text.c_str(), text.size()}; }
 
-// Objects of one allocator region share a VirtualQuery. Reset every tick, so
-// a cached region is never trusted beyond one budget slice.
+// Objects of one allocator region share a VirtualQuery: the last few
+// readable regions are kept and forgotten every tick (ForgetRegions, at the
+// start of each scan slice), so none is trusted beyond one budget slice.
 struct Region { uintptr_t begin, end; };
-extern Region g_region;
+void ForgetRegions();
+// Committed, readable, no guard page, through the kept regions.
+bool RegionReadable(const void* address, size_t size);
 
 // The located layout: the table and object header (globals::TableShape) and
 // what the pack knows of UStruct; -1 is unknown. Valid once PackReady said yes.
@@ -93,7 +96,17 @@ bool HeaderReadable(const Object* object);
 // guard page's exception through.
 bool CheckedCopy(const void* source, void* out, size_t bytes);
 bool ClassMatches(const Object* object, std::string_view wanted, std::string& scratch);
+// The class or a parent class is named `wanted` (any case).
+bool ClassNamed(const Object* type, std::string_view wanted, std::string& scratch);
 void ResetClassCache();
+// The class index (class_index.h, agent_ue_index.cpp) find --cls and each walk:
+// StartClassIndex on a query's first tick, then ClassIndexReady each tick
+// until true (false: out of this tick's budget), then NextIndexed gives the
+// candidate slots in order; each still gets the full checks. False from
+// StartClassIndex: out of memory (the caller walks the whole table).
+bool StartClassIndex(std::string_view wanted);
+bool ClassIndexReady(const Budget& budget);
+int32_t NextIndexed(int32_t from, int32_t end);
 std::string_view ClassArgument(const Request& request);
 // The request's object filter on outers (protocol_ue.h): true when none is set.
 bool OuterMatches(const Request& request, const Object* object, std::string& scratch);

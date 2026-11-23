@@ -37,7 +37,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
              cursor,
              {"--limit", Takes::One, "int", "N", "rows at most (1..1000), over as many pages as it takes"}},
             Of<shape::Find>, parse::Find, "The rows become $1..$N. Only the first page counts total. --limit pages "
-            "until N rows or the end; next_cursor continues after the last row."},
+            "until N rows or the end; next_cursor continues after the last row. --cls uses the agent's class index; "
+            "text alone walks the whole object table, so add --cls when the class is known."},
         {"census", "ue", ToolPack::Observe, "live instances per class, most first; pages of 100 rows; --diff: only the counts that changed",
             {},
             {cls,

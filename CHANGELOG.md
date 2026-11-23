@@ -166,6 +166,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **`find --cls` and `each` use a class index:** the agent keeps each
+  object-table slot's object and class and, per query, rereads only the
+  slots that changed, so a class lookup no longer walks every object
+  ([find](docs/commands/unreal.md#unreal-pack)). Text without `--cls`
+  still walks the whole table. Rebuild and re-inject the agent.
 - **Saves follow switches:** `disasm --save` reads each jump table
   (bounded by the `cmp` before it), saves it as data and each target as a
   chunk, so switch functions decompile without `JUMPOUT`; up to 256 chunks

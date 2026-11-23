@@ -485,6 +485,20 @@ tools, with their decisions and rejected alternatives:
   fix). `FindExact` stops at the first match. Rejected for now: a
   name-to-class index built by one scan (thousands of pages for the
   classes of a large game; the exact find makes a miss the only full scan).
+- **A class index for `find --cls` and `each`.** Measured live on a table
+  of about 410 000 objects at 55 ticks per second and a 4 ms scan budget:
+  `find --cls` took 4.4 s and `find <text>` 0.7 s, both in the agent (two
+  round trips). The class walk cost about six times the name walk per
+  object: each distinct class's parent chain was checked with a
+  `VirtualQuery` per step. Now the agent keeps per slot the object last
+  seen and its class; a query compares slot pointers (a sequential read)
+  and reads only changed headers, and parent chains go through a cache of
+  the last readable regions. Rejected: rebuilding only when the table's
+  count changes or after N seconds (slots are reused, so the count barely
+  moves while objects come and go; a fixed age either rebuilds on most
+  calls or misses new objects for that long); building it on a thread of
+  its own (the pass is a few milliseconds, inside the existing scan
+  budget, and a pack thread would need a host opt-in).
 - **Known debt: the interface stub pattern decodes bytes in the agent.**
   `func` on an interface function matches one stub shape
   (`mov rax, [reg]; call [rax + disp]`, `StubVtableSlot`) inside the agent,

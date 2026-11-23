@@ -179,7 +179,7 @@ Progress Refs(const Request& request, Response& response, bool first, const Host
     uint8_t pattern[1 + sizeof(int32_t)] = {expr::NameConst};
     memcpy(pattern + 1, &index, sizeof(index));
     Budget budget;
-    g_region = {};
+    ForgetRegions();
     std::string scratch;
     try {
         const int32_t count = TableNum();

@@ -26,7 +26,9 @@ namespace reagentlive::ue {
 namespace {
 constexpr size_t MaxNameCacheBytes = 64u << 20;
 
-struct FindState { int32_t cursor; uint32_t count, total, next; };
+// indexing: the class index is being brought up to date; indexed: the scan
+// visits only the slots it names (NextIndexed).
+struct FindState { int32_t cursor; uint32_t count, total, next; bool indexing, indexed; };
 FindState g_find;
 
 // Base names by FName comparison index. The name pool only grows and never
@@ -42,21 +44,35 @@ bool g_namesDisabled;
 
 }
 
-Region g_region;
+namespace {
+// Regions VirtualQuery found readable, most recent first in a ring; forgotten
+// every tick (ForgetRegions), so none is trusted beyond one budget slice.
+constexpr unsigned RegionSlots = 8;
+Region g_regions[RegionSlots];
+unsigned g_regionNext;
+}
 
-bool HeaderReadable(const Object* object) {
-    const auto address = reinterpret_cast<uintptr_t>(object);
-    const size_t size = globals::ObjectHeaderBytes(Layout().shape);
-    if (address >= g_region.begin && address + size <= g_region.end) return true;
+void ForgetRegions() {
+    for (auto& region : g_regions) region = {};
+    g_regionNext = 0;
+}
+
+bool RegionReadable(const void* address, size_t size) {
+    const auto begin = reinterpret_cast<uintptr_t>(address);
+    for (const auto& region : g_regions)
+        if (begin >= region.begin && begin + size <= region.end) return true;
     MEMORY_BASIC_INFORMATION info{};
-    if (!VirtualQuery(object, &info, sizeof(info)) || info.State != MEM_COMMIT ||
+    if (!VirtualQuery(address, &info, sizeof(info)) || info.State != MEM_COMMIT ||
         (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
         !(info.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
                           PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
         return false;
-    g_region = {reinterpret_cast<uintptr_t>(info.BaseAddress), reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize};
-    return address + size <= g_region.end;
+    const Region region{reinterpret_cast<uintptr_t>(info.BaseAddress), reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize};
+    g_regions[g_regionNext++ % RegionSlots] = region;
+    return begin + size <= region.end;
 }
+
+bool HeaderReadable(const Object* object) { return RegionReadable(object, globals::ObjectHeaderBytes(Layout().shape)); }
 
 namespace {
 // Base name (without the _N instance suffix) of an FName comparison index.
@@ -104,21 +120,18 @@ bool SameText(std::string_view a, std::string_view b) {
 // headers live outside the objects' allocator regions. Cleared per search.
 std::unordered_map<const void*, bool>* g_classes;
 
+}
+
 // Without a known SuperStruct only the exact class matches.
-bool ClassChainMatches(const Object* type, std::string_view wanted, std::string& scratch) {
-    MEMORY_BASIC_INFORMATION info{};
+bool ClassNamed(const Object* type, std::string_view wanted, std::string& scratch) {
     const auto& layout = Layout();
     const size_t bytes = std::max<size_t>(globals::ObjectHeaderBytes(layout.shape),
                                           layout.superStruct < 0 ? 0 : static_cast<size_t>(layout.superStruct) + sizeof(void*));
     for (unsigned depth = 0; type && depth < MaxClassDepth; type = SuperOf(type), ++depth) {
-        if (!VirtualQuery(type, &info, sizeof(info)) || info.State != MEM_COMMIT ||
-            (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
-            reinterpret_cast<uintptr_t>(type) + bytes >
-                reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize) return false;
+        if (!RegionReadable(type, bytes)) return false;
         if (SameText(BaseName(ObjectName(type).index, scratch), wanted)) return true;
     }
     return false;
-}
 }
 
 // Whether the object's class or a parent class is named `wanted`. Headers only:
@@ -129,7 +142,7 @@ bool ClassMatches(const Object* object, std::string_view wanted, std::string& sc
     if (g_classes) {
         if (const auto found = g_classes->find(type); found != g_classes->end()) return found->second;
     }
-    const bool match = ClassChainMatches(type, wanted, scratch);
+    const bool match = ClassNamed(type, wanted, scratch);
     if (g_classes) {
         try { g_classes->emplace(type, match); } catch (...) { g_classes->clear(); }
     }
@@ -264,24 +277,31 @@ Progress FindBody(const Request& request, Response& response, bool first, const 
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response, Access::Read)) return Progress::Done;
     const auto from = static_cast<int32_t>(request.args[1]);
+    const std::string_view wantedClass = ClassArgument(request);
     if (first) {
         if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
         if (!OuterAlive(request, pack, response)) return Progress::Done;
         g_find = {};
         g_find.cursor = from; // Later pages start at their cursor instead of rescanning from slot 0.
+        g_find.indexing = !wantedClass.empty() && StartClassIndex(wantedClass);
         ResetClassCache();
     }
     const bool exact = (request.flags & FindExact) != 0;
     const bool live = (request.flags & FindLive) != 0;
     const bool counting = from == 0 && !exact; // Only the first page counts every match.
     const std::string_view query(request.text);
-    const std::string_view wantedClass = ClassArgument(request);
     auto* entries = reinterpret_cast<FindEntry*>(response.data);
     Budget budget;
+    ForgetRegions();
+    if (g_find.indexing) {
+        if (!ClassIndexReady(budget)) return Progress::Continue;
+        g_find.indexing = false;
+        g_find.indexed = true;
+    }
     const int32_t count = TableNum();
-    g_region = {};
     std::string name, scratch;
-    for (unsigned checked = 0; g_find.cursor < count; ++g_find.cursor, ++checked) {
+    const auto next = [count](int32_t slot) { return g_find.indexed ? NextIndexed(slot, count) : slot; };
+    for (unsigned checked = 0; (g_find.cursor = next(g_find.cursor)) < count; ++g_find.cursor, ++checked) {
         if ((checked & 63) == 63 && budget.Spent()) return Progress::Continue;
         // Cheap header check while scanning; full validation only for matches.
         Object* object = TableObject(g_find.cursor);

@@ -345,7 +345,7 @@ Progress GuardedRead(Handler body, const Request& request, Response& response, b
     bool faulted = false;
     const Progress progress = FaultGuarded(body, request, response, first, host, faulted);
     if (!faulted) return progress;
-    g_region = {};
+    ForgetRegions();
     response.length = 0;
     Refuse(response, Status::NotReadable, "fault during an off-thread read");
     if (host.log) host.log(LogLevel::Warning, static_cast<unsigned>(Status::NotReadable), "Unreal pack: fault during an off-thread read");
