@@ -122,6 +122,8 @@ Result<shape::GameThread> SendGameThread(Session& session, const Request& reques
 // rows: a data table's RowMap, each row decoded with its RowStruct.
 void RunRows(Session& session, const Command& command, StructCache& structs, std::string_view jsonCommand);
 void RunExportLabels(Session& session, const Command& command, std::string_view jsonCommand);
+// export-assets: each object's get --nonzero and a table's rows, a file each (export.cpp).
+void RunExportAssets(Session& session, const Command& command, std::string_view jsonCommand);
 // layout-export and layout-check (command.target "export" or "check").
 void RunLayout(Session& session, const Command& command, std::string_view jsonCommand);
 void RunGet(Session& session, const Command& command, StructCache& structs, std::vector<Ref>& refs,

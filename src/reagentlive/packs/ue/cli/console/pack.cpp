@@ -319,6 +319,7 @@ bool PackCommand(const Command& command) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::Refs: case Kind::Entries: case Kind::ExportLabels: case Kind::Label:
     case Kind::Layout: case Kind::Trace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::GameThread:
+    case Kind::ExportAssets:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -364,6 +365,10 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
     }
     if (command.kind == Kind::ExportLabels) {
         RunExportLabels(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::ExportAssets) {
+        RunExportAssets(session, command, jsonCommand);
         return;
     }
     if (command.kind == Kind::Layout) {

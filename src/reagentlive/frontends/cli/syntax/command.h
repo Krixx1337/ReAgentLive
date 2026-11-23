@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, Writes, Script, Refs, Peek, Entries, ExportLabels, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, Label, Stats, Layout,
-    MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread };
+    MemSnap, MemDiff, Trace, Calls, Rows, Enum, GameThread, ExportAssets };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -140,6 +140,7 @@ constexpr size_t MaxTypeName = 128;
 constexpr uint64_t MaxRootOffset = 0x10000;
 constexpr size_t MaxBatchCommands = 64, MaxGetPaths = 16, MaxGetDepth = 8;
 constexpr uint32_t DefaultCensusLimit = 100;
+constexpr uint32_t MaxExportClasses = 16, MaxExportObjects = 2000; // export-assets: per call.
 constexpr uint32_t DefaultCallRows = 100;   // call: rows of a returned array per page.
 constexpr uint32_t DefaultEachRows = 100;   // each: rows printed.
 // mem-snap: bytes kept; mem-diff: rows shown and the tests it takes.

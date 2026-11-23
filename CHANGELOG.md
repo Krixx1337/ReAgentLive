@@ -83,6 +83,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Asset data to files:** `export-assets <dir> --cls <Class>... [--match
+  <text>]` writes each live instance's nonzero fields, and a data or curve
+  table's rows, to one JSON file per object with an index, so a run reads
+  asset data offline instead of live again
+  ([assets to files](docs/commands/unreal.md#assets-to-files)).
+
 - **Blueprint logic as statements:** `script <obj|Class> <Fn> --decode`
   decodes the Kismet bytecode into readable statements with byte offsets
   (`if !(Speed > Limit) goto +0x58`), names properties by their readable

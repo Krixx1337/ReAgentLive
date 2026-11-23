@@ -317,6 +317,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             "call-pure $1 Actor:K2_GetActorLocation --dry", "call-pure Pawn GetHealth --each --seconds 5"}},
         {"label", {"label $1 0x10 f32 Speed"}},
         {"export-labels", {"export-labels", "export-labels out.jsonl"}},
+        {"export-assets", {"export-assets out --cls DataTable", "export-assets out --cls DataTable CurveTable --match Weapon"}},
         {"layout-export", {"layout-export out.json Pawn", "layout-export out.json Pawn --closure", "layout-export out.json Pawn --closure 2"}},
         {"layout-check", {"layout-check out.json"}},
         {"entries", {"entries $1 Items", "entries $1 Items --start 8"}},

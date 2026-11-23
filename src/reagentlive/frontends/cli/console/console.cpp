@@ -878,3 +878,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     return session.failed ? 1 : 0;
 }
 }
+
+namespace reagentlive::cli::detail {
+void ExecuteLine(Session& session, std::string_view line) { Execute(session, ReadLine(line), true); }
+}

@@ -753,6 +753,44 @@ TEST_CASE("rows reads a curve table's keys and evaluates them with --at") {
     CHECK(refused[2]["error"]["kind"] == "syntax");
 }
 
+TEST_CASE("export-assets writes each object's fields and a table's rows, one file each, and an index") {
+    const auto& fixture = TheFixture();
+    TheCurveTables();
+    const auto dir = std::filesystem::path(SaveFile("export"));
+    std::filesystem::remove_all(dir);
+    const auto result = Result("export-assets \"" + dir.string() + "\" --cls Thing CurveTable");
+    CHECK(result["failed"] == 0);
+    CHECK(result["capped"] == false);
+    CHECK(result["exported"] == result["rows"].size());
+    const auto index = Json::parse(std::ifstream(result["index"].get<std::string>()));
+    CHECK(index.size() == result["exported"]);
+    bool thing = false;
+    uint64_t tables = 0;
+    for (const auto& row : index) {
+        const auto file = Json::parse(std::ifstream(row["file"].get<std::string>()));
+        CHECK(file["ref"] == row["ref"]);
+        CHECK(file["get"].contains("rows"));
+        if (row["name"] == "Thing_0") {
+            thing = true;
+            CHECK(file["ref"] == fixture.thing);
+            CHECK_FALSE(file.contains("rows"));
+        }
+        if (file.contains("rows")) {
+            ++tables;
+            CHECK(row["table_rows"] == file["rows"]["rows"].size());
+            CHECK(file["rows"].contains("curve"));
+        }
+    }
+    CHECK(thing);
+    CHECK(tables == result["tables"]);
+    CHECK(tables == 3); // CT_Derived too: a subclass of the class asked for.
+    const auto sway = Result("export-assets \"" + dir.string() + "\" --cls CurveTable --match sway");
+    CHECK(sway["exported"] == 1);
+    CHECK(sway["rows"][0]["table_rows"] == 2);
+    // A missing --cls is a syntax error.
+    CHECK(RunLines("export-assets x")[0]["error"]["kind"] == "syntax");
+}
+
 TEST_CASE("disasm --save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {
     const auto file = SaveFile("switch.jsonl");
     const auto saved = Result("disasm " + At(0x1400) + " --function --save " + file);

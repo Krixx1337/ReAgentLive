@@ -143,6 +143,8 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
 // search (a job: started, then polled up to --wait) and search-job.
+// One command line run as a batch item is (its records go to session.capture when set).
+void ExecuteLine(Session& session, std::string_view line);
 void RunSearch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWatch(Session& session, const Command& command, std::string_view jsonCommand);
 void RunSig(Session& session, const Command& command, std::string_view jsonCommand);

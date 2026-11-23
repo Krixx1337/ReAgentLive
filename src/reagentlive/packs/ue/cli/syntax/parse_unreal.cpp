@@ -321,6 +321,23 @@ Parsed ExportLabels(const Args& args, const ParseContext&) {
     return command;
 }
 
+// export-assets <dir> --cls <Class>... [--match <text>]: each object's fields
+// and table rows, one file per object.
+Parsed ExportAssets(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::ExportAssets;
+    command.file = args.At(0);
+    const auto* classes = args.Find("--cls");
+    if (!classes || classes->values.empty()) return Fail("--cls names at least one class");
+    for (const auto& name : classes->values) {
+        if (!ClassName(name)) return Fail("'" + name + "' is not a class name");
+        command.fields.push_back(name);
+    }
+    if (command.fields.size() > MaxExportClasses) return Fail("at most " + std::to_string(MaxExportClasses) + " classes per call");
+    command.match = args.Value("--match");
+    return command;
+}
+
 // layout-export <file> <Class>...: the fields each class declares, as JSON lines.
 Parsed LayoutExport(const Args& args, const ParseContext&) {
     Command command;

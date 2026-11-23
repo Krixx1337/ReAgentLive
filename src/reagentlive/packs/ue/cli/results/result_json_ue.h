@@ -930,6 +930,39 @@ struct ExportLabels {
         v("capped", &ExportLabels::capped);
     }
 };
+// export-assets: one file per object; the index lists them all, rows the first.
+struct ExportedAsset {
+    static constexpr std::string_view TypeName = "ExportedAsset";
+    std::string name, className, file;
+    RefId ref;
+    std::optional<uint64_t> tableRows;
+    std::optional<std::string> error;
+    template<class V> static void Describe(V& v) {
+        v("name", &ExportedAsset::name);
+        v("class", &ExportedAsset::className);
+        v("ref", &ExportedAsset::ref);
+        v("file", &ExportedAsset::file);
+        v("table_rows", &ExportedAsset::tableRows);
+        v("error", &ExportedAsset::error);
+    }
+};
+struct ExportAssets {
+    std::string dir, index;
+    uint64_t objects = 0, tables = 0, failed = 0;
+    bool capped = false;
+    std::vector<ExportedAsset> rows;
+    std::optional<uint64_t> omitted;
+    template<class V> static void Describe(V& v) {
+        v("dir", &ExportAssets::dir);
+        v("index", &ExportAssets::index);
+        v("exported", &ExportAssets::objects);
+        v("tables", &ExportAssets::tables);
+        v("failed", &ExportAssets::failed);
+        v("capped", &ExportAssets::capped);
+        v("rows", &ExportAssets::rows);
+        v("omitted", &ExportAssets::omitted);
+    }
+};
 }
 
 inline shape::Object MakeObject(const ue::Object& object) {

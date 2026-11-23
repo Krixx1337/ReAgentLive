@@ -26,6 +26,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | One table over every instance of a class (one tick, one call) | `each` (fields), `call-pure <Class> <Getter> --each` (a getter) |
 | Elements of an array, set or map | `entries` |
 | A data table's rows; a curve table's keys, or its value at a time | `rows`, `rows <table> --at <t>` |
+| Many assets read again and again (data assets, tables): to files once | `export-assets <dir> --cls <Class>...`, then grep the files |
 | What a byte or enum field's number means | `enum` |
 | Functions on a class; one function's entry and parameter block | `funcs`; `func` |
 | Name an unreflected member for good | `label` |
@@ -53,7 +54,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Several ranges in one tick | `batch` of `read`s, or `get` |
 | What qwords hold (object, module, heap, value) | `peek` |
 | What memory an address is | `read`/`peek` (`region`) |
-| Where a value or string lives | `search` |
+| Where a value or string lives | `search` (long ones: `search-job <id>`) |
 | Which bytes of a range react to an action | `mem-snap`, then `mem-diff` |
 | A native object's class, bases, virtual table | `vtable --rtti` |
 | Change memory once / every tick / once with an undo | `write` / `write --hold` / `write --undo` (approval); `writes`, `writes clear` |

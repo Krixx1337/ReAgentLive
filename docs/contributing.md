@@ -152,6 +152,7 @@ one file:
 | `syntax/layout.h`, `values/layout_json.h` | typed layouts (`read --type "<layout>"`, native member types) |
 | `packs/ue/cli/console/dump.cpp` | field tables, struct layouts, `get` with no paths and `--types` |
 | `packs/ue/cli/console/labels.cpp` | `export-labels` |
+| `packs/ue/cli/console/export.cpp` | `export-assets`: each object's `get` and table rows run as batch items, one file each |
 | `packs/ue/cli/console/capture.cpp` | snapshots (`get --snap`, `--changed` files) |
 | `packs/ue/cli/console/calls.cpp` | `func` (with its signature), typed calls |
 | `packs/ue/cli/console/rows.h`, `rows.cpp` | the decoder for values read through engine memory (returned arrays, `rows`, compact `get`/`each` values) and `--fields`; `rows` |

@@ -338,6 +338,28 @@ and one field table, both cached for the agent instance, so re-checking a
 mod's offsets after a game patch is one command, not one `get --types` per
 class.
 
+## Assets to files
+
+`export-assets <dir> --cls <Class>... [--match <text>]` writes the live
+instances of up to 16 classes (and their subclasses; no `Default__` or
+archetype objects), optionally only those whose name contains `text`, one
+JSON file per object, so asset data can be read, searched and compared
+between builds offline instead of live again:
+
+- The file is `<dir>/<Class>/<name>.json` (characters Windows refuses
+  become `_`; a second object of the same name gets `~2`), holding `ref`,
+  `name`, `class`, `get` (the result of `get <ref> --nonzero`) and, for a
+  data or curve table, `rows` (the result of `rows <ref> --limit 0`). A
+  table is an object with a `RowStruct` field, or whose class or the class
+  asked for names `CurveTable`. A read that failed is `{error}` in its
+  place, and the object counts in `failed`.
+- `<dir>/index.json` lists every object (`name`, `class`, `ref`, `file`,
+  `table_rows`, `error`); the result carries `exported`, `tables`,
+  `failed`, the first 100 rows and `omitted`. At most 2000 objects per
+  call, then `capped`: narrow with `--match` or fewer classes.
+- Each object costs the reads of its `get` and `rows`, run as batch items
+  run (no output budget per item); the files are replaced on every call.
+
 ## each
 
 `each <Class> <path>...` is a table: `columns` once, then `rows` of

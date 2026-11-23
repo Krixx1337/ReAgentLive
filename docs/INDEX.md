@@ -100,6 +100,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal pack](commands/unreal.md) |
 | `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal pack](commands/unreal.md#call-recorder) |
 | `layout-export`, `layout-check` | T2 | [Unreal pack](commands/unreal.md#layouts-in-bulk) |
+| `export-assets` | T2 | [Unreal pack](commands/unreal.md#assets-to-files) |
 | `each` | T3 | [Unreal pack](commands/unreal.md#each) |
 | `census`, `census --diff` | T1 | [Unreal pack](commands/unreal.md#census) |
 | `get` (every field, `--match`, `--nonzero`, `--own`) | T2 | [Unreal pack](commands/unreal.md#get), paths: [console](commands/console.md#fewer-round-trips) |

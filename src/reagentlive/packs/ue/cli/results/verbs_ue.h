@@ -124,6 +124,15 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "wrote back (user), globals peek --label confirmed, kinds not derived now and other builds' lines are "
             "kept; per address the highest rank wins (user, global, exec, interface, vtable). After another tool's "
             "mappings: --kinds interface,global."},
+        {"export-assets", "ue", ToolPack::Native, "each object of the classes into its own JSON file: every nonzero field, and a table's rows",
+            {{"dir", "dir", One, "path", "the folder to write (created when missing)"}},
+            {{"--cls", Takes::Some, "str", "Class", "the classes (and their subclasses) to export, up to 16"},
+             {"--match", Takes::One, "str", "text", "only objects whose name contains text, any case"}},
+            Of<shape::ExportAssets>, parse::ExportAssets,
+            "Live instances only (no Default__ or archetype objects), up to 2000 per call (then capped). A file "
+            "<dir>/<Class>/<name>.json holds {ref, name, class, get, rows}: get is get <ref> --nonzero's result, rows "
+            "(a data or curve table) is rows <ref> --limit 0's; a read that failed is {error} in its place. "
+            "<dir>/index.json lists every file; rows here shows the first 100. Run it again to refresh: files are replaced."},
         {"layout-export", "ue", ToolPack::Native, "classes', structs' and enums' reflected layouts into a file (JSON lines): for layout-check and a static tool's types",
             {{"file", "file", One, "path", path}, {"classes", "Name", Some, "str", "a class, struct or enum name, per type (up to 256)"}},
             {{"--closure", Takes::Maybe, "int", "depth", "also the types their fields reference, to this depth (default 1), and each one's super chain"}},
