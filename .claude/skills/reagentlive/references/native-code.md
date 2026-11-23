@@ -48,11 +48,26 @@ Answer one-address questions live, with no database:
   loader (`src/reagentlive/frontends/ida/reagentlive_ida.py`) give the function,
   its chunks and callees in seconds; decompile all in one Python call,
   `add_saved` the next save
-  (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`). Install
-  the loader once (ask: outside the repo). Save from the function's start.
+  (`docs/commands/fast-lane.md#saving-a-function-for-a-static-tool`). Save
+  from the function's start.
   A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved (a jump
   table, a target past the cap): save it, `add_saved` it. A typed-pointer index
   (`p[27]`) is offset = index × size.
+
+## One workspace database per investigation
+
+- Open the first save; `add_saved` every later save into the same database;
+  close it when the investigation ends. Never one database per function.
+- `add_saved` returns a summary of what it added and joined, and refuses
+  when a saved function's start has no loaded bytes: read the refusal,
+  save what it names, add again.
+- Each work cycle starts with `list_databases`: close every headless
+  (idalib) database that is not the workspace or a reference database.
+  Leaked workers pile up and die.
+- One-time setup, done by the user (outside the repo; ask, never edit their
+  install): put the loader's folder on IDAPython's path (one `sys.path`
+  line in `idapythonrc.py`) so scripts `import reagentlive_ida`, and
+  disable any plugin that fails to load under idalib.
 
 ## Following a native getter
 
