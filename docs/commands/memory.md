@@ -84,8 +84,9 @@ tick. The console starts it and polls it for up to `wait` seconds
 the agent's request slot. The answer is the job's state: `rows` (hits so
 far: `address`, with `module` and `rva` inside a module), `job`, `state`
 (`running`, `done` or `stopped`), `from` and `to` (the range), `scanned`
-(the share of the range's addresses behind the cursor; address space is
-sparse, so for wide ranges it is a rough guide) and `next_cursor`.
+(the share of the range's searchable bytes, the committed readable memory
+the scope takes, behind the cursor; 0 while the job first measures them)
+and `next_cursor`.
 `{"verb": "search-job", "args": {"job": 16}}` answers the same for a
 running or finished job; with `"stop": true` it ends it first. One job at
 a time: a new search stops the last one, and only the last answers. The

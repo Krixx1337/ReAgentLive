@@ -70,8 +70,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   | `search` with `wide` | `type` `wtext` |
 
 - **`search` is a job, in the main module by default:** it answers within
-  `wait` seconds (default 10) with `job`, `state`, `to` and `scanned`; a
-  scan still running keeps going in the agent while other commands run,
+  `wait` seconds (default 10) with `job`, `state`, `to` and `scanned`
+  (the share of the scope's searchable memory done, so it moves while the
+  job runs); a scan still running keeps going in the agent while other commands run,
   and `search-job` reads or (with `stop`) ends it. The agent uses its
   worker when the host allows it. A search with no `scope` covers the
   main module only: add `scope.heap` or `scope.writable` for data
@@ -152,8 +153,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `explore`, `native`, `observe` or `modify` (every verb that writes or
   calls is in `modify`); `help` groups by pack. The console's `--packs`
   and the Python session's `packs=` refuse verbs outside the ceiling with
-  kind `pack`, `batch` items included; `status` lists `tool_packs`, `stats`
-  counts `calls_by_pack`
+  kind `pack` (its `pack` names the one to add), `batch` items included;
+  `status` lists `tool_packs`, `stats` counts `calls_by_pack` (a call
+  refused for its pack counts as a refusal only)
   ([tool packs](docs/tool-interface.md#tool-packs)).
 - **A generated verb reference:** [docs/commands/reference.md](docs/commands/reference.md)
   lists every verb with its args, result, notes and an example call, the
@@ -175,9 +177,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   it as `unlisted` pieces, ignore one-byte decoy entries, and `touches`
   scans leaf functions too; `touches` with `reads` ranks by offsets read
   ([fast lane](docs/commands/fast-lane.md#function-bounds)).
-- **A digest keeps `saved` and `next`:** a call too large to print still
-  names the file it wrote, and a cut listing its resume address
+- **A digest keeps `saved`, `next` and a search job's `job`, `state` and
+  `scanned`:** a call too large to print still names the file it wrote, a
+  cut listing its resume address and a search job what to poll
   ([output budgets](docs/commands/console.md#fewer-round-trips)).
+- **Arg help states each enforced range** (`search`'s `max` 1..507,
+  `read`'s `len`, `vtable`'s `count` and `offset`, `touches`, `trace`'s
+  `channel` and others), so `help` with `verb` shows a bound before a call
+  hits it.
 - **`get`, `rows` and `entries` take a `Default__` name**, as `call` does
   ([class names](docs/commands/unreal-objects.md#class-names)).
 - **`search` text rows carry the string they hit** (`text`)
@@ -213,6 +220,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   overflow:** its startup checks look at the memory region before reading,
   and name decoding catches only bad-memory faults.
 - **`touches` rows no longer lose their `text` on long instructions.**
+- **`stats`:** one-shot runs no longer join a session named with
+  `--session` (the MCP adapter's), where they were counted and missing
+  from `stats` with `sessions`; a refused call is never marked
+  `unfiltered`.
+- **`disasm` with `save` leaves `rows` out** instead of an empty list.
 - **IDA label import refused databases loaded the default way:** it reads
   the PE header IDA keeps.
 

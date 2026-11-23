@@ -45,6 +45,10 @@ struct Usage {
     std::filesystem::path path;             // <console>.usage.jsonl; stats reads it.
     bool record = false;                    // False with --no-usage.
     std::string session, caller = "shell";
+    // The session the cache file hands to the next one-shot run, and its
+    // caller: this run's, unless --session named it (then the one loaded).
+    std::string handoff, handoffCaller;
+    bool internal = false;                  // A verb's own calls (ExecuteLine): no line; their output is the verb's.
 };
 // The line being run: its output so far and how it ended. A batch's items
 // add their own output to `inner`, so the batch's line keeps its wrapper alone.
@@ -140,7 +144,9 @@ void RunPin(Session& session, const Command& command, std::string_view jsonComma
 void RunTrial(Session& session, const Command& command, std::string_view jsonCommand);
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand);
 void RunPeek(Session& session, const Command& command, std::string_view jsonCommand);
-// One call's JSON text run as a batch item (its records go to session.capture when set).
+// One call's JSON text run as part of the running verb's own work (its
+// records go to session.capture when set): not logged, and its output is
+// not counted, since only what the verb prints reaches the caller.
 void ExecuteLine(Session& session, std::string_view line);
 // The console's source commit (memory.cpp holds the generated header).
 std::string ConsoleCommit();

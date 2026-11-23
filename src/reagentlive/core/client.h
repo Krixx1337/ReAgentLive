@@ -43,6 +43,7 @@ struct SearchJobResult {
     uint32_t id = 0;
     SearchJobState state = SearchJobState::Running;
     uint64_t start = 0, cursor = 0, end = 0;
+    uint32_t scanned = 0;           // Millionths of the range's searchable bytes behind the cursor.
     std::vector<uint64_t> hits;
 };
 // Relative references to `target` (protocol.h, Xrefs): fields in [from, to).

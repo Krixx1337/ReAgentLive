@@ -18,7 +18,7 @@ namespace shape {
 struct StatsTotals {
     uint64_t calls = 0, in = 0, out = 0, refused = 0;
     std::map<std::string, uint64_t> outByCaller;
-    std::map<std::string, uint64_t> callsByPack;    // Every call (a batch's items too) by its verb's tool pack.
+    std::map<std::string, uint64_t> callsByPack;    // Every call (a batch's items too) by its verb's tool pack, but those refused for it.
     uint64_t digested = 0, saved = 0;   // Results past the budget; what their digests kept out.
     double ms = 0;
     template<class V> static void Describe(V& v) {
@@ -166,9 +166,11 @@ inline shape::Stats MakeStats(std::span<const UsageLine> lines, const std::optio
             ++stats.totals.digested;
             stats.totals.saved += saved;
         }
-        if (const Verb* verb = FindVerb(verbs, line.verb)) ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
-        // A digested call cost its digest only: not worth a mark.
-        if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.digest) {
+        // A call refused for its pack never ran in it: a refusal only.
+        if (const Verb* verb = FindVerb(verbs, line.verb); verb && (line.ok || line.refused != "pack"))
+            ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
+        // A digested call cost its digest only, a refused one its error: neither is worth a mark.
+        if (const Verb* verb = FindVerb(verbs, line.verb); verb && line.ok && !line.digest) {
             const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) {
                 return IsFilter(a.key) || std::ranges::any_of(a.fields, [](const Arg& f) { return IsFilter(f.key); });
             });

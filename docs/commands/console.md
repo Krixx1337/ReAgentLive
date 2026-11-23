@@ -153,9 +153,11 @@ request costs up to a host tick. The console cuts both:
   `status`: every key the result had that says whether it is complete
   (`capped`, `truncated`, `unnamed`, `matched`, `omitted`, `errors` as a
   count, `tick_accurate`, `same_tick`, `total`, `next_cursor`, `next`,
-  `filtered`) or names a file the call wrote (`saved`), so a capped result
-  never reads as whole and a saved file is never lost (`status.next` is a
-  cut listing's resume address, not the digest's own `next` call).
+  `filtered`), names a file the call wrote (`saved`) or names what is
+  still running (`job`, `state`, `scanned`), so a capped result never
+  reads as whole, a saved file is never lost and a search job can still be
+  polled (`status.next` is a cut listing's resume address, not the
+  digest's own `next` call).
   Then one of two:
   - `next`: the call again, narrowed by what the result showed. A row
     list's members that fit go in `view.fields` (whole members where they
@@ -251,7 +253,8 @@ answered `{"checked": true}` or with its refusal.
 of those [tool packs](../tool-interface.md#tool-packs) (`explore` always;
 default: all four, for a person at the keyboard). Any other verb is
 refused before its args are checked, with an error of kind `pack` that
-names its pack and the option to start with; `batch` items are checked one
+names its pack (`pack`, the one to add) and the option to start with (no
+`example`: no arg is at fault); `batch` items are checked one
 by one, so a batch cannot carry a verb past it. `status` lists the
 console's packs as `tool_packs`. The MCP adapter and the Python session
 pass their own.
@@ -285,7 +288,11 @@ the generated functions, the MCP tools), so one log covers them
   agent instance and caller share one through the [cache file](#fewer-round-trips)
   (a shell's checks never join a tool's session);
   `<console> --session <id>` names it outright (the MCP adapter passes one
-  per server to the console it starts for each call).
+  per server to the console it starts for each call). A named session is
+  never handed on: one-shot runs between a server's calls keep their own.
+- **A verb's own calls** (`export-assets` reading each object with `get`
+  and `rows`) are not logged: their output goes to files, so only the
+  verb's result counts as its output.
 - **The caller** is `tool` (an agent reads every result, as through the
   MCP adapter), `script` (the Python session's default: only what the
   script returns reaches the agent) or `shell` (started by hand, the
@@ -294,6 +301,8 @@ the generated functions, the MCP tools), so one log covers them
   own start and end), runs with no target, and anything with `--no-usage`.
 - **A batch** writes a line per call, under its own verb, and one for
   itself holding only its wrapper, so no output counts twice.
+- **Refused calls** count under `refused`; they never get `unfiltered`, and
+  one refused for its pack does not count in `calls_by_pack`.
 - **Capped:** past 4 MB the oldest sessions are dropped when a console
   starts, down to three quarters of that. `stats` with `all` gives
   `since`, the oldest line kept.

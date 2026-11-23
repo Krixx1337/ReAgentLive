@@ -263,7 +263,7 @@ struct AddressRow {
     }
 };
 // search and search-job: a job's hits so far. scanned is the share of the
-// range's addresses behind the cursor; next_cursor resumes a job that
+// range's searchable bytes behind the cursor; next_cursor resumes a job that
 // stopped or filled its hits.
 struct Search {
     std::vector<AddressRow> rows;

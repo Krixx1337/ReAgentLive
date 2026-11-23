@@ -166,7 +166,7 @@ struct Disasm {
     uint64_t size = 0;
     std::string stop;
     std::optional<Addr> next;
-    std::vector<Instruction> rows;
+    std::optional<std::vector<Instruction>> rows; // Absent with `save`.
     std::optional<std::vector<DisasmString>> strings;
     std::optional<std::string> saved;    // `save`: the file written; rows and strings are left out.
     std::optional<uint64_t> savedRows;   // `save`: the instructions the file holds.
@@ -434,9 +434,10 @@ inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
     shape::Disasm out;
     out.address = address;
     out.where = Locate(address, modules);
+    auto& rows = out.rows.emplace();
     for (const auto& row : listing.rows) {
-        out.rows.push_back(MakeInstruction(row, modules, full, whole));
-        if (whole && !full && out.rows.size() > 1) out.rows.back().where.rva.reset();
+        rows.push_back(MakeInstruction(row, modules, full, whole));
+        if (whole && !full && rows.size() > 1) rows.back().where.rva.reset();
         out.size += row.bytes.size();
     }
     if (whole) {
@@ -462,8 +463,8 @@ inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
 // disasm with `save`: the file holds the listing, so the result keeps what it says
 // about it (bounds, size, why it stopped, the instruction count) and no rows.
 inline void KeepSaveSummary(shape::Disasm& out, std::string file) {
-    out.savedRows = out.rows.size();
-    out.rows.clear();
+    out.savedRows = out.rows ? out.rows->size() : 0;
+    out.rows.reset();
     out.strings.reset();
     out.saved = std::move(file);
 }

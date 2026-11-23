@@ -31,11 +31,16 @@ constexpr size_t SearchChunkPages = 64; // 256 KB between clock and cancel check
 
 // One search, self-contained: the background worker must not read the shared
 // request slot, which the next request overwrites. `hits` and `progress` are
-// published with atomic_ref for the job's status, read while the worker runs.
+// published with atomic_ref for the job's status, read while the worker runs,
+// and so are `searchable` and `behind`.
 struct SearchJob {
     uint8_t pattern[MaxSearchPattern];
     uint32_t length, align, flags, maxHits, hits;
     uintptr_t start, cursor, end, progress;
+    // A job first measures its range's searchable bytes (`measured`: how far;
+    // a plain search starts at end), so its status can say how far it got.
+    uintptr_t measured;
+    uint64_t counted, searchable, behind; // Counted so far, the total once measured, and those behind the cursor.
     bool relative;   // Xrefs: 4-byte fields landing on `target` (protocol.h).
     uint64_t target;
     uint64_t found[MaxSearchHits];
@@ -194,11 +199,35 @@ void StartJob(SearchJob& job, const Request& request) {
         reinterpret_cast<uintptr_t>(system.lpMinimumApplicationAddress));
     job.start = job.cursor = job.progress = AlignUp(start, job.align);
     job.end = request.args[0] ? std::min<uintptr_t>(static_cast<uintptr_t>(request.args[0]), top) : top;
+    job.measured = request.flags & SearchJobStart ? job.start : job.end;
+    job.counted = job.searchable = job.behind = 0;
+}
+// A job's searchable bytes in its range, in the same slices as the scan:
+// false while `deadline` stops it. Regions change meanwhile, so the total is
+// as the walk found them.
+bool Measure(SearchJob& job, int64_t deadline, const std::atomic<bool>* cancel) {
+    while (job.measured < job.end) {
+        if (deadline && Microseconds() >= deadline) return false;
+        if (cancel && cancel->load(std::memory_order_relaxed)) return true;
+        MEMORY_BASIC_INFORMATION info{};
+        if (!VirtualQuery(reinterpret_cast<const void*>(job.measured), &info, sizeof(info))) break;
+        const uintptr_t regionEnd = std::min(reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize, job.end);
+        if (regionEnd <= job.measured) break;
+        if (Searchable(info, job.flags)) job.counted += regionEnd - job.measured;
+        job.measured = regionEnd;
+    }
+    job.measured = job.end;
+    std::atomic_ref(job.searchable).store(job.counted, std::memory_order_relaxed);
+    return true;
+}
+void Behind(SearchJob& job, uintptr_t from, uintptr_t to) {
+    if (to > from) std::atomic_ref(job.behind).store(job.behind + (to - from), std::memory_order_relaxed);
 }
 // Scans until the range is done, the page of hits is full, `deadline` passes
 // (0: none) or `cancel` is set. True once the job is finished.
 bool RunJob(SearchJob& job, int64_t deadline, const std::atomic<bool>* cancel) {
     const bool paged = job.flags & SearchPaged;
+    if (!Measure(job, deadline, cancel)) return false;
     while (job.cursor < job.end && job.hits < job.maxHits) {
         std::atomic_ref(job.progress).store(job.cursor, std::memory_order_relaxed);
         if (deadline && Microseconds() >= deadline) return false;
@@ -208,6 +237,7 @@ bool RunJob(SearchJob& job, int64_t deadline, const std::atomic<bool>* cancel) {
         const uintptr_t regionEnd = std::min(reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize, job.end);
         if (regionEnd <= job.cursor) { job.cursor = job.end; break; }
         if (!Searchable(info, job.flags)) { job.cursor = regionEnd; continue; }
+        const uintptr_t before = job.cursor;
         // One chunk, then the clock again. The residency check looks one page
         // past the chunk so a match crossing into it is still found.
         const uintptr_t page = job.cursor & ~(PageSize - 1);
@@ -216,12 +246,17 @@ bool RunJob(SearchJob& job, int64_t deadline, const std::atomic<bool>* cancel) {
         if (!paged) {
             const size_t pages = (std::min(regionEnd, chunkEnd + PageSize) - page + PageSize - 1) / PageSize;
             limit = std::min(regionEnd, ResidentEnd(page, pages));
-            if (limit <= job.cursor) { job.cursor = AlignUp(page + PageSize, job.align); continue; }
+            if (limit <= job.cursor) {
+                job.cursor = AlignUp(page + PageSize, job.align);
+                Behind(job, before, std::min(job.cursor, regionEnd));
+                continue;
+            }
         }
         const uintptr_t last = std::min(limit, chunkEnd);
         uintptr_t stop = last;
         if (!ScanSlice(job, job.cursor, last, limit, stop)) stop = regionEnd; // Freed meanwhile.
         job.cursor = stop > job.cursor ? stop : AlignUp(last, job.align);
+        Behind(job, before, std::min(job.cursor, regionEnd));
     }
     std::atomic_ref(job.progress).store(job.cursor, std::memory_order_relaxed);
     return true;
@@ -318,7 +353,11 @@ void JobAnswer(Response& response) {
     const SearchJob& job = *g_searchJob;
     const uint32_t hits = std::atomic_ref(const_cast<uint32_t&>(job.hits)).load(std::memory_order_acquire);
     const bool running = g_jobState.state == SearchJobState::Running;
-    SearchJobInfo info{g_jobState.id, static_cast<uint32_t>(g_jobState.state), hits, 0, job.start,
+    const uint64_t searchable = std::atomic_ref(const_cast<uint64_t&>(job.searchable)).load(std::memory_order_relaxed);
+    const uint64_t behind = std::atomic_ref(const_cast<uint64_t&>(job.behind)).load(std::memory_order_relaxed);
+    const auto scanned = searchable ?
+        static_cast<uint32_t>(static_cast<double>(std::min(behind, searchable)) / searchable * SearchScannedWhole) : 0u;
+    SearchJobInfo info{g_jobState.id, static_cast<uint32_t>(g_jobState.state), hits, scanned, job.start,
         running ? std::atomic_ref(const_cast<uintptr_t&>(job.progress)).load(std::memory_order_relaxed) : job.cursor, job.end};
     memcpy(response.data, &info, sizeof(info));
     memcpy(response.data + sizeof(info), job.found, hits * sizeof(uint64_t));

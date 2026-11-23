@@ -18,13 +18,14 @@
 namespace reagentlive::cli::budget {
 // A tool caller's default: what one result may take of an agent's context.
 constexpr size_t ToolBudget = 25000;
-// The keys that say whether a result is complete, and what a call left
-// outside its result. A digest keeps every one a result has (a list as its
-// length), so a capped or partial result never reads as whole and a file a
-// call wrote is never lost (`saved`; `next` is a cut listing's resume
-// address). Results name them alike: results.md, Conventions.
+// The keys that say whether a result is complete, what a call left outside
+// its result, and which running thing it is. A digest keeps every one a
+// result has (a list as its length), so a capped or partial result never
+// reads as whole, a file a call wrote is never lost (`saved`; `next` is a
+// cut listing's resume address) and a search job can still be polled (`job`,
+// `state`, `scanned`). Results name them alike: results.md, Conventions.
 inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
-    "tick_accurate", "same_tick", "total", "next_cursor", "next", "filtered", "saved"};
+    "tick_accurate", "same_tick", "total", "next_cursor", "next", "filtered", "saved", "job", "state", "scanned"};
 // The verb args that narrow a result, as the digest names them.
 inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls"};
 

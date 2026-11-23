@@ -541,9 +541,8 @@ shape::Search SearchShape(Session& session, const SearchJobResult& job) {
     result.state = job.state == SearchJobState::Running ? "running" : job.state == SearchJobState::Done ? "done" : "stopped";
     result.from = job.start;
     result.to = job.end;
-    const uint64_t span = job.end > job.start ? job.end - job.start : 0;
-    const uint64_t behind = std::min(job.cursor, job.end) - std::min(job.start, job.cursor);
-    result.scanned = !span || job.cursor >= job.end ? 1.0 : std::round(static_cast<double>(behind) / span * 1000) / 1000;
+    result.scanned = job.cursor >= job.end ? 1.0 :
+        std::round(static_cast<double>(job.scanned) / SearchScannedWhole * 1000) / 1000;
     if (job.state != SearchJobState::Running && job.cursor < job.end) result.nextCursor = job.cursor;
     return result;
 }

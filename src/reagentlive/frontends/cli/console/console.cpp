@@ -336,6 +336,7 @@ struct UsageScope {
     Clock::time_point began = Clock::now();
     UsageLine record;
     bool skip = false;
+    const bool internal = session.usage.internal;
 
     UsageScope(Session& session, std::string_view input, bool inBatch) : session(session), outer(session.line) {
         session.line = &line;
@@ -370,6 +371,7 @@ struct UsageScope {
     }
     ~UsageScope() {
         session.line = outer;
+        if (internal) return;
         if (outer) outer->inner += line.out;
         if (skip || record.verb.empty() || !session.usage.record || session.usage.path.empty()) return;
         record.time = UtcNow();
@@ -527,10 +529,11 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     } lineScope{session, session.meta, session.current, session.input};
     session.current = nullptr;
     {
-        // The budget: the call's own, a batch's for its items, else the caller's default.
+        // The budget: none for a verb's own calls (their output is never printed),
+        // else the call's own, a batch's for its items, else the caller's default.
         LineInput line;
         line.call = input.call;
-        line.budget = input.big ? 0 : input.budget ? *input.budget : inBatch ? session.input.budget :
+        line.budget = session.usage.internal || input.big ? 0 : input.budget ? *input.budget : inBatch ? session.input.budget :
             session.usage.caller == "tool" ? budget::ToolBudget : 0;
         session.input = std::move(line);
     }
@@ -546,9 +549,12 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     const Json& callArgs = input.Args();
     usage.Describe(input.name, callArgs);
     // The ceiling (--packs): a verb of another pack is refused before it is parsed, inside a batch too.
+    // No arg is at fault, so no example: `pack` names the pack to add.
     if (const Verb* row = FindVerb(session.verbs, jsonCommand); row && !(session.toolPacks & ToolPackBit(row->pack))) {
-        JsonError(session, jsonCommand, ErrorKind::Pack,
-            refusal::OutsidePacks(row->name, ToolPackName(row->pack), ToolPackList(session.toolPacks)));
+        Json error = ErrorEnvelope(jsonCommand, ErrorKind::Pack,
+            refusal::OutsidePacks(row->name, ToolPackName(row->pack), ToolPackList(session.toolPacks)))["error"];
+        error["pack"] = std::string(ToolPackName(row->pack));
+        JsonRefusal(session, jsonCommand, std::move(error));
         return false;
     }
     // A host's verb: its row checks the arguments and the result, the host does the rest.
@@ -657,6 +663,8 @@ void LoadSessionCache(Session& session, const std::filesystem::path& path, bool 
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     auto data = LoadCache(text);
     if (!data || data->owner != session.client.AgentOwner()) return; // Another agent instance: start fresh.
+    session.usage.handoff = data->session;
+    session.usage.handoffCaller = data->sessionCaller;
     if (oneShot && !data->session.empty() && data->sessionCaller == session.usage.caller)
         session.usage.session = data->session;
     session.modules = std::move(data->modules);
@@ -669,8 +677,8 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
     CacheData data;
     data.owner = session.client.AgentOwner();
     if (!data.owner) return;
-    data.session = session.usage.session;
-    data.sessionCaller = session.usage.caller;
+    data.session = session.usage.handoff;
+    data.sessionCaller = session.usage.handoffCaller;
     data.watchFile = session.watchFile;
     data.modules.assign(session.modules.begin(), session.modules.end());
     for (const auto& [base, layout] : session.layouts)
@@ -940,7 +948,10 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             GetCurrentProcessId()), caller};
     if (session.usage.record) TrimUsageFile(usagePath);
     if (!cachePath.empty()) LoadSessionCache(session, cachePath, oneShot.has_value());
+    // A named session is its starter's (the MCP adapter's per server): one-shot
+    // runs never join it, so the cache keeps handing on the one it held.
     if (!sessionId.empty()) session.usage.session = sessionId;
+    else session.usage.handoff = session.usage.session, session.usage.handoffCaller = caller;
     size_t next = 0;
     std::string line;
     const auto nextLine = [&] {
@@ -964,5 +975,10 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
 }
 
 namespace reagentlive::cli::detail {
-void ExecuteLine(Session& session, std::string_view line) { Execute(session, ReadLine(line), true); }
+void ExecuteLine(Session& session, std::string_view line) {
+    const bool outer = session.usage.internal;
+    session.usage.internal = true;
+    Execute(session, ReadLine(line), true);
+    session.usage.internal = outer;
+}
 }

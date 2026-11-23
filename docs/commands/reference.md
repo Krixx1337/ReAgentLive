@@ -128,7 +128,7 @@ Pack `explore`.
 
 Result: `{session?: str, sessions?: u64, since?: str, totals: {calls: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, ms: f64}, rows: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, ms: f64, batched?: u64, unfiltered?: u64, repeated?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64}], largest: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}]}`
 
-From the usage log beside the console; works with no target (then: the log's latest session). out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the output budget, and saved the characters their digests kept out (full size less the digest). Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and printed whole), repeated (the same input again in its session), refused (by error kind). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log.
+From the usage log beside the console; works with no target (then: the log's latest session). out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the output budget, and saved the characters their digests kept out (full size less the digest). Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and printed whole; never a refused call), repeated (the same input again in its session), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log.
 
 ```json
 {"args":{},"verb":"stats"}
@@ -142,7 +142,7 @@ Pack `explore`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `calls` | `calls` | yes |  | the calls, each {"verb": ..., "args": {...}} |
+| `calls` | `calls` | yes |  | the calls, each {"verb": ..., "args": {...}} (up to 64) |
 
 Result: `{all_ok: bool, same_tick: bool, first_tick: u64, last_tick: u64, spans_ticks: [{index: u64, command: str}], rows: [value], tick_accurate?: bool}`
 
@@ -180,7 +180,7 @@ Pack `explore`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
-| `len` | `int` |  | `64` | how many bytes |
+| `len` | `int` |  | `64` | how many bytes (1..4096) |
 | `type` | `layout` |  |  | i8..u64\|f32\|f64\|ptr: values; cstr\|wstr: text; "u8 phase, pad 3, f64[3] start": a layout |
 
 Result: `{address: addr, module?: str, rva?: hex, size: u64, hex: bytes, views?: {i32?: i32, u32?: u32, f32?: value, i64?: i64, u64?: u64, ptr?: addr, ptr_module?: str, ptr_rva?: hex, f64?: value}, values?: [value], layout?: value, text?: str, length?: u64, terminated?: bool, region?: Region, chain?: Chain}`
@@ -200,7 +200,7 @@ Pack `explore`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
-| `count` | `int` |  | `8` | how many qwords |
+| `count` | `int` |  | `8` | how many qwords (1..64) |
 | `label` | `bool` |  |  | append this one qword as a confirmed global to a labels file |
 | `file` | `file` |  |  | with label: the labels file (default: the host's names file, else the console's) |
 | `name` | `str` |  |  | with label: the label's name (default FName_<hint>) |
@@ -222,7 +222,7 @@ Pack `modify`; **writes or calls**.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `addr` | yes |  | the address |
-| `data` | `bytes` | yes |  | bytes as hex pairs, spaced or packed: "00 00 80 3f" |
+| `data` | `bytes` | yes |  | bytes as hex pairs, spaced or packed: "00 00 80 3f" (up to 256; 64 with undo or hold) |
 | `expect` | `bytes` |  |  | write only while memory still holds these bytes (with undo: required, restored afterwards) |
 | `undo` | `obj` |  |  | restore the bytes after a while, guarded on their owner (needs expect) |
 | `undo.after` | `dur` | yes |  | restore after this long (up to 60 s) |
@@ -288,7 +288,7 @@ Pack `native`.
 | `scope.paged` | `bool` |  |  | also non-resident pages (slow) |
 | `align` | `int` |  |  | 1, 2, 4, 8 or 16 (typed values default to their size) |
 | `wait` | `int` |  | `10` | seconds to wait for the job before answering with it running (0..60) |
-| `max` | `int` |  | `64` | hits at most; the job stops when full |
+| `max` | `int` |  | `64` | hits at most (1..507); the job stops when full |
 
 Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, from: addr, to: addr, scanned: f64, next_cursor?: addr}`
 
@@ -311,7 +311,7 @@ Pack `native`.
 
 Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, from: addr, to: addr, scanned: f64, next_cursor?: addr}`
 
-Only the last job answers. scanned is the share of the range's addresses behind the cursor.
+Only the last job answers. scanned is the share of the range's searchable bytes (the committed, readable memory scope takes) behind the cursor, 0 while the job first measures them.
 
 ```json
 {"args":{"job":16},"verb":"search-job"}
@@ -367,7 +367,7 @@ Pack `observe`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `duration` | `dur` | yes |  | how long, in seconds |
-| `ranges` | `[range]` | yes |  | a range to sample: {"addr": <addr>, "len": N}, {"addr": <addr>, "type": "f64", "count"?: N} to decode values, {"object": <ref>, "field": <path>} for a reflected field (a pack resolves it); following a root, {"offset": N, ...} in place of addr |
+| `ranges` | `[range]` | yes |  | up to 8 ranges to sample, each {"addr": <addr>, "len": N}, {"addr": <addr>, "type": "f64", "count"?: N} to decode values, {"object": <ref>, "field": <path>} for a reflected field (a pack resolves it); following a root, {"offset": N, ...} in place of addr |
 | `every` | `dur` |  |  | sample interval (default: every tick, then at most 30 s) |
 | `follow` | `str` |  |  | continue on a host root's replacement; ranges are offsets from it |
 | `file` | `file` |  |  | keep every sample in this file (JSON lines), rewritten by each watch-read and watch-stop |
@@ -504,7 +504,7 @@ Pack `native`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
-| `count` | `int` |  | `24` | how many instructions (with function: up to 2048) |
+| `count` | `int` |  | `24` | how many instructions (1..1024; with function: up to 2048) |
 | `function` | `bool` |  |  | list the whole containing function (exception table; else walk from addr) |
 | `resume` | `bool` |  |  | with function: start at addr (a cut listing's next), not the function's start |
 | `save` | `obj` |  |  | with function: write the function and its read-only data for a static tool, not the rows |
@@ -513,7 +513,7 @@ Pack `native`.
 | `save.labels` | `file` |  |  | name from this labels file (default: the console's and the host's names file) |
 | `follow` | `bool` |  |  | step through up to 3 unconditional direct jumps |
 
-Result: `{address: addr, module?: str, rva?: hex, size: u64, stop: str, next?: addr, rows: [{address: addr, module?: str, rva?: hex, bytes?: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, import?: str, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool, value?: f64, value_type?: str, value_hex?: bytes}], strings?: [{text: str, wide?: bool, at: [addr]}], saved?: str, saved_rows?: u64, functions?: [{start: addr, end: addr, rows: u64, depth?: u32}], skipped?: [{address: addr, why: str}], chunks?: [{start: addr, end: addr, rows: u64, depth?: u32}], tables?: [{jump: addr, table: addr, targets: u32}], jumpouts_left?: [addr], capped?: bool, layouts?: {classes: [str], types: u64}, piece?: {start: addr, end: addr}, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{from: addr, to: addr, to_module?: str, to_rva?: hex}], chain?: Chain}`
+Result: `{address: addr, module?: str, rva?: hex, size: u64, stop: str, next?: addr, rows?: [{address: addr, module?: str, rva?: hex, bytes?: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, import?: str, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool, value?: f64, value_type?: str, value_hex?: bytes}], strings?: [{text: str, wide?: bool, at: [addr]}], saved?: str, saved_rows?: u64, functions?: [{start: addr, end: addr, rows: u64, depth?: u32}], skipped?: [{address: addr, why: str}], chunks?: [{start: addr, end: addr, rows: u64, depth?: u32}], tables?: [{jump: addr, table: addr, targets: u32}], jumpouts_left?: [addr], capped?: bool, layouts?: {classes: [str], types: u64}, piece?: {start: addr, end: addr}, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{from: addr, to: addr, to_module?: str, to_rva?: hex}], chain?: Chain}`
 
 An answer about one address: the default count stays small, and a whole function or more belongs in a save file for a static tool (save), not in a reply. Rows carry rva, bytes, text, targets, string hints, import names and the value a read-only [rip + disp] load reads; the listing names the module once. meta adds each row's module and address fields. function lists to the function's end, up to 2048 instructions or 16 KB (a cut gives next: continue with resume), with compact rows (no bytes, rva on the first row; meta for full rows) and strings: each string referenced, with the rows using it. Where no exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch passes: stop "walk end", no function key. Strings built at run time, reached through a pointer, or held as names are not seen. save leaves rows and strings out of the result (the file holds them) and adds saved and saved_rows, and saves each chunk the function jumps into: chained entries and switch targets (chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets still unsaved in jumpouts_left; callees follows direct calls and tail jumps breadth-first and adds functions (each saved one, with its depth) and skipped (each target left out, why: depth, count past 16 callees, bytes past 256 KB of code in the whole save, unreadable). With an engine pack, a saved function whose label names a reflected class (Class::Method, or Class_Method by the longest class prefix) brings that class's layout (layout-export with closure 1) into the file as layout rows, counted in layouts (classes, types). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume. Options: count and function decide what is read (not a view: they bound the decoding), resume continues a cut listing, save writes files, follow steps through jumps.
 
@@ -550,8 +550,8 @@ Pack `native`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `addr` | yes |  | the address |
-| `offsets` | `[int]` | yes |  | the struct offsets to look for |
-| `range` | `int` |  | `"0x80000"` | bytes each side of addr |
+| `offsets` | `[int]` | yes |  | the struct offsets to look for (up to 8, each above 0) |
+| `range` | `int` |  | `"0x80000"` | bytes each side of addr (1..0x400000) |
 | `reads` | `bool` |  |  | rank by offsets read; drop rows writing every offset they read |
 
 Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64}`
@@ -571,8 +571,8 @@ Pack `native`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
-| `count` | `int` |  |  | how many slots at most |
-| `offset` | `int` |  |  | the table pointer at addr+offset (an interface part) |
+| `count` | `int` |  |  | how many slots at most (1..512) |
+| `offset` | `int` |  |  | the table pointer at addr+offset (an interface part; 0..0x100000) |
 | `table` | `bool` |  |  | addr is the table itself |
 | `resolve` | `bool` |  |  | where jump stubs lead |
 | `rtti` | `bool` |  |  | also the class and bases its run-time type information names (MSVC images) |
@@ -661,7 +661,7 @@ Pack `explore`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `indices` | `[int]` | yes |  | FName comparison indices |
+| `indices` | `[int]` | yes |  | FName comparison indices (up to 1024) |
 
 Result: `{rows: [ue.Name]}`
 
@@ -970,7 +970,7 @@ Pack `observe`.
 |---|---|---|---|---|
 | `start` | `point` | yes |  | the start: a world point [x, y, z] in cm, an object's location (actor, component, camera manager) by its ref, or {"object": <ref>, "socket": "Name"} on a mesh component |
 | `end` | `point` | yes |  | the end, as start takes |
-| `channel` | `int` |  | `0` | the trace type query: 0 visibility, 1 camera, N: TraceTypeQuery N+1 |
+| `channel` | `int` |  | `0` | the trace type query (0..31): 0 visibility, 1 camera, N: TraceTypeQuery N+1 |
 | `simple` | `bool` |  |  | simple collision instead of complex |
 | `ignore` | `ref` |  |  | an actor the line passes through; also the world it runs in |
 
@@ -1012,7 +1012,7 @@ Pack `modify`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `slot` | `int` |  |  | the recording (default: the last started) |
+| `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
 | `view` | `obj` |  |  | how the result is shown: page, row limit, filters (the shared view keys) |
 | `view.start` | `int` |  |  | a page's next_cursor: the page after it |
 
@@ -1032,7 +1032,7 @@ Pack `modify`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `slot` | `int` |  |  | the recording (default: the last started) |
+| `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
 
 Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, ms: f64, thread: u32, object: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
 

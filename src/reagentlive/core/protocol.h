@@ -87,8 +87,12 @@ constexpr uint32_t SearchAlignment(uint32_t flags) { return (flags & 0xFF) ? (fl
 // Done: the range is scanned, or the hits are full (cursor < end: resume there).
 // Stopped: by SearchJobStop or a newer job; resume at the cursor.
 enum class SearchJobState : uint32_t { Running = 1, Done, Stopped };
+// scanned: the share of the range's searchable bytes (committed, readable
+// regions the job's filters take, as the job found them) behind the cursor,
+// in millionths; 0 while the job still measures them.
+constexpr uint32_t SearchScannedWhole = 1000000;
 struct SearchJobInfo {
-    uint32_t id, state, hits, reserved;
+    uint32_t id, state, hits, scanned;
     uint64_t start, cursor, end; // Where it began, how far it got, where it ends (exclusive).
 };
 constexpr size_t MaxSearchJobHits = (MaxRead - sizeof(SearchJobInfo)) / sizeof(uint64_t);
@@ -390,7 +394,8 @@ constexpr uint32_t NextRequestSeq(uint32_t last) { return last + 1 == RequestWri
 constexpr bool RequestPending(uint32_t seq, uint32_t handled) { return seq != RequestWriting && seq != handled; }
 // Bumped when a field's meaning changes but no size does (so the sizes alone
 // would not refuse a mismatched pair). 1: requestSeq is a seqlock.
-constexpr uint32_t ProtocolRevision = 1;
+// 2: SearchJobInfo carries scanned.
+constexpr uint32_t ProtocolRevision = 2;
 struct Section {
     uint32_t magic, layout, agentPid, opCount;
     uint64_t heartbeat; // Agent ticks.

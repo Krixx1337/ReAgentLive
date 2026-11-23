@@ -126,7 +126,7 @@ TEST_CASE("help rows come from the table: args, an example call, the result in n
     CHECK(read["types"]["Region"] == "{kind: code|rodata|data|mapped|private|reserved|free, base: addr, size: hex, protect: str}");
     CHECK(read["args"][0] == Json{{"key", "addr"}, {"type", "chain"}, {"required", true},
         {"help", "the address, or a pointer chain to follow first"}});
-    CHECK(read["args"][1] == Json{{"key", "len"}, {"type", "int"}, {"default", 64}, {"help", "how many bytes"}});
+    CHECK(read["args"][1] == Json{{"key", "len"}, {"type", "int"}, {"default", 64}, {"help", "how many bytes (1..4096)"}});
     CHECK(read["example"] == Json{{"verb", "read"}, {"args", {{"addr", "0x140001000"}}}});
     noGrammar(read);
     const Verb* search = FindVerb(AllVerbs(), "search");
@@ -140,7 +140,7 @@ TEST_CASE("help rows come from the table: args, an example call, the result in n
         {"enum", {"hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text", "wtext"}}, {"help", "the value's type (wtext: text as UTF-16)"}});
     CHECK(full["args"][1]["type"] == "scalar");
     CHECK(full["args"].back() == Json{{"key", "max"}, {"type", "int"}, {"default", 64},
-        {"help", "hits at most; the job stops when full"}});
+        {"help", "hits at most (1..507); the job stops when full"}});
     // An object arg lists its keys as fields, each as ArgJson gives it.
     CHECK(full["args"][2]["type"] == "obj");
     CHECK(full["args"][2]["fields"][1] == Json{{"key", "start"}, {"type", "addr"}, {"help", "start, or a job's next_cursor"}});
@@ -1051,7 +1051,7 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
     CHECK(stats.rows[0].unfiltered == 2u);
     CHECK(stats.rows[0].repeated == 1u);
     CHECK(stats.rows[1].verb == "find");
-    CHECK(stats.rows[1].unfiltered == 1u);                  // find has cls.
+    CHECK_FALSE(stats.rows[1].unfiltered.has_value());      // Refused: never a filter mark.
     CHECK(stats.rows[1].refused == 1u);
     CHECK(stats.rows[1].refusedBy->at("schema") == 1);
     const auto read = std::ranges::find(stats.rows, std::string("read"), &shape::StatsVerb::verb);
@@ -1076,10 +1076,14 @@ TEST_CASE("stats ranks a session's verbs by output and marks unfiltered, repeate
 
     // Calls per tool pack, a batch's items included.
     CHECK(stats.totals.callsByPack == std::map<std::string, uint64_t>{{"explore", 6}});
-    const std::vector<UsageLine> mixed = {line("p", "disasm", 10, "1"), line("p", "write", 10, "2"),
-                                          line("p", "disasm", 10, "3"), line("p", "nonsense", 10, "4")};
-    CHECK(MakeStats(mixed, std::string("p"), AllVerbs()).totals.callsByPack ==
-          std::map<std::string, uint64_t>{{"native", 2}, {"modify", 1}});
+    std::vector<UsageLine> mixed = {line("p", "disasm", 10, "1"), line("p", "write", 10, "2"),
+                                    line("p", "disasm", 10, "3"), line("p", "nonsense", 10, "4"),
+                                    line("p", "call", 10, "5")};
+    mixed[4].ok = false;
+    mixed[4].refused = "pack";                              // Refused for its pack: a refusal, not a modify call.
+    const auto packs = MakeStats(mixed, std::string("p"), AllVerbs());
+    CHECK(packs.totals.callsByPack == std::map<std::string, uint64_t>{{"native", 2}, {"modify", 1}});
+    CHECK(packs.totals.refused == 1);
 }
 
 TEST_CASE("stats counts digests and what they kept out, and lists and picks sessions") {

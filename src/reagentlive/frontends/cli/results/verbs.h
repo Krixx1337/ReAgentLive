@@ -17,6 +17,10 @@
 #include "reagentlive/frontends/cli/call/build_internal.h"
 
 namespace reagentlive::cli {
+// The bounds the builders enforce, as the arg help below states them.
+static_assert(MaxSearchJobHits == 507 && MaxRead == 4096 && MaxPeek == 64 && MaxWrite == 256 && MaxTrialBytes == 64 &&
+    MaxPinBytes == 64 && MaxDisasm == 1024 && MaxFunctionDisasm == 2048 && MaxBatchCommands == 64 &&
+    MaxWatchRanges == 8 && touch::MaxOffsets == 8 && touch::MaxRange == 0x400000);
 inline const std::vector<Verb>& CoreVerbs() {
     using schema::Of;
     constexpr std::string_view at = "the address";
@@ -43,11 +47,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             "characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
             "output budget, and saved the characters their digests kept out (full size less the digest). Marks per "
             "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own or cls, and "
-            "printed whole), repeated (the same input again in its session), refused (by error kind). A batch's "
+            "printed whole; never a refused call), repeated (the same input again in its session), refused (by "
+            "error kind; one refused for its pack is not in calls_by_pack). A batch's "
             "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
-            {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}}", {}, true}},
+            {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,
             "rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, "
             "status, stats, quit, batch and run are not allowed inside."},
@@ -65,7 +70,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "builds. Up to 256 steps; run and quit are not allowed in a plan. A plan file is the replay key: run it "
             "again to repeat an investigation.", false, true},
         {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); type decodes values",
-            {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes", "64"},
+            {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes (1..4096)", "64"},
              {"type", "layout", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": a layout"}},
             Of<shape::Read>, build::Read,
             "type adds values (one per element); cstr|wstr adds text, length and terminated (default 256 bytes); "
@@ -73,7 +78,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "A chain adds chain. region is the memory the address lies in (kind: code, rodata, data, mapped, "
             "private, reserved or free)."},
         {"peek", "core", ToolPack::Explore, "what 1..64 qwords hold (default 8): object, module, heap or value",
-            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many qwords", "8"},
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many qwords (1..64)", "8"},
              {"label", "bool", "append this one qword as a confirmed global to a labels file"},
              {"file", "file", "with label: the labels file (default: the host's names file, else the console's)"},
              {"name", "str", "with label: the label's name (default FName_<hint>)"}},
@@ -81,7 +86,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             "object needs a pack; value rows carry floats, a double and name_hint. region is the memory the address "
             "lies in, as read gives it."},
         {"write", "core", ToolPack::Modify, "write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while",
-            {{"addr", "addr", at, {}, true}, {"data", "bytes", hex, {}, true},
+            {{"addr", "addr", at, {}, true},
+             {"data", "bytes", "bytes as hex pairs, spaced or packed: \"00 00 80 3f\" (up to 256; 64 with undo or hold)", {}, true},
              {"expect", "bytes", "write only while memory still holds these bytes (with undo: required, restored afterwards)"},
              {"undo", "obj", "restore the bytes after a while, guarded on their owner (needs expect)", {}, false, false, {},
               {{"after", "dur", "restore after this long (up to 60 s)", {}, true},
@@ -116,7 +122,7 @@ inline const std::vector<Verb>& CoreVerbs() {
                {"paged", "bool", "also non-resident pages (slow)"}}},
              {"align", "int", "1, 2, 4, 8 or 16 (typed values default to their size)"},
              {"wait", "int", "seconds to wait for the job before answering with it running (0..60)", "10"},
-             {"max", "int", "hits at most; the job stops when full", "64"}},
+             {"max", "int", "hits at most (1..507); the job stops when full", "64"}},
             Of<shape::Search>, build::Search,
             "The range is the main module unless scope says otherwise; scope.start alone ends with the module it "
             "lies in. A job still running after wait comes back with state running and its hits so far: search-job "
@@ -127,7 +133,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             {{"job", "int", "the job a search returned", {}, true},
              {"stop", "bool", "end the job first; its next_cursor resumes it"}},
             Of<shape::Search>, build::SearchJob,
-            "Only the last job answers. scanned is the share of the range's addresses behind the cursor."},
+            "Only the last job answers. scanned is the share of the range's searchable bytes (the committed, "
+            "readable memory scope takes) behind the cursor, 0 while the job first measures them."},
         {"mem-snap", "core", ToolPack::Observe, "keep up to 1 MiB of memory for mem-diff (a file beside the cache, across runs)",
             {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes, up to 1048576", {}, true}},
             Of<shape::MemSnap>, build::MemSnap,
@@ -145,7 +152,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "instance is refused."},
         {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min with every); returns at once",
             {{"duration", "dur", "how long, in seconds", {}, true},
-             {"ranges", "range", "a range to sample: {\"addr\": <addr>, \"len\": N}, {\"addr\": <addr>, \"type\": \"f64\", "
+             {"ranges", "range", "up to 8 ranges to sample, each {\"addr\": <addr>, \"len\": N}, {\"addr\": <addr>, \"type\": \"f64\", "
               "\"count\"?: N} to decode values, {\"object\": <ref>, \"field\": <path>} for a reflected field (a pack "
               "resolves it); following a root, {\"offset\": N, ...} in place of addr", {}, true, true},
              {"every", "dur", "sample interval (default: every tick, then at most 30 s)"},
@@ -200,7 +207,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
             "rows stay."},
         {"disasm", "core", ToolPack::Native, "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
-            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (with function: up to 2048)", "24"},
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (1..1024; with function: up to 2048)", "24"},
              {"function", "bool", "list the whole containing function (exception table; else walk from addr)"},
              {"resume", "bool", "with function: start at addr (a cut listing's next), not the function's start"},
              {"save", "obj", "with function: write the function and its read-only data for a static tool, not the rows",
@@ -236,16 +243,16 @@ inline const std::vector<Verb>& CoreVerbs() {
             "16 KB each side): a function with several returns spans several pieces, and junk bytes may lead one. "
             "Entries under 4 bytes (a packed image's decoys) bound nothing."},
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
-            {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for", {}, true, true},
-             {"range", "int", "bytes each side of addr", "\"0x80000\""},
+            {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
+             {"range", "int", "bytes each side of addr (1..0x400000)", "\"0x80000\""},
              {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"}},
             Of<shape::Touches>, build::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
             "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
             "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
             "unlisted code. reads leaves out struct copies and constructors."},
         {"vtable", "core", ToolPack::Native, "an object's virtual table: slots until the first entry that is not code",
-            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many slots at most"},
-             {"offset", "int", "the table pointer at addr+offset (an interface part)"},
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many slots at most (1..512)"},
+             {"offset", "int", "the table pointer at addr+offset (an interface part; 0..0x100000)"},
              {"table", "bool", "addr is the table itself"},
              {"resolve", "bool", "where jump stubs lead"},
              {"rtti", "bool", "also the class and bases its run-time type information names (MSVC images)"}},

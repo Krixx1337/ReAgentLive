@@ -687,10 +687,10 @@ TEST_CASE("fast-lane results have their documented keys") {
 
     // save: the file holds the listing, the result its summary.
     auto saved = MakeDisasm(Base + 0x1000, more, function, modules, false, true);
-    const auto listed = saved.rows.size();
+    const auto listed = saved.rows->size();
     KeepSaveSummary(saved, "fn.jsonl");
     const auto summary = Checked(std::move(saved));
-    CHECK(summary["rows"].empty());
+    CHECK_FALSE(summary.contains("rows"));
     CHECK_FALSE(summary.contains("strings"));
     CHECK(summary["saved"] == "fn.jsonl");
     CHECK(summary["saved_rows"] == listed);

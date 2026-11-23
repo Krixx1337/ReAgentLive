@@ -7,6 +7,8 @@
 #include "reagentlive/frontends/cli/call/build_internal.h"
 
 namespace reagentlive::cli {
+// The bounds the builders enforce, as the arg help below states them.
+static_assert(ue::MaxCallsSlots == 8 && MaxRead / 4 == 1024);
 // The pack's origin: its id on every row and the title headings show.
 inline constexpr Origin UnrealOrigin{"ue", "Unreal pack"};
 
@@ -49,7 +51,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
         {"name-find", "ue", ToolPack::Explore, "FName indices whose text contains text (gameplay tags, row names)",
             {{"text", "text", "part of the pooled name", {}, true}, View("start")}, Of<shape::NameFind>, build::NameFind},
         {"name", "ue", ToolPack::Explore, "FName comparison indices as text (FName #N in dumps)",
-            {{"indices", "int", "FName comparison indices", {}, true, true}}, Of<shape::Names>, build::Name,
+            {{"indices", "int", "FName comparison indices (up to 1024)", {}, true, true}}, Of<shape::Names>, build::Name,
             "A row has no name when the index is not where a pool entry starts (inside an entry) or does not decode."},
         {"each", "ue", ToolPack::Explore, "a table over the live instances of a class: a value per column (up to 16 field paths)",
             {{"cls", "str", "a class or struct name", {}, true},
@@ -183,7 +185,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
               "the start: a world point [x, y, z] in cm, an object's location (actor, component, camera manager) by "
               "its ref, or {\"object\": <ref>, \"socket\": \"Name\"} on a mesh component", {}, true},
              {"end", "point", "the end, as start takes", {}, true},
-             {"channel", "int", "the trace type query: 0 visibility, 1 camera, N: TraceTypeQuery N+1", "0"},
+             {"channel", "int", "the trace type query (0..31): 0 visibility, 1 camera, N: TraceTypeQuery N+1", "0"},
              {"simple", "bool", "simple collision instead of complex"},
              {"ignore", "ref", "an actor the line passes through; also the world it runs in"}},
             Of<shape::Trace>, build::Trace,
@@ -204,14 +206,14 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "carry their parameters after the call; Blueprint graphs calling native code show only the object "
             "(via vm); direct C++ calls are not seen. 256 rows per recording; older ones are dropped.", true},
         {"calls-read", "ue", ToolPack::Modify, "a recording's calls so far, decoded by the function's parameters",
-            {{"slot", "int", "the recording (default: the last started)"},
+            {{"slot", "int", "the recording, 0..7 (default: the last started)"},
              View("start")},
             Of<shape::Calls>, build::CallsRead,
             "values: in, out and return by name, read after the call (inputs as the function left them). Objects "
             "are named while they live; strings, arrays, sets and maps print their headers (the caller may have "
             "freed them). A recording past its time is restored first."},
         {"calls-stop", "ue", ToolPack::Modify, "end a recording now (restores the pointer) and return its calls",
-            {{"slot", "int", "the recording (default: the last started)"}},
+            {{"slot", "int", "the recording, 0..7 (default: the last started)"}},
             Of<shape::Calls>, build::CallsStop,
             "state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding."},
         {"describe", "ue", ToolPack::Explore, "an object's name, class and reusable ref",

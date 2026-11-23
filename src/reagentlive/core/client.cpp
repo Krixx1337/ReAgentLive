@@ -291,10 +291,10 @@ Result<SearchJobResult> JobResult(const Response& response) {
         return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid search job response"});
     memcpy(&info, response.data, sizeof(info));
     const size_t count = (response.length - sizeof(info)) / sizeof(uint64_t);
-    if (count != info.hits || info.state < 1 || info.state > 3)
+    if (count != info.hits || info.state < 1 || info.state > 3 || info.scanned > SearchScannedWhole)
         return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid search job response"});
     SearchJobResult result{info.id, static_cast<SearchJobState>(info.state), info.start, info.cursor, info.end,
-        std::vector<uint64_t>(count)};
+        info.scanned, std::vector<uint64_t>(count)};
     memcpy(result.hits.data(), response.data + sizeof(info), count * sizeof(uint64_t));
     return result;
 }

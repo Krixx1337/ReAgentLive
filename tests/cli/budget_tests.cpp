@@ -272,6 +272,21 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     REQUIRE(kept);
     CHECK((*kept)["digest"]["status"]["saved"] == "fn.jsonl");
     CHECK((*kept)["digest"]["status"]["next"] == "0x140001000");
+    // A search job's id, state and progress survive, so it can still be polled.
+    Json job = VendorCall(200);
+    job["job"] = 3;
+    job["state"] = "running";
+    job["scanned"] = 0.25;
+    job["next_cursor"] = "0x7ff000";
+    Json polled = Envelope(job);
+    const auto still = budget::Replace(polled, Text(polled).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
+        [](const std::string&) { return std::string(); });
+    REQUIRE(still);
+    const Json& jobStatus = (*still)["digest"]["status"];
+    CHECK(jobStatus["job"] == 3);
+    CHECK(jobStatus["state"] == "running");
+    CHECK(jobStatus["scanned"] == 0.25);
+    CHECK(jobStatus["next_cursor"] == "0x7ff000");
     // A result with none carries no status.
     Json plain = Envelope(VendorCall(200));
     const auto none = budget::Replace(plain, Text(plain).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
