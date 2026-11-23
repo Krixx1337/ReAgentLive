@@ -557,8 +557,8 @@ a time, since its own thread and Draw both tick the agent.
   `export-labels` for names.
 - **No decoder in the agent:** it would grow the injected image for
   display-only work. The agent reads bytes; the console decodes them.
-- **Signatures: the agent makes them, ReAgentLive verifies them.** Making one
-  is judgement (which instructions are distinctive, which operands move,
+- **Signatures: the agent makes them, ReAgentLive verifies them.** One
+  exception, below: the labels mass signer. Making one is judgement (which instructions are distinctive, which operands move,
   whether a caller is the better place) that an agent does from the static
   tool's disassembly without a generator. What it cannot know alone is the
   result in the image the host really scans, DLLs with no database
@@ -573,14 +573,24 @@ a time, since its own thread and Draw both tick the agent.
   console on the exact `search` (anchor) and `read-batch` (mask compare);
   the agent is unchanged. Unique means one match in the whole module image,
   stricter than a host scanner that reads only code. Rejected: a signature
-  maker in the console or as a static-tool script (two earlier drafts had
-  one each; the checker's feedback covers the mistakes a generator would
-  prevent; revisit a script only if hand-made signatures keep needing many
-  attempts), wildcards in the agent's `search` (the anchor plus a masked
+  maker for signatures that matter, in the console or as a static-tool
+  script (two earlier drafts had one each; the checker's feedback covers the
+  mistakes a generator would prevent; revisit a script only if hand-made
+  signatures keep needing many attempts), wildcards in the agent's `search` (the anchor plus a masked
   compare needs none; take it up only if a masked search over the heap, a
   struct found by shape, is wanted twice), scanning the exe on disk (the
   static tool and a host's offline verifier do that) and writing into
   host source files (the agent or the user pastes).
+- **The labels mass signer stays one fixed loop.** `labels-sign` signs a
+  labels file's names so `labels-port` can find them after a patch: cheap,
+  the same every time, and a miss costs one re-find, so quality is not worth
+  judgement there. The line: ReAgentLive checks, stores and ports
+  signatures, and the only ones it makes come from that loop. Rejected:
+  anything that makes its signatures better (later starts, caller
+  fallbacks, ranking, looser masks, a generator's tiers), and a way to store
+  a hand-made one (`--pattern`; the row is one JSON line and `sig-file`
+  checks it). A name the loop cannot sign is signed by hand or left
+  unsigned; a failure is never a reason to extend the loop.
 - **Rejected:** call graphs, decompiling, types and naming in ReAgentLive (the
   static tool has the whole image); symbol loading; ReAgentLive talking to the
   static tool directly (the agent driving both is the bridge).
