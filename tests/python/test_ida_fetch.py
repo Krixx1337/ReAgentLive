@@ -137,5 +137,21 @@ class Fetch(unittest.TestCase):
             loader.fetch(0x140001000, depth=4, console=self.console)
 
 
+class Timing(unittest.TestCase):
+    def test_opens_counts_the_databases_an_ida_session_opened(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
+        import fetch_timing
+        events = [
+            {'ts': '2026-01-01T00:00', 'event': 'tool_call', 'tool': 'open_database', 'call_id': 'a', 'input': {'path': 'one.json'}},
+            {'ts': '2026-01-01T00:01', 'event': 'tool_result', 'tool': 'open_database', 'call_id': 'a', 'duration_ms': 1500},
+            {'ts': '2026-01-02T00:00', 'event': 'tool_call', 'tool': 'open_database', 'call_id': 'b', 'input': {'path': 'two.json'}},
+            {'ts': '2026-01-02T00:01', 'event': 'tool_result', 'tool': 'open_database', 'call_id': 'b', 'duration_ms': 500},
+            {'ts': '2026-01-02T00:02', 'event': 'tool_result', 'tool': 'execute_python', 'call_id': 'c'},
+        ]
+        lines = [json.dumps(event) for event in events] + ['not json']
+        self.assertEqual(fetch_timing.opens(lines), {'opened': 2, 'seconds': 2.0, 'paths': ['one.json', 'two.json']})
+        self.assertEqual(fetch_timing.opens(lines, since='2026-01-02')['opened'], 1)
+
+
 if __name__ == '__main__':
     unittest.main()

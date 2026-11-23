@@ -314,6 +314,14 @@ It returns `functions` (every saved one), `skipped` (the console's rows),
 with the console's error object in `refusal`; a file that does not load
 raises `SaveError`. The scratch files go when it returns.
 
+`tools/fetch_timing.py` times the loop inside IDA, hop by hop: `time_fetch`
+(live: the console's save, `add_saved`, `decompile_to` per address) and
+`time_saves` (offline: saved files, no console); outside IDA, `python
+tools/fetch_timing.py opens <session.jsonl>` counts the databases an IDA MCP
+session opened. Offline, on an open save database, one function took
+0.04 s and five one-function hops 0.34 s (`add_saved` under 0.02 s each,
+the rest decompiling); live adds the console's save per hop.
+
 ## xrefs
 
 `xrefs` lists what points at `addr` in one module: the one holding it,
