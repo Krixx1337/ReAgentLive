@@ -25,6 +25,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+### Breaking
+
+- **The MCP adapter needs the MCP Python SDK 2:** run
+  `python -m pip install --upgrade "mcp>=2"` in the Python your MCP config
+  starts (SDK 1 stops it with that line). Clients on the 2026-07-28
+  protocol hear a rebuilt console's tool list on their listen stream.
+
 ### New
 
 - **Names that survive a patch:** `labels-sign` stores a byte signature on

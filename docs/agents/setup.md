@@ -38,7 +38,7 @@ without asking the user.
 | Ninja | `ninja --version` | ask; Visual Studio ships one in its developer shell |
 | Git | `git --version` | ask |
 | Python 3.10 or newer | `python --version` | ask |
-| The MCP Python SDK | `python -c "import mcp"` | `python -m pip install mcp` (ask first) |
+| The MCP Python SDK 2 | `python -c "import mcp.server.subscriptions"` | `python -m pip install --upgrade "mcp>=2"` (ask first) |
 
 Check CMake and Ninja again inside the developer shell (step 3) before you
 report them missing.

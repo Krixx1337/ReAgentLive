@@ -2,7 +2,7 @@
 
 The table is the real one (--table <reagentlive-table.exe> or REAGENTLIVE_TABLE);
 the console is the scripted fake from fake_console.py.
-Skipped without the MCP Python SDK.
+Skipped without the MCP Python SDK 2.
 """
 import asyncio
 import json
@@ -17,8 +17,9 @@ FRONTENDS = os.path.join(HERE, '..', '..', 'src', 'reagentlive', 'frontends')
 sys.path[:0] = [os.path.join(FRONTENDS, 'python'), os.path.join(FRONTENDS, 'mcp')]
 
 try:
+    import anyio  # noqa: E402
     import reagentlive_mcp  # noqa: E402
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from mcp import Client
 except ImportError:
     reagentlive_mcp = None
 
@@ -32,7 +33,7 @@ def call(verb, args=None):
     return {'verb': verb, 'args': args or {}}
 
 
-@unittest.skipUnless(reagentlive_mcp, 'needs the MCP Python SDK (fastmcp or mcp)')
+@unittest.skipUnless(reagentlive_mcp, 'needs the MCP Python SDK 2 (mcp)')
 @unittest.skipUnless(TABLE_TOOL, 'needs the verb table: --table <reagentlive-table.exe> or REAGENTLIVE_TABLE')
 class McpTests(unittest.TestCase):
     @classmethod
@@ -70,7 +71,7 @@ class McpTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.dir.cleanup()
 
-    def run_client(self, body, notices=None, **options):
+    def run_client(self, body, notices=None, mode='auto', **options):
         server = reagentlive_mcp.build(sys.executable, ['-I', FAKE], **options)
 
         async def handler(message):
@@ -78,7 +79,7 @@ class McpTests(unittest.TestCase):
                 notices.append(message)
 
         async def main():
-            async with create_connected_server_and_client_session(server, message_handler=handler) as client:
+            async with Client(server, message_handler=handler, mode=mode) as client:
                 return await body(client)
         return asyncio.run(main())
 
@@ -91,20 +92,20 @@ class McpTests(unittest.TestCase):
                     for row in rows}
         self.assertEqual(set(tools), expected)
         self.assertNotIn('watch', tools)                      # Blocking verbs are left out.
-        self.assertTrue(tools['read'].annotations.readOnlyHint)
-        self.assertFalse(tools['read'].annotations.destructiveHint)
-        self.assertTrue(tools['write'].annotations.destructiveHint)
-        self.assertTrue(tools['ue_call'].annotations.destructiveHint)
-        schema = tools['read'].inputSchema
+        self.assertTrue(tools['read'].annotations.read_only_hint)
+        self.assertFalse(tools['read'].annotations.destructive_hint)
+        self.assertTrue(tools['write'].annotations.destructive_hint)
+        self.assertTrue(tools['ue_call'].annotations.destructive_hint)
+        schema = tools['read'].input_schema
         self.assertEqual(schema['required'], ['addr'])
         self.assertEqual(set(schema['properties']), {'addr', 'len', 'type', 'budget'})   # budget: every tool's.
         self.assertFalse(schema['additionalProperties'])          # A guessed argument is refused.
         self.assertEqual(schema['properties']['type']['type'], 'string')
-        self.assertIn('rows', tools['ue_find'].outputSchema['properties'])
-        self.assertEqual(tools['batch'].inputSchema['properties']['calls']['type'], 'array')
-        trial = tools['trial'].inputSchema
+        self.assertIn('rows', tools['ue_find'].output_schema['properties'])
+        self.assertEqual(tools['batch'].input_schema['properties']['calls']['type'], 'array')
+        trial = tools['trial'].input_schema
         self.assertIn('owner', trial['required'])                 # A required flag.
-        self.assertEqual(tools['search'].inputSchema['properties']['type']['enum'][:2], ['hex', 'u32'])
+        self.assertEqual(tools['search'].input_schema['properties']['type']['enum'][:2], ['hex', 'u32'])
         self.assertIn('read <addr> [len] [--type type]', tools['read'].description)
 
     def tool_list(self, **options):
@@ -116,10 +117,10 @@ class McpTests(unittest.TestCase):
         compact, off = (self.tool_list(output_schemas=p) for p in ('compact', 'off'))
         self.assertEqual(set(off), set(compact))
         find = next(row for row in self.table['rows'] if row['verb'] == 'find')
-        self.assertEqual(set(compact['ue_find'].outputSchema['properties']), set(find['type']['struct']) | {'digest'})
-        self.assertEqual(compact['ue_find'].outputSchema['properties']['rows'], {'type': 'array'})
-        self.assertNotIn('$defs', compact['ue_find'].outputSchema)
-        self.assertTrue(all(tool.outputSchema is None for tool in off.values()))
+        self.assertEqual(set(compact['ue_find'].output_schema['properties']), set(find['type']['struct']) | {'digest'})
+        self.assertEqual(compact['ue_find'].output_schema['properties']['rows'], {'type': 'array'})
+        self.assertNotIn('$defs', compact['ue_find'].output_schema)
+        self.assertTrue(all(tool.output_schema is None for tool in off.values()))
         size = lambda tools: sum(len(json.dumps(t.model_dump(exclude_none=True))) for t in tools.values())
         self.assertLess(size(off), size(compact))
 
@@ -139,8 +140,8 @@ class McpTests(unittest.TestCase):
             async def body(client):
                 return await client.call_tool('ue_find', {'text': 'A'})
             found = self.run_client(body, output_schemas=profile)
-            self.assertFalse(found.isError, f'{profile}: {found.content[0].text}')
-            self.assertEqual(found.structuredContent['rows'][0]['ref'], REF)
+            self.assertFalse(found.is_error, f'{profile}: {found.content[0].text}')
+            self.assertEqual(found.structured_content['rows'][0]['ref'], REF)
 
     def test_families_and_read_only_narrow_the_list(self):
         core = self.tool_list(families=['core'])
@@ -148,7 +149,7 @@ class McpTests(unittest.TestCase):
         self.assertFalse(any(name.startswith(('ue_', 'host_')) for name in core))
         reads = self.tool_list(read_only=True)
         self.assertIn('ue_find', reads)
-        self.assertFalse(any(tool.annotations.destructiveHint for tool in reads.values()))
+        self.assertFalse(any(tool.annotations.destructive_hint for tool in reads.values()))
         self.assertNotIn('write', reads)
         with self.assertRaisesRegex(ValueError, 'unknown family'):
             reagentlive_mcp.build(sys.executable, ['-I', FAKE], families=['nope'])
@@ -163,16 +164,16 @@ class McpTests(unittest.TestCase):
             sneaky = await client.call_tool('batch', {'calls': [call('describe', {'object': REF}), {'verb': 'write'}]})
             return found, batched, refused, guessed, nulls, sneaky
         found, batched, refused, guessed, nulls, sneaky = self.run_client(body)
-        self.assertTrue(sneaky.isError)                               # A read-only tool never carries a write.
+        self.assertTrue(sneaky.is_error)                               # A read-only tool never carries a write.
         self.assertIn('send write as its own tool', sneaky.content[0].text)
-        self.assertTrue(guessed.isError)                              # Checked against the row before a console runs.
+        self.assertTrue(guessed.is_error)                              # Checked against the row before a console runs.
         self.assertIn("'length' was unexpected", guessed.content[0].text)
-        self.assertFalse(nulls.isError, nulls.content[0].text)       # A null argument is a left-out one.
-        self.assertFalse(found.isError, found.content[0].text)
-        self.assertEqual(found.structuredContent['rows'][0]['ref'], REF)
-        self.assertFalse(batched.isError, batched.content[0].text)
-        self.assertTrue(batched.structuredContent['same_tick'])
-        self.assertTrue(refused.isError)
+        self.assertFalse(nulls.is_error, nulls.content[0].text)       # A null argument is a left-out one.
+        self.assertFalse(found.is_error, found.content[0].text)
+        self.assertEqual(found.structured_content['rows'][0]['ref'], REF)
+        self.assertFalse(batched.is_error, batched.content[0].text)
+        self.assertTrue(batched.structured_content['same_tick'])
+        self.assertTrue(refused.is_error)
         self.assertIn('literal ref', refused.content[0].text)
         self.assertIn('"kind": "syntax"', refused.content[0].text)   # The error object, not only its message.
 
@@ -184,13 +185,13 @@ class McpTests(unittest.TestCase):
             kept = await client.call_tool('ue_call', {'object': REF, 'function': 'Buy'})
             return narrowed, kept
         narrowed, kept = self.run_client(body)
-        self.assertFalse(narrowed.isError, narrowed.content[0].text)
-        self.assertEqual(narrowed.structuredContent['digest']['chars'], 90000)
+        self.assertFalse(narrowed.is_error, narrowed.content[0].text)
+        self.assertEqual(narrowed.structured_content['digest']['chars'], 90000)
         text = narrowed.content[0].text
         self.assertIn('past the budget of 25000', text)
         self.assertIn('Call next: ue_rows {"object": "0x10#1:1", "fields": "Cost", "limit": 40}', text)
         self.assertIn('rows[].value.Icon (60000)', text)
-        self.assertFalse(kept.isError, kept.content[0].text)
+        self.assertFalse(kept.is_error, kept.content[0].text)
         self.assertIn('must not run again', kept.content[0].text)
         self.assertIn('C:/temp/r.json', kept.content[0].text)
         self.assertNotIn('Call next', kept.content[0].text)
@@ -204,7 +205,7 @@ class McpTests(unittest.TestCase):
 
         async def body(client):
             for _ in range(2):
-                self.assertFalse((await client.call_tool('ue_describe', {'object': REF})).isError)
+                self.assertFalse((await client.call_tool('ue_describe', {'object': REF})).is_error)
         self.run_client(body)
         with open(self.log) as file:
             lines = file.read().splitlines()
@@ -213,30 +214,46 @@ class McpTests(unittest.TestCase):
         self.assertEqual(sessions[0], sessions[1])               # ...in one usage-log session.
         self.assertEqual(lines.count('quit'), 3)                 # Each ended: the table read at start, then each call.
 
-    def test_a_rebuilt_console_remakes_the_tools_and_tells_the_client(self):
-        notices = []
+    def rebuilt_run(self, body, notices=None, mode='auto'):
+        """`body` on a client whose console is rebuilt (one verb fewer) after its first list."""
         rebuilt = dict(self.table, table_hash='rebuilt')
         rebuilt['rows'] = [row for row in self.table['rows'] if row['verb'] != 'region']
 
-        async def body(client):
+        async def wrapped(client):
             before = {tool.name for tool in (await client.list_tools()).tools}
             self.write_replies(rebuilt)                           # The console is rebuilt between two calls.
-            described = await client.call_tool('ue_describe', {'object': REF})
-            gone = await client.call_tool('region', {'addr': '0x1000'})
-            after = {tool.name for tool in (await client.list_tools()).tools}
-            return before, described, gone, after
+            return before, *(await body(client))
         try:
-            before, described, gone, after = self.run_client(body, notices)
+            return self.run_client(wrapped, notices, mode)
         finally:
             self.write_replies(self.table)
-        self.assertFalse(described.isError, described.content[0].text)   # Ran through the new tools.
-        self.assertEqual(described.structuredContent['ref'], REF)
+
+    def test_a_rebuilt_console_remakes_the_tools_and_tells_the_client(self):
+        async def body(client):
+            async with client.listen(tools_list_changed=True) as events:
+                described = await client.call_tool('ue_describe', {'object': REF})
+                with anyio.fail_after(5):
+                    event = await events.__anext__()
+            gone = await client.call_tool('region', {'addr': '0x1000'})
+            after = {tool.name for tool in (await client.list_tools(cache_mode='refresh')).tools}
+            return described, gone, after, event
+        before, described, gone, after, event = self.rebuilt_run(body)
+        self.assertFalse(described.is_error, described.content[0].text)  # Ran through the new tools.
+        self.assertEqual(described.structured_content['ref'], REF)
         self.assertIn('region', before)
         self.assertNotIn('region', after)
-        self.assertTrue(gone.isError)                            # An old tool for a verb the console lost.
+        self.assertTrue(gone.is_error)                           # An old tool for a verb the console lost.
+        self.assertEqual(type(event).__name__, 'ToolsListChanged')   # On the client's listen stream.
+
+    def test_an_older_client_hears_the_change_as_a_notification(self):
+        notices = []
+
+        async def body(client):
+            return (await client.call_tool('ue_describe', {'object': REF}),)
+        _, described = self.rebuilt_run(body, notices, mode='legacy')
+        self.assertFalse(described.is_error, described.content[0].text)
         self.assertTrue(any(getattr(getattr(n, 'root', n), 'method', '') == 'notifications/tools/list_changed'
                             for n in notices), notices)
-
 
 if __name__ == '__main__':
     args = sys.argv[1:]

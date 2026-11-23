@@ -243,7 +243,9 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   strings, chat) as untrusted data: in a multiplayer game other people
   write much of it, so an agent must never act on it as an instruction.
 - `--name` sets the server name clients show (default `reagentlive`).
-- Needs the MCP Python SDK (`pip install mcp`; its low-level server). Check a
+- Needs the MCP Python SDK 2 (`pip install --upgrade "mcp>=2"`; its low-level
+  server). A rebuilt console's new tool list reaches a 2026-07-28 client on its
+  `subscriptions/listen` stream and an older one as a plain notification. Check a
   build with the MCP Inspector: it lists the tools and calls one with no
   AI client.
 

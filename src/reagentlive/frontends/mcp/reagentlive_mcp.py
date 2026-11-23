@@ -36,8 +36,9 @@ whole type either way), `off` advertises none. `--families` serves only the
 verbs of the origins named (`help --json` lists them under `origins`) and
 `--read-only` leaves out every verb that writes the target or calls into it.
 
-Needs the MCP Python SDK (its low-level server, mcp.server.lowlevel); the
-session client needs only the standard library. Transport: standard input
+Needs the MCP Python SDK 2 (its low-level server, mcp.server.lowlevel,
+handlers passed to the constructor); the session client needs only the
+standard library. Transport: standard input
 and output; the protocol revision is whichever the installed SDK negotiates.
 """
 import argparse
@@ -53,9 +54,14 @@ from reagentlive_session import Digest, ReAgentLiveError, Record, Session  # noq
 
 import anyio  # noqa: E402
 import jsonschema  # noqa: E402
-from mcp import types  # noqa: E402
-from mcp.server.lowlevel import NotificationOptions, Server  # noqa: E402
-from mcp.server.stdio import stdio_server  # noqa: E402
+try:
+    from mcp import types  # noqa: E402
+    from mcp.server.lowlevel import NotificationOptions, Server  # noqa: E402
+    from mcp.server.stdio import stdio_server  # noqa: E402
+    from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ToolsListChanged  # noqa: E402
+except ImportError as error:  # Missing, or SDK 1 (no subscriptions, decorator handlers).
+    raise SystemExit(f'reagentlive_mcp needs the MCP Python SDK 2: python -m pip install --upgrade "mcp>=2" '
+                     f'({error})') from None
 
 INSTRUCTIONS = (
     'Tools for a live process through a ReAgentLive console. Each tool is one console verb; its description '
@@ -265,9 +271,9 @@ class Live:
 class ReAgentLiveServer(Server):
     """The low-level server, saying that its tool list can change so a client asks again on the notice."""
 
-    def create_initialization_options(self, notification_options=None, experimental_capabilities=None):
+    def create_initialization_options(self, notification_options=None, *args, **kwargs):
         return super().create_initialization_options(notification_options or NotificationOptions(tools_changed=True),
-                                                     experimental_capabilities)
+                                                     *args, **kwargs)
 
 
 def instructions(families, read_only):
@@ -294,47 +300,56 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', famili
         if unknown := families - known:
             raise ValueError(f'unknown famil{"ies" if len(unknown) > 1 else "y"} {", ".join(sorted(unknown))}; '
                              f'this console has {", ".join(sorted(known))}')
-    server = ReAgentLiveServer(name, instructions=instructions(families, read_only))
 
     def tools():
         named = live.table.get('types', {})
-        return [types.Tool(name=tool_name(row), description=description(row), inputSchema=input_schema(row),
-                           outputSchema=output_schema(row, named) if output_schemas == 'compact' else None,
-                           annotations=types.ToolAnnotations(readOnlyHint=not row.get('writes'),
-                                                             destructiveHint=bool(row.get('writes')),
-                                                             idempotentHint=False, openWorldHint=False))
+        return [types.Tool(name=tool_name(row), description=description(row), input_schema=input_schema(row),
+                           output_schema=output_schema(row, named) if output_schemas == 'compact' else None,
+                           annotations=types.ToolAnnotations(read_only_hint=not row.get('writes'),
+                                                             destructive_hint=bool(row.get('writes')),
+                                                             idempotent_hint=False, open_world_hint=False))
                 for row in live.table['rows'] if served(row, families, read_only)]
 
     tools()  # A type this file lacks stops the server at start, not at the client's first list.
 
-    @server.list_tools()
-    async def list_tools():
-        return tools()
+    def failed(text):
+        return types.CallToolResult(is_error=True, content=[types.TextContent(type='text', text=text)])
 
-    @server.call_tool(validate_input=False)  # Live.run checks against the row of the console it started.
-    async def call_tool(name, arguments):
+    async def list_tools(ctx, params):
+        return types.ListToolsResult(tools=tools())
+
+    # No get_tool_input_schema: the SDK checks no arguments. Live.run checks them against the row of the
+    # console it started, which may be newer than the list the client holds.
+    async def call_tool(ctx, params):
+        name, arguments = params.name, params.arguments or {}
         row = live.row(name)
         if row is None or not served(row, families, read_only):
-            return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=f'no tool {name}')])
+            return failed(f'no tool {name}')
         if row['verb'] == 'batch' and (writer := batch_writer(live.table, arguments)):
-            text = f'batch takes read-only verbs here; send {writer} as its own tool, so it is approved'
-            return types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=text)])
+            return failed(f'batch takes read-only verbs here; send {writer} as its own tool, so it is approved')
         try:
-            raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments or {})
+            raw, changed = await anyio.to_thread.run_sync(live.run, name, arguments)
         except RuntimeError as error:
-            raw, changed = None, False
-            result = types.CallToolResult(isError=True, content=[types.TextContent(type='text', text=str(error))])
+            changed = False
+            result = failed(str(error))
         else:
             if isinstance(raw, Digest):  # Past the budget: what to call instead, not the result.
                 raw = {'digest': dict(raw)}
                 content = [types.TextContent(type='text', text=digest_text(raw['digest'], name))]
             else:
                 content = [types.TextContent(type='text', text=json.dumps(raw))]
-            result = types.CallToolResult(content=content, structuredContent=raw)
+            result = types.CallToolResult(content=content, structured_content=raw)
         if changed:
-            await server.request_context.session.send_tool_list_changed()
+            # Both eras: a 2026-07-28 client hears it on its subscriptions/listen stream (the bus), an older
+            # one as a plain notification (dropped by the SDK on a modern connection).
+            await bus.publish(ToolsListChanged())
+            await ctx.session.send_tool_list_changed()
         return result
 
+    bus = InMemorySubscriptionBus()
+    server = ReAgentLiveServer(name, instructions=instructions(families, read_only),
+                               on_list_tools=list_tools, on_call_tool=call_tool,
+                               on_subscriptions_listen=ListenHandler(bus))
     server.live = live
     return server
 
