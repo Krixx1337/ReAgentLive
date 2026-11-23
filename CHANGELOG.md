@@ -247,6 +247,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **`get` with no `paths` on an address alone** works: the console
+  resolves the object as `describe` does (before, the agent refused it as
+  a bad request with no reason); an address that holds no object is
+  refused with why.
 - **A request after a timeout can no longer run half-written:** the agent
   could copy the shared request while the console overwrote it with the
   next one, and run a mix of both. The request number is now a seqlock.

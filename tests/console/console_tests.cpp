@@ -1204,3 +1204,15 @@ TEST_CASE("past --context-limit a tool caller's every envelope carries context_w
     for (const auto& record : RunWith(calls, {L"--context-limit", L"10"}))       // A shell's output is no context.
         CHECK_FALSE(record.contains("context_warning"));
 }
+
+TEST_CASE("get with no paths on an address alone resolves the object as describe does") {
+    const std::string thing = TheFixture().thing;
+    const std::string address = thing.substr(0, thing.find('#'));
+    const auto bare = Result(CallText("get", {{"object", address}}));
+    CHECK(bare["ref"] == thing);                                   // The full ref, as describe gives it.
+    CHECK(bare["rows"] == Result(CallText("get", GetArgs()))["rows"]);
+    const auto nothing = RunLines(CallText("get", {{"object", "0x10"}}));    // No object there: a clear refusal.
+    REQUIRE(nothing.size() == 1);
+    CHECK_FALSE(nothing[0].value("ok", true));
+    CHECK_FALSE(nothing[0]["error"].value("message", std::string()).empty());
+}

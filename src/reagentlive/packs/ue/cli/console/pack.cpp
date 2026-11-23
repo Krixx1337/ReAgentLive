@@ -99,7 +99,15 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         ue::SetRef(command.request, *type);
         if (command.className.starts_with("Default__")) command.className.clear(); // An object, not a class target.
     }
-    if (command.kind == Kind::Dump) return PrintDump(session, ue::GetRef(request), refs, structs, command, baseline);
+    if (command.kind == Kind::Dump) {
+        Ref object = ue::GetRef(request);
+        if (object.index < 0) { // An address alone: the object reads need its full ref, as describe gives it.
+            auto described = ue::Describe(client, object);
+            if (!described) return CommandError(session, jsonCommand, described.error());
+            object = described->ref;
+        }
+        return PrintDump(session, object, refs, structs, command, baseline);
+    }
     if (command.kind == Kind::Script) {
         if (command.decode) return RunScriptDecode(session, command, jsonCommand);
         if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support script");
