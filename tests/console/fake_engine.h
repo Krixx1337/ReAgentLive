@@ -529,6 +529,7 @@ constexpr reagentlive::Command Commands[] = {
     {reagentlive::op::Read, "read", &reagentlive::Read},
     {reagentlive::op::ReadBatch, "read-batch", &reagentlive::ReadBatch},
     {reagentlive::op::Modules, "modules", &Modules},
+    {reagentlive::op::Search, "search", &reagentlive::Search},
     {ue::op::Find, "find", &Find},
     {ue::op::Fields, "fields", &Fields},
     {ue::op::ReadObject, "read object", &ReadObject},

@@ -10,7 +10,9 @@ files: Unreal pack (`docs/commands/unreal.md#names-that-survive-a-patch`).
   one `labels-port` lists `missing` once found again, gets a signature made
   as below, written into its row's `sig` (`{pattern, offset}` or
   `{pattern, resolve}`) and checked with `sig-file`. Never extend the
-  signer for a failure.
+  signer for a failure. A failed row is marked and later calls skip it:
+  rerun `labels-sign` freely; `--again` retries the marked rows; delete
+  the mark when you write a hand-made `sig`.
 - **Everything else** (a host's runtime patterns): you make it as below,
   and ReAgentLive checks it.
 

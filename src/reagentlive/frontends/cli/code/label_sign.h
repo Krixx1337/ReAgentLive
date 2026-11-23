@@ -44,8 +44,10 @@ struct LabelSignRow {
 struct LabelsSign {
     std::string path, module;
     uint32_t timestamp = 0;
-    uint64_t signedRows = 0, unsignedRows = 0, skipped = 0, searches = 0;
-    std::vector<LabelSignRow> rows;
+    // skipped: rows already signed; failedBefore: rows a call on this build
+    // could not sign (sig_failed), not tried again.
+    uint64_t signedRows = 0, unsignedRows = 0, skipped = 0, failedBefore = 0, searches = 0;
+    std::vector<LabelSignRow> rows;     // The rows tried this call.
     template<class V> static void Describe(V& v) {
         v("path", &LabelsSign::path);
         v("module", &LabelsSign::module);
@@ -53,6 +55,7 @@ struct LabelsSign {
         v("signed", &LabelsSign::signedRows);
         v("unsigned", &LabelsSign::unsignedRows);
         v("skipped", &LabelsSign::skipped);
+        v("failed_before", &LabelsSign::failedBefore);
         v("searches", &LabelsSign::searches);
         v("rows", &LabelsSign::rows);
     }
@@ -130,6 +133,13 @@ inline Json LabelSigJson(const LabelSig& sig) {
         out["resolve"] = std::to_string(sig.resolve->next) + "," + std::to_string(sig.resolve->field) + "," +
             std::to_string(sig.resolve->size);
     return out;
+}
+
+// A row labels-sign could not sign carries `sig_failed`: {timestamp (the
+// build tried), reason}. A mark of this build is not tried again unasked.
+inline bool FailedBefore(const Json& extra, uint32_t timestamp) {
+    const auto found = extra.find("sig_failed");
+    return found != extra.end() && found->is_object() && found->value("timestamp", uint64_t{0}) == timestamp;
 }
 
 // The first `length` bytes of a pattern, trailing wildcards dropped.

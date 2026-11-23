@@ -574,7 +574,11 @@ global's at the first code that loads it; each is the live bytes with
 address fields masked (as `sig-bytes` suggests), cut on whole instructions
 and grown from 16 bytes (to `unique_at_length` when `sig-check` knows it)
 until exactly one match lands on the row, up to 96. Derived rows are not
-signed: `export-labels` remakes them.
+signed: `export-labels` remakes them. A row it cannot sign gets
+`sig_failed` (`timestamp`: the build tried, `reason`), and later calls on
+that build skip it and count it in `failed_before`, so a repeated call
+searches only for new rows; `--again` tries it too. Signing the row drops
+the mark; `labels-port` never copies it.
 
 A row's signature comes one of two ways:
 
@@ -582,11 +586,12 @@ A row's signature comes one of two ways:
   a second a row, no judgement) and the same bytes always give the same
   signature. It is frozen as one fixed loop: no later starts, caller
   signatures, ranking or looser masks, and struct offsets stay fixed.
-- **By hand:** a row it lists `unsigned` (with its `reason`), or a name
-  `labels-port` lists `missing` once found again. Make the signature as for
-  any other ([signatures](fast-lane.md#signatures)), write it into the
-  row's `sig` and check the file's signatures with `sig-file`. A failure
-  is signed by hand or left unsigned, never a reason to extend the loop.
+- **By hand:** a row it lists `unsigned` (with its `reason`, kept in its
+  `sig_failed`), or a name `labels-port` lists `missing` once found again.
+  Make the signature as for any other ([signatures](fast-lane.md#signatures)),
+  write it into the row's `sig` (removing `sig_failed`) and check the
+  file's signatures with `sig-file`. A failure is signed by hand or left
+  unsigned, never a reason to extend the loop.
 
 `labels-port [file] [--module M]`, after a patch: per name the running
 build lacks, the newest signed row of another build of the module is

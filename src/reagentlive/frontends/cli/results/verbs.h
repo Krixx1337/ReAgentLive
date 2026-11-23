@@ -162,12 +162,13 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"labels-sign", "core", "a byte signature on each of this build's user and global names, so they survive a patch",
             {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"},
-             {"--again", Takes::Nothing, "bool", "", "sign rows that already have a signature too"}},
+             {"--again", Takes::Nothing, "bool", "", "sign rows that have a signature or failed before too"}},
             Of<shape::LabelsSign>, parse::LabelsSign,
             "A function's signature starts at it, a global's at the first code that loads it (a reference signature); "
             "each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's "
-            "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why. The "
-            "file is rewritten in place; other builds' lines stay as they are."},
+            "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and "
+            "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless --again. "
+            "The file is rewritten in place; other builds' lines stay as they are."},
         {"labels-port", "core", "find other builds' signed names in the running build and add them to the file",
             {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"}},

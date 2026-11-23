@@ -149,10 +149,12 @@ void RunLabelsSign(Session& session, const Command& command, std::string_view js
     result.module = module.name;
     result.timestamp = file->timestamp;
     auto lines = file->lines;
+    bool changed = false;
     for (auto& line : lines) {
         const auto row = ParseLabel(line, module, file->timestamp);
         if (!row || (row->kind != "user" && row->kind != "global")) continue;
         if (row->extra.contains("sig") && !command.all) { ++result.skipped; continue; }
+        if (FailedBefore(row->extra, file->timestamp) && !command.all) { ++result.failedBefore; continue; }
         const uint64_t address = module.base + row->rva;
         shape::LabelSignRow out{row->name, row->kind, row->rva, "unsigned", {}, {}, {}};
         std::optional<LabelSig> signature;
@@ -172,20 +174,27 @@ void RunLabelsSign(Session& session, const Command& command, std::string_view js
         } else {
             out.reason = global.error();
         }
+        // Signed: the sig, no failure mark. Not: the mark, so later calls on
+        // this build skip the row.
+        auto json = Json::parse(line);
         if (signature) {
-            auto json = Json::parse(line);
             json["sig"] = LabelSigJson(*signature);
-            line = json.dump();
+            json.erase("sig_failed");
             out.status = "signed";
             out.length = signature->pattern.Size();
             ++result.signedRows;
         } else {
+            json["sig_failed"] = {{"timestamp", file->timestamp}, {"reason", out.reason.value_or("")}};
             ++result.unsignedRows;
+        }
+        if (auto text = json.dump(); text != line) {
+            line = std::move(text);
+            changed = true;
         }
         result.rows.push_back(std::move(out));
     }
     result.searches = checker.Searches();
-    if (result.signedRows)
+    if (changed)
         if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, "file", written.error());
     Emit(session, jsonCommand, std::move(result));
 }
@@ -213,6 +222,7 @@ void RunLabelsPort(Session& session, const Command& command, std::string_view js
         shape::LabelPortRow row{candidate.name, candidate.kind, candidate.from, outcome.status, {}, {}, {}};
         if (outcome.status == "ported") {
             row.rva = *outcome.rva;
+            // A new row: the signature and its origin, never the old row's sig_failed.
             auto line = ToJson(MakeLabel(module, file->timestamp, module.base + *outcome.rva, candidate.name,
                 candidate.kind.empty() ? "user" : candidate.kind));
             line["sig"] = candidate.sigJson;

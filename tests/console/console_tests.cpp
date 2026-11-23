@@ -435,6 +435,7 @@ uint64_t TheCode() {
         // mov rax, rcx; add rsp, 0x28; ret
         image.Put(0x1200, {0x48, 0x8b, 0xc1, 0x48, 0x83, 0xc4, 0x28, 0xc3});
         image.Put(0x1300, {0x06});          // Undecodable in 64-bit mode.
+        std::fill(image.bytes + 0x3000, image.bytes + 0x3100, uint8_t{0x90}); // Nops: no signature is unique.
         return image.Base();
     }();
     return base;
@@ -487,4 +488,57 @@ TEST_CASE("disasm counts past 64 instructions and sig-bytes caps a long length")
     CHECK(bytes["length"] == 96);
     CHECK(bytes["capped"] == true);
     CHECK_FALSE(Result("sig-bytes " + At(0x2000) + " 16").contains("capped"));
+}
+
+namespace {
+std::string LabelLine(uint32_t rva, const char* name, std::string extra = {}) {
+    return std::format(R"({{"module":"Game.exe","module_size":{},"timestamp":100000000,"rva":"0x{:x}","name":"{}","kind":"user"{}}})",
+        Image::Size, rva, name, extra);
+}
+std::vector<Json> FileRows(const std::string& path) {
+    std::vector<Json> rows;
+    std::ifstream in(path);
+    for (std::string line; std::getline(in, line);) rows.push_back(Json::parse(line));
+    return rows;
+}
+}
+
+TEST_CASE("labels-sign marks a row it cannot sign and skips it on this build unless --again") {
+    TheCode();
+    const auto file = SaveFile("labels.jsonl");
+    std::ofstream(file, std::ios::binary) << LabelLine(0x1100, "Signable") << '\n' << LabelLine(0x3010, "Twin") << '\n';
+    const auto first = Result("labels-sign " + file);
+    CHECK(first["signed"] == 1);
+    CHECK(first["unsigned"] == 1);
+    CHECK(first["failed_before"] == 0);
+    auto rows = FileRows(file);
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].contains("sig"));
+    CHECK_FALSE(rows[0].contains("sig_failed"));
+    REQUIRE(rows[1].contains("sig_failed"));
+    CHECK(rows[1]["sig_failed"]["timestamp"] == 100000000);
+    CHECK(rows[1]["sig_failed"]["reason"].get<std::string>().starts_with("not unique"));
+    // The same build again: nothing tried, nothing searched.
+    const auto second = Result("labels-sign " + file);
+    CHECK(second["failed_before"] == 1);
+    CHECK(second["skipped"] == 1);
+    CHECK(second["searches"] == 0);
+    CHECK(second["rows"].empty());
+    // --again tries every row.
+    const auto again = Result("labels-sign " + file + " --again");
+    CHECK(again["rows"].size() == 2);
+    CHECK(again["unsigned"] == 1);
+    // A mark from another build is tried again and marked for this one.
+    std::ofstream(file, std::ios::binary) << LabelLine(0x3010, "Twin", R"(,"sig_failed":{"timestamp":1,"reason":"old"})") << '\n';
+    const auto other = Result("labels-sign " + file);
+    CHECK(other["rows"].size() == 1);
+    CHECK(other["failed_before"] == 0);
+    CHECK(FileRows(file)[0]["sig_failed"]["timestamp"] == 100000000);
+    // A row signed later loses its mark.
+    std::ofstream(file, std::ios::binary) << LabelLine(0x1100, "Signable", R"(,"sig_failed":{"timestamp":1,"reason":"old"})") << '\n';
+    CHECK(Result("labels-sign " + file)["signed"] == 1);
+    rows = FileRows(file);
+    CHECK(rows[0].contains("sig"));
+    CHECK_FALSE(rows[0].contains("sig_failed"));
+    std::filesystem::remove(file);
 }
