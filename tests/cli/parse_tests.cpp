@@ -275,8 +275,8 @@ bool WritesOrCalls(const Command& command) {
 }
 }
 
-TEST_CASE("no form of a read-only verb writes or calls") {
-    // Every form of every verb outside the writes mark: a new verb or flag lands here.
+TEST_CASE("no form of a verb outside the modify pack writes or calls") {
+    // Every form of every verb in explore, native and observe: a new verb or flag lands here.
     const std::map<std::string, std::vector<std::string>> forms = {
         {"help", {"help", "help read", "help --json", "help --hash"}},
         {"status", {"status"}},
@@ -321,12 +321,9 @@ TEST_CASE("no form of a read-only verb writes or calls") {
         {"enum", {"enum EMode"}},
         {"refs", {"refs Health", "refs #42"}},
         {"funcs", {"funcs $1", "funcs Pawn Get --start 4"}},
-        // The recorder's reader and its stop live with calls-start.
-        {"calls-read", {"calls-read"}},
     };
     for (const auto& verb : AllVerbs()) {
-        // calls-stop restores the pointer calls-start swapped: a write, unmarked since only a recording asks for it.
-        if (verb.writes || verb.name == "calls-stop") continue;
+        if (verb.pack == ToolPack::Modify) continue;
         const auto found = forms.find(std::string(verb.name));
         REQUIRE_MESSAGE(found != forms.end(), "no forms listed for " << verb.name);
         for (const auto& line : found->second) {

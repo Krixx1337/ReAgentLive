@@ -303,7 +303,9 @@ request per tick in practice). Refusals log at warning level.
 
 A host's console (`RunConsole`) can add verbs of its own. Each is a row
 of the console's verb table (`ConsoleConfig::verbs`, the row type in
-`syntax/verb.h`): name, origin `host`, a summary, positionals (key, usage
+`syntax/verb.h`): name, origin `host`, its tool pack
+([tool packs](tool-interface.md#tool-packs); `modify` for one that writes),
+a summary, positionals (key, usage
 name, arity, type, help) and flags (name, takes, type, placeholder, help),
 and a result type from a struct with `Describe` (`results/schema.h`); mark
 `writes` on a verb that writes the target or calls into it and `blocks` on

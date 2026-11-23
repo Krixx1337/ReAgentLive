@@ -12,6 +12,7 @@
 #include "reagentlive/packs/ue/cli/values/watch_field.h"
 #include "doctest.h"
 #include "verbs.h"
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -109,7 +110,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     const Verb* modules = FindVerb(AllVerbs(), "modules");
     REQUIRE(modules);
     const auto brief = Checked(MakeHelpRow(*modules, false, false));
-    CHECK(brief == Json{{"verb", "modules"}, {"origin", "core"}, {"usage", "modules"},
+    CHECK(brief == Json{{"verb", "modules"}, {"origin", "core"}, {"pack", "explore"}, {"usage", "modules"},
         {"summary", "loaded modules, exe first (also refreshes the cached list)"}});
     const auto detail = Checked(MakeHelpRow(*modules, true, false));
     CHECK(detail["result"] == "{rows: [{name: str, base: addr, size: u64}]}");
@@ -134,6 +135,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
     CHECK(writers == std::set<std::string>{"write", "writes", "call", "release", "calls-start", "game-thread"});
+    CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), false, false))["pack"] == "explore");
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["flags"][1] == Json{{"flag", "--start"}, {"key", "start"}, {"takes", "one"}, {"type", "addr"}, {"value", "addr"},
         {"help", "start, or a page's next_cursor"}});
@@ -150,7 +152,7 @@ TEST_CASE("help rows come from the table: usage, flags, the result in notation a
 }
 
 TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors end with the usage line") {
-    const Verb verb{"probe", "core", "", {{"addr", "addr", Arity::One}, {"bytes", "bytes", Arity::Some}},
+    const Verb verb{"probe", "core", ToolPack::Explore, "", {{"addr", "addr", Arity::One}, {"bytes", "bytes", Arity::Some}},
         {{"--expect", Takes::Some, "bytes", "bytes"}, {"--changed", Takes::Maybe, "path", "file"}, {"--all", Takes::Nothing},
          {"--then", Takes::Rest, "line", "line"}}};
     auto args = Tokenise(verb, "0x10 01 02 --expect 03 04 --all --changed --then call $1 Fn --all");
@@ -168,7 +170,7 @@ TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors
     CHECK_FALSE(args->Has("--all"));
     CHECK(args->Value("--changed") == "f.snap");
     const std::string usage = "; usage: probe <addr> <bytes>... [--expect <bytes>...] [--changed [file]] [--all] [--then line]";
-    const Verb strict{"strict", "core", "", {}, {{"--owner", Takes::One, "ref", "ref", "", {}, true}}};
+    const Verb strict{"strict", "core", ToolPack::Explore, "", {}, {{"--owner", Takes::One, "ref", "ref", "", {}, true}}};
     CHECK(Tokenise(strict, "").error() == "missing --owner; usage: strict --owner <ref>");
     CHECK(Tokenise(verb, "0x10").error() == "too few arguments" + usage);
     CHECK(Tokenise(verb, "0x10 01 --bogus").error() == "unknown flag --bogus (it takes --expect, --changed, --all, --then)" + usage);
@@ -176,7 +178,7 @@ TEST_CASE("a line's tokens sort into the row's positionals and flags, and errors
     CHECK(Tokenise(verb, "0x10 01 --expect").error() == "--expect needs a value" + usage);
     CHECK(Tokenise(verb, "0x10 01 --then").error() == "--then needs a value" + usage);
     CHECK(Tokenise(verb, "0x10 \"open").error() == "the quote is not closed" + usage);
-    const Verb one{"single", "core", "", {{"addr", "addr", Arity::One}, {"len", "len", Arity::Optional}}, {}};
+    const Verb one{"single", "core", ToolPack::Explore, "", {{"addr", "addr", Arity::One}, {"len", "len", Arity::Optional}}, {}};
     CHECK(Tokenise(one, "1 2 3").error() == "too many arguments; usage: single <addr> [len]");
     // A parser's own complaint also ends with the usage line; a bare failure is the usage line.
     CHECK(Parse("read 0x10 0x", {}).error() == "len: '0x' is not a number; usage: read <addr> [len] [--type type]");
@@ -1158,4 +1160,38 @@ TEST_CASE("a layout line round-trips and names the first thing that differs") {
     CHECK_FALSE(ParseLayoutLine(R"({"owner": "Pawn", "field": "X"})").has_value());
     CHECK_FALSE(ParseLayoutLine(R"({"owner": "Pawn", "field": "X", "offset": "nope"})").has_value());
     CHECK_FALSE(ParseLayoutLine("not json").has_value());
+}
+
+TEST_CASE("every verb is in one tool pack; every writer in modify, none in the others") {
+    std::map<ToolPack, std::set<std::string>> byPack;
+    for (const auto& verb : AllVerbs()) {
+        REQUIRE(static_cast<size_t>(verb.pack) < std::size(ToolPacks));
+        byPack[verb.pack].insert(std::string(verb.name));
+        if (verb.writes) CHECK_MESSAGE(verb.pack == ToolPack::Modify, verb.name << " writes outside modify");
+    }
+    // The packs a research session loads by default hold nothing that writes or calls.
+    for (const auto pack : {ToolPack::Explore, ToolPack::Native, ToolPack::Observe})
+        for (const auto& name : byPack[pack]) CHECK_FALSE_MESSAGE(FindVerb(AllVerbs(), name)->writes, name);
+    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "writes", "call", "release", "calls-start", "calls-read",
+                                                             "calls-stop", "game-thread"});
+    CHECK(byPack[ToolPack::Native].contains("disasm"));
+    CHECK(byPack[ToolPack::Observe].contains("call-pure"));
+    // help --json lists the packs, and plain help groups its rows by them.
+    const auto table = Checked(MakeHelpTable(AllVerbs(), AllOrigins()));
+    REQUIRE(table["packs"].size() == std::size(ToolPacks));
+    CHECK(table["packs"][0] == Json{{"pack", "explore"}, {"job", std::string(ToolPacks[0].job)}});
+    const auto rows = HelpByPack(AllVerbs());
+    REQUIRE(rows.size() == AllVerbs().size());
+    CHECK(rows.front().pack == "explore");
+    CHECK(rows.back().pack == "modify");
+    CHECK(std::ranges::is_sorted(rows, {}, [](const shape::HelpRow& row) {
+        return static_cast<int>(FindToolPack(row.pack)->pack); }));
+}
+
+TEST_CASE("--packs lists parse to a set that always holds explore") {
+    CHECK(*ParseToolPacks("native") == (ToolPackBit(ToolPack::Explore) | ToolPackBit(ToolPack::Native)));
+    CHECK(*ParseToolPacks(" observe , modify,") ==
+          (ToolPackBit(ToolPack::Explore) | ToolPackBit(ToolPack::Observe) | ToolPackBit(ToolPack::Modify)));
+    CHECK(ToolPackList(AllToolPacks) == "explore,native,observe,modify");
+    CHECK(ParseToolPacks("explore,writes").error() == "unknown pack 'writes' (packs: explore, native, observe, modify)");
 }

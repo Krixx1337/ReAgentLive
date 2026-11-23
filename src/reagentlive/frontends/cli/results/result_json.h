@@ -600,7 +600,7 @@ struct HelpPositional {
     }
 };
 struct HelpRow {
-    std::string verb, origin, usage, summary;
+    std::string verb, origin, pack, usage, summary;
     std::optional<bool> writes, blocks;
     std::optional<std::vector<std::string>> aliases;
     std::optional<std::vector<HelpFlag>> flags;
@@ -611,6 +611,7 @@ struct HelpRow {
     template<class V> static void Describe(V& v) {
         v("verb", &HelpRow::verb);
         v("origin", &HelpRow::origin);
+        v("pack", &HelpRow::pack, "explore|native|observe|modify");
         v("usage", &HelpRow::usage);
         v("summary", &HelpRow::summary);
         v("writes", &HelpRow::writes);
@@ -640,18 +641,28 @@ struct HelpOrigin {
         v("title", &HelpOrigin::title);
     }
 };
+// help --json: a tool pack, the workflow its verbs serve (rows carry `pack`).
+struct HelpPack {
+    std::string pack, job;
+    template<class V> static void Describe(V& v) {
+        v("pack", &HelpPack::pack);
+        v("job", &HelpPack::job);
+    }
+};
 struct Help {
     std::vector<HelpRow> rows;
     std::optional<std::vector<std::string>> notes;
     std::optional<std::string> tableHash;
     std::optional<std::map<std::string, HelpType>> types;
     std::optional<std::vector<HelpOrigin>> origins;
+    std::optional<std::vector<HelpPack>> packs;
     template<class V> static void Describe(V& v) {
         v("rows", &Help::rows);
         v("notes", &Help::notes);
         v("table_hash", &Help::tableHash);
         v("types", &Help::types);
         v("origins", &Help::origins);
+        v("packs", &Help::packs);
     }
 };
 }

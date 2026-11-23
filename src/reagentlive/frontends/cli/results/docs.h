@@ -51,15 +51,19 @@ inline std::string ResultsMarkdown(const Json& table) {
         "- A key that does not apply is omitted; results hold no nulls outside game values.\n"
         "- A flag may add optional keys and never changes a key's type.\n"
         "- **Writes or calls.** marks a verb that writes the target's memory or calls into it; every other verb\n"
-        "  only reads (`help --json` carries it as `writes`).\n";
+        "  only reads (`help --json` carries it as `writes`).\n"
+        "- **Pack** is the workflow a verb serves (`help --json` lists them under `packs`): `explore`, `native`,\n"
+        "  `observe` or `modify`. A console's `--packs` and the MCP adapter's packs pick by it; every verb marked\n"
+        "  writes or calls is in `modify`.\n";
     std::string origin;
     for (const auto& row : table.at("rows")) {
         const auto rowOrigin = row.at("origin").get<std::string>();
         if (rowOrigin != origin) {
             origin = rowOrigin;
-            out += "\n## " + heading(origin) + "\n\n| Command | What it does | `result` |\n|---|---|---|\n";
+            out += "\n## " + heading(origin) + "\n\n| Command | Pack | What it does | `result` |\n|---|---|---|---|\n";
         }
-        out += "| `" + cell(row.at("usage").get<std::string>()) + "` | " + cell(row.at("summary").get<std::string>()) +
+        out += "| `" + cell(row.at("usage").get<std::string>()) + "` | " + row.at("pack").get<std::string>() + " | " +
+            cell(row.at("summary").get<std::string>()) +
             (row.value("writes", false) ? " **Writes or calls.**" : "") +
             " | `" + cell(row.at("result").get<std::string>()) + "` |\n";
     }

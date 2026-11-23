@@ -142,7 +142,7 @@ CALLS = [
         CALL, mode='typed', kept=True, kept_reason='ReturnValue is a String', truncated=False, outputs=[
             {'name': 'ReturnValue', 'direction': 'return', 'value': 'x', 'truncated': False}]))],
     [C('call', {'object': 16, 'function': 'Pawn:Get', 'typed': True}), ok(dict(CALL, mode='typed', outputs=[], truncated=False))],
-    [C('help', {'verb': 'modules'}), ok({'rows': [{'verb': 'modules', 'origin': 'core', 'usage': 'modules', 'summary': 's',
+    [C('help', {'verb': 'modules'}), ok({'rows': [{'verb': 'modules', 'origin': 'core', 'pack': 'explore', 'usage': 'modules', 'summary': 's',
                                                    'flags': [], 'result': '{rows: [ModuleRow]}'}]})],
 ]
 

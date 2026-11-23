@@ -6,7 +6,9 @@
 // No JSON here; results/schema.h builds types from C++ structs.
 #pragma once
 #include <algorithm>
+#include <cstdint>
 #include <expected>
+#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
@@ -115,6 +117,55 @@ inline bool OneOf(std::string_view type, std::string_view word) {
 }
 }
 
+// The workflow a verb serves: what a session loads (the MCP adapter) and
+// what a console allows (--packs). Every row names one. A verb marked
+// `writes` is in Modify; the other three hold none.
+enum class ToolPack { Explore, Native, Observe, Modify };
+struct ToolPackInfo {
+    ToolPack pack;
+    std::string_view name, job;
+};
+inline constexpr ToolPackInfo ToolPacks[] = {
+    {ToolPack::Explore, "explore", "find objects and read their state and data (always on)"},
+    {ToolPack::Native, "native", "read code and keep names across builds"},
+    {ToolPack::Observe, "observe", "watch behaviour over time without changing it"},
+    {ToolPack::Modify, "modify", "change the target or call into it"},
+};
+inline std::string_view ToolPackName(ToolPack pack) { return ToolPacks[static_cast<size_t>(pack)].name; }
+inline const ToolPackInfo* FindToolPack(std::string_view name) {
+    for (const auto& info : ToolPacks)
+        if (info.name == name) return &info;
+    return nullptr;
+}
+// A set of packs as bits (1 << pack).
+using ToolPackSet = uint32_t;
+inline constexpr ToolPackSet AllToolPacks = (1u << std::size(ToolPacks)) - 1;
+inline constexpr ToolPackSet ToolPackBit(ToolPack pack) { return 1u << static_cast<uint32_t>(pack); }
+// "explore,native" as a set; explore is always in it. Unknown names: the error.
+inline std::expected<ToolPackSet, std::string> ParseToolPacks(std::string_view list) {
+    ToolPackSet set = ToolPackBit(ToolPack::Explore);
+    while (!list.empty()) {
+        const size_t comma = list.find(',');
+        const auto name = text::Trim(list.substr(0, comma));
+        list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
+        if (name.empty()) continue;
+        const auto* info = FindToolPack(name);
+        if (!info) {
+            std::string known;
+            for (const auto& each : ToolPacks) known += (known.empty() ? "" : ", ") + std::string(each.name);
+            return std::unexpected("unknown pack '" + std::string(name) + "' (packs: " + known + ")");
+        }
+        set |= ToolPackBit(info->pack);
+    }
+    return set;
+}
+inline std::string ToolPackList(ToolPackSet set) {
+    std::string text;
+    for (const auto& info : ToolPacks)
+        if (set & ToolPackBit(info.pack)) text += (text.empty() ? "" : ",") + std::string(info.name);
+    return text;
+}
+
 // How many tokens a positional takes. Rest: the remainder of the line, verbatim.
 enum class Arity { One, Optional, Some, Any, Rest };
 struct Positional {
@@ -192,6 +243,7 @@ struct ParseContext {
 struct Verb {
     std::string_view name;
     std::string_view origin;                // "core", a pack's name ("ue"), or "host".
+    ToolPack pack;                          // The workflow it serves; writes implies Modify.
     std::string_view summary;               // One line.
     std::vector<Positional> positionals;
     std::vector<Flag> flags;

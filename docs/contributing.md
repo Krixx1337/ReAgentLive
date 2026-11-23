@@ -38,7 +38,10 @@ never the section directly. ReAgentLive never includes host code.
    unit-tested in `tests/cli/`. A list is `rows`; follow the conventions
    at the top of `results/result_json.h`. One verb has one result type: a
    mode with another shape is another verb.
-3. **Its row** in the verb table (`results/verbs.h`): name, summary,
+3. **Its row** in the verb table (`results/verbs.h`): name, origin, its
+   [tool pack](tool-interface.md#tool-packs) (`modify` when it writes or
+   calls; a new verb outside `modify` also gets its forms in the
+   `parse_tests.cpp` forms test), summary,
    positionals (key, usage name, arity, type, help, default) and flags
    (name, takes, type, placeholder, help, default), the result type, the
    parser, `writes` when it writes the target or calls into it, `blocks`

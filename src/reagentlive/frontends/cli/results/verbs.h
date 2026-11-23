@@ -23,16 +23,16 @@ inline const std::vector<Verb>& CoreVerbs() {
     constexpr std::string_view at = "an address: 0x hex, $N[+off], base+off or <module>+off";
     constexpr std::string_view hex = "bytes as hex pairs, spaced or packed: 00 00 80 3f";
     static const std::vector<Verb> verbs = {
-        {"help", "core", "the verbs, one line each; help <verb>: its flags, result and notes",
+        {"help", "core", ToolPack::Explore, "the verbs, one line each; help <verb>: its flags, result and notes",
             {{"verb", "verb", Optional, "str", "a verb to show in full"}},
             {{"--json", Takes::Nothing, "bool", "", "the whole table for programs"},
              {"--hash", Takes::Nothing, "bool", "", "only the table's hash: has it changed since a program read it?"}},
             Of<shape::Help>, parse::Help, {}, {"?"}},
-        {"status", "core", "agent pid, tick rate, the packs the host offers and the verb table's hash",
+        {"status", "core", ToolPack::Explore, "agent pid, tick rate, the packs the host offers and the verb table's hash",
             {}, {}, Of<shape::Status>, parse::Status,
             "table_hash changes when any verb's arguments or result change: a cached script or skill is then stale."},
-        {"quit", "core", "end the console", {}, {}, Of<shape::Quit>, parse::Quit, {}, {"exit", "q"}},
-        {"stats", "core", "what this session cost: calls, output and refusals per verb, largest output first",
+        {"quit", "core", ToolPack::Explore, "end the console", {}, {}, Of<shape::Quit>, parse::Quit, {}, {"exit", "q"}},
+        {"stats", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
             {}, {{"--all", Takes::Nothing, "bool", "", "every session in the log, and the verbs none called"},
                  {"--sessions", Takes::Nothing, "bool", "", "the log's sessions, newest first: one row each"},
                  {"--session", Takes::One, "str", "id", "one session from the log, by its id"}},
@@ -44,13 +44,13 @@ inline const std::vector<Verb>& CoreVerbs() {
             "printed whole), repeated (the same input again in its session), refused (by error kind). A batch's "
             "items count under their own verbs (batched); the batch row holds its wrapper. --sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log."},
-        {"batch", "core", "up to 64 commands in as few host ticks as possible; one envelope each",
+        {"batch", "core", ToolPack::Explore, "up to 64 commands in as few host ticks as possible; one envelope each",
             {{"calls", "{ <command>; <command>; ... }", Rest, "calls",
               "command lines between braces, split by ;  (a JSON call: a list of {verb, args})"}},
             {}, Of<shape::Batch>, parse::Batch,
             "A $N set by an earlier line in the batch works in a typed line. rows holds each command's envelope, with "
             "tick (and last_tick when its responses spanned ticks)."},
-        {"read", "core", "hex dump of 1..4096 bytes (default 64); --type decodes values",
+        {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); --type decodes values",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}},
             {{"--type", Takes::Rest, "layout", "type", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": layout"}},
             Of<shape::Read>, parse::Read,
@@ -58,14 +58,14 @@ inline const std::vector<Verb>& CoreVerbs() {
             "256 bytes); --type \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read "
             "adds views. <addr>->0x10->0x8 follows a pointer chain and adds chain. region is the memory the address "
             "lies in (kind: code, rodata, data, mapped, private, reserved or free)."},
-        {"peek", "core", "what 1..64 qwords hold (default 8): object, module, heap or value",
+        {"peek", "core", ToolPack::Explore, "what 1..64 qwords hold (default 8): object, module, heap or value",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many qwords", "8"}},
             {{"--label", Takes::Maybe, "path", "file", "append this one qword as a confirmed global to a labels file (default: the host's names file, else the console's)"},
              {"--name", Takes::One, "str", "name", "the label's name (default FName_<hint>)"}},
             Of<shape::Peek>, parse::Peek,
             "object needs a pack; value rows carry floats, a double and name_hint. Accepts a pointer chain. region is "
             "the memory the address lies in, as read gives it."},
-        {"write", "core", "write up to 256 bytes; --undo restores it after a while, --hold rewrites it every tick for a while",
+        {"write", "core", ToolPack::Modify, "write up to 256 bytes; --undo restores it after a while, --hold rewrites it every tick for a while",
             {{"addr", "addr", One, "addr", at}, {"data", "hex bytes", Some, "bytes", hex}},
             {{"--expect", Takes::Some, "bytes", "hex bytes", "write only while memory still holds these bytes (with --undo: required, restored afterwards)"},
              {"--undo", Takes::One, "dur", "duration", "restore the bytes after this long (up to 60 s; needs --owner and --expect)"},
@@ -78,15 +78,15 @@ inline const std::vector<Verb>& CoreVerbs() {
             "conflict if the game changes the value, abandoned if the owner or --object's vtable changes; the owner's "
             "check is the pack's, so without one it is refused. --hold on $N+off stops when that object is freed or "
             "replaced.", {}, true},
-        {"writes", "core", "the timed writes (write --undo, --hold) with their state; clear ends one or all, restoring --undo ones",
+        {"writes", "core", ToolPack::Modify, "the timed writes (write --undo, --hold) with their state; clear ends one or all, restoring --undo ones",
             {{"action", "clear", Optional, "str", "clear: end them"},
              {"id", "id", Optional, "str", "with clear: one write's id as writes lists it (undo:N or hold:N); default all"}},
             {}, Of<shape::Writes>, parse::Writes,
             "Rows are --undo writes (restored, conflict or abandoned ones stay listed until cleared) then --hold ones. "
             "clear answers cleared and the rows it ended.", {}, true},
-        {"modules", "core", "loaded modules, exe first (also refreshes the cached list)",
+        {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
             {}, {}, Of<shape::Modules>, parse::Modules},
-        {"search", "core", "addresses holding a value in resident, cacheable memory",
+        {"search", "core", ToolPack::Native, "addresses holding a value in resident, cacheable memory",
             {{"type", "hex|u32|i32|u64|ptr|f32|f64|text", One, "hex|u32|i32|u64|ptr|f32|f64|text", "the value's type"},
              {"value", "value", Some, "text", "the value to find"}},
             {{"--wide", Takes::Nothing, "bool", "", "text as UTF-16"},
@@ -100,12 +100,12 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"--max", Takes::One, "int", "N", "rows per page", "64"}},
             Of<shape::Search>, parse::Search,
             "Quote text to keep spaces, ';' and '--'. next_cursor is present while more of the range is left."},
-        {"mem-snap", "core", "keep up to 1 MiB of memory for mem-diff (a file beside the cache, across runs)",
+        {"mem-snap", "core", ToolPack::Observe, "keep up to 1 MiB of memory for mem-diff (a file beside the cache, across runs)",
             {{"addr", "addr", One, "addr", at}, {"len", "len", One, "int", "how many bytes, up to 1048576"}},
             {}, Of<shape::MemSnap>, parse::MemSnap,
             "A new snap replaces the last one and its candidates. Refused when part of the range is unreadable. "
             "Accepts a pointer chain."},
-        {"mem-diff", "core", "elements of the last mem-snap that changed, stayed, rose or fell since; --keep narrows",
+        {"mem-diff", "core", ToolPack::Observe, "elements of the last mem-snap that changed, stayed, rose or fell since; --keep narrows",
             {{"test", "changed|unchanged|increased|decreased", One, "changed|unchanged|increased|decreased", "what an element must have done"},
              {"type", "type", One, "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start"}},
             {{"--keep", Takes::Nothing, "bool", "", "keep only the matches as candidates and today's bytes as the new baseline"},
@@ -114,7 +114,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
             "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 --keep, act, mem-diff ... --keep "
             "until few remain; matched counts all, rows show the first. A snap from another agent instance is refused."},
-        {"watch-start", "core", "a capture the agent keeps (up to 60 min with --every); returns at once",
+        {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min with --every); returns at once",
             {{"duration", "duration", One, "dur", "how long: seconds, or Nms, Ns, Nm"},
              {"ranges", "addr|offset:len|type[n]|ref.Field", Some, "range",
               "a range to sample: a length, or a read --type element (f64, i32[2]) to decode; following a root, its offset "
@@ -129,16 +129,16 @@ inline const std::vector<Verb>& CoreVerbs() {
             "is guarded on its object. --file writes the ranges as the first line now; the file persists for the "
             "agent instance in the cache, and a later watch-start without --file drops it. For a blocking capture, "
             "start, wait and stop (the Python session's watch helper)."},
-        {"watch-read", "core", "the capture so far: its first sample, each change and its last", {},
+        {"watch-read", "core", ToolPack::Observe, "the capture so far: its first sample, each change and its last", {},
             {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchRead,
             "Rows are the first sample, every sample that differs from the one before (each with its time) and the last; "
             "samples counts them all. Past 200 rows the middle is dropped (dropped). The summary covers every sample, "
             "with changes per value. --all returns every sample. With watch-start --file, every sample also goes to "
             "the file (file names it)."},
-        {"watch-stop", "core", "end the capture and return it: its first sample, each change and its last", {},
+        {"watch-stop", "core", ToolPack::Observe, "end the capture and return it: its first sample, each change and its last", {},
             {{"--all", Takes::Nothing, "bool", "", "every sample, not only the changes"}}, Of<shape::WatchCapture>, parse::WatchStop,
             "As watch-read."},
-        {"sig-check", "core", "is a byte signature unique in a module, and does it land where expected; --file checks a file of them",
+        {"sig-check", "core", ToolPack::Native, "is a byte signature unique in a module, and does it land where expected; --file checks a file of them",
             {{"pattern", "pattern", Any, "pattern", "the signature: 48 8b ?? 89, or 0x48, 0x8B, -1, 0x89"}},
             {{"--file", Takes::One, "path", "patterns file", "a JSON-lines file, one signature per line, in place of pattern"},
              {"--module", Takes::One, "str", "name", "default: the exe"},
@@ -149,10 +149,10 @@ inline const std::vector<Verb>& CoreVerbs() {
             "pattern: \"48 8b ?? 89\" or \"0x48, 0x8B, -1, 0x89\", up to 96 bytes. Reports mismatches, diverges_at "
             "and warnings for unmasked addresses. --file takes no other flag and answers file, winner (the first line "
             "that holds) and a row per line."},
-        {"sig-bytes", "core", "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
+        {"sig-bytes", "core", ToolPack::Native, "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
             {{"addr", "addr", One, "addr", at}, {"len", "len", Optional, "int", "how many bytes", "64"}}, {},
             Of<shape::SigBytes>, parse::SigBytes},
-        {"labels-sign", "core", "a byte signature on each of this build's user and global names, so they survive a patch",
+        {"labels-sign", "core", ToolPack::Native, "a byte signature on each of this build's user and global names, so they survive a patch",
             {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"},
              {"--again", Takes::Nothing, "bool", "", "sign rows that have a signature or failed before too"}},
@@ -162,7 +162,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and "
             "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless --again. "
             "The file is rewritten in place; other builds' lines stay as they are."},
-        {"labels-port", "core", "find other builds' signed names in the running build and add them to the file",
+        {"labels-port", "core", ToolPack::Native, "find other builds' signed names in the running build and add them to the file",
             {{"file", "file", Optional, "path", "the labels file (default: the host's names file, else the console's)"}},
             {{"--module", Takes::One, "str", "name", "default: the exe"}},
             Of<shape::LabelsPort>, parse::LabelsPort,
@@ -170,7 +170,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "search per anchor). One match appends a row for this build with the same sig and ported_from (the old "
             "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
             "rows stay."},
-        {"disasm", "core", "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
+        {"disasm", "core", ToolPack::Native, "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many instructions (--function: up to 2048)", "24"}},
             {{"--function", Takes::Nothing, "bool", "", "list the whole containing function (exception table; else walk from addr)"},
              {"--resume", Takes::Nothing, "bool", "", "with --function: start at addr (a cut listing's next), not the function's start"},
@@ -189,7 +189,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "and saved_rows, and saves each chained chunk the function jumps into (chunks); --callees (calls and tail jumps) adds functions (each saved one) and skipped (call targets past 16 functions or "
             "256 KB). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
             "piece (the piece holding addr, as xrefs gives it), and --save then refuses unless --resume."},
-        {"xrefs", "core", "what points at an address: rel32 fields and stored pointers, each with its function",
+        {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", One, "addr", at}},
             {{"--module", Takes::One, "str", "name", "scan another loaded module"},
              {"--all", Takes::Nothing, "bool", "", "also list unknown hits (likely chance bytes)"}},
@@ -197,7 +197,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "function the piece holding it, cut as touches cuts unlisted code (between returns and int3 padding, within "
             "16 KB each side): a function with several returns spans several pieces, and junk bytes may lead one. "
             "Entries under 4 bytes (a packed image's decoys) bound nothing."},
-        {"touches", "core", "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
+        {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", One, "addr", at}, {"offsets", "offset", Some, "int", "a struct offset to look for, per offset"}},
             {{"--range", Takes::One, "int", "N", "bytes each side of addr", "0x80000"},
              {"--reads", Takes::Nothing, "bool", "", "rank by offsets read; drop rows writing every offset they read"}},
@@ -205,7 +205,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
             "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
             "unlisted code. --reads leaves out struct copies and constructors."},
-        {"vtable", "core", "an object's virtual table: slots until the first entry that is not code",
+        {"vtable", "core", ToolPack::Native, "an object's virtual table: slots until the first entry that is not code",
             {{"addr", "addr", One, "addr", at}, {"count", "count", Optional, "int", "how many slots at most"}},
             {{"--offset", Takes::One, "int", "N", "the table pointer at addr+N (an interface part)"},
              {"--table", Takes::Nothing, "bool", "", "addr is the table itself"},
@@ -287,7 +287,8 @@ inline std::string_view ArityName(Arity arity) {
 // notation (named types by name, defined under `types`) and the notes.
 // Machine: also the result's type for programs; its named types go to `named`.
 inline shape::HelpRow MakeHelpRow(const Verb& verb, bool detail, bool machine, schema::NamedTypes* named = nullptr) {
-    shape::HelpRow row{std::string(verb.name), std::string(verb.origin), Usage(verb), std::string(verb.summary)};
+    shape::HelpRow row{std::string(verb.name), std::string(verb.origin), std::string(ToolPackName(verb.pack)), Usage(verb),
+        std::string(verb.summary)};
     if (verb.writes) row.writes = true;
     if (verb.blocks) row.blocks = true;
     if (!detail && !machine) return row;
@@ -327,8 +328,8 @@ inline shape::HelpRow MakeHelpRow(const Verb& verb, bool detail, bool machine, s
     return row;
 }
 
-// help --json: every row in full, the named types once, and each origin's
-// title. Its text is what `table_hash` hashes.
+// help --json: every row in full, the named types once, each origin's
+// title and the tool packs. Its text is what `table_hash` hashes.
 inline shape::Help MakeHelpTable(std::span<const Verb> verbs, std::span<const Origin> origins) {
     shape::Help help;
     schema::NamedTypes named;
@@ -340,7 +341,18 @@ inline shape::Help MakeHelpTable(std::span<const Verb> verbs, std::span<const Or
     for (const auto& origin : origins)
         if (std::ranges::any_of(verbs, [&](const Verb& verb) { return verb.origin == origin.id; }))
             help.origins->push_back({std::string(origin.id), std::string(origin.title)});
+    help.packs.emplace();
+    for (const auto& pack : ToolPacks) help.packs->push_back({std::string(pack.name), std::string(pack.job)});
     return help;
+}
+
+// help with no verb: one line per verb, grouped by tool pack in pack order.
+inline std::vector<shape::HelpRow> HelpByPack(std::span<const Verb> verbs) {
+    std::vector<shape::HelpRow> rows;
+    for (const auto& pack : ToolPacks)
+        for (const auto& verb : verbs)
+            if (verb.pack == pack.pack) rows.push_back(MakeHelpRow(verb, false, false));
+    return rows;
 }
 
 // FNV-1a of the whole table as help --json prints it: changes when any

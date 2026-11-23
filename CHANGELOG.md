@@ -66,6 +66,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Tool packs:** every verb belongs to one workflow pack, `explore`,
+  `native`, `observe` or `modify` (every verb that writes or calls is in
+  `modify`). `help` groups the verbs by pack; `help --json` rows carry
+  `pack` and the table lists `packs`
+  ([tool interface](docs/tool-interface.md#tool-packs)).
 - **Names that survive a patch:** `labels-sign` stores a byte signature on
   each name people confirmed (functions and globals); after a patch
   `labels-port` finds them in the new build and adds them to the file,

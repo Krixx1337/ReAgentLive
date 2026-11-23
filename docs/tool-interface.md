@@ -82,6 +82,14 @@ the console.
   description: a caller that picks a command, not types one, needs them
   all. The types that need no target state (`int`, an enum) are checked
   with the counts, before a verb's parser runs.
+- **Each row names its tool pack** (`pack`): the workflow it serves,
+  `explore`, `native`, `observe` or `modify`, set where the row is defined
+  (core rows in the console, a pack's in the pack, a host's in the host).
+  It is a second axis beside `origin`, which stays the code owner and the
+  tool-name prefix. A verb marked `writes` is in `modify`; the other three
+  hold none (a test checks every argument form of their verbs). `help`
+  lists the rows grouped by pack, `help --json` names the packs and their
+  jobs under `packs`. What the packs are for: [tool packs](#tool-packs).
 - **Named types.** A struct several results share names itself
   (`TypeName`): `help --json` lists it once under `types`, rows refer to it
   (`{"named": "Chain"}`), and `help <verb>` prints the name and its
@@ -275,3 +283,18 @@ host verbs, before the adapter made schemas from the rows, about 45 KB with
 nothing, so an approval request shows exactly what will be sent. A dry run
 the client must repeat with a token waits until the marks and the
 client's own prompt are not enough.
+
+## Tool packs
+
+A session should load the tools its job needs, and only a person should
+decide that it may change the target. Every verb belongs to one workflow
+pack, sized so a normal question stays inside the default ones:
+
+| Pack | Job | Holds |
+|---|---|---|
+| `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, functions' metadata, memory reads |
+| `native` | read code and keep names across builds | disassembly, references, signatures, labels, layout files |
+| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `trace`, `call-pure` |
+| `modify` | change the target or call into it | `write`, `writes`, `call`, `release`, the call recorder, `game-thread` |
+
+`help --json` is the list's source (each row's `pack`).

@@ -130,7 +130,7 @@ std::expected<shape::Help, std::string> BuildHelp(std::span<const Verb> verbs, s
         if (!verb) return std::unexpected("unknown command '" + command.target + "' (try help)");
         help.rows.push_back(MakeHelpRow(*verb, true, false));
     } else {
-        for (const auto& verb : verbs) help.rows.push_back(MakeHelpRow(verb, false, false));
+        help.rows = HelpByPack(verbs);
         help.notes = GeneralNotes();
         for (const auto& note : PackNotes()) help.notes->push_back(note);
     }
