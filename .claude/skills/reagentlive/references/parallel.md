@@ -18,8 +18,11 @@ follows a background run: the console-driving reference.
   never needs another's session state.
 - Values from two calls, or two clients, are never from one moment. For
   values that must line up: one `get` with several `paths`, or a `batch`
-  of `read`s. A `batch` holding `get` or `describe` spans ticks through
-  their lookups, other clients or not.
+  of `read`s. A `batch` holding `get` spans ticks through its lookups
+  (2-3 ticks each, other clients or not), and a batch of `read`s often
+  spans 2-3. Values that change every frame and must line up (camera and
+  projectile, aim and target): `watch-start`, which samples them in one
+  tick, every tick.
 
 ## Shared resources: one at a time
 
