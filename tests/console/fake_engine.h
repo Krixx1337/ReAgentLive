@@ -33,6 +33,7 @@
 #include "reagentlive/core/agent.h"
 #include "reagentlive/core/client.h"
 #include "reagentlive/packs/ue/protocol_ue.h"
+#include "reagentlive/packs/ue/request_ue.h"
 #include "reagentlive/frontends/cli/console/console.h"
 #include "doctest.h"
 

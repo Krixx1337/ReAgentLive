@@ -11,6 +11,7 @@
 #include "reagentlive/packs/ue/engine_layout.h"
 #include "reagentlive/packs/ue/globals.h"
 #include "reagentlive/packs/ue/name_pool.h"
+#include "reagentlive/packs/ue/request_ue.h"
 
 namespace reagentlive::ue {
 // A full object table takes many ticks; bound each tick (Context::scanMicroseconds).

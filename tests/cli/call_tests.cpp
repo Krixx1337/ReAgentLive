@@ -3,6 +3,7 @@
 #include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/call/plan.h"
 #include "reagentlive/packs/ue/protocol_ue.h"
+#include "reagentlive/packs/ue/request_ue.h"
 #include "reagentlive/version.h"
 #include "doctest.h"
 #include "verbs.h"

@@ -11,6 +11,7 @@
 #include <new>
 #include "reagentlive/packs/ue/host_draw.h"
 #include "reagentlive/packs/ue/agent_ue.h"
+#include "reagentlive/packs/ue/request_ue.h"
 
 namespace reagentlive::ue::draw {
 namespace {

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstring>
 #include "reagentlive/packs/ue/client_ue.h"
+#include "reagentlive/packs/ue/request_ue.h"
 
 namespace reagentlive::ue {
 namespace {

@@ -6,6 +6,7 @@
 #include "reagentlive/frontends/cli/call/build_internal.h"
 #include "reagentlive/frontends/cli/call/layout.h"
 #include "reagentlive/packs/ue/protocol_ue.h"
+#include "reagentlive/packs/ue/request_ue.h"
 
 namespace reagentlive::cli::build {
 using namespace text;

@@ -26,6 +26,7 @@
 #include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/call/build_internal.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
+#include "reagentlive/packs/ue/request_ue.h"
 #include "doctest.h"
 
 using namespace reagentlive;

@@ -8,7 +8,8 @@ process handle. You need this page only to write a client or change an op;
 everyone else uses the console. Agent and client must come from the same
 revision: the layout check refuses a mismatched pair.
 
-Definitions: `core/protocol.h`, Unreal additions `packs/ue/protocol_ue.h`.
+Definitions: `core/protocol.h`, Unreal additions `packs/ue/protocol_ue.h`
+(the bounds each Unreal request is checked against: `packs/ue/request_ue.h`).
 
 ## Section
 

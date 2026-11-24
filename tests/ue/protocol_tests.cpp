@@ -4,6 +4,7 @@
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/name_pool.h"
 #include "reagentlive/packs/ue/protocol_ue.h"
+#include "reagentlive/packs/ue/request_ue.h"
 #include "doctest.h"
 #include <algorithm>
 #include <cstring>
