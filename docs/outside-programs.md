@@ -76,4 +76,4 @@ Each waits for a real program that needs it:
   samples them every tick (`watch-start` is the start), and they expire when the
   client's heartbeat stops;
 - a second channel, so two requests are in flight at once: the core's
-  state moves into a per-channel context.
+  state moves into a per-channel context ([backlog](ideas.md#38--two-requests-in-flight-channels)).

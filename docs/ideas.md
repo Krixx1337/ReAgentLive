@@ -224,6 +224,21 @@ plugin from a remote marketplace is a cached copy under
 home outside it (`%LOCALAPPDATA%\reagentlive\local-lessons.md`). Pull
 forward when a user asks for plugin installs.
 
+### 38 · Two requests in flight (channels)
+
+Clients take the one slot in short turns today
+([design](design/console-costs.md)); a long agent request (a sliced
+`search` over a wide range) or a big held `batch` still makes the others
+wait. Two steps, each useful alone: first a context per request (every
+multi-tick handler's progress moves out of its globals into a call object
+that dies with the request; a test fails on a new mutable global), then N
+channels (1-8, default 4), each its own request and response with its own
+seqlock, served round-robin on the host's one tick thread. Channels share
+one tick budget and one hold budget, so the game-thread cost stays what it
+is; each gets its own image window on first use; caches stay shared and
+keyed by their inputs. Protocol change. Pull forward when `usage` shows
+interactive calls waiting on the slot (`slot_ms`), not only background runs.
+
 ## Before a public release
 
 - A minimal client example ([#20](#20--example-client)).
