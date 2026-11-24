@@ -62,11 +62,34 @@ bool NameSlot(Session& session, std::span<const ue::Field> fields, uint32_t offs
     return false;
 }
 
-// `slot` continued into a container's element: [index], then the member at
-// `inner` in the element (a map's value past its value offset).
-void NameElement(Session& session, Slot& slot, uint32_t index, uint32_t inner) {
+// The step into element `index` of the container at `offset` in `holder`:
+// an array's [index]; a set's or map's [Key] when the key is a name or an
+// object (entries lists them by key), else [slot N] (a sparse slot, free
+// slots counted, so not entries' row number).
+std::string ElementStep(Session& session, const Ref& holder, const ue::Field& container, uint32_t offset, uint32_t index) {
+    if (container.type == "ArrayProperty") return "[" + std::to_string(index) + "]";
+    const std::string slot = "[slot " + std::to_string(index) + "]";
+    const auto kind = container.type == "MapProperty" ? ue::ContainerKind::Map : ue::ContainerKind::Set;
+    if (!container.stride || container.stride > ue::MaxArrayElementBytes) return slot;
+    auto page = ue::Entries(session.client, holder, offset, kind, container.stride, index);
+    if (!page || page->bytes.size() < 8) return slot;
+    if (container.elementType == "NameProperty") {
+        int32_t name = 0;
+        memcpy(&name, page->bytes.data(), sizeof(name));
+        auto names = ue::Names(session.client, std::span(&name, 1));
+        if (names && !names->front().empty()) return "[" + names->front() + "]";
+    } else if (container.elementType == "ObjectProperty" || container.elementType == "ObjectPtrProperty") {
+        uint64_t key = 0;
+        memcpy(&key, page->bytes.data(), sizeof(key));
+        if (auto object = ue::Describe(session.client, ue::AddressRef(key)); object) return "[" + object->name + "]";
+    }
+    return slot;
+}
+
+// `slot` continued into a container's element (`at`, ElementStep), then the
+// member at `inner` in the element (a map's value past its value offset).
+void NameElement(Session& session, Slot& slot, const std::string& at, uint32_t inner) {
     const ue::Field& container = *slot.field;
-    const auto at = "[" + std::to_string(index) + "]";
     slot.path += at;
     slot.raw += at;
     const bool map = container.type == "MapProperty";
@@ -102,7 +125,7 @@ std::string HopField(Session& session, const ue::RouteHop& hop) {
             snprintf(text, sizeof(text), "+0x%x", hop.offset);
             return text;
         }
-        NameElement(session, slot, hop.index, hop.inner);
+        NameElement(session, slot, ElementStep(session, hop.holder, *slot.field, hop.offset, hop.index), hop.inner);
     }
     return slot.path;
 }
@@ -128,7 +151,8 @@ bool InContainer(Session& session, const Ref& object, uint64_t address, Slot& ou
         Append(slot, readable.empty() ? std::string_view(field.name) : readable, field.name);
         slot.field = &field;
         slot.type = field.type;
-        NameElement(session, slot, static_cast<uint32_t>((address - data) / stride), static_cast<uint32_t>((address - data) % stride));
+        NameElement(session, slot, ElementStep(session, object, field, field.offset, static_cast<uint32_t>((address - data) / stride)),
+                    static_cast<uint32_t>((address - data) % stride));
         out = std::move(slot);
         return true;
     }

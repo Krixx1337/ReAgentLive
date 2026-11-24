@@ -294,6 +294,7 @@ const ue::Field* FindField(const Names& names, std::span<const ue::Field> fields
     const auto found = std::ranges::find_if(fields, matches);
     if (found == fields.end()) {
         why = "no field " + std::string(wanted);
+        if (wanted.find('[') != std::string_view::npos) why += " (a path step is a field name: read elements with entries)";
         if (const auto closest = ClosestFields(names, fields, wanted); !closest.empty()) why += "; closest: " + closest;
         return nullptr;
     }

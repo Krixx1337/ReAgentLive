@@ -1270,3 +1270,24 @@ TEST_CASE("owner names fields, structs and container elements, and route prints 
     REQUIRE(back["rows"].size() == 1);
     CHECK(back["rows"][0]["steps"][0]["field"] == "Members[0]");
 }
+
+TEST_CASE("owner names a map element by its key") {
+    using namespace fake;
+    using reagentlive::cli::RefText;
+    auto& world = TheWorld();
+    Type& holder = world.AddType("KeyedHolder", 0x100, false, "Object");
+    holder.fields = {MapField("Modes", 0x30, MakeField("Key", "NameProperty", 0, 8), MakeField("Value", "ObjectProperty", 0, 8), 24, 8)};
+    const Ref holderRef = world.Instance("KeyedHolder_0", holder).ref;
+    struct Slot { int32_t name, number; uint64_t value; int32_t next, hash; };
+    const Slot slots[2] = {{world.Name("Walking"), 0, holderRef.address, -1, 0}, {world.Name("Falling"), 0, holderRef.address, -1, 0}};
+    auto* bytes = reinterpret_cast<uint8_t*>(holderRef.address);
+    SetSparse(bytes + 0x30, std::span(reinterpret_cast<const uint8_t*>(slots), sizeof(slots)), 2, 24);
+    uint64_t data = 0;
+    memcpy(&data, bytes + 0x30, 8);
+    char address[32];
+    snprintf(address, sizeof(address), "0x%llx", static_cast<unsigned long long>(data + 24 + 8));
+    const auto owner = Result(CallText("owner", {{"addrs", {address}}, {"within", {RefText(holderRef)}}}));
+    REQUIRE(owner["rows"].size() == 1);
+    CHECK(owner["rows"][0]["path"] == "Modes[Falling]");
+    CHECK(owner["rows"][0]["container"] == true);
+}

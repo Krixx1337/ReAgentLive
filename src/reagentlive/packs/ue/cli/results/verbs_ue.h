@@ -273,13 +273,14 @@ inline const std::vector<Verb>& UnrealVerbs() {
               "\"0x...\"); default: every root", {}, false, true, "[\"pawn\"]"},
              {"depth", "int", "hops at most (1..16)", "8"},
              {"budget", "int", "objects visited at most (1..1048576)", "20000"},
-             {"outer", "bool", "also follow each object's Outer, when no field route exists"}},
+             {"outer", "bool", "also step from each object up to its Outer (child to parent only)"}},
             Of<shape::Route>, build::Route,
             "Breadth-first over object fields, arrays, sets and map values of objects or of structs holding them; "
             "no class, weak, soft or lazy pointers, and no containers inside a container's elements. Up to 4 "
             "routes of the shortest length. end says why there is none: depth or budget ran out, or none (every "
-            "reachable object visited). Objects can die while it walks: check a route with get before relying on "
-            "it. Needs the game thread."},
+            "reachable object visited). A walk that runs out its budget takes seconds; lower budget to fail fast. "
+            "A step into a set or map reads [Key] for a name or object key, else [slot N]. Objects can die while it "
+            "walks: check a route with get (entries for an indexed step) before relying on it. Needs the game thread."},
         {"funcs", "ue", ToolPack::Explore, "functions on the class chain, then on the native interfaces it implements",
             {{"object", "str", objectOrClass, {}, true, false, ref}, View("match start")},
             Of<shape::Funcs>, build::Funcs,

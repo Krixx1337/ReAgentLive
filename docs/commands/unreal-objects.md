@@ -204,7 +204,9 @@ reflection only; neither scans raw memory for pointers.
   values of objects or of structs holding them, and structs holding any
   of these. Class, weak, soft and lazy pointers are not followed (they
   lead into the asset graph), nor are containers inside a container's
-  elements; `outer` adds each object's `Outer` as a last resort.
+  elements; `outer` adds a step from each object up to its `Outer`, as a
+  last resort. It never steps down, so an object only its children's
+  `Outer` points to stays out of reach.
 - **Bounds:** `depth` hops and `budget` objects visited. It answers up
   to 4 routes of the shortest length, or `end` says why there is none
   (`depth`, `budget`, or `none` when every reachable object was visited),
@@ -214,7 +216,12 @@ reflection only; neither scans raw memory for pointers.
   `get` before writing it into code.
 - **Paths:** each step's `field` is relative to the previous object, and
   `path` joins them from the root. `get` follows the field steps; an
-  indexed step (`Items[3]`) is an `entries` read.
+  indexed step (`Items[3]`) is an `entries` read. A set or map step names
+  the element by its key (`Modes[Walking]`) when the key is a name or an
+  object, as `entries` lists it; otherwise `[slot N]` is the sparse slot,
+  free slots counted, not `entries`' row number.
+- **Cost:** a route found a few hops out takes about a second; a walk
+  that runs out its budget takes several. A low `budget` fails fast.
 
 ## Class names
 
