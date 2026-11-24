@@ -48,8 +48,8 @@ Budget: one `usage` call and at most 10 lines.
 | docs wrong, verb or arg missing, console bug, a game fact, a host's console | one suggestion in the closing line (plus a lesson for any workaround) | the docs or code fix, a `docs/ideas.md` entry, the host notes or the project's findings (ask) |
 | none | drop | drop |
 
-4. `user`: write every survivor now. A lesson that sharpens one already
-   there replaces it. End with one line, for example `Lessons: +1 general,
+4. `user`: write every survivor now, reading the target file first when it
+   was not loaded. A lesson that sharpens one already there replaces it. End with one line, for example `Lessons: +1 general,
    +1 my-game; suggestion: modules could take a limit`. Never post an issue.
 5. `dev`: propose at most 3, strongest first (one sentence, the exact text,
    the target file; a diff or a plan), the rest one line each. Write only
