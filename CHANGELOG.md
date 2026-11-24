@@ -25,6 +25,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+## 0.6.0
+
+Ask a live game where its objects live, and keep exploring while long
+calls run: `owner` and `route` answer "who holds this and how does the
+engine reach it" in a call each, clients share the agent in short turns,
+plans run in the background, and IDA names native functions in one step.
+
 ### New
 
 - **Where objects live, in two calls:** `owner` names the object, field
