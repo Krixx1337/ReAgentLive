@@ -73,10 +73,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **The IDA side is set up once, not copied:** run
+  `python -I tools/ida_setup.py --install` (it replaces `ida_loader_check.py`
+  and removes the copied `reagentlive_ida.py`); IDA then runs the repo's
+  code ([IDA loader](docs/commands/ida-loader.md#install)).
 - **IDA `import_labels` returns a dict** (`named`, `commented`, `outside`,
   `already`, `rows`, `cancelled`) instead of a tuple, and its line says why
-  nothing was named; read the keys. An older loader refuses new saves
-  (their `console` row): copy the new one into IDA's loaders folder.
+  nothing was named; read the keys.
 - **Local lessons moved out of the skill folder** into
   `%LOCALAPPDATA%\reagentlive\lessons\`: `general.md` for any game, one
   file per game, and an `INDEX.md` that maps each game file to its exe

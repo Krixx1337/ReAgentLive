@@ -19,9 +19,10 @@ Steps:
 6. Install the skill
 7. Verify
 8. (Optional) Get an injector
-9. Choose the improvement mode
-10. Write the setup record
-11. Report
+9. (Optional) Set up the IDA side
+10. Choose the improvement mode
+11. Write the setup record
+12. Report
 
 ---
 
@@ -185,14 +186,14 @@ if (Test-Path $link) {
 
    or from `cmd`: `mklink /J "%USERPROFILE%\.claude\skills\reagentlive" "<dir>\.claude\skills\reagentlive"`.
 2. **Symlink** (`symlink`), if the junction fails, or the skill is missing
-   from Claude Code after the restart (step 11): it needs Developer Mode
+   from Claude Code after the restart (step 12): it needs Developer Mode
    or an elevated shell. Remove the junction as above, then:
 
    ```powershell
    New-Item -ItemType SymbolicLink -Path $link -Target "<dir>\.claude\skills\reagentlive"
    ```
 
-   Then set `skill_install` to `symlink` in the record (step 10), also
+   Then set `skill_install` to `symlink` in the record (step 11), also
    when the record was already written.
 
 3. **Copy** (`copy`), the last resort:
@@ -294,7 +295,28 @@ Add this line to the user-level instructions file from step 6:
 ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it with <injector.exe> --process-name <name> --inject <dll>, only into a process the user names.
 ```
 
-## 9. Choose the improvement mode
+## 9. (Optional) Set up the IDA side
+
+For users of IDA Pro 9: the agent can then decompile live functions in
+IDA without analysing the whole image
+([IDA loader](../commands/ida-loader.md)). Ask the user whether they use
+IDA Pro and want this. No IDA, or no: skip this step (`ida` false in the
+record).
+
+If they agree:
+
+```powershell
+python -I "<dir>	ools\ida_setup.py" --install
+```
+
+It writes a path file into the site-packages of IDA's Python (found from
+IDA's registry key) and a loader stub into
+`%APPDATA%\Hex-Rays\IDA Pro\loaders`, nothing else. It passes when
+`state` is `current`. On "no IDA Python found", ask the user for the
+`python.exe` IDA uses and add `--python <exe>`; any other `why` line: tell
+the user and skip this step.
+
+## 10. Choose the improvement mode
 
 After a task the skill reviews what slowed it down: for a user it keeps
 its own lessons without asking, for a developer it proposes fixes
@@ -307,7 +329,7 @@ Ask the user: "Do you use ReAgentLive as a user or as a developer?"
 | developer | `dev` | propose changes to the skill, docs and ReAgentLive code, each on the user's yes; code changes on a branch with the build and tests run, never committed unasked |
 | neither ("off", "no") | `off` | nothing |
 
-## 10. Write the setup record
+## 11. Write the setup record
 
 One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 [the update procedure](update.md) need no questions:
@@ -320,7 +342,8 @@ One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 | `python_functions` | `true` when step 5 ran |
 | `skill_install` | `junction`, `symlink`, `copy` (step 6), or `instructions` for an instructions line |
 | `skill_commit` | copy installs only: the commit copied |
-| `improvement` | `user`, `dev` or `off` (step 9) |
+| `improvement` | `user`, `dev` or `off` (step 10) |
+| `ida` | `true` when step 9 set up the IDA side |
 | `scratch` | optional: `true` keeps notes on friction in a file during each task (the default in `dev`), `false` none (the default otherwise) |
 | `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [the update procedure](update.md) sets it to the new commit |
 
@@ -329,7 +352,7 @@ $commit = git -C "<dir>" rev-parse --short=12 HEAD
 $record = [ordered]@{
   dir = "<dir>"; examples = @("<example>"); client = "<client>"
   python_functions = $false; skill_install = "junction"
-  improvement = "user"; setup_commit = $commit
+  improvement = "user"; ida = $false; setup_commit = $commit
 }
 # Copy installs only: $record.skill_commit = $commit
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\reagentlive" | Out-Null
@@ -339,7 +362,7 @@ New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\reagentlive" | Out-Null
 `WriteAllText` writes UTF-8 without a byte order mark, which every JSON
 reader accepts. Replace an existing record.
 
-## 11. Report
+## 12. Report
 
 Tell the user:
 
@@ -351,6 +374,7 @@ Tell the user:
 │  ✓ Check     status ok, ticking, packs <packs>        │
 │  ✓ Tier      <T0, or T1-T2 (T3 after game-thread on)> │
 │  ✓ Injector  <path, or "skipped">                     │
+│  ✓ IDA       <state, or "skipped">                    │
 │  ✓ Mode      <user, dev or off>                       │
 │  ✓ Record    %LOCALAPPDATA%\reagentlive\setup.json    │
 │                                                       │

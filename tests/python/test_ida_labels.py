@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'ida'))
-import reagentlive_ida as labels  # noqa: E402
+from reagentlive_ida import labels  # noqa: E402
 
 ROW = '{"kind":"%s","module":"Game.exe","module_size":4096,"name":"%s","rva":"%s","timestamp":7}'
 

@@ -337,8 +337,8 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 
 Not interfaces: they never drive the agent.
 
-- **IDA side** (`frontends/ida/reagentlive_ida.py`, one file in IDA's
-  loaders folder): opens what `disasm`'s `save` wrote, so IDA decompiles
+- **IDA side** (the `reagentlive_ida` package in `frontends/ida/`, with a
+  loader stub in IDA's loaders folder): opens what `disasm`'s `save` wrote, so IDA decompiles
   it without the whole image, and carries names both ways through the
   labels file ([IDA loader](commands/ida-loader.md)).
 - **Round-trip timings** (`frontends/python/benchmark.py`): measures calls

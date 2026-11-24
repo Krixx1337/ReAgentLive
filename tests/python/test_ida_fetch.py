@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'ida'))
-import reagentlive_ida as loader  # noqa: E402
+import reagentlive_ida as rl  # noqa: E402
 
 # A console stand-in: reads `-c @<file>`, logs its arguments, writes a one-function save per disasm call
 # (a callee too when callees is given) and prints one envelope per call; REFUSE=1 refuses the second.
@@ -49,27 +49,27 @@ for index, call in enumerate(calls):
 
 class Calls(unittest.TestCase):
     def test_one_save_per_address_with_the_depth(self):
-        calls, paths = loader.fetch_calls([0x140001000, '140002000'], 'dir', depth=2)
+        calls, paths = rl.fetch_calls([0x140001000, '140002000'], 'dir', depth=2)
         self.assertEqual(len(paths), 2)
         self.assertEqual(calls[0], {'verb': 'disasm', 'args': {'addr': '0x140001000', 'function': True,
                                                                'save': {'file': paths[0], 'callees': 2}}})
         self.assertEqual(calls[1]['args']['addr'], '0x140002000')
-        alone, _ = loader.fetch_calls('0x140001000', 'dir', callees=False)
+        alone, _ = rl.fetch_calls('0x140001000', 'dir', callees=False)
         self.assertNotIn('callees', alone[0]['args']['save'])
-        zero, _ = loader.fetch_calls('0x140001000', 'dir', depth=0)   # Depth 0: the function alone.
+        zero, _ = rl.fetch_calls('0x140001000', 'dir', depth=0)   # Depth 0: the function alone.
         self.assertNotIn('callees', zero[0]['args']['save'])
         with self.assertRaises(ValueError):
-            loader.fetch_calls(['nowhere'], 'dir')
+            rl.fetch_calls(['nowhere'], 'dir')
 
     def test_replies_raise_the_first_refusal_with_it_attached(self):
         ok = json.dumps({'ok': True, 'result': {'saved': 'a'}})
         refused = json.dumps({'ok': False, 'command': 'disasm', 'error': {'kind': 'start', 'message': 'no'}})
-        self.assertEqual(loader.console_results(f'noise\n{ok}\n', 1), [{'saved': 'a'}])
-        with self.assertRaises(loader.FetchError) as caught:
-            loader.console_results(f'{ok}\n{refused}\n', 2)
+        self.assertEqual(rl.console_results(f'noise\n{ok}\n', 1), [{'saved': 'a'}])
+        with self.assertRaises(rl.FetchError) as caught:
+            rl.console_results(f'{ok}\n{refused}\n', 2)
         self.assertEqual(caught.exception.refusal['kind'], 'start')
-        with self.assertRaises(loader.FetchError):
-            loader.console_results(ok, 2)   # A reply missing.
+        with self.assertRaises(rl.FetchError):
+            rl.console_results(ok, 2)   # A reply missing.
 
 
 class Fetch(unittest.TestCase):
@@ -83,11 +83,11 @@ class Fetch(unittest.TestCase):
         os.environ['FAKE_LOG'] = self.log
         os.environ.pop('REFUSE', None)
         self.added, self.decompiled = [], []
-        self.saved = (loader.add_saved, loader.decompile_to)
+        self.saved = (rl.session.add_saved, rl.session.decompile_to)
 
         def add_saved(path):
             with open(path) as handle:
-                plan = loader.parse(handle.read().splitlines())
+                plan = rl.parse(handle.read().splitlines())
             self.added.append([start for start, _ in plan['functions']])
             return {'added': [f'{start:#x}-{start + 1:#x}' for start, _ in plan['functions']], 'joined': [], 'cut': [],
                     'stubs_replaced': [], 'types': 1, 'types_failed': [], 'this_typed': 1, 'this_skipped': []}
@@ -96,15 +96,15 @@ class Fetch(unittest.TestCase):
             self.decompiled.append((targets, out_dir, grep))
             return [{'address': hex(t), 'path': os.path.join(out_dir, f'fn_{t:x}.c')} for t in targets]
 
-        loader.add_saved, loader.decompile_to = add_saved, decompile_to
+        rl.session.add_saved, rl.session.decompile_to = add_saved, decompile_to
 
     def tearDown(self):
-        loader.add_saved, loader.decompile_to = self.saved
+        rl.session.add_saved, rl.session.decompile_to = self.saved
         os.environ.pop('REFUSE', None)
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def test_addresses_to_a_loaded_and_decompiled_summary(self):
-        out = loader.fetch([0x140001000, '0x140002000'], depth=2, decompile_dir='out', console=self.console, grep='this')
+        out = rl.fetch([0x140001000, '0x140002000'], depth=2, decompile_dir='out', console=self.console, grep='this')
         with open(self.log) as handle:
             args = json.loads(handle.read().splitlines()[0])
         self.assertEqual(args[:4], ['--caller', 'script', '--packs', 'native'])
@@ -119,25 +119,25 @@ class Fetch(unittest.TestCase):
         self.assertEqual(set(out['seconds']), {'console', 'load', 'decompile'})
 
     def test_without_callees_one_function_each_and_no_decompile(self):
-        out = loader.fetch(0x140001000, callees=False, console=self.console)
+        out = rl.fetch(0x140001000, callees=False, console=self.console)
         self.assertEqual(out['functions'], ['0x140001000'])
         self.assertNotIn('decompiled', out)
         self.assertEqual(self.decompiled, [])
 
     def test_depth_zero_is_the_function_alone(self):
-        out = loader.fetch(0x140001000, depth=0, console=self.console)
+        out = rl.fetch(0x140001000, depth=0, console=self.console)
         self.assertEqual(out['functions'], ['0x140001000'])
         with self.assertRaises(ValueError):
-            loader.fetch(0x140001000, depth=-1, console=self.console)
+            rl.fetch(0x140001000, depth=-1, console=self.console)
 
     def test_the_recorded_console_is_the_default(self):
         saved = os.environ.pop('REAGENTLIVE_CONSOLE', None)
-        recorded = loader._recorded_or_none
+        recorded = rl.session._recorded_or_none
         try:
-            loader._recorded_or_none = lambda: {'path': self.console, 'labels': 'a', 'names': 'b'}
-            self.assertEqual(loader.fetch(0x140001000, depth=0)['functions'], ['0x140001000'])
+            rl.session._recorded_or_none = lambda: {'path': self.console, 'labels': 'a', 'names': 'b'}
+            self.assertEqual(rl.fetch(0x140001000, depth=0)['functions'], ['0x140001000'])
         finally:
-            loader._recorded_or_none = recorded
+            rl.session._recorded_or_none = recorded
             if saved is not None:
                 os.environ['REAGENTLIVE_CONSOLE'] = saved
 
@@ -145,13 +145,13 @@ class Fetch(unittest.TestCase):
         saved = os.environ.pop('REAGENTLIVE_CONSOLE', None)
         try:
             recorded = {'path': 'recorded.exe'}
-            self.assertEqual(loader.console_command(None, recorded), ['recorded.exe'])
+            self.assertEqual(rl.console_command(None, recorded), ['recorded.exe'])
             os.environ['REAGENTLIVE_CONSOLE'] = 'env.exe'
-            self.assertEqual(loader.console_command(None, recorded), ['env.exe'])
-            self.assertEqual(loader.console_command(['py', 'c.py'], recorded), ['py', 'c.py'])
+            self.assertEqual(rl.console_command(None, recorded), ['env.exe'])
+            self.assertEqual(rl.console_command(['py', 'c.py'], recorded), ['py', 'c.py'])
             os.environ.pop('REAGENTLIVE_CONSOLE')
-            with self.assertRaises(loader.FetchError) as caught:
-                loader.console_command(None, None)
+            with self.assertRaises(rl.FetchError) as caught:
+                rl.console_command(None, None)
             self.assertIn('open a save database', str(caught.exception))
         finally:
             os.environ.pop('REAGENTLIVE_CONSOLE', None)
@@ -160,25 +160,25 @@ class Fetch(unittest.TestCase):
 
     def test_a_refusal_raises_before_anything_loads(self):
         os.environ['REFUSE'] = '1'
-        with self.assertRaises(loader.FetchError) as caught:
-            loader.fetch([0x140001000, 0x140002000], console=self.console)
+        with self.assertRaises(rl.FetchError) as caught:
+            rl.fetch([0x140001000, 0x140002000], console=self.console)
         self.assertEqual(caught.exception.refusal, {'kind': 'start', 'message': 'nothing to save'})
         self.assertEqual(self.added, [])
 
     def test_the_console_comes_from_the_environment(self):
         saved = os.environ.pop('REAGENTLIVE_CONSOLE', None)
         try:
-            with self.assertRaises(loader.FetchError):
-                loader.fetch(0x140001000)
+            with self.assertRaises(rl.FetchError):
+                rl.fetch(0x140001000)
             os.environ['REAGENTLIVE_CONSOLE'] = os.path.join(self.dir, 'no-such-console.exe')
-            with self.assertRaises(loader.FetchError):   # It does not run: an error, not a hang.
-                loader.fetch(0x140001000)
+            with self.assertRaises(rl.FetchError):   # It does not run: an error, not a hang.
+                rl.fetch(0x140001000)
         finally:
             os.environ.pop('REAGENTLIVE_CONSOLE', None)
             if saved is not None:
                 os.environ['REAGENTLIVE_CONSOLE'] = saved
         with self.assertRaises(ValueError):
-            loader.fetch(0x140001000, depth=4, console=self.console)
+            rl.fetch(0x140001000, depth=4, console=self.console)
 
 
 class StartAndFinish(unittest.TestCase):
@@ -192,8 +192,8 @@ class StartAndFinish(unittest.TestCase):
         os.environ['FAKE_LOG'] = os.path.join(self.dir, 'log')
         self.recorded = {'path': [sys.executable, '-I', script], 'labels': 'console.labels.jsonl', 'names': 'names.jsonl'}
         self.calls = []
-        self.saved = (loader.recorded_console, loader.import_labels, loader.export_names)
-        loader.recorded_console = lambda: self.recorded
+        self.saved = (rl.session.recorded_console, rl.session.import_labels, rl.session.export_names)
+        rl.session.recorded_console = lambda: self.recorded
 
         def import_labels(files):
             self.calls.append(('import', files))
@@ -203,27 +203,27 @@ class StartAndFinish(unittest.TestCase):
             self.calls.append(('export', path))
             return 2
 
-        loader.import_labels, loader.export_names = import_labels, export_names
+        rl.session.import_labels, rl.session.export_names = import_labels, export_names
 
     def tearDown(self):
-        loader.recorded_console, loader.import_labels, loader.export_names = self.saved
+        rl.session.recorded_console, rl.session.import_labels, rl.session.export_names = self.saved
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def test_workspace_imports_the_recorded_labels_files(self):
-        out = loader.workspace()
+        out = rl.workspace()
         self.assertEqual(self.calls, [('import', ['console.labels.jsonl', 'names.jsonl'])])
         self.assertEqual(out['named'], 3)
         self.assertEqual(out['files'], ['console.labels.jsonl', 'names.jsonl'])
-        self.assertEqual(loader.workspace_files({'labels': 'a', 'names': 'a'}), ['a'])   # Each once.
+        self.assertEqual(rl.workspace_files({'labels': 'a', 'names': 'a'}), ['a'])   # Each once.
         self.recorded = None
         with self.assertRaises(ValueError):
-            loader.workspace()
-        loader.workspace('mine.jsonl')
+            rl.workspace()
+        rl.workspace('mine.jsonl')
         self.assertEqual(self.calls[-1], ('import', ['mine.jsonl']))
 
     def test_finish_exports_then_signs_the_names_file(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            out = loader.finish()
+            out = rl.finish()
         self.assertEqual(self.calls, [('export', 'names.jsonl')])
         self.assertEqual(out['exported'], 2)
         self.assertEqual((out['signed'], out['unsigned'], out['path']), (1, 1, 'names.jsonl'))
@@ -247,32 +247,52 @@ class Timing(unittest.TestCase):
 
 
 
-class LoaderCheckTest(unittest.TestCase):
-    """tools/ida_loader_check.py: current, stale or missing, by digest; loader_digest agrees."""
+class SetupTest(unittest.TestCase):
+    """tools/ida_setup.py: the stub and the package, current, stale or missing; install into a folder."""
+
+    def setUp(self):
+        import importlib.util
+        tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools', 'ida_setup.py')
+        spec = importlib.util.spec_from_file_location('ida_setup', tool)
+        self.setup = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.setup)
+        self.folder = tempfile.mkdtemp()
+        self.package = os.path.dirname(os.path.abspath(rl.__file__))
+
+    def tearDown(self):
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def write(self, name, text):
+        with open(os.path.join(self.folder, name), 'w') as handle:
+            handle.write(text)
 
     def test_states(self):
-        import importlib.util
-        tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools', 'ida_loader_check.py')
-        spec = importlib.util.spec_from_file_location('ida_loader_check', tool)
-        check = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(check)
-        folder = tempfile.mkdtemp()
-        try:
-            self.assertEqual(check.check(folder)['state'], 'missing')
-            with open(os.path.join(folder, 'other.py'), 'w') as other:
-                other.write('# another loader' + chr(10))
-            self.assertEqual(check.check(folder)['state'], 'missing')
-            copy = os.path.join(folder, 'any_name.py')
-            shutil.copyfile(check.REPO_LOADER, copy)
-            report = check.check(folder)
-            self.assertEqual(report['state'], 'current')
-            self.assertEqual(report['repo'], loader.loader_digest())
-            self.assertEqual(loader.loader_digest(copy), loader.loader_digest())
-            with open(copy, 'a') as stale:
-                stale.write('# edited' + chr(10))
-            self.assertEqual(check.check(folder)['state'], 'stale')
-        finally:
-            shutil.rmtree(folder, ignore_errors=True)
+        check = self.setup.check
+        self.assertEqual(check(self.folder, self.package)['state'], 'missing')
+        self.write('other.py', '# another loader' + chr(10))
+        shutil.copyfile(self.setup.STUB, os.path.join(self.folder, 'reagentlive_loader.py'))
+        self.assertEqual(check(self.folder, None)['state'], 'missing')   # No package: the stub loads nothing.
+        report = check(self.folder, self.package)
+        self.assertEqual((report['state'], report['why']), ('current', []))
+        self.assertEqual(len(report['installed']), 1)   # Only ReAgentLive files.
+        self.assertEqual(check(self.folder, self.folder)['state'], 'stale')   # The package from elsewhere.
+        self.write('reagentlive_ida.py', '"""ReAgentLive' + chr(39) + 's IDA side, one file' + chr(10))   # The old loader.
+        self.assertEqual(check(self.folder, self.package)['state'], 'stale')
+        os.remove(os.path.join(self.folder, 'reagentlive_loader.py'))   # The old loader alone: not set up.
+        self.assertEqual(check(self.folder, self.package)['state'], 'missing')
+
+    def test_install_writes_the_stub_and_removes_the_old_loader(self):
+        self.write('reagentlive_ida.py', '"""ReAgentLive' + chr(39) + 's IDA side, one file' + chr(10))
+        site = os.path.join(self.folder, 'site-packages')
+        os.makedirs(site)
+        self.setup.site_packages = lambda python: site
+        loaders = os.path.join(self.folder)
+        done = self.setup.install(loaders, 'python')
+        self.assertEqual(done['removed'], [os.path.join(loaders, 'reagentlive_ida.py')])
+        with open(done['path_file']) as handle:
+            self.assertEqual(handle.read().strip(), self.setup.REPO_IDA)
+        self.assertEqual(self.setup.check(loaders, self.package)['state'], 'current')
+
 
 if __name__ == '__main__':
     unittest.main()

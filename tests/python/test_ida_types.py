@@ -4,12 +4,12 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'reagentlive', 'frontends', 'ida'))
-import reagentlive_ida as loader  # noqa: E402
+import reagentlive_ida as rl  # noqa: E402
 
 
 class DecompileTo(unittest.TestCase):
     def test_file_names_are_safe_and_unique(self):
-        names = loader.file_names([(0x1000, 'AThing::Tick'), (0x2000, 'athing__tick'), (0x3000, ''),
+        names = rl.file_names([(0x1000, 'AThing::Tick'), (0x2000, 'athing__tick'), (0x3000, ''),
                                    (0x4000, 'A?B<int>'), (0x5000, 'x' * 200)])
         self.assertEqual(names[0], 'AThing__Tick.c')
         self.assertEqual(names[1], 'athing__tick_2000.c')   # Taken already, ignoring case.
@@ -19,21 +19,21 @@ class DecompileTo(unittest.TestCase):
 
     def test_grep_lists_matching_lines_by_file_line(self):
         text = 'void f(Thing *this)\n{\n  this->bArmed = 1;\n  g(this->Speed);\n}\n'
-        entry = loader.summary(0x1000, 'f', 'out/f.c', text, loader.matcher(r'this->\w+'))
+        entry = rl.summary(0x1000, 'f', 'out/f.c', text, rl.matcher(r'this->\w+'))
         self.assertEqual(entry['lines'], 5)
         self.assertEqual(entry['matches'], ['3: this->bArmed = 1;', '4: g(this->Speed);'])
         self.assertNotIn('error', entry)
-        plain = loader.summary(0x1000, 'f', 'out/f.c', text, loader.matcher('g(this'))   # No valid regex: a substring.
+        plain = rl.summary(0x1000, 'f', 'out/f.c', text, rl.matcher('g(this'))   # No valid regex: a substring.
         self.assertEqual(plain['matches'], ['4: g(this->Speed);'])
-        self.assertNotIn('matches', loader.summary(0x1000, 'f', 'out/f.c', text, loader.matcher(None)))
+        self.assertNotIn('matches', rl.summary(0x1000, 'f', 'out/f.c', text, rl.matcher(None)))
 
     def test_matches_are_capped(self):
-        entry = loader.summary(0x1000, 'f', 'f.c', 'x\n' * 50, loader.matcher('x'))
+        entry = rl.summary(0x1000, 'f', 'f.c', 'x\n' * 50, rl.matcher('x'))
         self.assertEqual(len(entry['matches']), 40)
         self.assertEqual(entry['matches_more'], 10)
 
     def test_a_failed_decompile_reports_its_error(self):
-        entry = loader.summary(0x1000, 'f', 'f.c', '// decompile failed: boom\n', None, 'boom')
+        entry = rl.summary(0x1000, 'f', 'f.c', '// decompile failed: boom\n', None, 'boom')
         self.assertEqual(entry['error'], 'boom')
         self.assertEqual(entry['lines'], 1)
 
@@ -76,19 +76,19 @@ LAYOUT = [
 
 class Types(unittest.TestCase):
     def build(self, lines=LAYOUT):
-        classes, enums, read = loader.layouts(lines)
-        text, report = loader.declarations(classes, enums)
+        classes, enums, read = rl.layouts(lines)
+        text, report = rl.declarations(classes, enums)
         return text, report, read
 
     def test_a_layout_file_reads_into_types_and_enums(self):
-        classes, enums, read = loader.layouts(LAYOUT)
+        classes, enums, read = rl.layouts(LAYOUT)
         self.assertEqual(list(classes), ['Thing', 'Base', 'Pair'])
         self.assertEqual((classes['Thing']['base'], classes['Thing']['size']), ('Base', 0x70))
         self.assertEqual(classes['Pair']['fields'][0]['offset'], 0)          # A line without kind is a field.
         self.assertEqual(enums['EMode']['values'][1], ('EMode::On', 2))
         self.assertEqual(len(read['lines_skipped']), 2)                      # The unknown kind, the bad line.
         self.assertIn('unknown kind "widget"', read['lines_skipped'][0])
-        self.assertIsInstance(loader.layouts(['', 'nothing']), str)
+        self.assertIsInstance(rl.layouts(['', 'nothing']), str)
 
     def test_types_become_packed_structs_with_their_super_as_base(self):
         text, report, _ = self.build()
@@ -174,11 +174,11 @@ class Types(unittest.TestCase):
 
     def test_a_method_label_names_its_class_by_the_longest_known_prefix(self):
         known = {'Thing', 'Thing_Sub'}.__contains__
-        self.assertEqual(loader.this_class('Thing_Sub_Tick', known), 'Thing_Sub')
-        self.assertEqual(loader.this_class('Thing_Tick', known), 'Thing')
-        self.assertEqual(loader.this_class('Thing::execTick', known), 'Thing')
-        self.assertIsNone(loader.this_class('Other_Tick', known))
-        self.assertIsNone(loader.this_class('Thing', known))   # No method part.
+        self.assertEqual(rl.this_class('Thing_Sub_Tick', known), 'Thing_Sub')
+        self.assertEqual(rl.this_class('Thing_Tick', known), 'Thing')
+        self.assertEqual(rl.this_class('Thing::execTick', known), 'Thing')
+        self.assertIsNone(rl.this_class('Other_Tick', known))
+        self.assertIsNone(rl.this_class('Thing', known))   # No method part.
 
 
 # A save with layout rows (disasm save of a labelled method): the console adds "row": "layout".
@@ -197,44 +197,44 @@ SAVE = [
 
 class SavedTypes(unittest.TestCase):
     def test_layout_rows_read_as_a_layout_file(self):
-        plan = loader.parse(SAVE)
+        plan = rl.parse(SAVE)
         self.assertIsInstance(plan, dict)
         self.assertEqual(len(plan['layouts']), 15)
-        classes, enums, report = loader.layouts(plan['layouts'])
+        classes, enums, report = rl.layouts(plan['layouts'])
         self.assertEqual(set(classes), {'Thing', 'Base', 'Pair'})
         self.assertEqual(set(enums), set())   # LAYOUT's enum lines come later.
         self.assertEqual(report['lines_skipped'], [])
         self.assertEqual(classes['Thing']['base'], 'Base')
 
     def test_methods_are_the_saved_functions_with_names(self):
-        plan = loader.parse(SAVE)
-        self.assertEqual(loader.methods(plan), [(0x140001000, 'Thing_Tick'), (0x140002000, 'fn_2000')])
+        plan = rl.parse(SAVE)
+        self.assertEqual(rl.methods(plan), [(0x140001000, 'Thing_Tick'), (0x140002000, 'fn_2000')])
 
     def test_saved_types_declares_then_types_this_with_what_a_load_left(self):
-        plan = loader.parse(SAVE)
+        plan = rl.parse(SAVE)
         calls = []
-        saved = (loader._declare, loader._type_this, loader._take_pending, loader._defer_this)
-        loader._declare = lambda classes, enums, report: calls.append(('declare', sorted(classes))) or             {'types': sorted(classes), 'enums': [], 'failed': []}
-        loader._type_this = lambda named: calls.append(('this', named)) or             {'typed': 1, 'skipped': ['fn_2000: x'], 'left': [(0x140005000, 'Thing_Late')]}
-        loader._take_pending = lambda: [(0x140004000, 'Thing_Earlier')]
-        loader._defer_this = lambda named: calls.append(('defer', named))
+        saved = (rl.loader._declare, rl.loader._type_this, rl.loader._take_pending, rl.loader._defer_this)
+        rl.loader._declare = lambda classes, enums, report: calls.append(('declare', sorted(classes))) or             {'types': sorted(classes), 'enums': [], 'failed': []}
+        rl.loader._type_this = lambda named: calls.append(('this', named)) or             {'typed': 1, 'skipped': ['fn_2000: x'], 'left': [(0x140005000, 'Thing_Late')]}
+        rl.loader._take_pending = lambda: [(0x140004000, 'Thing_Earlier')]
+        rl.loader._defer_this = lambda named: calls.append(('defer', named))
         try:
-            now = loader.saved_types(plan)
+            now = rl.saved_types(plan)
             self.assertEqual(now, {'types': 3, 'types_failed': [], 'this_typed': 1,
                                    'this_skipped': ['fn_2000: x', 'Thing_Late: no decompiler']})
             self.assertEqual(calls[1], ('this', [(0x140004000, 'Thing_Earlier'), (0x140001000, 'Thing_Tick'),
                                                  (0x140002000, 'fn_2000')]))
             calls.clear()
-            later = loader.saved_types(plan, now=False)   # While loading: the types, `this` waits.
+            later = rl.saved_types(plan, now=False)   # While loading: the types, `this` waits.
             self.assertEqual(later['this_typed'], 0)
             self.assertEqual([call[0] for call in calls], ['declare', 'defer'])
-            self.assertIn('error', loader.saved_types(dict(plan, layouts=['not json'])))
+            self.assertIn('error', rl.saved_types(dict(plan, layouts=['not json'])))
         finally:
-            loader._declare, loader._type_this, loader._take_pending, loader._defer_this = saved
+            rl.loader._declare, rl.loader._type_this, rl.loader._take_pending, rl.loader._defer_this = saved
 
     def test_layout_rows_without_a_type_are_no_layout(self):
-        plan = loader.parse(SAVE[:4] + ['{"row":"layout","kind":"widget","name":"x"}'])
-        self.assertEqual(loader.layouts(plan['layouts']), 'no layout lines: not a layout-export file')
+        plan = rl.parse(SAVE[:4] + ['{"row":"layout","kind":"widget","name":"x"}'])
+        self.assertEqual(rl.layouts(plan['layouts']), 'no layout lines: not a layout-export file')
 
 
 if __name__ == '__main__':

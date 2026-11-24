@@ -17,9 +17,10 @@ Steps:
 6. MCP server
 7. Running targets
 8. Local lessons
-9. Verify
-10. Update the setup record
-11. Report
+9. IDA side
+10. Verify
+11. Update the setup record
+12. Report
 
 A host project that carries ReAgentLive as a submodule follows
 [its own section](#host-projects-with-a-submodule) instead.
@@ -29,7 +30,7 @@ A host project that carries ReAgentLive as a submodule follows
 ## 1. Read the setup record
 
 Read `%LOCALAPPDATA%\reagentlive\setup.json`
-([its fields](setup.md#10-write-the-setup-record)). It names `dir`,
+([its fields](setup.md#11-write-the-setup-record)). It names `dir`,
 the `examples` built, the `client`, whether `python_functions` were
 generated, the `skill_install` and the `improvement` mode.
 
@@ -103,7 +104,7 @@ cmake --build build/unreal
 ```
 
 Each build stamps the clone's commit into the console, so `status` shows
-it after (step 9). If the link step cannot write `<dll>`, a running
+it after (step 10). If the link step cannot write `<dll>`, a running
 process still has it loaded: ask the user to close that process, then
 build again. Check the exit code of each build; report a failure, do not
 work around it.
@@ -121,7 +122,7 @@ python <dir>\src\reagentlive\frontends\python\reagentlive_gen.py --console <dir>
 | `skill_install` | Do |
 |---|---|
 | `junction` or `symlink` | nothing: the link points into the clone, and the client reads the skill each session |
-| `copy` | copy it again as [agent setup](setup.md#6-install-the-skill) does; the user's lessons live outside it and stay. Set `skill_commit` in step 10. Offer the junction instead (setup step 6, option 1): later updates then need nothing here |
+| `copy` | copy it again as [agent setup](setup.md#6-install-the-skill) does; the user's lessons live outside it and stay. Set `skill_commit` in step 11. Offer the junction instead (setup step 6, option 1): later updates then need nothing here |
 | `instructions` (other agents) | nothing: the line points into the clone |
 
 ## 6. MCP server
@@ -169,7 +170,21 @@ dropping each lesson the skill now covers, one line each; the user
 decides. How the file works:
 [the improvement guide](../../.claude/skills/reagentlive/references/improving.md#local-lessons).
 
-## 9. Verify
+## 9. IDA side
+
+Only when the record's `ida` is true; otherwise skip this step:
+
+```powershell
+python -I "<dir>	ools\ida_setup.py"
+```
+
+It only reads. `current`: IDA runs the clone's code, so the update needs
+nothing here, but an IDA session open since before step 3 keeps the old
+code: tell the user to restart IDA (or run `rl.reload()` in it). `stale`
+or `missing`: show the user its `why` lines and, on their yes, run it
+again with `--install`.
+
+## 10. Verify
 
 With a target running the new DLL (or the throwaway Python process from
 [agent setup](setup.md#7-verify), same commands and pass checks):
@@ -188,15 +203,15 @@ With a target running the new DLL (or the throwaway Python process from
 `replaced_agents` above 0 means the new DLL was loaded into a process
 that already had an agent (step 7).
 
-## 10. Update the setup record
+## 11. Update the setup record
 
 Write the record back with `setup_commit` set to the new commit (the
 baseline for the next update), `skill_commit` to the same value for a
 copy install, and `skill_install` to what step 5 left (`junction` after
 replacing a copy). Write it the way
-[agent setup](setup.md#10-write-the-setup-record) does.
+[agent setup](setup.md#11-write-the-setup-record) does.
 
-## 11. Report
+## 12. Report
 
 Tell the user:
 
@@ -206,10 +221,11 @@ Tell the user:
 │  ✓ Built     <dir>\<build> (<example>)                │
 │  ✓ Changes   <a few bullets from step 2>              │
 │  ✓ Check     status ok, commit <new>                  │
+│  ✓ IDA       <state, or "skipped">                    │
 │  ✓ Record    %LOCALAPPDATA%\reagentlive\setup.json    │
 │                                                       │
 │  ⚡ Still to do: <restart the session, re-inject a     │
-│     target, or "nothing">                             │
+│     target, restart IDA, or "nothing">                │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -226,5 +242,6 @@ git -C <host>/<path> log --oneline <old>..HEAD
 
 where `<path>` is the submodule's folder and `<old>` the commit it was
 at. Read the CHANGELOG lines as in step 2, rebuild the host with its own
-build, re-inject (step 7), verify `status` (step 9), and commit the new
+build, re-inject (step 7), verify `status` (step 10), check the IDA side when
+the user has set it up (step 9), and commit the new
 submodule pointer only when the user asks.

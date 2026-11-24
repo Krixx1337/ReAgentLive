@@ -10,7 +10,7 @@ Instructions an AI agent follows on the user's machine; humans: see the
 | A first install (no `%LOCALAPPDATA%\reagentlive\setup.json`) | [setup.md](setup.md) |
 | An update of an existing install | [update.md](update.md) |
 
-The setup record's fields: [setup.md](setup.md#10-write-the-setup-record).
+The setup record's fields: [setup.md](setup.md#11-write-the-setup-record).
 
 ## Rules every procedure shares
 

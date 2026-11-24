@@ -1,11 +1,11 @@
 """Timing for the fast-lane IDA loop: an address to decompiled text, and databases opened per run.
 
-Inside IDA (an open save database), load it as a module next to the loader:
+Inside IDA (an open save database, the IDA side set up: tools/ida_setup.py), load it as a module:
 
     import importlib.util
+    import reagentlive_ida as rl
     spec = importlib.util.spec_from_file_location('fetch_timing', r'<repo>/tools/fetch_timing.py')
     timing = importlib.util.module_from_spec(spec); spec.loader.exec_module(timing)
-    rl = timing.loader(r'<repo>/src/reagentlive/frontends/ida/reagentlive_ida.py')
     timing.time_fetch(rl, ['0x<addr>'], '<dir>')                 # live: 1 function
     timing.time_fetch(rl, ['0x<a>', '0x<b>', ...], '<dir>')      # live: a chain, hop by hop
     timing.time_saves(rl, ['<save>', ...], '<dir>')              # offline: saved files, no console
@@ -20,16 +20,6 @@ Outside IDA, databases opened by an IDA MCP session (its session log, JSON lines
 import json
 import sys
 import time
-
-
-def loader(path):
-    """The IDA loader module from its file."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location('reagentlive_ida', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _functions(rl, path):

@@ -15,13 +15,12 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 
 ## One-time setup (the user's; ask, never edit their install)
 
-- Copy `src/reagentlive/frontends/ida/reagentlive_ida.py` into
-  `%APPDATA%\Hex-Rays\IDA Pro\loaders`, and copy it again after every
-  ReAgentLive update: an old loader refuses new saves.
-- Before the first `fetch` of a session check the install is current:
-  `python -I tools/ida_loader_check.py` (`state` `current`; `stale` or
-  `missing`: tell the user), or in IDA
-  `rl.loader_digest() == rl.loader_digest('<repo copy>')`.
+- Before the first `fetch` of a session check the setup:
+  `python -I tools/ida_setup.py` (read-only; `state` `current`; `stale`
+  or `missing`: give the user its `why` and ask them to run
+  `python -I tools/ida_setup.py --install`). IDA runs the repo's code, so
+  an update needs no copy; in an IDA session open since the update,
+  `rl.reload()` first.
 - In a save database `fetch` and `finish` find the console from the saves;
   pass `console=` only in a full database. Never set
   `REAGENTLIVE_CONSOLE` on the user's machine yourself.
@@ -37,8 +36,7 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
    function. Then `rl.workspace()`: the labels files in. Most rows land
    `outside` a save database; that is not a failure.
 3. **Per hop, one call:** `rl.fetch(addr, depth=1, decompile_dir=<dir>, grep=<regex>)`
-   (`import reagentlive_ida as rl` once the loader is installed; a repo copy
-   loads by path: `docs/commands/ida-loader.md#from-an-automated-session`).
+   (`import reagentlive_ida as rl`, in any database once set up).
    Read its summary, open only the files it points to; the next address
    comes from the pseudocode. `depth` 0 for the function alone, 2 or 3
    only when the callees matter; `skipped` says what the depth or caps left out. A `FetchError`

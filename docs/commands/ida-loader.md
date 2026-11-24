@@ -1,9 +1,9 @@
 # IDA loader
 
-*Home of:* the IDA side, `frontends/ida/reagentlive_ida.py`: installing it and checking the installed copy, opening a save, the workspace database (`add_saved`, `workspace`, `finish`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
+*Home of:* the IDA side, the `reagentlive_ida` package in `frontends/ida/` and its loader stub: setting it up and checking the setup, reloading it, opening a save, the workspace database (`add_saved`, `workspace`, `finish`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
 
-**TL;DR:** One Python file in IDA's loaders folder opens what `disasm`'s
-`save` wrote as a small x64 database, so IDA decompiles those functions
+**TL;DR:** A loader stub in IDA's loaders folder, calling the repo's
+`reagentlive_ida` package, opens what `disasm`'s `save` wrote as a small x64 database, so IDA decompiles those functions
 without analysing the whole image. One workspace database grows through
 an investigation: `fetch(addr)` saves an address live, adds it and
 decompiles it in one call. Names travel both ways through the labels file.
@@ -11,20 +11,32 @@ What a save holds: [saving a function](fast-lane.md#saving-a-function-for-a-stat
 
 ## Install
 
-- Copy `frontends/ida/reagentlive_ida.py` into IDA's user loaders folder
-  (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`). IDA's headless library
-  reads the same folder, so an automated session opens saves too. Any file
-  name there works.
-- **Copy it again after every update.** A loader older than the file
-  refuses it at the first row kind it does not know ("this loader is older
-  than the file"), so a save never loads with its chunks or names silently
-  missing.
-- **Is the installed copy current?** `python -I tools/ida_loader_check.py`
-  (`--loaders <dir>` for another folder) hashes the repo's file and every
-  ReAgentLive loader in the folder (found by its first docstring line, any
-  file name) and prints `state`: `current`, `stale` (copy the repo's file
-  over it) or `missing`; the exit code is 0, 1 or 2 to match. Inside IDA:
-  `rl.loader_digest() == rl.loader_digest('<repo copy>')`.
+- **Set it up once:** `python -I tools/ida_setup.py --install`. It writes
+  a path file, `reagentlive_ida.pth`, into the site-packages of IDA's
+  Python (the one IDA's registry key `Python3TargetDLL` names; `--python
+  <exe>` for another), so IDA imports the package from the repo, and
+  copies the stub, `frontends/ida/reagentlive_loader.py`, into IDA's user
+  loaders folder (Windows: `%APPDATA%\Hex-Rays\IDA Pro\loaders`;
+  `--loaders <dir>` for another), removing older ReAgentLive loaders
+  there. IDA's headless library reads the same folder and Python, so an
+  automated session opens saves too. Run it again after switching IDA's
+  Python.
+- **Nothing to copy after an update:** IDA runs the repo's code. An IDA
+  session already running keeps what it imported: `rl.reload()` loads it
+  again (the stub calls through the module, so new saves load with it
+  too), or restart IDA. Code older than a save refuses it at the first
+  row kind it does not know ("this ReAgentLive is older than the file"),
+  so a save never loads with its chunks or names silently missing.
+- **Is it set up?** `python -I tools/ida_setup.py` (no `--install`: it
+  only reads) prints where IDA's Python imports `reagentlive_ida` from,
+  the ReAgentLive files in the loaders folder, `why` (what is wrong) and
+  `state`: `current`, `stale` (an old or edited loader there, or the
+  package from another folder) or `missing` (no stub, or no package);
+  the exit code is 0, 1 or 2 to match. `--install` fixes both.
+- The stub's functions call `reagentlive_ida.loader`: IDAPython runs a
+  loader function with the stub's namespace as its globals, so they are
+  defined there, not imported. Without the package the stub claims no
+  file and prints why once.
 - `fetch` and `finish` run the console the database's saves recorded (each
   save's `console` row; the latest one loaded wins). `console=` (its
   absolute path or a command list) overrides it, then
@@ -132,23 +144,15 @@ the databases an IDA MCP session opened.
 
 ## From an automated session
 
-An IDA bridge with Python: open the first save, then import the loader
-and call it. With the loader installed in IDA's loaders folder, a plain
-import finds it:
+An IDA bridge with Python: open the first save, then import the package
+and call it. Once set up, a plain import finds it in any database, a
+reopened one included (IDA runs no loader there):
 
 ```python
 import reagentlive_ida as rl
 rl.workspace()                                         # the recorded labels files in
 rl.fetch('0x<addr>', depth=2, decompile_dir='<dir>')   # save, add, type, decompile
 rl.finish()                                            # your names out, then signed
-```
-
-Only for a copy outside the loaders folder (the repo's, say), load it by path:
-
-```python
-import importlib.util
-spec = importlib.util.spec_from_file_location('reagentlive_ida', '<path>/reagentlive_ida.py')
-rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
 ```
 
 Close the database once read, and before opening a new save under the
@@ -188,7 +192,7 @@ the return type stay as IDA has them. It returns `typed` (a count) and
 ## Names both ways
 
 - `import_labels(path)` (a path, or a list: the console's file and the
-  host's names file; File > Script file runs it, asking for the file)
+  host's names file; asked for in a dialog when none is given)
   names a full database of the build (size and timestamp from the PE
   header IDA keeps, so a default load with no header bytes works) or a
   save database (the build its loader kept); the highest-ranked row per
