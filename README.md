@@ -41,6 +41,12 @@ By hand, start from the example for your target:
 | Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
 | A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
 
+**To update later** (pull, rebuild, re-inject, check), paste:
+
+```text
+Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.
+```
+
 ## What you can do, by tier
 
 | Tier | Adds | Works on |
@@ -148,9 +154,6 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
   task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
   [design](docs/design.md).
-- **Update** (pull, rebuild, re-inject, check): paste
-  `Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.`
-  into your agent.
 - **Status:** version 0.5.0 ([changelog](CHANGELOG.md)). It is usable,
   and the API can change before 1.0. Windows x64, C++23.
 
