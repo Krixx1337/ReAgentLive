@@ -942,7 +942,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     };
     Names names;
     uint32_t pid = 0;
-    std::filesystem::path namesFile, usagePath, labelsPath;
+    std::filesystem::path namesFile, usagePath, labelsPath, executable;
     bool namesRequired = false, record = true, check = false;
     ToolPackSet toolPacks = AllToolPacks;
     std::string caller = "shell", sessionId;
@@ -953,6 +953,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         if (!config.namesFile.empty()) namesFile = std::filesystem::path(module).parent_path() / config.namesFile;
         usagePath = std::filesystem::path(module).replace_extension(L".usage.jsonl");
         labelsPath = std::filesystem::path(module).replace_extension(L".labels.jsonl");
+        executable = module;
     }
     std::optional<std::vector<std::string>> oneShot;
     for (int i = 1; i < argc; ++i) {
@@ -1083,6 +1084,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     const auto cachePath = CachePath(pid);
     session.results = ResultsFolder(pid, client->AgentOwner());
     session.labels = labelsPath;
+    session.executable = executable;
     if (!config.labelsFile.empty()) {
         const std::filesystem::path host(config.labelsFile);
         session.hostLabels = host.is_absolute() || labelsPath.empty() ? host : labelsPath.parent_path() / host;

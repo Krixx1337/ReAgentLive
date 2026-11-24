@@ -451,7 +451,13 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             if (const auto label = labels.find(starts[i]); label != labels.end()) methods.push_back(label->second);
     auto layouts = PackSaveLayouts(session, methods);
     if (!layouts) return CommandError(session, jsonCommand, layouts.error());
-    std::string text = save::Lines(*module, *timestamp, saved, data, labels);
+    const auto utf8 = [](const std::filesystem::path& path) {
+        const auto text = path.u8string();
+        return std::string(text.begin(), text.end());
+    };
+    const save::Console console{utf8(session.executable), utf8(session.labels),
+        utf8(!session.hostLabels.empty() ? session.hostLabels : session.labels)};
+    std::string text = save::Lines(*module, *timestamp, saved, data, labels, console);
     for (size_t at = 0; at < layouts->lines.size();) {
         const size_t end = layouts->lines.find('\n', at);
         Json row = Json::parse(layouts->lines.substr(at, end - at));

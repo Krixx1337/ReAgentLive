@@ -56,6 +56,13 @@ class LoadFunction(unittest.TestCase):
         other = FUNCTION.replace('"timestamp":7', '"timestamp":8')
         self.assertIn('another build', loader.parse([FUNCTION, other, CODE]))
 
+    def test_the_console_row_names_the_console_and_its_labels_files(self):
+        row = '{"labels":"C:/c/console.labels.jsonl","names":"C:/h/names.jsonl","path":"C:/c/console.exe","row":"console"}'
+        plan = loader.parse([FUNCTION, CODE, row])
+        self.assertEqual(plan['console'], {'path': 'C:/c/console.exe', 'labels': 'C:/c/console.labels.jsonl',
+                                           'names': 'C:/h/names.jsonl'})
+        self.assertIsNone(loader.parse([FUNCTION, CODE])['console'])
+
     def test_chunk_rows_become_function_tails(self):
         chunk = '{"end":"0x140002002","function":"0x140001000","row":"chunk","start":"0x140002000"}'
         code = '{"address":"0x140002000","bytes":"90c3","row":"code","rva":"0x2000"}'

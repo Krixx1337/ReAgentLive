@@ -2,8 +2,9 @@
 // `function` and `save.file`, optionally `save.callees`). JSON lines: one `function` row per saved
 // function (module, size, timestamp, bounds), `code` and `data` rows (live
 // bytes at their addresses, never overlapping), `name` rows (the functions,
-// imports, call targets and labelled globals), and `chunk` rows (a
-// function's chained continuations, listed apart). A loader builds a small
+// imports, call targets and labelled globals), `chunk` rows (a
+// function's chained continuations, listed apart) and one `console` row (the
+// console that wrote it and its labels files). A loader builds a small
 // database from it, so the tool decompiles those functions without
 // analysing the whole image. Pure: rows and bytes come in, text goes out.
 #pragma once
@@ -176,15 +177,23 @@ inline std::string HexText(std::span<const uint8_t> bytes) {
     return out;
 }
 
+// The console that writes a save: its executable and the labels files it
+// reads (`labels`: its derived names; `names`: where a person's names go),
+// absolute UTF-8 paths, so a static tool runs it again and finds its files.
+struct Console {
+    std::string path, labels, names;
+};
+
 // The file's text. `data` pairs each DataRanges range with the bytes read
 // there (an unreadable one is left out); `labels` names addresses (from a
 // labels file). Names, one per address, first kind wins: each saved function
 // (its label, else fn_<rva>), the import slots called through, the direct
 // call targets not saved (label, else fn_<rva>), tail jump targets outside
-// every saved part (`tail`), labelled RIP-relative targets (globals).
+// every saved part (`tail`), labelled RIP-relative targets (globals). Last,
+// the `console` row when `console.path` is given.
 inline std::string Lines(const Module& module, uint32_t timestamp, std::span<const Saved> functions,
                          std::span<const std::pair<uint64_t, std::vector<uint8_t>>> data,
-                         const std::map<uint64_t, std::string>& labels = {}) {
+                         const std::map<uint64_t, std::string>& labels = {}, const Console& console = {}) {
     std::string out;
     const auto line = [&](const Json& row) { out += row.dump() + "\n"; };
     const auto endOf = [](const Saved& part) {
@@ -234,6 +243,8 @@ inline std::string Lines(const Module& module, uint32_t timestamp, std::span<con
         for (const auto& row : function.rows)
             if (row.ripTarget && row.target && !row.import && labels.contains(*row.target))
                 name(*row.target, labels.at(*row.target), "global");
+    if (!console.path.empty())
+        line({{"row", "console"}, {"path", console.path}, {"labels", console.labels}, {"names", console.names}});
     return out;
 }
 }

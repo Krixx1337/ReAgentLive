@@ -126,8 +126,9 @@ struct Session {
     // <console>.labels.jsonl: the derived names labels-export writes when
     // given no file. `hostLabels`: the host's file for names people confirm
     // (ConsoleConfig::labelsFile), where peek with `label` writes; empty: `labels`.
-    // disasm with `save` reads both.
-    std::filesystem::path labels, hostLabels;
+    // disasm with `save` reads both. `executable`: this console's own path,
+    // which a save records.
+    std::filesystem::path labels, hostLabels, executable;
     std::string watchFile;                  // watch-start with `file`: where watch-read and watch-stop write every sample.
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}

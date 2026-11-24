@@ -1,6 +1,6 @@
 # IDA loader
 
-*Home of:* the IDA side, `frontends/ida/reagentlive_ida.py`: installing it and checking the installed copy, opening a save, the workspace database (`add_saved`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
+*Home of:* the IDA side, `frontends/ida/reagentlive_ida.py`: installing it and checking the installed copy, opening a save, the workspace database (`add_saved`, `workspace`, `finish`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
 
 **TL;DR:** One Python file in IDA's loaders folder opens what `disasm`'s
 `save` wrote as a small x64 database, so IDA decompiles those functions
@@ -25,9 +25,10 @@ What a save holds: [saving a function](fast-lane.md#saving-a-function-for-a-stat
   file name) and prints `state`: `current`, `stale` (copy the repo's file
   over it) or `missing`; the exit code is 0, 1 or 2 to match. Inside IDA:
   `rl.loader_digest() == rl.loader_digest('<repo copy>')`.
-- For `fetch`, pass the console: `console=` with its absolute path (or a
-  command list). `REAGENTLIVE_CONSOLE` is optional, read only when
-  `console` is not given.
+- `fetch` and `finish` run the console the database's saves recorded (each
+  save's `console` row; the latest one loaded wins). `console=` (its
+  absolute path or a command list) overrides it, then
+  `REAGENTLIVE_CONSOLE`; a full database records none, so pass one there.
 
 ## Opening a save
 
@@ -44,7 +45,9 @@ C++, so the decompiler uses the Windows calling convention):
   decompiler shows `fn_6fa0aa0(...)` or a label instead of a bare address;
 - the file's `layout` rows as local types, and `Class *this` on the
   methods they belong to once auto-analysis ends (the decompiler is not
-  there while loading).
+  there while loading);
+- its `console` row, kept in the database for `fetch`, `workspace` and
+  `finish`.
 
 Writable globals are not saved (their values change). The `rva`s cross
 back to a full database of the same build. The loader ran when the
@@ -73,6 +76,19 @@ function it could not type yet waits for the next `add_saved`. It raises
 parse, another build, a byte that differs from the database, or a saved
 function or chunk start left without bytes.
 
+### Start and finish
+
+`workspace(files=None)` starts work in an open save database: it runs
+`import_labels` over the labels files the recorded console reads (its
+derived names and the host's names file; `files`, a path or a list,
+instead) and returns its counts plus `console` (the recorded path) and
+`files`. `finish(names_file=None, console=None, timeout=300)` ends it:
+`export_names` into the recorded names file (or `names_file`), then the
+console's `labels-sign` on that file, which reads the target and writes
+only the file. It returns `exported` and `labels-sign`'s `path`,
+`signed`, `unsigned`, `skipped` and `failed_before`, with the unsigned
+rows as `unsigned_rows` (`'<name>: why'`). Close the database after it.
+
 ## From an address to pseudocode in one call
 
 `fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None, timeout=120)`,
@@ -81,7 +97,8 @@ on an open save database, is the whole loop: it runs the console with one
 false) as a JSON call file (`-c @<file>`, `--caller script`, `--packs
 native`), `add_saved`s each file (types and `this` included), and with
 `decompile_dir` runs `decompile_to` over every saved function. One address
-or a list; each an int or `'0x..'` text.
+or a list; each an int or `'0x..'` text. `depth` 0 saves the function
+alone, as `callees=False` does.
 
 ```python
 out = rl.fetch(0x140001000, depth=2, decompile_dir='<dir>', grep=r'this->\w+')
@@ -121,8 +138,9 @@ import finds it:
 
 ```python
 import reagentlive_ida as rl
+rl.workspace()                                         # the recorded labels files in
 rl.fetch('0x<addr>', depth=2, decompile_dir='<dir>')   # save, add, type, decompile
-rl.export_names('<names file>')   # before closing: always with a path
+rl.finish()                                            # your names out, then signed
 ```
 
 Only for a copy outside the loaders folder (the repo's, say), load it by path:
@@ -136,7 +154,7 @@ rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
 Close the database once read, and before opening a new save under the
 same name delete the database files beside it. `export_names` and
 `import_labels` without a path open a file dialog, which hangs a headless
-session.
+session (`workspace` and `finish` never ask).
 
 ## Types
 
@@ -175,8 +193,12 @@ the return type stay as IDA has them. It returns `typed` (a count) and
   header IDA keeps, so a default load with no header bytes works) or a
   save database (the build its loader kept); the highest-ranked row per
   address. A name you set stays (the label becomes a comment), exec thunks
-  become functions. One undo step, a wait box that can cancel it; it
-  prints how many rows it named, commented and skipped.
+  become functions. One undo step, a wait box that can cancel it. It
+  returns and prints `named`, `commented`, `outside` (rows at addresses
+  the database holds no bytes for: most rows, in a save database),
+  `already` (named or commented so before), `rows` (this build's, one per
+  address) and `cancelled`; when nothing was named or commented, the line
+  says why.
 - `export_names(path)` (path: the host's names file) writes every name you
   gave in that database as `user` rows of its build: not IDA's names
   (`sub_…`, `fn_…`, a switch's `def_…` and `jpt_…`, a jump table, any

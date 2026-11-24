@@ -22,9 +22,9 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
   `python -I tools/ida_loader_check.py` (`state` `current`; `stale` or
   `missing`: tell the user), or in IDA
   `rl.loader_digest() == rl.loader_digest('<repo copy>')`.
-- Pass the console to every `fetch`: `console=` with its absolute path
-  (the host's skill names it). `REAGENTLIVE_CONSOLE` is optional; never
-  set it on the user's machine yourself.
+- In a save database `fetch` and `finish` find the console from the saves;
+  pass `console=` only in a full database. Never set
+  `REAGENTLIVE_CONSOLE` on the user's machine yourself.
 - Disable any IDA plugin that fails to load under idalib.
 
 ## The loop
@@ -34,17 +34,19 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
    Save from the function's start.
 2. **Open that file in IDA** (the loader claims it): this database is
    the workspace for the whole investigation. Never one database per
-   function.
+   function. Then `rl.workspace()`: the labels files in. Most rows land
+   `outside` a save database; that is not a failure.
 3. **Per hop, one call:** `rl.fetch(addr, depth=1, decompile_dir=<dir>, grep=<regex>)`
    (`import reagentlive_ida as rl` once the loader is installed; a repo copy
    loads by path: `docs/commands/ida-loader.md#from-an-automated-session`).
    Read its summary, open only the files it points to; the next address
-   comes from the pseudocode. `depth` 2 or 3 only when the callees
-   matter; `skipped` says what the depth or caps left out. A `FetchError`
+   comes from the pseudocode. `depth` 0 for the function alone, 2 or 3
+   only when the callees matter; `skipped` says what the depth or caps left out. A `FetchError`
    carries the console's refusal: fix the call it names.
-4. **Before closing:** `rl.export_names(<names file>)` with a path, so
-   later saves show what you named (without a path it opens a dialog and
-   hangs a headless session).
+4. **Name as you go** (`ida_name.set_name`), then **before closing:**
+   `rl.finish()`: your names into the host's names file, then signed, so
+   later saves show them and they survive a patch. Report its
+   `unsigned_rows` to the user; then close the database.
 
 - A `JUMPOUT(<addr>)` or cast `fn_<rva>(...)` left is code not saved:
   `fetch` it. A typed-pointer index (`p[27]`) is offset = index × size.

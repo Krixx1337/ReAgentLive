@@ -1,5 +1,7 @@
 """The IDA loader's fetch: the console calls it sends, its replies, and the one-call loop over a stand-in
 console (a small Python script that writes synthetic saves), with the IDA steps stubbed."""
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -19,6 +21,12 @@ calls = json.load(open(args[args.index('-c') + 1][1:]))
 with open(os.environ['FAKE_LOG'], 'a') as log:
     log.write(json.dumps(args) + '\n')
 for index, call in enumerate(calls):
+    if call['verb'] == 'labels-sign':
+        rows = [{'name': 'Mine', 'kind': 'user', 'rva': '0x10', 'status': 'signed'},
+                {'name': 'Short', 'kind': 'user', 'rva': '0x20', 'status': 'unsigned', 'reason': 'no unique bytes'}]
+        print(json.dumps({'ok': True, 'command': 'labels-sign', 'result': {
+            'path': call['args']['file'], 'signed': 1, 'unsigned': 1, 'skipped': 0, 'failed_before': 0, 'rows': rows}}))
+        continue
     save = call['args']['save']
     if os.environ.get('REFUSE') and index == 1:
         print(json.dumps({'ok': False, 'command': 'disasm', 'error': {'kind': 'start', 'message': 'nothing to save'}}))
@@ -48,6 +56,8 @@ class Calls(unittest.TestCase):
         self.assertEqual(calls[1]['args']['addr'], '0x140002000')
         alone, _ = loader.fetch_calls('0x140001000', 'dir', callees=False)
         self.assertNotIn('callees', alone[0]['args']['save'])
+        zero, _ = loader.fetch_calls('0x140001000', 'dir', depth=0)   # Depth 0: the function alone.
+        self.assertNotIn('callees', zero[0]['args']['save'])
         with self.assertRaises(ValueError):
             loader.fetch_calls(['nowhere'], 'dir')
 
@@ -114,6 +124,40 @@ class Fetch(unittest.TestCase):
         self.assertNotIn('decompiled', out)
         self.assertEqual(self.decompiled, [])
 
+    def test_depth_zero_is_the_function_alone(self):
+        out = loader.fetch(0x140001000, depth=0, console=self.console)
+        self.assertEqual(out['functions'], ['0x140001000'])
+        with self.assertRaises(ValueError):
+            loader.fetch(0x140001000, depth=-1, console=self.console)
+
+    def test_the_recorded_console_is_the_default(self):
+        saved = os.environ.pop('REAGENTLIVE_CONSOLE', None)
+        recorded = loader._recorded_or_none
+        try:
+            loader._recorded_or_none = lambda: {'path': self.console, 'labels': 'a', 'names': 'b'}
+            self.assertEqual(loader.fetch(0x140001000, depth=0)['functions'], ['0x140001000'])
+        finally:
+            loader._recorded_or_none = recorded
+            if saved is not None:
+                os.environ['REAGENTLIVE_CONSOLE'] = saved
+
+    def test_an_argument_then_the_environment_override_the_recorded_console(self):
+        saved = os.environ.pop('REAGENTLIVE_CONSOLE', None)
+        try:
+            recorded = {'path': 'recorded.exe'}
+            self.assertEqual(loader.console_command(None, recorded), ['recorded.exe'])
+            os.environ['REAGENTLIVE_CONSOLE'] = 'env.exe'
+            self.assertEqual(loader.console_command(None, recorded), ['env.exe'])
+            self.assertEqual(loader.console_command(['py', 'c.py'], recorded), ['py', 'c.py'])
+            os.environ.pop('REAGENTLIVE_CONSOLE')
+            with self.assertRaises(loader.FetchError) as caught:
+                loader.console_command(None, None)
+            self.assertIn('open a save database', str(caught.exception))
+        finally:
+            os.environ.pop('REAGENTLIVE_CONSOLE', None)
+            if saved is not None:
+                os.environ['REAGENTLIVE_CONSOLE'] = saved
+
     def test_a_refusal_raises_before_anything_loads(self):
         os.environ['REFUSE'] = '1'
         with self.assertRaises(loader.FetchError) as caught:
@@ -135,6 +179,55 @@ class Fetch(unittest.TestCase):
                 os.environ['REAGENTLIVE_CONSOLE'] = saved
         with self.assertRaises(ValueError):
             loader.fetch(0x140001000, depth=4, console=self.console)
+
+
+class StartAndFinish(unittest.TestCase):
+    """workspace and finish over the recorded console row, with the IDA steps stubbed."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        script = os.path.join(self.dir, 'console.py')
+        with open(script, 'w') as handle:
+            handle.write(FAKE)
+        os.environ['FAKE_LOG'] = os.path.join(self.dir, 'log')
+        self.recorded = {'path': [sys.executable, '-I', script], 'labels': 'console.labels.jsonl', 'names': 'names.jsonl'}
+        self.calls = []
+        self.saved = (loader.recorded_console, loader.import_labels, loader.export_names)
+        loader.recorded_console = lambda: self.recorded
+
+        def import_labels(files):
+            self.calls.append(('import', files))
+            return {'named': 3, 'commented': 0, 'outside': 9, 'already': 0, 'rows': 12, 'cancelled': False}
+
+        def export_names(path):
+            self.calls.append(('export', path))
+            return 2
+
+        loader.import_labels, loader.export_names = import_labels, export_names
+
+    def tearDown(self):
+        loader.recorded_console, loader.import_labels, loader.export_names = self.saved
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_workspace_imports_the_recorded_labels_files(self):
+        out = loader.workspace()
+        self.assertEqual(self.calls, [('import', ['console.labels.jsonl', 'names.jsonl'])])
+        self.assertEqual(out['named'], 3)
+        self.assertEqual(out['files'], ['console.labels.jsonl', 'names.jsonl'])
+        self.assertEqual(loader.workspace_files({'labels': 'a', 'names': 'a'}), ['a'])   # Each once.
+        self.recorded = None
+        with self.assertRaises(ValueError):
+            loader.workspace()
+        loader.workspace('mine.jsonl')
+        self.assertEqual(self.calls[-1], ('import', ['mine.jsonl']))
+
+    def test_finish_exports_then_signs_the_names_file(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            out = loader.finish()
+        self.assertEqual(self.calls, [('export', 'names.jsonl')])
+        self.assertEqual(out['exported'], 2)
+        self.assertEqual((out['signed'], out['unsigned'], out['path']), (1, 1, 'names.jsonl'))
+        self.assertEqual(out['unsigned_rows'], ['Short: no unique bytes'])
 
 
 class Timing(unittest.TestCase):

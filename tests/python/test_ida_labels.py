@@ -105,6 +105,17 @@ class ImportLabels(unittest.TestCase):
             with open(path, encoding='utf-8') as handle:
                 self.assertEqual([row['name'] for row in labels.load(handle)], ['Ricochet_Resolve'])
 
+    def test_the_import_line_says_why_nothing_was_applied(self):
+        counts = {'named': 0, 'commented': 0, 'outside': 25860, 'already': 5, 'rows': 25865, 'cancelled': False}
+        line = labels.labels_message(counts)
+        self.assertIn('25865 skipped', line)
+        self.assertIn("25860 outside the database's loaded bytes", line)
+        self.assertIn('5 named or commented so already', line)
+        self.assertIn('a save database holds only its saved functions', line)
+        self.assertNotIn('nothing to name', labels.labels_message(dict(counts, named=4)))
+        self.assertEqual(labels.labels_message({'named': 2, 'commented': 1, 'outside': 0, 'already': 0, 'rows': 3}),
+                         'ReAgentLive labels: 2 named, 1 commented, 0 skipped, from 3 rows of this build')
+
     def test_a_users_name_stays_and_the_label_becomes_a_comment(self):
         rows = labels.load([ROW % ('exec', 'A::execB', '0x10'), ROW % ('vtable', 'vtbl_A', '0x20'),
                             ROW % ('global', 'FName_Tag.With Space', '0x30'), ROW % ('exec', 'Same', '0x40')])

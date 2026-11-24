@@ -178,6 +178,7 @@ JSON lines:
 | `code` | `address`, `rva`, `bytes` (hex): the listed code of every saved part, one row per contiguous run; runs that overlap or touch are joined, so no two rows overlap |
 | `data` | `address`, `rva`, `bytes`: each read-only constant the code reads (at least 8 bytes) and each string it references, up to 64 bytes each, merged where they touch, and each switch table whole; bytes a `code` row holds are left out |
 | `name` | `address`, `rva`, `name`, `what`: one per address, the first kind winning: `function` (its label, else `fn_<rva>`), `import` (each slot called through), `call` (a direct call target not saved: its label, else `fn_<rva>`), `tail` (a tail jump target outside every saved part, named the same way), `global` (a labelled RIP-relative target) |
+| `console` | `path` (the console's executable), `labels` (its derived names file), `names` (the host's names file, else `labels`): absolute paths, so a static tool runs the console and finds its labels files |
 | `layout` | a `layout-export` line (`kind` `class`, `struct`, `field` or `enum`, with its keys): the layouts of the saved methods' classes, last in the file |
 
 The [IDA loader](ida-loader.md) opens a save as a small database, grows

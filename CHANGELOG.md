@@ -27,6 +27,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **IDA start and finish in one call each:** `workspace()` imports the
+  labels files the saves' console reads; `finish()` exports your names
+  and signs them with `labels-sign`. Saves now record their console, so
+  `fetch` needs no `console=` in a save database, and `fetch` with
+  `depth` 0 saves the function alone
+  ([IDA loader](docs/commands/ida-loader.md#start-and-finish)).
+
 - **Background runs:** a plan (or one long call as a one-step plan) runs in
   its own console while you keep exploring: `run` with `background` in a
   Python `Session`, the `run` tool through MCP, then `run_status` (with
@@ -66,6 +73,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **IDA `import_labels` returns a dict** (`named`, `commented`, `outside`,
+  `already`, `rows`, `cancelled`) instead of a tuple, and its line says why
+  nothing was named; read the keys. An older loader refuses new saves
+  (their `console` row): copy the new one into IDA's loaders folder.
 - **Local lessons moved out of the skill folder** into
   `%LOCALAPPDATA%\reagentlive\lessons\`: `general.md` for any game, one
   file per game, and an `INDEX.md` that maps each game file to its exe

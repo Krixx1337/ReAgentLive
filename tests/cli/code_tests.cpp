@@ -765,6 +765,22 @@ TEST_CASE("callees saves tail jumps out of the function, and names the unsaved o
     CHECK(named);
 }
 
+TEST_CASE("a save ends with the console that wrote it, when it is known") {
+    const Module module{"Game.exe", Base, 0x100000};
+    std::vector<dis::Instruction> rows(1);
+    rows[0].address = Base + 0x1000; rows[0].bytes = {0xc3};
+    const std::vector<save::Saved> one{{Base + 0x1000, rows}};
+    const save::Console console{R"(C:\tools\console.exe)", R"(C:\tools\console.labels.jsonl)", R"(C:\host\names.jsonl)"};
+    std::vector<Json> lines;
+    std::istringstream text(save::Lines(module, 7, one, {}, {}, console));
+    for (std::string line; std::getline(text, line);) lines.push_back(Json::parse(line));
+    REQUIRE(!lines.empty());
+    CHECK(lines.back() == Json{{"row", "console"}, {"path", R"(C:\tools\console.exe)"},
+                               {"labels", R"(C:\tools\console.labels.jsonl)"}, {"names", R"(C:\host\names.jsonl)"}});
+    std::istringstream unknown(save::Lines(module, 7, one, {}));
+    for (std::string line; std::getline(unknown, line);) CHECK(Json::parse(line)["row"] != "console");
+}
+
 TEST_CASE("a function's chained chunk is found by its jumps and saved as a chunk row") {
     const Module module{"Game.exe", Base, 0x100000};
     std::vector<dis::Instruction> rows(4);

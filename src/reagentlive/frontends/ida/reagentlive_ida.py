@@ -30,9 +30,13 @@ same folder. Then:
   (addresses or names), a short summary each, the lines matching `grep`.
   `decompile_all()`: every function's pseudocode, one string.
 - `fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None, timeout=120)`:
-  the console's save of each address (and its callees, `depth` levels),
-  added to the open database, decompiled into `decompile_dir`: one call
-  from an address to pseudocode.
+  the console's save of each address (and its callees, `depth` levels;
+  0: none), added to the open database, decompiled into `decompile_dir`:
+  one call from an address to pseudocode. The console defaults to the one
+  the saves recorded.
+- `workspace(files=None)`: start: import_labels from the labels files the
+  saves' console reads. `finish(names_file=None)`: export_names into its
+  names file, then the console's labels-sign on it.
 - `import_layouts(path)`: local types from a `layout-export` file, a packed
   struct per class or struct and an enum per enum.
 - `apply_this(path)`: type the first argument `Class *this` on functions a
@@ -73,9 +77,10 @@ def parse(lines):
     Plan: {'build': {module, module_size, timestamp, base}, 'functions': [(start, end)]
     in file order, 'chunks': [(start, end, function)], 'segments': [(start, bytes, 'CODE' | 'DATA')] sorted,
     'names': [(address, name, what)], 'stubs': [(address, what)] for names no
-    segment holds, 'layouts': the layout rows as layout-export lines (JSON text)}.
+    segment holds, 'layouts': the layout rows as layout-export lines (JSON text),
+    'console': {path, labels, names} (the console that wrote it), or None}.
     """
-    build, functions, chunks, segments, names, layout_rows = None, [], [], [], [], []
+    build, functions, chunks, segments, names, layout_rows, console = None, [], [], [], [], [], None
     for number, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
@@ -102,6 +107,8 @@ def parse(lines):
             elif kind == 'layout':
                 del row['row']
                 layout_rows.append(json.dumps(row))
+            elif kind == 'console':
+                console = {key: row[key] for key in ('path', 'labels', 'names')}
             else:
                 # A row kind added since: skipping it would load the file
                 # silently with less in it (no chunks, no names).
@@ -117,7 +124,7 @@ def parse(lines):
         return segments
     held = [(start, start + len(data)) for start, data, _ in segments]
     return {'build': build, 'functions': functions, 'chunks': chunks, 'segments': segments, 'names': names,
-            'stubs': stubs(names, held), 'layouts': layout_rows}
+            'stubs': stubs(names, held), 'layouts': layout_rows, 'console': console}
 
 
 def methods(plan):
@@ -198,6 +205,7 @@ def additions(segments, existing):
 FORMAT = 'ReAgentLive saved function'
 ACCEPT_FIRST = 0x8000  # ida_loader.ACCEPT_FIRST: offered before IDA's own "Binary file".
 _NODE = '$ reagentlive build'  # The database's build, so add_saved refuses another one.
+_CONSOLE_NODE = '$ reagentlive console'  # The latest save's console row: fetch, workspace and finish default to it.
 
 
 def _auto_name():
@@ -313,12 +321,32 @@ def load_file(li, neflags, format):
         import ida_name
         ida_name.set_name(first, named[first], _auto_name())  # The entry's name is the file's too.
     ida_netnode.netnode(_NODE, 0, True).supset(0, json.dumps(plan['build']))
+    _keep_console(plan)
     if plan['layouts']:
         # The types now; `this` once auto-analysis is done (no decompiler while loading).
         types = saved_types(plan, now=False)
         if types.get('error') or types['types_failed']:
             ida_kernwin.msg(f'ReAgentLive types: {json.dumps(types)}\n')
     return 1
+
+
+def _keep_console(plan):
+    """IDA: keep the save's console row in the database (the latest save's wins)."""
+    import ida_netnode
+
+    if plan['console']:
+        ida_netnode.netnode(_CONSOLE_NODE, 0, True).supset(0, json.dumps(plan['console']))
+
+
+def recorded_console():
+    """IDA: the console row the database's saves recorded, {path, labels, names}, or None (a full
+    database: no save recorded one)."""
+    import ida_netnode
+
+    node = ida_netnode.netnode(_CONSOLE_NODE, 0, False)
+    if node.index() == ida_netnode.BADNODE or not node.supstr(0):
+        return None
+    return json.loads(node.supstr(0))
 
 
 class SaveError(ValueError):
@@ -364,6 +392,7 @@ def add_saved(path):
     replaced, failed = _apply(plan, writes)
     if failed:
         raise SaveError(f'{path}: {failed}')
+    _keep_console(plan)
     summary = {'added': _ranges(report['added']), 'joined': _ranges(report['joined']),
                'cut': _ranges(report['cut']), 'stubs_replaced': [f'{at:#x}' for at in replaced]}
     if plan['layouts']:
@@ -570,10 +599,32 @@ def _database_build():
     return {'module': ida_nalt.get_root_filename(), 'module_size': build[0], 'timestamp': build[1], 'base': base}
 
 
+def labels_message(counts):
+    """import_labels' line from its counts {named, commented, outside, already, rows, cancelled}:
+    what was skipped and, when nothing was applied, why."""
+    head = (f"ReAgentLive labels: {counts['named']} named, {counts['commented']} commented, "
+            f"{counts['outside'] + counts['already']} skipped, from {counts['rows']} rows of this build")
+    parts = []
+    if counts['outside']:
+        parts.append(f"{counts['outside']} outside the database's loaded bytes")
+    if counts['already']:
+        parts.append(f"{counts['already']} named or commented so already")
+    if counts.get('cancelled'):
+        parts.append('cancelled')
+    if not parts:
+        return head
+    line = f"{head} ({', '.join(parts)})"
+    if not counts['named'] and not counts['commented'] and counts['outside']:
+        line += ': nothing to name here; a save database holds only its saved functions, so most rows fall outside it'
+    return line
+
+
 def import_labels(path=None):
     """Name the open database (a full one or a save) from a labels file, or a list of them (the
     console's derived names and the host's names file); asked for when None.
-    Returns (named, commented, skipped), or None when nothing was imported."""
+    Returns {named, commented, outside (rows at addresses the database holds no bytes for), already
+    (named or commented so before), rows (this build's, one per address), cancelled}, or None when
+    nothing was imported."""
     import ida_bytes
     import ida_funcs
     import ida_kernwin
@@ -607,22 +658,24 @@ def import_labels(path=None):
 
     ida_undo.create_undo_point('ReAgentLive labels', 'ReAgentLive labels')  # One Undo reverts the import.
     actions = plan(best(rows), existing)
-    named = commented = skipped = 0
+    named = commented = outside = already = 0
+    cancelled = False
     ida_kernwin.show_wait_box('ReAgentLive labels: importing')
     try:
         for index, action in enumerate(actions):
             if index % 500 == 0:
                 if ida_kernwin.user_cancelled():
+                    cancelled = True
                     break
                 ida_kernwin.replace_wait_box(f'ReAgentLive labels: {index} of {len(actions)}')
             ea = base + action[1]
             if action[0] == 'skip':
-                skipped += 1
+                already += 1
+                continue
+            if not ida_bytes.is_loaded(ea):
+                outside += 1  # Outside a save's bytes.
                 continue
             if action[0] == 'name':
-                if not ida_bytes.is_loaded(ea):
-                    skipped += 1  # Outside a save's bytes.
-                    continue
                 if action[3] == 'exec' and not ida_funcs.get_func(ea):
                     ida_funcs.add_func(ea)
                 if ida_name.set_name(ea, action[2], _auto_name()):
@@ -633,14 +686,16 @@ def import_labels(path=None):
                 text = action[2]
             old = ida_bytes.get_cmt(ea, False) or ''
             if text in old:
-                skipped += 1  # Imported before.
+                already += 1  # Imported before.
                 continue
             ida_bytes.set_cmt(ea, f'{old}\n{text}' if old else text, False)
             commented += 1
     finally:
         ida_kernwin.hide_wait_box()
-    print(f'ReAgentLive labels: {named} named, {commented} commented, {skipped} skipped, from {len(rows)} rows')
-    return named, commented, skipped
+    counts = {'named': named, 'commented': commented, 'outside': outside, 'already': already,
+              'rows': len(actions), 'cancelled': cancelled}
+    print(labels_message(counts))
+    return counts
 
 
 def export_names(path=None):
@@ -1192,7 +1247,8 @@ def _address_text(address):
 
 def fetch_calls(addrs, folder, callees=True, depth=1):
     """The console calls fetch sends, one `disasm` save per address into `folder`, and the files:
-    (calls, paths). `addrs` is one address (an int or '0x..' text) or a list of them."""
+    (calls, paths). `addrs` is one address (an int or '0x..' text) or a list of them. Depth 0 or
+    `callees` false: the function alone."""
     import os
 
     if isinstance(addrs, (str, int)):
@@ -1201,7 +1257,7 @@ def fetch_calls(addrs, folder, callees=True, depth=1):
     for index, address in enumerate(addrs):
         path = os.path.join(folder, f'fetch_{index}.jsonl')
         save = {'file': path}
-        if callees:
+        if callees and depth:
             save['callees'] = depth
         calls.append({'verb': 'disasm', 'args': {'addr': _address_text(address), 'function': True, 'save': save}})
         paths.append(path)
@@ -1229,54 +1285,78 @@ def console_results(text, count):
     return [reply.get('result') or {} for reply in replies[:count]]
 
 
-def _console_command(console):
-    """The console to run, as a command list: the argument (a path or a list), else REAGENTLIVE_CONSOLE."""
+def console_command(console, recorded=None):
+    """The console to run, as a command list: the argument (a path or a list), else
+    REAGENTLIVE_CONSOLE, else the path the saves recorded (`recorded`, a console row)."""
     import os
 
-    console = console or os.environ.get(_CONSOLE_ENV)
+    console = console or os.environ.get(_CONSOLE_ENV) or (recorded or {}).get('path')
     if not console:
-        raise FetchError(f'no console: pass console= or set {_CONSOLE_ENV} to the console executable')
+        raise FetchError(f'no console: open a save database (its saves record the console), pass console= '
+                         f'or set {_CONSOLE_ENV} to the console executable')
     return list(console) if isinstance(console, (list, tuple)) else [console]
 
 
-def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None, timeout=120):
-    """IDA: save the functions at `addrs` from the live process and add them to the open database in
-    one call: runs the console (`console`, a path or a command list, else REAGENTLIVE_CONSOLE) with one
-    `disasm` save per address (`save.callees` = `depth` unless `callees` is false; the native packs
-    ceiling) through `-c @<file>`, then add_saved for each file, then with `decompile_dir`
-    decompile_to every saved function (`grep` as decompile_to takes it).
+def _recorded_or_none():
+    """recorded_console(), or None outside IDA."""
+    try:
+        return recorded_console()
+    except ImportError:
+        return None
 
-    Returns {'functions': ['0x..' every saved function], 'skipped': the console's skipped rows,
-    'added', 'joined', 'cut', 'stubs_replaced' (add_saved's, over every file), 'types', 'this_typed',
-    'this_skipped', 'decompiled': decompile_to's summaries, 'seconds': {'console', 'load', 'decompile'}}.
-    Raises FetchError with the console's refusal attached, SaveError when a file does not load."""
+
+def run_console(command, calls, timeout=120):
+    """Run the console `command` on `calls` ([{verb, args}]) through a JSON call file (`-c @<file>`,
+    `--caller script`, `--packs native`): their results, or FetchError."""
     import os
     import shutil
     import subprocess
     import tempfile
-    import time
 
-    if not 1 <= depth <= 3:
-        raise ValueError('depth is 1..3')
-    command = _console_command(console)
-    folder = tempfile.mkdtemp(prefix='reagentlive-fetch-')
+    folder = tempfile.mkdtemp(prefix='reagentlive-calls-')
     try:
-        calls, paths = fetch_calls(addrs, folder, callees, depth)
         calls_file = os.path.join(folder, 'calls.json')
         with open(calls_file, 'w', encoding='utf-8') as handle:
             json.dump(calls, handle)
-        started = time.perf_counter()
         try:
             ran = subprocess.run(command + ['--caller', 'script', '--packs', 'native', '-c', '@' + calls_file],
                                  capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise FetchError(f'console {command[0]}: {error}') from error
         try:
-            results = console_results(ran.stdout, len(calls))
+            return console_results(ran.stdout, len(calls))
         except FetchError as error:
             if not ran.stdout.strip() and ran.stderr.strip():
                 raise FetchError(f'{error}; stderr: {ran.stderr.strip()[-400:]}', error.refusal) from None
             raise
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=None, timeout=120):
+    """IDA: save the functions at `addrs` from the live process and add them to the open database in
+    one call: runs the console (`console`, a path or a command list, else REAGENTLIVE_CONSOLE, else
+    the one the database's saves recorded) with one `disasm` save per address (`save.callees` =
+    `depth`, 0..3; 0 or `callees` false: the function alone) through `-c @<file>`, then add_saved
+    for each file, then with `decompile_dir` decompile_to every saved function (`grep` as
+    decompile_to takes it).
+
+    Returns {'functions': ['0x..' every saved function], 'skipped': the console's skipped rows,
+    'added', 'joined', 'cut', 'stubs_replaced' (add_saved's, over every file), 'types', 'this_typed',
+    'this_skipped', 'decompiled': decompile_to's summaries, 'seconds': {'console', 'load', 'decompile'}}.
+    Raises FetchError with the console's refusal attached, SaveError when a file does not load."""
+    import shutil
+    import tempfile
+    import time
+
+    if not 0 <= depth <= 3:
+        raise ValueError('depth is 0..3 (0: the function alone, no callees)')
+    command = console_command(console, _recorded_or_none())
+    folder = tempfile.mkdtemp(prefix='reagentlive-fetch-')
+    try:
+        calls, paths = fetch_calls(addrs, folder, callees, depth)
+        started = time.perf_counter()
+        results = run_console(command, calls, timeout)
         seconds = {'console': round(time.perf_counter() - started, 3)}
         out = {'functions': [], 'skipped': [], 'added': [], 'joined': [], 'cut': [], 'stubs_replaced': [],
                'types': 0, 'this_typed': 0, 'this_skipped': []}
@@ -1299,6 +1379,61 @@ def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=N
         return out
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+
+# --- One call to start, one to finish ---------------------------------------
+
+def workspace_files(recorded):
+    """The labels files a console row names, each once: its derived names, then the host's names file."""
+    files = []
+    for key in ('labels', 'names'):
+        path = (recorded or {}).get(key)
+        if path and path not in files:
+            files.append(path)
+    return files
+
+
+def workspace(files=None):
+    """IDA: start work in an open save database: import_labels from `files`, by default the labels
+    files its saves' console reads (its derived names and the host's names file). Returns
+    import_labels' counts plus 'console' (the recorded console, fetch's default) and 'files'."""
+    recorded = recorded_console()
+    files = [files] if isinstance(files, str) else files or workspace_files(recorded)
+    if not files:
+        raise ValueError('no labels files: this database has no recorded console (open a save the console '
+                         'wrote), so pass files=')
+    counts = import_labels(files) or {}
+    return {**counts, 'console': (recorded or {}).get('path'), 'files': files}
+
+
+def sign_summary(result):
+    """finish's summary of a labels-sign result: its counts and file, and the rows left unsigned
+    as 'name: why'."""
+    out = {key: result.get(key, 0) for key in ('signed', 'unsigned', 'skipped', 'failed_before')}
+    out['path'] = result.get('path')
+    out['unsigned_rows'] = [f"{row['name']}: {row.get('reason', 'no reason given')}"
+                            for row in result.get('rows', []) if row.get('status') == 'unsigned']
+    return out
+
+
+def finish(names_file=None, console=None, timeout=300):
+    """IDA: finish work: export_names into `names_file` (default: the names file its saves' console
+    recorded), then the console's labels-sign on that file (it reads the target and writes only the
+    file), so the new names survive a patch. Returns {'exported': n, 'path', 'signed', 'unsigned',
+    'skipped', 'failed_before', 'unsigned_rows': ['name: why']}. Close the database afterwards."""
+    recorded = recorded_console()
+    names_file = names_file or (recorded or {}).get('names')
+    if not names_file:
+        raise ValueError('no names file: this database has no recorded console, so pass names_file=')
+    exported = export_names(names_file)
+    if exported is None:
+        raise ValueError('names not exported: see the warning')
+    command = console_command(console, recorded)
+    result = run_console(command, [{'verb': 'labels-sign', 'args': {'file': names_file}}], timeout)[0]
+    out = {'exported': exported, **sign_summary(result)}
+    print(f"ReAgentLive finish: {exported} names exported, {out['signed']} signed, {out['unsigned']} unsigned "
+          f"({out['path']})")
+    return out
 
 
 if __name__ == '__main__':
