@@ -48,6 +48,7 @@ constexpr size_t Probes = 7;         // Entries sampled per request while the ra
 constexpr size_t Window = 340;       // Entries read whole once the range is this narrow (4080 bytes).
 constexpr size_t MaxChain = 32;      // Chained entries followed before giving up.
 constexpr uint8_t ChainInfo = 0x4;   // UNW_FLAG_CHAININFO.
+constexpr uint64_t PageBytes = 2048; // Unwind data read and kept a page at a time (one read: under MaxRead).
 
 namespace detail {
 inline uint32_t U32(std::span<const uint8_t> bytes, size_t at) {
@@ -68,8 +69,10 @@ inline std::expected<std::vector<uint8_t>, std::string> ReadOne(const ReadFn& re
 }
 }
 
-// Lookups in one module's directory. Sampled entries are kept, so the first
-// requests of every search (the same probes for every address) cost once.
+// Lookups in one module's directory. Sampled entries, read windows, chain
+// links and the unwind data's pages are kept, so the first requests of every
+// search (the same probes for every address) cost once and a lookup near an
+// earlier one costs none: a sweep resolving thousands of hits stays fast.
 class Table {
 public:
     Table(ReadFn read, Module module, Directory directory)
@@ -140,13 +143,16 @@ private:
             lo = nextLo;
             hi = nextHi;
         }
-        auto bytes = detail::ReadOne(read_, Address(lo), (hi - lo) * EntrySize);
-        if (!bytes) return std::unexpected(bytes.error());
+        bool known = true;
+        for (size_t i = lo; i < hi && known; ++i) known = entries_.contains(i);
+        if (!known) {
+            auto bytes = detail::ReadOne(read_, Address(lo), (hi - lo) * EntrySize);
+            if (!bytes) return std::unexpected(bytes.error());
+            for (size_t i = lo; i < hi; ++i) entries_[i] = detail::Parse(*bytes, (i - lo) * EntrySize);
+        }
         std::optional<size_t> found;
         for (size_t i = lo; i < hi; ++i) {
-            const Entry entry = detail::Parse(*bytes, (i - lo) * EntrySize);
-            entries_[i] = entry;
-            if (entry.begin > rva) break;
+            if (entries_.at(i).begin > rva) break;
             found = i;
         }
         if (!found || floor) return found;
@@ -179,12 +185,18 @@ private:
     // the unwind RVA set: it names the parent entry directly. Otherwise the
     // unwind info's CHAININFO flag puts the parent after the unwind codes.
     std::expected<std::optional<Entry>, std::string> Parent(const Entry& entry) {
+        if (const auto known = parents_.find(entry.begin); known != parents_.end()) return known->second;
+        auto parent = ReadParent(entry);
+        if (parent) parents_[entry.begin] = *parent;
+        return parent;
+    }
+    std::expected<std::optional<Entry>, std::string> ReadParent(const Entry& entry) {
         uint64_t at = 0;
         if (entry.unwind & 1) {
             at = entry.unwind & ~1u;
         } else {
             if (entry.unwind >= module_.size) return std::nullopt;
-            auto header = detail::ReadOne(read_, module_.base + entry.unwind, 4);
+            auto header = Paged(module_.base + entry.unwind, 4);
             if (!header) return std::unexpected(header.error());
             // Versions 1 and 2 only (as the OS unwinder): anything else is
             // not unwind info (a decoy entry's garbage), so no chain.
@@ -194,11 +206,30 @@ private:
             at = entry.unwind + 4 + 2 * ((codes + 1) & ~1u);
         }
         if (at >= module_.size || module_.size - at < EntrySize) return std::unexpected("chained unwind data malformed");
-        auto bytes = detail::ReadOne(read_, module_.base + at, EntrySize);
+        auto bytes = Paged(module_.base + at, EntrySize);
         if (!bytes) return std::unexpected(bytes.error());
         const Entry parent = detail::Parse(*bytes, 0);
         if (parent == entry || parent.begin >= parent.end) return std::unexpected("chained unwind data malformed");
         return parent;
+    }
+    // Unwind data through whole pages (a read's limit, rounded down), kept: neighbouring functions'
+    // unwind info shares pages. A page that does not read whole (the image's
+    // end) falls back to the exact span.
+    std::expected<std::vector<uint8_t>, std::string> Paged(uint64_t address, uint64_t length) {
+        const uint64_t first = address / PageBytes * PageBytes, last = (address + length - 1) / PageBytes * PageBytes;
+        std::vector<uint8_t> out;
+        for (uint64_t page = first; page <= last; page += PageBytes) {
+            auto known = pages_.find(page);
+            if (known == pages_.end()) {
+                auto bytes = detail::ReadOne(read_, page, PageBytes);
+                if (!bytes) return detail::ReadOne(read_, address, length);
+                known = pages_.emplace(page, std::move(*bytes)).first;
+            }
+            const uint64_t from = std::max(address, page), to = std::min(address + length, page + PageBytes);
+            out.insert(out.end(), known->second.begin() + static_cast<ptrdiff_t>(from - page),
+                known->second.begin() + static_cast<ptrdiff_t>(to - page));
+        }
+        return out;
     }
     uint64_t Address(size_t index) const { return module_.base + directory_.rva + index * EntrySize; }
 
@@ -206,5 +237,7 @@ private:
     Module module_;
     Directory directory_;
     std::map<size_t, Entry> entries_;
+    std::map<uint32_t, std::optional<Entry>> parents_;
+    std::map<uint64_t, std::vector<uint8_t>> pages_;
 };
 }

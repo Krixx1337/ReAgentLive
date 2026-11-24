@@ -306,7 +306,7 @@ inline size_t Sweep(std::span<const uint8_t> code, uint64_t address, const Form&
 }
 
 // same_base: the hits of functions that use every displacement of `disps` on
-// one base register; `function` gives a hit's function start (nullopt:
+// one base register; `starts` holds each hit's function start (nullopt:
 // outside every entry, left out). Each group is a function and a base, its
 // hits in address order; groups in function order.
 struct Group {
@@ -314,11 +314,12 @@ struct Group {
     std::string base;
     std::vector<Hit> hits;
 };
-template<class FunctionOf>
-std::vector<Group> SameBase(std::span<const Hit> hits, std::span<const uint32_t> disps, FunctionOf&& function) {
+inline std::vector<Group> SameBase(std::span<const Hit> hits, std::span<const std::optional<uint64_t>> starts,
+                                   std::span<const uint32_t> disps) {
     std::map<std::pair<uint64_t, std::string>, Group> groups;
-    for (const auto& hit : hits) {
-        const std::optional<uint64_t> start = function(hit.address);
+    for (size_t i = 0; i < hits.size() && i < starts.size(); ++i) {
+        const Hit& hit = hits[i];
+        const std::optional<uint64_t> start = starts[i];
         if (!start) continue;
         auto& group = groups[{*start, hit.base}];
         group.function = *start;
@@ -331,5 +332,20 @@ std::vector<Group> SameBase(std::span<const Hit> hits, std::span<const uint32_t>
                 return std::ranges::any_of(group.hits, [&](const Hit& hit) { return hit.disp == disp; });
             })) out.push_back(std::move(group));
     return out;
+}
+
+// A same_base page keeps whole functions: when the next page would start at
+// `at` inside a function that began on this page after `from` (`function`,
+// the start of the one holding `at`), the page ends at that start instead and
+// drops the function's hits (and their starts), so the next page sees it
+// whole. Returns where the next page starts.
+inline uint64_t KeepWhole(std::vector<Hit>& hits, std::vector<std::optional<uint64_t>>& starts, uint64_t from, uint64_t at,
+                          std::optional<uint64_t> function) {
+    if (!function || *function <= from || *function >= at) return at;
+    const auto cut = std::ranges::lower_bound(hits, *function, {}, &Hit::address);
+    const auto kept = static_cast<size_t>(cut - hits.begin());
+    hits.resize(kept);
+    starts.resize(std::min(starts.size(), kept));
+    return *function;
 }
 }

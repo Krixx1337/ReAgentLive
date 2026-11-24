@@ -216,6 +216,11 @@ TEST_CASE("a large directory is searched in a few requests, sharing its samples"
     CHECK(first <= 6);
     CHECK(table.Lookup(Base + 0x20000 + 4321 * 0x10 + 9).value() == std::nullopt); // Between entries.
     CHECK(table.Lookup(Base + 0x20000 + 17 * 0x10).value()->range.start == Base + 0x20000 + 17 * 0x10);
+    // A sweep's lookups near earlier ones (its window read, its unwind data's page) cost no request.
+    const size_t warm = image.requests;
+    for (size_t i = 4312; i < 4406; ++i) // The window the first lookup read.
+        CHECK(table.Lookup(Base + 0x20000 + i * 0x10 + 1).value()->range.start == Base + 0x20000 + i * 0x10);
+    CHECK(image.requests == warm);
 }
 
 TEST_CASE("disasm decodes text, targets, fields and where code ends") {
@@ -1155,11 +1160,47 @@ TEST_CASE("disp-scan takes several disps, tags each hit, keeps rbp and groups fu
     hits.clear();
     touch::Sweep(code, Base, {{0xd0, 0xb8}}, true, hits, 16);
     const std::vector<uint32_t> disps{0xd0, 0xb8};
-    const auto groups = touch::SameBase(hits, disps, [](uint64_t) { return std::optional<uint64_t>(Base); });
+    const std::vector<std::optional<uint64_t>> one(hits.size(), Base), none(hits.size());
+    const auto groups = touch::SameBase(hits, one, disps);
     REQUIRE(groups.size() == 1);
     CHECK(groups[0].base == "rdi");
     CHECK(groups[0].hits.size() == 2);
-    CHECK(touch::SameBase(hits, disps, [](uint64_t) { return std::optional<uint64_t>(); }).empty());
+    CHECK(touch::SameBase(hits, none, disps).empty());
+}
+
+TEST_CASE("disp-scan same_base pages end on a function boundary and together equal one page") {
+    // Two functions, each writing both disps on rdi; the second straddles the page end.
+    const auto hit = [](uint64_t address, uint32_t disp) { return touch::Hit{address, disp, "rdi", "write", 8, {}}; };
+    const std::vector<touch::Hit> all{hit(Base + 0x10, 0xd0), hit(Base + 0x20, 0xb8), hit(Base + 0x110, 0xd0),
+        hit(Base + 0x190, 0xb8)};
+    const auto functionOf = [](uint64_t address) { return std::optional<uint64_t>(address < Base + 0x100 ? Base : Base + 0x100); };
+    std::vector<std::optional<uint64_t>> allStarts;
+    for (const auto& h : all) allStarts.push_back(functionOf(h.address));
+    const std::vector<uint32_t> disps{0xd0, 0xb8};
+    const auto whole = touch::SameBase(all, allStarts, disps);
+    REQUIRE(whole.size() == 2);
+
+    // The first page stopped at 0x150, inside the second function: it ends at that function's start.
+    std::vector<touch::Hit> page(all.begin(), all.begin() + 3);
+    std::vector<std::optional<uint64_t>> starts(allStarts.begin(), allStarts.begin() + 3);
+    const uint64_t next = touch::KeepWhole(page, starts, Base, Base + 0x150, functionOf(Base + 0x150));
+    CHECK(next == Base + 0x100);
+    CHECK(page.size() == 2);
+    CHECK(starts.size() == 2);
+    auto groups = touch::SameBase(page, starts, disps);
+    // The second page sees the second function whole.
+    const std::vector<touch::Hit> rest(all.begin() + 2, all.end());
+    const std::vector<std::optional<uint64_t>> restStarts(allStarts.begin() + 2, allStarts.end());
+    for (auto& group : touch::SameBase(rest, restStarts, disps)) groups.push_back(std::move(group));
+    REQUIRE(groups.size() == whole.size());
+    for (size_t i = 0; i < groups.size(); ++i) {
+        CHECK(groups[i].function == whole[i].function);
+        CHECK(groups[i].hits.size() == whole[i].hits.size());
+    }
+    // A cut at a function start, or in the function the page began with, keeps everything.
+    CHECK(touch::KeepWhole(page, starts, Base, Base + 0x100, Base + 0x100) == Base + 0x100);
+    CHECK(touch::KeepWhole(page, starts, Base, Base + 0x30, Base) == Base + 0x30);
+    CHECK(page.size() == 2);
 }
 
 TEST_CASE("one anchor scan finds every anchor across blocks, as separate searches would") {

@@ -680,6 +680,51 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
         code.size(), rows, ms, LoadedModules(session)));
 }
 
+namespace {
+// Reads inside one module through the image window, a whole window per
+// request and kept: the function lookups for a sweep's thousands of hits
+// read the exception directory and unwind data at memory speed, not a host
+// tick per read. A span outside the module, or without the window: the
+// agent's reads.
+sig::ReadFn ImageRead(Session& session, const Module& module) {
+    if (!session.client.Supports(op::ImageCopy)) return AgentRead(session);
+    auto blocks = std::make_shared<std::map<uint64_t, ImageBlock>>();
+    return [&session, module, blocks, agent = AgentRead(session)](std::span<const ReadSpan> spans)
+               -> std::expected<std::vector<std::optional<std::vector<uint8_t>>>, std::string> {
+        std::vector<std::optional<std::vector<uint8_t>>> items;
+        const uint64_t moduleEnd = module.base + module.size;
+        for (const auto& span : spans) {
+            if (span.address < module.base || span.address >= moduleEnd || span.length > moduleEnd - span.address) {
+                auto one = agent(std::span(&span, 1));
+                if (!one) return std::unexpected(one.error());
+                items.push_back(one->empty() ? std::nullopt : std::move(one->front()));
+                continue;
+            }
+            std::vector<uint8_t> out;
+            bool readable = true;
+            for (uint64_t at = span.address; readable && at < span.address + span.length;) {
+                const uint64_t start = module.base + (at - module.base) / ImageWindowBytes * ImageWindowBytes;
+                auto block = blocks->find(start);
+                if (block == blocks->end()) {
+                    const uint64_t end = std::min(start + ImageWindowBytes, moduleEnd);
+                    auto copied = session.client.CopyImage(start, static_cast<uint32_t>(end - start), std::chrono::seconds(30));
+                    if (!copied) return std::unexpected("image copy: " + copied.error().message);
+                    block = blocks->emplace(start, std::move(*copied)).first;
+                }
+                const auto& bytes = block->second.bytes;
+                const uint64_t to = std::min(span.address + span.length, start + bytes.size());
+                for (uint64_t page = (at - start) / 0x1000; page <= (to - 1 - start) / 0x1000; ++page)
+                    readable = readable && page < block->second.copied.size() && block->second.copied[page];
+                out.insert(out.end(), bytes.begin() + static_cast<ptrdiff_t>(at - start), bytes.begin() + static_cast<ptrdiff_t>(to - start));
+                at = to;
+            }
+            items.push_back(readable ? std::optional(std::move(out)) : std::nullopt);
+        }
+        return items;
+    };
+}
+}
+
 // disp-scan: a linear sweep of the main module's executable sections from
 // `start` (default: the first), one block at a time, until the time budget
 // or the hit cap ends the page; next_cursor resumes it. Blocks come through
@@ -707,8 +752,8 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     uint64_t at = command.request.address ? command.request.address : code.front().start;
     if (std::ranges::none_of(code, [&](const unwind::Range& r) { return r.start <= at && at < r.end; }))
         return JsonError(session, jsonCommand, ErrorKind::Validation, "start: not in the main module's code (pass a next_cursor)");
-    auto& table = session.unwindTables[module.base];
-    if (!table) table = std::make_unique<unwind::Table>(AgentRead(session), module, (*layout)->exception);
+    // Function starts for every hit (same_base) or row: lookups through the image window.
+    unwind::Table table(ImageRead(session, module), module, (*layout)->exception);
     const touch::Form form{command.offsets, command.access, command.width, command.imm, touch::Bases{command.bases, true}};
     const size_t limit = command.limit ? command.limit : MaxHits;
     const size_t most = command.sameBase ? MaxGroupHits : limit;
@@ -717,6 +762,12 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     const auto started = Clock::now();
     Clock::duration reading{};
     std::vector<touch::Hit> hits;
+    std::vector<std::optional<uint64_t>> starts; // same_base: each hit's function start, inside the budget.
+    const auto startOf = [&](uint64_t address) -> std::optional<uint64_t> {
+        auto function = table.Lookup(address);
+        if (!function || !*function) return std::nullopt;
+        return (*function)->range.start;
+    };
     const uint64_t from = at;
     bool done = false;
     while (true) {
@@ -734,23 +785,24 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
         if (!read) return JsonError(session, jsonCommand, ErrorKind::Read, read.error());
         const size_t stopped = touch::Sweep(bytes, at, form, end == section->end, hits, most);
         at += std::max<size_t>(stopped, 1);
+        // Out of time while resolving: the page ends at the first hit left (an instruction start).
+        bool late = false;
+        if (command.sameBase)
+            while (starts.size() < hits.size() && !(late = Clock::now() - started >= Budget))
+                starts.push_back(startOf(hits[starts.size()].address));
+        if (late) {
+            at = hits[starts.size()].address;
+            hits.resize(starts.size());
+            break;
+        }
         if (hits.size() >= most || Clock::now() - started >= Budget) break;
     }
-    const auto startOf = [&](uint64_t address) -> std::optional<uint64_t> {
-        auto function = FunctionAt(session, address);
-        if (!function || !*function) return std::nullopt;
-        return (*function)->range.start;
-    };
     // same_base groups need whole functions: a page cut inside one resumes at its start.
-    if (command.sameBase && !done)
-        if (const auto start = startOf(at); start && *start > from && *start < at) {
-            std::erase_if(hits, [&](const touch::Hit& hit) { return hit.address >= *start; });
-            at = *start;
-        }
+    if (command.sameBase && !done) at = touch::KeepWhole(hits, starts, from, at, startOf(at));
     std::vector<touch::Group> groups;
     bool cut = false;
     if (command.sameBase) {
-        groups = touch::SameBase(hits, form.disps, startOf);
+        groups = touch::SameBase(hits, starts, form.disps);
         // Past view.limit rows: whole functions up to it (one at least), the page resuming at the next.
         size_t rows = 0, keep = 0;
         while (keep < groups.size() && (!keep || rows + groups[keep].hits.size() <= limit)) rows += groups[keep++].hits.size();
