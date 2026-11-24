@@ -2,7 +2,8 @@
 import json
 import re
 
-from .labels import _database_build, best, load, of_build
+from .database import _auto_name
+from .labels import _database_build, best, load, made_up, of_build
 
 _C_UNSAFE = re.compile(r'[^A-Za-z0-9_]')
 _KEYWORDS = {'auto', 'bool', 'break', 'case', 'char', 'class', 'const', 'continue', 'default', 'delete', 'do',
@@ -212,6 +213,81 @@ def this_class(name, known):
     return None
 
 
+_EXEC = re.compile(r'^(?P<cls>.+)::exec(?P<method>\w+)$')
+
+
+def exec_method(label):
+    """(Class, Method) for an exec thunk's label `Class::execMethod`, else None."""
+    match = _EXEC.match(label or '')
+    return (match['cls'], match['method']) if match else None
+
+
+def thunk_body(calls):
+    """The native function an exec thunk calls, from its direct calls [(callee, passes_context)]:
+    the one callee whose first argument is the thunk's own first parameter (P_THIS: the context
+    object). The thunk's helpers take the stack frame first. None when no callee or several are."""
+    found = {callee for callee, context in calls if context}
+    return found.pop() if len(found) == 1 else None
+
+
+def _context_calls(ea):
+    """IDA: the direct calls in the decompiled function at `ea`, [(callee, passes_context)], or None
+    when it does not decompile."""
+    import ida_hexrays
+
+    try:
+        cfunc = ida_hexrays.decompile(ea)
+    except Exception:  # noqa: BLE001 - a thunk that does not decompile keeps its body unnamed.
+        return None
+    if not cfunc or not cfunc.argidx.size():
+        return None
+    context = cfunc.argidx[0]
+    calls = []
+
+    class Calls(ida_hexrays.ctree_visitor_t):
+        def visit_expr(self, expr):
+            if expr.op == ida_hexrays.cot_call and expr.x.op == ida_hexrays.cot_obj:
+                first = expr.a[0] if expr.a.size() else None
+                while first is not None and first.op == ida_hexrays.cot_cast:
+                    first = first.x
+                calls.append((expr.x.obj_ea, first is not None and first.op == ida_hexrays.cot_var
+                              and first.v.idx == context))
+            return 0
+
+    Calls(ida_hexrays.CV_FAST).apply_to(cfunc.body, None)
+    return calls
+
+
+def _thunk_bodies(named):
+    """IDA: for each exec thunk [(start, `Class::execMethod`)], the native function it calls
+    (thunk_body), named `Class::Method` (an auto name, as a save's) when its name is made up.
+    Returns ([(start, name)] to type `this` on, the names given, and the
+    thunks that did not decompile: they wait (while a load ends the decompiler refuses))."""
+    import ida_funcs
+    import ida_name
+
+    out, given, waiting = [], [], []
+    for ea, label in named:
+        parts = exec_method(label)
+        if not parts:
+            continue
+        calls = _context_calls(ea)
+        if calls is None:
+            waiting.append((ea, label))
+            continue
+        body = thunk_body(calls)
+        if body is None or not ida_funcs.get_func(body):
+            continue
+        name = ida_name.get_name(body) or ''
+        if made_up(name):
+            name = f'{parts[0]}::{parts[1]}'
+            if not ida_name.set_name(body, name, _auto_name()):
+                continue  # Taken at another address.
+            given.append(name)
+        out.append((body, name))
+    return out, given, waiting
+
+
 def _number(value):
     """'0x..', decimal text or an int, as layout files write numbers."""
     return value if isinstance(value, int) else int(value, 0)
@@ -311,9 +387,10 @@ def apply_this(labels_path):
 
 
 def _type_this(named):
-    """IDA: `Class *this` on each function [(start, name)] whose name gives a local struct type.
+    """IDA: `Class *this` on each function [(start, name)] whose name gives a local struct type, and
+    on the native function an exec thunk among them calls (_thunk_bodies names it `Class::Method`).
     Returns {'typed': n, 'skipped': ['name: why'], 'left': [(start, name)] with no function type
-    yet (no decompiler)}."""
+    yet (no decompiler), 'bodies': names given to thunks' native functions}."""
     import ida_auto
     import ida_funcs
     import ida_hexrays
@@ -323,7 +400,12 @@ def _type_this(named):
     ida_auto.auto_wait()
     structs, typed, skipped, left = {}, 0, [], []
     decompiler = ida_hexrays.init_hexrays_plugin()
-    for ea, label in named:
+    if decompiler:
+        bodies, given, waiting = _thunk_bodies(named)
+    else:  # Without the decompiler an exec thunk's native function is not found: the thunk waits.
+        bodies, given, waiting = [], [], [(ea, label) for ea, label in named if exec_method(label)]
+    # A native function the save listed too (as fn_<rva>) is typed under its new name, once.
+    for ea, label in {**dict(named), **dict(bodies)}.items():
         function = ida_funcs.get_func(ea)
         if not function or function.start_ea != ea:
             continue  # A global, or a function this database does not hold.
@@ -354,4 +436,5 @@ def _type_this(named):
             typed += 1
         else:
             skipped.append(f"{label}: IDA refused the type")
-    return {'typed': typed, 'skipped': skipped, 'left': left}
+    left += [item for item in waiting if item not in left]
+    return {'typed': typed, 'skipped': skipped, 'left': left, 'bodies': given}

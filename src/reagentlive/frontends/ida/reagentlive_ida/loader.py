@@ -3,6 +3,7 @@ add_saved, which grows an open database by another save."""
 import json
 
 from .database import _CONSOLE_NODE, _NODE, _auto_name
+from .labels import made_up
 from .layout_types import _declare, _type_this, layouts
 from .save import additions, methods, parse, stubs
 
@@ -70,8 +71,11 @@ def _apply(plan, writes):
         segment.perm = ida_segment.SEGPERM_READ | (ida_segment.SEGPERM_EXEC if what in ('call', 'tail', 'function') else 0)
         ida_segment.add_segm_ex(segment, f'stub_{address:x}', 'STUB', ida_segment.ADDSEG_NOSREG)
     for address, name, _ in plan['names']:
-        if not ida_bytes.has_user_name(ida_bytes.get_flags(address)):  # A name you gave stays.
-            ida_name.set_name(address, name, _auto_name())
+        if ida_bytes.has_user_name(ida_bytes.get_flags(address)):
+            continue  # A name you gave stays.
+        if made_up(name) and not made_up(ida_name.get_name(address) or ''):
+            continue  # fn_<rva> never replaces a name the database derived (a thunk's native function).
+        ida_name.set_name(address, name, _auto_name())
     unloaded = [start for start, _ in plan['functions']] + [start for start, _, _ in plan['chunks']]
     unloaded = [f'{start:#x}' for start in unloaded if not ida_bytes.is_loaded(start)]
     if unloaded:
@@ -195,7 +199,8 @@ def saved_types(plan, now=True):
     """IDA: a save's layout rows as local types (import_layouts' logic: types of the same name are
     replaced), then `Class *this` on its functions whose names give a class (apply_this' logic),
     with any a load left pending. Returns {'types': types and enums declared, 'types_failed':
-    declarations IDA refused, 'this_typed': n, 'this_skipped': ['name: why']}, or {'error': why}
+    declarations IDA refused, 'this_typed': n, 'this_skipped': ['name: why'], 'bodies_named':
+    ['Class::Method' given to an exec thunk's native function]}, or {'error': why}
     when the rows are no layout. With `now` false (while loading: no decompiler yet) the
     functions wait in the database and are typed when auto-analysis ends, or by the next
     add_saved; this_typed is then 0."""
@@ -204,12 +209,12 @@ def saved_types(plan, now=True):
         return {'error': parsed}
     report = _declare(*parsed)
     out = {'types': len(report.get('types', [])) + len(report.get('enums', [])), 'types_failed': report['failed'],
-           'this_typed': 0, 'this_skipped': []}
+           'this_typed': 0, 'this_skipped': [], 'bodies_named': []}
     if not now:
         _defer_this(methods(plan))
         return out
     typed = _type_this(_take_pending() + methods(plan))
-    out.update(this_typed=typed['typed'], this_skipped=typed['skipped'] + [f'{name}: no decompiler' for _, name in typed['left']])
+    out.update(this_typed=typed['typed'], bodies_named=typed.get('bodies', []), this_skipped=typed['skipped'] + [f'{name}: no decompiler' for _, name in typed['left']])
     return out
 
 
@@ -224,16 +229,27 @@ def _defer_this(named):
         def auto_empty_finally(self):
             self.unhook()
             ida_idp.reagentlive_this_hook = None
-            pending = _take_pending()
-            if pending:
-                left = _type_this(pending)['left']
-                if left:  # No decompiler yet: the next add_saved types them.
-                    ida_netnode.netnode(_PENDING, 0, True).supset(0, json.dumps(left))
+            type_pending()  # No decompiler yet: what it needs waits for decompile_to or add_saved.
             return 0
 
     hook = _AfterAnalysis()
     hook.hook()
     ida_idp.reagentlive_this_hook = hook  # Kept alive past this loader module.
+
+
+def type_pending():
+    """IDA: type what a load left pending (no decompiler then: functions with no type, exec thunks'
+    native functions); what still cannot be done waits again. Returns _type_this's report, or None
+    when nothing waited. decompile_to and decompile_all run it first."""
+    import ida_netnode
+
+    pending = _take_pending()
+    if not pending:
+        return None
+    typed = _type_this(pending)
+    if typed['left']:
+        ida_netnode.netnode(_PENDING, 0, True).supset(0, json.dumps(typed['left']))
+    return typed
 
 
 def _take_pending():

@@ -125,7 +125,7 @@ def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=N
 
     Returns {'functions': ['0x..' every saved function], 'skipped': the console's skipped rows,
     'added', 'joined', 'cut', 'stubs_replaced' (add_saved's, over every file), 'types', 'this_typed',
-    'this_skipped', 'decompiled': decompile_to's summaries, 'seconds': {'console', 'load', 'decompile'}}.
+    'this_skipped', 'bodies_named', 'decompiled': decompile_to's summaries, 'seconds': {'console', 'load', 'decompile'}}.
     Raises FetchError with the console's refusal attached, SaveError when a file does not load."""
     import shutil
     import tempfile
@@ -141,11 +141,11 @@ def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=N
         results = run_console(command, calls, timeout)
         seconds = {'console': round(time.perf_counter() - started, 3)}
         out = {'functions': [], 'skipped': [], 'added': [], 'joined': [], 'cut': [], 'stubs_replaced': [],
-               'types': 0, 'this_typed': 0, 'this_skipped': []}
+               'types': 0, 'this_typed': 0, 'this_skipped': [], 'bodies_named': []}
         started = time.perf_counter()
         for path, result in zip(paths, results):
             loaded = add_saved(path)
-            for key in ('added', 'joined', 'cut', 'stubs_replaced', 'this_skipped'):
+            for key in ('added', 'joined', 'cut', 'stubs_replaced', 'this_skipped', 'bodies_named'):
                 out[key] += loaded.get(key, [])
             out['types'] += loaded.get('types', 0)
             out['this_typed'] += loaded.get('this_typed', 0)

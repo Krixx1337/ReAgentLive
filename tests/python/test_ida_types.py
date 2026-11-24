@@ -215,13 +215,14 @@ class SavedTypes(unittest.TestCase):
         calls = []
         saved = (rl.loader._declare, rl.loader._type_this, rl.loader._take_pending, rl.loader._defer_this)
         rl.loader._declare = lambda classes, enums, report: calls.append(('declare', sorted(classes))) or             {'types': sorted(classes), 'enums': [], 'failed': []}
-        rl.loader._type_this = lambda named: calls.append(('this', named)) or             {'typed': 1, 'skipped': ['fn_2000: x'], 'left': [(0x140005000, 'Thing_Late')]}
+        rl.loader._type_this = lambda named: calls.append(('this', named)) or             {'typed': 1, 'skipped': ['fn_2000: x'], 'left': [(0x140005000, 'Thing_Late')], 'bodies': ['Thing::Tick']}
         rl.loader._take_pending = lambda: [(0x140004000, 'Thing_Earlier')]
         rl.loader._defer_this = lambda named: calls.append(('defer', named))
         try:
             now = rl.saved_types(plan)
             self.assertEqual(now, {'types': 3, 'types_failed': [], 'this_typed': 1,
-                                   'this_skipped': ['fn_2000: x', 'Thing_Late: no decompiler']})
+                                   'this_skipped': ['fn_2000: x', 'Thing_Late: no decompiler'],
+                                   'bodies_named': ['Thing::Tick']})
             self.assertEqual(calls[1], ('this', [(0x140004000, 'Thing_Earlier'), (0x140001000, 'Thing_Tick'),
                                                  (0x140002000, 'fn_2000')]))
             calls.clear()
@@ -231,6 +232,20 @@ class SavedTypes(unittest.TestCase):
             self.assertIn('error', rl.saved_types(dict(plan, layouts=['not json'])))
         finally:
             rl.loader._declare, rl.loader._type_this, rl.loader._take_pending, rl.loader._defer_this = saved
+
+    def test_an_exec_thunks_label_names_its_class_and_method(self):
+        self.assertEqual(rl.exec_method('Thing::execIsAimingBlocked'), ('Thing', 'IsAimingBlocked'))
+        self.assertEqual(rl.exec_method('Outer::Inner::execTick'), ('Outer::Inner', 'Tick'))
+        self.assertIsNone(rl.exec_method('Thing::Tick'))
+        self.assertIsNone(rl.exec_method('fn_2000'))
+
+    def test_the_thunks_native_function_is_the_one_call_passed_the_context(self):
+        # FFrame helpers take the stack frame first; the native function takes P_THIS.
+        self.assertEqual(rl.thunk_body([(0x10, False), (0x20, True), (0x30, False)]), 0x20)
+        self.assertEqual(rl.thunk_body([(0x20, True), (0x20, True)]), 0x20)   # Called twice: one function.
+        self.assertIsNone(rl.thunk_body([(0x10, False)]))                     # A virtual call: none direct.
+        self.assertIsNone(rl.thunk_body([(0x20, True), (0x40, True)]))        # Ambiguous: left unnamed.
+        self.assertIsNone(rl.thunk_body([]))
 
     def test_layout_rows_without_a_type_are_no_layout(self):
         plan = rl.parse(SAVE[:4] + ['{"row":"layout","kind":"widget","name":"x"}'])

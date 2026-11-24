@@ -1,6 +1,7 @@
 """Pseudocode out: one file per function (decompile_to), or one string (decompile_all)."""
 import re
 
+from .loader import type_pending
 from .save import sanitize
 
 _FILE_UNSAFE = re.compile(r'[^A-Za-z0-9_.-]')
@@ -96,6 +97,7 @@ def decompile_to(targets, out_dir, grep=None):
     # Analysis still queued (right after a load or add_saved, or in a script that loads and decompiles at
     # once) would leave frames and blocks half done: drain it first. Milliseconds on a save.
     ida_auto.auto_wait()
+    type_pending()  # `this` and thunks' native functions a load left for the decompiler.
     if isinstance(targets, (str, int)):
         targets = [targets]
     os.makedirs(out_dir, exist_ok=True)
@@ -124,4 +126,5 @@ def decompile_all():
     import idautils
 
     ida_auto.auto_wait()
+    type_pending()  # `this` and thunks' native functions a load left for the decompiler.
     return '\n\n'.join(f'// {ida_name.get_name(ea)}\n{_pseudocode(ea)[0]}' for ea in idautils.Functions())

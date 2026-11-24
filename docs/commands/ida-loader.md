@@ -57,7 +57,12 @@ C++, so the decompiler uses the Windows calling convention):
   decompiler shows `fn_6fa0aa0(...)` or a label instead of a bare address;
 - the file's `layout` rows as local types, and `Class *this` on the
   methods they belong to once auto-analysis ends (the decompiler is not
-  there while loading);
+  there while loading), including the native function a UFunction's exec
+  thunk (`Class::execMethod`) calls: the one call whose first argument is
+  the thunk's own first parameter (`P_THIS`; its helpers take the stack
+  frame first), named `Class::Method` when the save gives it only
+  `fn_<rva>`. A later save's `fn_<rva>` never replaces that name. What the
+  decompiler could not do while loading, `decompile_to` does first;
 - its `console` row, kept in the database for `fetch`, `workspace` and
   `finish`.
 
@@ -82,7 +87,9 @@ the code that arrives. Names you gave and comments already there stay.
 It returns `added` (new segments), `joined` (existing segments grown),
 `cut` (new bytes already held), each as `start-end` ranges,
 `stubs_replaced`, and for `layout` rows `types` (declared),
-`types_failed`, `this_typed` and `this_skipped` (`'<name>: why'`); a
+`types_failed`, `this_typed`, `this_skipped` (`'<name>: why'`) and
+`bodies_named` (the `Class::Method` names given to thunks' native
+functions); a
 function it could not type yet waits for the next `add_saved`. It raises
 `SaveError` instead of loading less than the file holds: a file it cannot
 parse, another build, a byte that differs from the database, or a saved
@@ -185,7 +192,8 @@ IDA refused; those types are missing, the rest are in).
 `apply_this(<labels file>)` types the first argument `Class *this` on each
 function a label of this build names `Class::Method`, or `Class_Method`
 with the longest `Class` prefix that is a local struct type (class names
-hold `_` too), so the decompiler shows `this->Field`. Other arguments and
+hold `_` too), so the decompiler shows `this->Field`; an exec thunk's
+native function too, as on loading. Other arguments and
 the return type stay as IDA has them. It returns `typed` (a count) and
 `skipped` (`'<name>: why'`). Run `import_layouts` first.
 

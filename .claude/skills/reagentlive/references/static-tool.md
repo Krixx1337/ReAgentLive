@@ -14,7 +14,9 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
   `import_labels` the labels files.
 - A UFunction's native code: `ue_func`'s `exec` is the thunk that unpacks
   the parameters, not the body. Save from `exec` with `callees` 1: the
-  body is the depth-1 function the thunk calls.
+  loader names the body `Class::Method` and types its `this`
+  (`bodies_named`). None named (a virtual call, the body not saved):
+  `disasm` the thunk and save its call target.
 
 ## One-time setup (the user's; ask, never edit their install)
 

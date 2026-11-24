@@ -51,7 +51,8 @@ from .decompile import decompile_all, decompile_to, file_names, matcher, summary
 from .database import recorded_console
 from .labels import (best, build_of, export_names, import_labels, labels_message, load, made_up,
                      merge_user_rows, of_build, plan, user_rows)
-from .layout_types import apply_this, c_name, declarations, import_layouts, layouts, this_class
+from .layout_types import (apply_this, c_name, declarations, exec_method, import_layouts, layouts, this_class,
+                           thunk_body)
 from .loader import FORMAT, SaveError, accept_file, add_saved, load_file, saved_types
 from .save import additions, join, methods, parse, sanitize, stubs
 from .session import (FetchError, console_command, console_results, fetch, fetch_calls, finish, run_console,
