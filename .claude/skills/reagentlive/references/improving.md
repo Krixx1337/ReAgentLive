@@ -6,19 +6,27 @@ maintaining reference.
 
 ## Mode
 
-Read `improvement` from the setup record
-(`%LOCALAPPDATA%\reagentlive\setup.json`). No record or no key: `user`.
+Read `improvement` and `scratch` from the setup record
+(`%LOCALAPPDATA%\reagentlive\setup.json`). No record or no key: `user`;
+`scratch` defaults to true in `dev`, false otherwise.
 
 | Mode | May change | During the task | After the task | Never |
 |---|---|---|---|---|
 | `off` | nothing | nothing | nothing | anything |
-| `user` (default) | only `references/local-lessons.md` (git-ignored) | scratch notes on friction | up to 3 proposals in plain words, one yes each; everything that is not a local lesson (docs or code problems, missing verbs, host notes, findings) is told to the user as a suggestion or an issue text, never written | any other file: ReAgentLive code, docs, tests, build files, tracked skill files, host notes, the project's findings |
+| `user` (default) | only `references/local-lessons.md` (git-ignored) | nothing written (scratch notes only with `scratch: true`) | up to 3 proposals in plain words, one yes each; everything that is not a local lesson (docs or code problems, missing verbs, host notes, findings) is told to the user as a suggestion or an issue text, never written | any other file: ReAgentLive code, docs, tests, build files, tracked skill files, host notes, the project's findings |
 | `dev` | anything: skill, docs, ReAgentLive code, tests, backlog | scratch notes | proposals as diffs or a plan; code changes on a branch with the build and tests run, diff shown | committing or pushing unless asked; silently changing approval or safety rules |
 
-`off`: skip this file. The user changes the mode with one line:
-`improvement` in the setup record.
+`off`: skip this file. Change the mode: set `improvement` (and
+`scratch`) in `%LOCALAPPDATA%\reagentlive\setup.json`, for example
+`{"improvement": "dev"}`, or ask the agent to. A file with only these keys
+is enough when setup never ran.
 
 ## During the task: the scratch file
+
+Only when `scratch` is on (`dev` by default). It keeps evidence that
+`usage` cannot hold and a long session may lose to compaction: user
+corrections, wrong turns, events from several agents. Off: keep working;
+the review reads `usage` and this conversation.
 
 - Path: `%LOCALAPPDATA%\reagentlive\sessions\<session>.md`, `<session>`
   being the id `usage` reports for this console session.
@@ -51,8 +59,10 @@ appeared. Otherwise delete the scratch file, if any, and stop. Budget: one
 
 1. `usage` for the session with `advice`
    (`{"verb": "usage", "args": {"session": "<id>", "advice": true}}`; drop
-   `session` while it runs); copy its marks, its `advice` rows and its
-   `refusals` (verb, kind, arg: the help texts that misled) into Friction.
+   `session` while it runs): its marks, its `advice` rows and its
+   `refusals` (verb, kind, arg: the help texts that misled) are the
+   Friction, with this session's corrections and wrong turns from the
+   conversation (and the scratch file, when there is one).
 2. Turn Friction and Wrong turns into candidates. Apply the rubric to each;
    drop any that fails one question:
    - Would it have saved a step, a refusal or an approval round?
@@ -83,7 +93,7 @@ game, mod or host.
    writes nothing but `local-lessons.md`; never post an issue. `dev` code
    changes: on a branch, build and run the tests, show the diff; never
    commit or push unless asked.
-6. Delete the scratch file (`dev`: once the PR is written).
+6. Delete the scratch file, if any (`dev`: once the PR is written).
 
 ## Local lessons
 

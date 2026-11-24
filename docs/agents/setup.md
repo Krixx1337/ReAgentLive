@@ -304,7 +304,7 @@ ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it 
 
 ## 9. Choose the improvement mode
 
-The skill keeps notes on what slowed it down and proposes fixes after a
+The skill reviews what slowed it down and proposes fixes after a
 task ([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
 Ask the user: "Do you use ReAgentLive as a user or as a developer?"
 
@@ -328,6 +328,7 @@ One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 | `skill_install` | `junction`, `symlink`, `copy` (step 6), or `instructions` for an instructions line |
 | `skill_commit` | copy installs only: the commit copied |
 | `improvement` | `user`, `dev` or `off` (step 9) |
+| `scratch` | optional: `true` keeps notes on friction in a file during each task (the default in `dev`), `false` none (the default otherwise) |
 | `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [the update procedure](update.md) sets it to the new commit |
 
 ```powershell
