@@ -52,6 +52,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Improved
 
+- **"Update ReAgentLive" is enough:** the skill reads the newest update
+  procedure from `origin/main` and follows it; a project that carries
+  ReAgentLive as a submodule gets its own checked steps, which stop before
+  stranding unpushed submodule commits ([update](docs/agents/update.md#host-projects-with-a-submodule)).
 - **Clients share the agent in short turns:** any number of consoles,
   sessions and MCP calls attach at once and take the agent's slot per
   request; long verbs (`disp-scan`, `labels-*`, `sig-check` with a file)

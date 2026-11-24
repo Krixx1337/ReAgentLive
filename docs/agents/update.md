@@ -29,7 +29,12 @@ A host project that carries ReAgentLive as a submodule follows
 
 ## 1. Read the setup record
 
-Read `%LOCALAPPDATA%\reagentlive\setup.json`
+First: the project you work in carries ReAgentLive as a submodule
+(`git submodule status` lists its folder): follow
+[its own section](#host-projects-with-a-submodule) instead, whatever the
+record holds (a host may keep one for `improvement` alone).
+
+Otherwise read `%LOCALAPPDATA%\reagentlive\setup.json`
 ([its fields](setup.md#11-write-the-setup-record)). It names `dir`,
 the `examples` built, the `client`, whether `python_functions` were
 generated, the `skill_install` and the `improvement` mode.
@@ -232,16 +237,35 @@ Tell the user:
 ## Host projects with a submodule
 
 A project that carries ReAgentLive as a git submodule loads the skill in
-place from the submodule's `.claude/skills` folder; there is no setup
-record. To update:
+place from the submodule's `.claude/skills` folder; it needs no setup
+record. `<host>` is the project, `<path>` the submodule's folder. The
+host's own notes (its build, its commit rules) win over these steps.
 
-```powershell
-git -C <host> submodule update --remote <path>
-git -C <host>/<path> log --oneline <old>..HEAD
-```
+1. Check the submodule's state; never update blindly:
 
-where `<path>` is the submodule's folder and `<old>` the commit it was
-at. Read the CHANGELOG lines as in step 2, rebuild the host with its own
-build, re-inject (step 7), verify `status` (step 10), check the IDA side when
-the user has set it up (step 9), and commit the new
-submodule pointer only when the user asks.
+   ```powershell
+   git -C <host>/<path> status --short
+   git -C <host>/<path> branch --show-current
+   git -C <host>/<path> fetch origin
+   git -C <host>/<path> log --oneline origin/main..HEAD
+   ```
+
+   - `status` prints a tracked file: stop, show the list and ask, as in
+     step 2.
+   - `log` prints commits: the submodule holds work that is not on
+     `origin/main` (a developer's host); stop and ask. An update would
+     leave those commits on no branch.
+   - A detached HEAD is normal for a submodule. A branch other than
+     `main`: tell the user and ask before switching.
+2. Keep `git -C <host>/<path> rev-parse --short=12 HEAD` as `<old>`, then
+   show what is coming as in step 2, run in `<host>/<path>` (the `log`,
+   the CHANGELOG diff and the protocol check). Empty `log`: nothing to
+   update; say so and stop.
+3. Update. On `main`: `git -C <host>/<path> pull --ff-only`. Detached:
+   `git -C <host> submodule update --remote <path>`.
+4. Rebuild the host with its own build, then follow steps 6 (MCP server),
+   7 (running targets), 8 (local lessons), 9 (IDA side: run its check;
+   `missing` without the record's `ida` means skip) and 10 (verify).
+5. Report with step 12's block; its `Record` line reads `none (submodule)`.
+   The host's submodule pointer now shows as changed: commit it only when
+   the user asks.

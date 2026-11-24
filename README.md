@@ -41,7 +41,8 @@ By hand, start from the example for your target:
 | Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
 | A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
 
-**To update later** (pull, rebuild, re-inject, check), paste:
+**To update later** (pull, rebuild, re-inject, check), ask your agent to
+"update ReAgentLive": the skill routes it. Without the skill, paste:
 
 ```text
 Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.

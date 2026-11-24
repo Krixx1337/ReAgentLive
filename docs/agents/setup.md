@@ -386,5 +386,5 @@ Tell the user:
 
 Then say in one line that for a UE5 game they mod with its SDK, the mod
 itself can host ReAgentLive for T4 ([hosting](../hosting.md)), and in one
-line that to update later they paste the update prompt from the README
-(it runs [the update procedure](update.md)).
+line that to update later they ask their agent to "update ReAgentLive"
+(the skill runs [the update procedure](update.md)).

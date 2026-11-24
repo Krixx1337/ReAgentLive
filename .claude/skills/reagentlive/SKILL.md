@@ -1,6 +1,6 @@
 ---
 name: reagentlive
-description: Investigate a running game with ReAgentLive, an in-process agent driven by MCP tools, a console or Python - find objects and UObject instances, read reflected and native fields, decode FName and gameplay tag indices, call engine getters on the game thread, capture runtime behaviour, read live code (disasm, xrefs, signatures) and turn findings into evidence-backed changes. Use for any runtime question about game data, engine objects or a mod's behaviour, before guessing from an SDK dump; also to read which tier a target gives and to climb it.
+description: Investigate a running game with ReAgentLive, an in-process agent driven by MCP tools, a console or Python - find objects and UObject instances, read reflected and native fields, decode FName and gameplay tag indices, call engine getters on the game thread, capture runtime behaviour, read live code (disasm, xrefs, signatures) and turn findings into evidence-backed changes. Use for any runtime question about game data, engine objects or a mod's behaviour, before guessing from an SDK dump; also to read which tier a target gives and to climb it, and to install or update ReAgentLive itself.
 ---
 
 # ReAgentLive investigations
@@ -16,9 +16,8 @@ if present and what it routes to (`general.md`; the game's file once `status`
 names the exe): the user's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
 skill folder lives in, else `dir`, else
 `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
-`status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`). A
-`copy` install whose `skill_commit` differs: tell the user once to update
-(`docs/agents/update.md`).
+`status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`). A `copy`
+install whose `skill_commit` differs: offer the update once (updating, below).
 
 ## First command: `status`
 
@@ -107,4 +106,5 @@ This skill:
 | When you... | Load |
 |---|---|
 | after a task with friction, or when the improvement mode is user or dev; read before ending the task | [references/improving.md](references/improving.md) |
+| are asked to install, update or upgrade ReAgentLive | [references/updating.md](references/updating.md) |
 | edit this skill | [references/maintaining.md](references/maintaining.md) |
