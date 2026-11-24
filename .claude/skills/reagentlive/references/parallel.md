@@ -17,7 +17,9 @@ follows a background run: the console-driving reference.
   and the skills to load first. Results carry literal refs, so a subagent
   never needs another's session state.
 - Values from two calls, or two clients, are never from one moment. For
-  values that must line up, one client sends one `batch`.
+  values that must line up: one `get` with several `paths`, or a `batch`
+  of `read`s. A `batch` holding `get` or `describe` spans ticks through
+  their lookups, other clients or not.
 
 ## Shared resources: one at a time
 
@@ -27,9 +29,9 @@ follows a background run: the console-driving reference.
 - **One search job** per agent: any client's new `search` stops the
   running one, and only the last job answers `search-job`. Only one client
   searches at a time; others wait for its job to end.
-- **`census` keeps one result per filter.** Two clients asking with
-  different filters rescan every time they alternate. Agree on one filter,
-  or let one client census and share the rows.
+- **`census` scans on every call** (a repeat with the same filter costs the
+  same). Let one client census and share the rows, instead of each
+  subagent running its own.
 
 ## Long work
 
