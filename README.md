@@ -15,6 +15,29 @@ and it waits for questions from outside: where a value lives, what the code
 at an address does, what happens if a byte changes. Your agent asks through
 its tools; you can ask from a command line.
 
+## Quick start
+
+**Needs:** Windows x64, Visual Studio's C++ tools and Python.
+
+Paste this into Claude Code, Codex, Cursor or any coding agent:
+
+```text
+Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/setup.md and follow it.
+```
+
+The agent builds the example for your target, registers its MCP tools,
+installs the skill (instructions it reads before investigating) and checks
+the result. If you want, it also fetches a command-line DLL loader, so it
+can load ReAgentLive into the process you name.
+
+By hand, start from the example for your target:
+
+| Your target | Start from | Tier |
+|---|---|---|
+| Any Windows x64 process | [`examples/own_thread`](examples/own_thread/README.md) | T0 |
+| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
+| A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
+
 ## What you can do, by tier
 
 | Tier | Adds | Works on |
@@ -79,14 +102,6 @@ as `module` + `rva` (module and offset), ready for IDA or Ghidra.
   class, read their fields by name and, on the game thread, call the
   game's own getters.
 
-## Pick your start
-
-| Your target | Start from | Tier |
-|---|---|---|
-| Any Windows x64 process | [`examples/own_thread`](examples/own_thread/README.md) | T0 |
-| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
-| A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
-
 ## Ways to drive it
 
 The same commands through four interfaces ([clients](docs/client.md)):
@@ -95,26 +110,6 @@ The same commands through four interfaces ([clients](docs/client.md)):
 - **Console:** a command line for you, or quick checks ([console](docs/commands/console.md)).
 - **Python:** generated functions for loops and comparisons over results.
 - **C++ client:** for your own tools and outside programs.
-
-## Set it up with your agent
-
-Paste this into Claude Code, Codex, Cursor or any coding agent:
-
-```text
-Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/setup.md and follow it.
-```
-
-The agent builds the example for your target, registers its MCP tools,
-installs the skill (instructions it reads before investigating) and checks
-the result. If you want, it also fetches a command-line DLL loader, so it
-can load ReAgentLive into the process you name. You need Windows x64,
-Visual Studio's C++ tools and Python. By hand: each example's README above.
-
-To update later (pull, rebuild, re-inject, check), paste:
-
-```text
-Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.
-```
 
 ## Safe by default
 
@@ -150,6 +145,9 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
   task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
   [design](docs/design.md).
+- **Update** (pull, rebuild, re-inject, check): paste
+  `Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.`
+  into your agent.
 - **Status:** version 0.5.0 ([changelog](CHANGELOG.md)). It is usable,
   and the API can change before 1.0. Windows x64, C++23.
 
