@@ -3,7 +3,10 @@
 #pragma once
 #include <vector>
 #include "reagentlive/packs/ue/cli/results/census.h"
-#include "reagentlive/packs/ue/cli/results/result_json_ue.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_objects.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_fields.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_calls.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_code.h"
 #include "reagentlive/frontends/cli/call/build_internal.h"
 
 namespace reagentlive::cli {

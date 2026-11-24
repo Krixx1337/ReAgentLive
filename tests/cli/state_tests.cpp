@@ -6,7 +6,10 @@
 #include "reagentlive/frontends/cli/state/usage.h"
 #include "reagentlive/packs/ue/cli/state/native_names.h"
 #include "reagentlive/frontends/cli/values/layout_json.h"
-#include "reagentlive/packs/ue/cli/results/result_json_ue.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_objects.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_fields.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_calls.h"
+#include "reagentlive/packs/ue/cli/results/result_ue_code.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>

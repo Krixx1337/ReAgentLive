@@ -1,7 +1,7 @@
 // reagentlive CLI: the core commands' results as typed structs (schema.h) and
 // the shared envelopes, built from client results only (no I/O). The verb
 // table (results/verbs.h) names each verb's type; docs/commands/results.md is
-// generated from it. The Unreal pack's are in packs/ue/cli/results/result_json_ue.h.
+// generated from it. The Unreal pack's are in packs/ue/cli/results/result_ue_*.h.
 //
 // Conventions every result follows:
 //   rows          the result's list.           total        how many there are in all, when rows may show fewer.
