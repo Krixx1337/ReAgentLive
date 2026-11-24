@@ -76,6 +76,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   write and untrusted-text rules, instead of a usage summary the skill
   already holds ([client](docs/client.md)).
 
+### Fixed
+
+- **`save.callees` no longer skips a callee as `unreadable` behind a
+  one-byte decoy entry** (a packed image's): it walks from the start, as
+  the function asked for already did.
+
 ### Breaking
 
 - **The IDA side is set up once, not copied:** run

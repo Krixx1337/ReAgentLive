@@ -366,6 +366,9 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             auto entry = FunctionAt(session, target);
             if (!entry) return JsonError(session, jsonCommand, ErrorKind::Unwind, entry.error());
             auto callee = list(target, MaxFunctionDisasm, !*entry, false);
+            // A one-byte decoy entry over the start bounds the listing to nothing:
+            // walk from the start instead, as the function asked for does.
+            if (callee && *entry && dis::ShorterThanOne(*callee)) callee = list(target, MaxFunctionDisasm, true, false);
             if (!callee || callee->rows.empty()) { skip(target, "unreadable"); continue; }
             tables.push_back(findTables(*callee));
             starts.push_back(target);

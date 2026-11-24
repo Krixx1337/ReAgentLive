@@ -510,7 +510,8 @@ namespace {
 // switch (0x1400) whose targets lie in its own entry, a chained chunk
 // (0x1500) that also holds its table, code no entry lists (0x1600) and
 // undecodable bytes (0x1610); a call chain (0x1700) and a function calling
-// one more than the callee cap (0x1800).
+// one more than the callee cap (0x1800), and a function calling the one
+// behind the decoy (0x1b00).
 uint64_t TheCode() {
     static const uint64_t base = [] {
         auto& image = TheImage();
@@ -584,6 +585,7 @@ uint64_t TheCode() {
             image.Put(target, {0xc3});
         }
         image.Put(0x1800 + 17 * 5, {0xc3});
+        image.Put(0x1b00, {0xe8, 0xfb, 0xf4, 0xff, 0xff, 0xc3});   // call 0x1000 (behind its decoy); ret
         std::fill(image.bytes + 0x3000, image.bytes + 0x3100, uint8_t{0x90}); // Nops: no signature is unique.
         return image.Base();
     }();
@@ -646,6 +648,10 @@ TEST_CASE("disasm save callees follows calls and tail jumps breadth-first to the
     const auto capped = save(0x1800, 1);
     CHECK(capped["functions"].size() == 17);
     CHECK(capped["skipped"] == Json::parse(R"([{"address": ")" + At(0x1900 + 16 * 0x10) + R"(", "why": "count"}])"));
+    // A callee behind a one-byte decoy entry is walked and saved, not skipped as unreadable.
+    const auto decoy = save(0x1b00, 1);
+    CHECK(starts(decoy) == Starts{{At(0x1b00), 0}, {At(0x1000), 1}});
+    CHECK_FALSE(decoy.contains("skipped"));
     std::filesystem::remove(file);
 }
 
