@@ -27,9 +27,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## 0.5.0
 
-A JSON-only console with typed schemas, tool packs with a safety ceiling,
-Blueprint bytecode decoded as statements, and a one-call path from a live
-address to typed pseudocode in IDA.
+Your agent gets it right the first time: plain JSON calls with refusals
+that show the fix, sessions that load only the tools they need, Blueprint
+logic that reads like code, and readable pseudocode in IDA in one step.
 
 ### Breaking
 
