@@ -50,7 +50,7 @@ answers. `host_thread: engine`: T3. Real serials (not `:0`): T4.
   address, the bytes now and new, and the effect; for a call, its `dry`
   output. One approval covers one write.
 - Never guess an arg or a result key: `{"verb": "help", "args": {"verb": "get"}}`
-  (no target needed). Behaviour: the verb's page (`docs/README.md#commands`).
+  (no target needed). Behaviour: the verb's page (`docs/commands/README.md`).
 - Pass literal refs (`0x<address>#<index>:<serial>`), never `$N`. Values
   that must line up: one `get` with `paths`, or a `batch` of `read`s (check
   `same_tick`); values that change every frame: `watch-start`.

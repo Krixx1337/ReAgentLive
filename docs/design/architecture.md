@@ -4,7 +4,7 @@
 
 **TL;DR:** What ReAgentLive builds and what it borrows from other tools, how the
 layers stack from the agent to the frontends, and why the source is
-grouped by layer. Part of [design](../design.md).
+grouped by layer. Part of [design](README.md).
 
 ## Place among other tools
 

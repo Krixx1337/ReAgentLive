@@ -7,7 +7,7 @@ that would justify building it. Check here before proposing something:
 it may be waiting, done, or ruled out on purpose. Numbers are stable ids,
 not ranks, so a link to an idea never breaks.
 
-Decisions behind the "no" answers: [design](design.md).
+Decisions behind the "no" answers: [design](design/README.md).
 
 ## Pull forward when an investigation needs it
 
@@ -87,7 +87,7 @@ The core is engine-agnostic; engine knowledge lives in a pack (its own op
 slot in 256-4095, its own agent handlers and client calls), as the Unreal pack
 does. Natural candidates: Unity (Mono and IL2CPP) and Source 2, each with
 its own object and type system to walk. Build one only for a real project
-in that engine ([design](design.md#not-now)); no pack is promised.
+in that engine ([design](design/principles.md#not-now)); no pack is promised.
 
 - **What a pack adds:** object lookup, reflected fields, calls on the
   engine's thread, and the console verbs over them. Memory, the fast lane
@@ -263,7 +263,7 @@ interactive calls waiting on the slot (`slot_ms`), not only background runs.
 
 ## Not ideas
 
-Deliberately out of scope, see [design](design.md#not-now): other transports,
+Deliberately out of scope, see [design](design/principles.md#not-now): other transports,
 async client calls, plugin DLLs, other engines before a project needs them.
 Also drawing of any kind (a draw list, an overlay, a frame hook to draw
 in): the core reads, writes and calls, and stays free of renderers. The

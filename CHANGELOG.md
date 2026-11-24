@@ -43,7 +43,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   no `skill_commit`. A copy install: ask your agent to "update
   ReAgentLive"; it replaces the copy with a link.
 - **The docs index is `docs/README.md`** (was `docs/INDEX.md`): change the
-  `ReAgentLive docs:` line in your agent's instructions file.
+  `ReAgentLive docs:` line in your agent's instructions file. Each docs
+  folder has its own `README.md` index: the command table moved to
+  `docs/commands/README.md` (was `docs/INDEX.md#commands`), and
+  `docs/design.md` became `docs/design/README.md` plus
+  `docs/design/principles.md`.
 
 ## 0.6.0
 

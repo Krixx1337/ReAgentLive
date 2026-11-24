@@ -253,7 +253,7 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   `destructiveHint`, every other one `readOnlyHint`, so a client can
   allow the read-only tools and ask first for the rest. `call-pure` is
   marked read-only: the agent checks the function is pure before calling
-  ([design](design.md)). `status` reads the game-thread mode;
+  ([design](design/README.md)). `status` reads the game-thread mode;
   `game-thread` only arms and removes the tick. The skill's approval rules
   still apply (the first call on a new host or in a new game needs the
   user's approval, `call-pure` included: a wrong engine layout can crash

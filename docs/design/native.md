@@ -5,7 +5,7 @@
 **TL;DR:** ReAgentLive answers what only a running process can, from live bytes
 and in well under a second, and hands whole functions, types and call
 graphs to a static tool. It checks signatures rather than making them,
-except for one fixed loop. Part of [design](../design.md).
+except for one fixed loop. Part of [design](README.md).
 
 ## Light reversing
 
@@ -81,7 +81,7 @@ database:
   following calls and jumps, naming from a labels file, bounded sweeps.
   Out for good: hooks or patches in executable code, and debugging
   (breakpoints, debug registers, exception handlers in the target); see
-  [principles](../design.md#principles). What the static tool already does well
+  [principles](principles.md#principles). What the static tool already does well
   (decompiling, types, whole-program call graphs) is borrowed, not rebuilt.
 - **A whole function and its constants** (`disasm` with `function`): decoded
   linearly to its entry's end, with the values its read-only loads read

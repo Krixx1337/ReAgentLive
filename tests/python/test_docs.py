@@ -1,4 +1,4 @@
-"""The docs rules (docs/contributing.md#docs): links resolve, the docs README lists every page, no host names,
+"""The docs rules (docs/contributing.md#docs): links resolve, every docs page is reachable from docs/README.md through folder READMEs, no host names,
 every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
 AGENTS.md (for an agent changing the repo; CLAUDE.md imports it) stays within its line budget and needs no
 header; links and names are checked there as everywhere. The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
@@ -28,7 +28,6 @@ AGENTS_MAX_LINES = 120
 AGENT_FILES = {'AGENTS.md', 'CLAUDE.md'}  # for an agent changing the repo: no TL;DR or Home of line
 SKILL = os.path.join('.claude', 'skills', 'reagentlive')
 GENERATED = {'docs/commands/results.md', 'docs/commands/reference.md'}
-ORCHESTRATORS = {'README.md', 'docs/README.md', 'tools/README.md'}
 AGENT_PROCEDURES = 'docs/agents/'  # pages an agent runs: no TL;DR or Home of line
 CODE = re.compile(r'`([^`]+)`')
 CODE_PATH = re.compile(r'(docs|src|examples|tests|cmake)/[\w./#-]+')
@@ -99,36 +98,47 @@ def check_links(root):
     return problems
 
 
-def check_index(root):
-    docs = os.path.join(root, 'docs')
+def reachable(root):
+    """docs/README.md, every Markdown page it links, and through each linked README.md under docs/
+    (a folder's index), every page that one links: normalized absolute paths."""
+    docs = os.path.normpath(os.path.join(root, 'docs'))
     index = os.path.join(docs, 'README.md')
     if not os.path.exists(index):
+        return set()
+    seen, queue = {index}, [index]
+    while queue:
+        page = queue.pop()
+        with open(page, encoding='utf-8') as file:
+            targets = {t.partition('#')[0] for t in LINK.findall(file.read())}
+        for target in targets:
+            if not target.endswith('.md') or re.match(r'[a-z]+:', target):
+                continue
+            path = os.path.normpath(os.path.join(os.path.dirname(page), target))
+            if path in seen or not os.path.exists(path):
+                continue
+            seen.add(path)
+            if os.path.basename(path) == 'README.md' and path.startswith(docs + os.sep):
+                queue.append(path)
+    return seen
+
+
+def check_index(root):
+    """Every page under docs/ is reachable from docs/README.md through folder READMEs."""
+    if not os.path.exists(os.path.join(root, 'docs', 'README.md')):
         return ['docs/README.md is missing']
-    with open(index, encoding='utf-8') as file:
-        listed = {os.path.normpath(os.path.join(docs, t.partition('#')[0])) for t in LINK.findall(file.read())}
-    return [f'{os.path.relpath(p, root)}: not listed in docs/README.md'.replace('\\', '/')
-            for p in files(docs, ('.md',)) if p != index and os.path.normpath(p) not in listed]
+    listed = reachable(root)
+    return [f'{os.path.relpath(p, root)}: not reachable from docs/README.md'.replace('\\', '/')
+            for p in files(os.path.join(root, 'docs'), ('.md',)) if os.path.normpath(p) not in listed]
 
 
 def listed_pages(root):
-    """docs/README.md and every Markdown page it links, as root-relative paths."""
-    docs = os.path.join(root, 'docs')
-    index = os.path.join(docs, 'README.md')
-    if not os.path.exists(index):
-        return []
-    with open(index, encoding='utf-8') as file:
-        targets = {t.partition('#')[0] for t in LINK.findall(file.read())}
-    pages = {'docs/README.md'}
-    for target in targets:
-        if target.endswith('.md') and not re.match(r'[a-z]+:', target):
-            path = os.path.normpath(os.path.join(docs, target))
-            if os.path.exists(path):
-                pages.add(os.path.relpath(path, root).replace('\\', '/'))
-    return sorted(pages)
+    """The pages reachable from docs/README.md, as root-relative paths."""
+    return sorted(os.path.relpath(p, root).replace('\\', '/') for p in reachable(root))
 
 
 def is_orchestrator(page):
-    return page in ORCHESTRATORS or re.fullmatch(r'examples/[^/]+/README\.md', page) is not None
+    """A README.md is its folder's index: it routes and needs no Home of line."""
+    return os.path.basename(page) == 'README.md'
 
 
 def check_headers(root):
@@ -307,6 +317,16 @@ class Docs(unittest.TestCase):
         with Tree({'docs/README.md': '[a](a.md)\n', 'docs/a.md': '# A\n', 'docs/b.md': '# B\n'}) as root:
             self.assertEqual(len(check_index(root)), 1)
 
+    def test_a_page_listed_by_a_folder_readme_is_reachable(self):
+        tree = {'docs/README.md': '**TL;DR:** x.\n[c](commands/README.md)\n',
+                'docs/commands/README.md': '# C\n\n**TL;DR:** routes.\n\n[m](memory.md)\n',
+                'docs/commands/memory.md': '# M\n\n*Home of:* m.\n\n**TL;DR:** fine.\n'}
+        with Tree(tree) as root:
+            self.assertEqual(check_index(root), [])
+            self.assertEqual(check_headers(root), [])  # a folder README needs no Home of line
+        with Tree({**tree, 'docs/commands/memory.md': '# M\n'}) as root:
+            self.assertEqual(len(check_headers(root)), 2)  # pages behind a folder README keep their header
+
     def test_a_forbidden_name_fails_in_any_case(self):
         with Tree({'core/x.h': '// for SomeGame only\n'}) as root:
             self.assertEqual(len(check_names(root, ['somegame'])), 1)
@@ -328,7 +348,7 @@ class Docs(unittest.TestCase):
                    'docs/agents/update.md': '# Update\n\nUnlisted.\n'}) as root:
             self.assertEqual(check_headers(root), [])
             self.assertEqual(check_links(root), ['docs/agents/setup.md:3: missing.md: no such file'])
-            self.assertEqual(check_index(root), ['docs/agents/update.md: not listed in docs/README.md'])
+            self.assertEqual(check_index(root), ['docs/agents/update.md: not reachable from docs/README.md'])
             self.assertEqual(len(check_names(root, ['somegame'])), 1)
 
     def test_a_tldr_below_the_header_lines_fails(self):

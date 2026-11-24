@@ -27,7 +27,7 @@ tick or two after the question.
 | Read, write, same-tick batches (held requests) | [protocol](protocol.md#exchange), [memory commands](commands/memory.md) |
 | Guarded writes and `write`'s timed forms: `hold` (rewritten every tick until it expires) and `undo` (restores itself) | [memory commands](commands/memory.md) |
 | References that refuse a replaced object; engine calls | the [Unreal pack](commands/unreal.md) |
-| No code hooks, no threads of its own, no drawing (the opt-in pointer swaps: [design](design.md#principles)) | [design](design.md#principles) |
+| No code hooks, no threads of its own, no drawing (the opt-in pointer swaps: [design](design/principles.md#principles)) | [design](design/principles.md#principles) |
 | A client library the program links | [clients](client.md) |
 | A host that ticks the core | [hosting](hosting.md); the DLL, its entry and its tick source are the host author's |
 

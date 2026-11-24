@@ -4,7 +4,7 @@
 
 **TL;DR:** AI agents pay for every tool call and every character of output.
 These are the decisions that cut both, the evidence from live sessions
-behind them, and what was rejected. Part of [design](../design.md).
+behind them, and what was rejected. Part of [design](README.md).
 
 ## Round trips
 

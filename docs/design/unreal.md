@@ -6,7 +6,7 @@
 UE5 layout on known objects when there is none, and calls engine code
 only on the thread the host says is the game's. Each decision with what
 lost. Behaviour: [Unreal pack](../commands/unreal.md). Part of
-[design](../design.md).
+[design](README.md).
 
 ## Decisions
 

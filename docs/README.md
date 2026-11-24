@@ -4,8 +4,8 @@
 or your agent's questions about its memory, code and engine objects.
 Start with [tiers](tiers.md) (what works where), then pick an
 interface ([clients](client.md)), then the page for your task below. Every
-command is listed with its page and the tier it needs; words you may not
-know are in the [glossary](#glossary).
+command, its tier and its page: [commands](commands/README.md); words you
+may not know are in the [glossary](#glossary).
 
 ReAgentLive is an in-process agent for live game memory and runtime
 inspection on Windows x64. A host inside the target calls its `Tick`; a
@@ -19,8 +19,9 @@ are under `src/reagentlive/`.
 |---|---|
 | Know what works where, and my tier | [tiers](tiers.md) |
 | Pick how to drive it (MCP tools, console, Python, C++ client) | [clients](client.md) |
-| Use the console or drive it from a script | [console](commands/console.md), then the command's page below; scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
+| Use the console or drive it from a script | [console](commands/console.md), then the command's page ([commands](commands/README.md)); scripts: [generated Python functions](client.md#generated-python-functions); AI agents: [MCP tools](client.md#mcp-tools) |
 | Decompile live functions in IDA, carry names both ways | [IDA loader](commands/ida-loader.md), [labels](commands/labels.md) |
+| Find the command for a task, its tier and page | [commands](commands/README.md) |
 | Know what a command takes and returns | `help` with `verb` in the console, the [verb reference](commands/reference.md), or [result shapes](commands/results.md) |
 | Have an AI agent set it all up, or update it | [for AI agents](#for-ai-agents) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
@@ -31,7 +32,7 @@ are under `src/reagentlive/`.
 | Add a command or change the code | [contributing](contributing.md) |
 | Find a repo script (build the examples, set up IDA, time the IDA loop) | [tools](../tools/README.md) |
 | Change ReAgentLive with an AI agent | [AGENTS.md](../AGENTS.md) (commands, hard rules, large changes) |
-| Know why something is built this way, or was rejected | [design](design.md): [console costs](design/console-costs.md), [architecture](design/architecture.md), [Unreal pack](design/unreal.md), [native code](design/native.md); for `help`, scripts and tools: [tool interface](tool-interface.md) |
+| Know why something is built this way, or was rejected | [design](design/README.md): [principles](design/principles.md), [console costs](design/console-costs.md), [architecture](design/architecture.md), [Unreal pack](design/unreal.md), [native code](design/native.md); for `help`, scripts and tools: [tool interface](tool-interface.md) |
 | Pick the next feature, or check it is not ruled out | [ideas](ideas.md) |
 | Describe the project | [positioning](positioning.md) |
 | Let an AI agent investigate a live game | the [`reagentlive` skill](../.claude/skills/reagentlive/SKILL.md) (method, pitfalls, references by question) |
@@ -46,51 +47,6 @@ the README's paste prompts send an agent there.
 | [which one](agents/README.md) | which procedure when, the rules they share |
 | [setup](agents/setup.md) | first install: build, MCP tools, skill, check, setup record |
 | [update](agents/update.md) | update a clone: pull, rebuild, skill, MCP server, re-inject, check `commit` |
-
-## Commands
-
-Every console verb, the [tier](tiers.md) it needs and its page. **T0**
-commands work in any process, the own-thread example included. **T1-T3**
-commands need a host built with the Unreal pack; on any other host they are
-refused with a message saying so, and `status` lists the packs a host
-offers (`packs`). **T3** commands also need the game thread
-([which ones](commands/unreal.md#off-the-engines-thread)).
-
-| Command | Needs | Page |
-|---|---|---|
-| `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
-| `write` with `hold`, `undo` or `clear`, `timed-writes` | T0; `undo`'s owner check needs T1 | [memory](commands/memory.md#timed-writes) |
-| `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
-| `search`, `search-job` | T0 | [memory](commands/memory.md#search) (text: [fast lane](commands/fast-lane.md#search-text)) |
-| `read` with a layout `type` | T0 | [memory](commands/memory.md#typed-layouts) |
-| `read` with `type` `cstr\|wstr`, pointer chains, `vtable`, its `rtti` | T0 | [native objects](commands/native-objects.md) |
-| `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |
-| `disasm`, `xrefs`, `touches`, `disp-scan` | T0 | [fast lane](commands/fast-lane.md) |
-| `sig-check` (one `pattern` or a `file`), `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
-| `peek` with `label`, `labels-sign`, `labels-check`, `labels-port` | T0 | [labels](commands/labels.md) |
-| `labels-export` | T3 (exec thunks); other `kinds` T2 | [labels](commands/labels.md#labels-export) |
-| `find`, `describe`, `name`, `name-find`, `census` (and its `diff`) | T1 | [Unreal objects](commands/unreal-objects.md) |
-| `enum`, `assets-export` | T2 | [Unreal objects](commands/unreal-objects.md) |
-| `each` | T3 | [Unreal objects](commands/unreal-objects.md#each) |
-| `owner`, `route` | T3 | [Unreal objects](commands/unreal-objects.md#owner-and-route) |
-| `get` (every mode), `entries`, `rows`, `member-name`, `layout-export`, `layout-check` | T2 | [Unreal fields](commands/unreal-fields.md) (snapshots over time: [capture](commands/capture.md)) |
-| `func`, `funcs` | T2 (`func`'s `params`: T3) | [Unreal calls](commands/unreal-calls.md#func-and-funcs) |
-| `call`, `call-pure`, `call-each`, `release`, `line-trace` | T3 | [Unreal calls](commands/unreal-calls.md) |
-| `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal calls](commands/unreal-calls.md#call-recorder) |
-| `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal calls](commands/unreal-calls.md#game-thread) |
-| `script` with `decode` | T2 (any thread) | [Unreal code](commands/unreal-code.md#decode) |
-| `script`, `name-refs` | T3 | [Unreal code](commands/unreal-code.md) |
-| `batch`, `timing` | T0 | [console](commands/console.md#fewer-round-trips) |
-| `run` (plan files) | T0 | [console](commands/console.md#plans) |
-| `status`, `help`, `quit`, `-c` | T0 | [console](commands/console.md) |
-| `usage`, `--caller`, `--no-usage` | T0; no target needed | [console](commands/console.md#usage-log-and-usage) |
-
-A host's own verbs (`help` lists them under its origin) come from the
-host, not this library: see the host's docs.
-
-What each verb takes and returns: [verb reference](commands/reference.md)
-and [result shapes](commands/results.md). The Unreal pack's shared rules
-(identity, layout groups, thread rules): [Unreal pack](commands/unreal.md).
 
 ## Glossary
 

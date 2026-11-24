@@ -1,24 +1,12 @@
-# ReAgentLive design
+# Design principles
 
-*Home of:* why ReAgentLive is built this way: its principles, goals and what is deliberately not built; the index of the design pages, which hold each decision with its rejected alternatives.
+*Home of:* the principles ReAgentLive is built on, its goals and non-goals, and what is deliberately not built now.
 
-**TL;DR:** Read this before proposing a change: most "why not just..."
-ideas were tried or weighed here, and the entry says why they lost. Each
-decision states what was chosen, what was rejected and the evidence. It
-describes reasons, not behaviour: what a command does lives on its command
-page.
-
-Current behaviour lives in the [command pages](README.md#commands),
-[protocol](protocol.md) and [hosting](hosting.md); the ranked backlog in
-[ideas](ideas.md).
-
-| Page | Decisions |
-|---|---|
-| [console costs](design/console-costs.md) | round trips and holds, output weight and dead ends, the usage log |
-| [architecture](design/architecture.md) | place among other tools, layers, frontends, source layout |
-| [Unreal pack](design/unreal.md) | layouts and globals, thread kinds, off-thread reads, calls, class index, stock layout groups, the Draw tick |
-| [native code](design/native.md) | light reversing, signatures and the fixed labels signer, the fast lane, native objects, search jobs |
-| [tool interface](tool-interface.md) | the verb table, JSON-only calls, generated functions, MCP tools, tool packs |
+**TL;DR:** The rules every design decision follows: read freely but never
+write code, let the host own the thread, one console as the command layer,
+and grow only when a real project needs it. Check here before proposing a
+feature: the non-goals and the "not now" list say what was ruled out. Part
+of [design](README.md).
 
 ## Principles
 
@@ -43,12 +31,12 @@ Current behaviour lives in the [command pages](README.md#commands),
   second is the host helper `reagentlive::ue-draw`: when `game-thread` arms it, it
   writes one pointer in the game viewport object, pointing it at a private
   copy of its interface vtable
-  ([decision](design/unreal.md#a-game-thread-tick-through-the-viewports-draw)). Code, the
+  ([decision](unreal.md#a-game-thread-tick-through-the-viewports-draw)). Code, the
   game's own vtables and imports are never written by either.
 - **One safety boundary, set by a person, held by the console:** every
   verb that writes or calls is marked and sits in the `modify` pack, and
   the console's `--packs` ceiling refuses it, whichever frontend sends it
-  ([tool packs](tool-interface.md#tool-packs)).
+  ([tool packs](../tool-interface.md#tool-packs)).
 - **Extensible by static tables, not plugins:** agent handlers and CLI verbs
   are constant arrays; op ranges separate core, packs and games.
 - **One command layer:** the console. It sits on the C++ client API,
@@ -87,9 +75,9 @@ Current behaviour lives in the [command pages](README.md#commands),
 - A GUI frontend until the CLI stops being enough.
 - Plugin DLLs or runtime loading of packs.
 - Protocol negotiation: `ProtocolRevision` is folded into the layout sum,
-  and the supported-op list advertises ops ([handshake](protocol.md#handshake)).
+  and the supported-op list advertises ops ([handshake](../protocol.md#handshake)).
 - Packs for other engines until a real project needs one.
 - Package-manager packaging (`install()`, `find_package`): the library is
   its own repository, consumed as a submodule or with `FetchContent` at a
   pinned tag, and each consumer compiles its sources with its own flags
-  ([hosting](hosting.md#using-it-in-your-project)).
+  ([hosting](../hosting.md#using-it-in-your-project)).

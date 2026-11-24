@@ -154,7 +154,7 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
 - **Docs:** [docs/README.md](docs/README.md): tiers first, then pages by
   task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
-  [design](docs/design.md).
+  [design](docs/design/README.md).
 - **Status:** version 0.6.0 ([changelog](CHANGELOG.md)). It is usable,
   and the API can change before 1.0. Windows x64, C++23.
 
