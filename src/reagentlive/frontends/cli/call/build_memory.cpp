@@ -364,15 +364,7 @@ Parsed WatchStart(const Args& args, const ParseContext& context) {
 Parsed WatchRead(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::Watch;
-    command.target = "read";
-    command.all = args.Has("all");
-    return command;
-}
-
-Parsed WatchStop(const Args& args, const ParseContext&) {
-    Command command;
-    command.kind = Kind::Watch;
-    command.target = "stop";
+    command.target = args.Has("stop") ? "stop" : "read";
     command.all = args.Has("all");
     return command;
 }

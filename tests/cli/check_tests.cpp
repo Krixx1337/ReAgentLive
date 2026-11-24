@@ -338,6 +338,7 @@ bool WritesOrCalls(const Command& command) {
         return true;
     if (request.op == ue::op::Call && !(request.flags & ue::CallPure)) return true;
     if (request.op == ue::op::CallsStart || request.op == ue::op::CallsStop) return true;
+    if (command.kind == Kind::Calls && command.target == "stop") return true;
     return request.op == ue::op::GameThread && request.flags != static_cast<uint32_t>(ue::GameThreadAction::Status);
 }
 }
@@ -361,9 +362,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"mem-diff", {R"({"compare": "changed", "type": "f32"})", R"({"compare": "increased", "type": "i32", "keep": true, "view": {"limit": 4}})"}},
         {"watch-start", {R"({"duration": 5, "ranges": [{"addr": "0x1000", "len": 8}]})",
             R"({"duration": 5, "ranges": [{"addr": "0x1000", "type": "f32"}], "every": 0.1, "file": "w.jsonl"})"}},
-        {"timed-writes", {R"({})"}},
-        {"watch-read", {R"({})", R"({"all": true})"}},
-        {"watch-stop", {R"({})", R"({"all": true})"}},
+        {"watch-read", {R"({})", R"({"all": true})", R"({"stop": true})", R"({"stop": true, "all": true})"}},
         {"sig-check", {R"({"pattern": "48 8b 05 89 ?? 90"})", R"({"file": "sigs.txt"})"}},
         {"sig-bytes", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 32})"}},
         {"labels-sign", {R"({})", R"({"retry": true})"}},
@@ -373,7 +372,8 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
             R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": 2}})"}},
         {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
-        {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})",
+        {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "access": "read"})",
+            R"({"addr": "0x1000", "offsets": ["0x10"], "access": "write"})",
             R"({"addr": "0x1000", "offsets": [16], "bases": ["rcx", "rbp"]})"}},
         {"disp-scan", {R"({"offsets": ["0x538"]})", R"({"offsets": [16], "access": "any", "bases": ["rcx"], "view": {"start": "0x1000"}})",
             R"({"offsets": [16, 24], "access": "read", "width": 4, "imm": 1, "same_base": true})"}},

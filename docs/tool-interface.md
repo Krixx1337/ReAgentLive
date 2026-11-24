@@ -227,8 +227,8 @@ pack, sized so a normal question stays inside the default ones:
 |---|---|---|
 | `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, function metadata, memory reads |
 | `native` | read code and keep names across builds | disassembly, references, signatures, memory search, labels, layout files |
-| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `line-trace`, `call-pure`, `call-each`, `timed-writes` (listing) |
-| `modify` | change the target or call into it | `write` (and `clear`), `call`, `release`, the call recorder, `game-thread` |
+| `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `line-trace`, `call-pure`, `call-each` |
+| `modify` | change the target or call into it | `write` (and `clear`), `timed-writes` (listing), `call`, `release`, the call recorder, `game-thread` |
 
 Membership is each row's `pack`, a one-line change.
 
@@ -237,8 +237,8 @@ Membership is each row's `pack`, a one-line change.
   keeps only `on` and `off`, the mode is read in `status`. A test parses
   every form of every verb outside `modify` and checks none writes or calls.
 - **The invariant:** a verb marked `writes` is in `modify`; `explore`,
-  `native` and `observe` hold none. `calls-read` and `calls-stop` read or
-  restore only but live with their recorder.
+  `native` and `observe` hold none. `calls-read` (with `stop` it restores)
+  and `timed-writes` read or restore only but live with their writers.
 - **One ceiling, in the console.** `--packs` refuses a verb of any other
   pack with kind `pack`, `batch` items included, so the boundary holds
   whichever frontend sends the call ([console](commands/console.md#one-shot-use)).

@@ -15,7 +15,7 @@ Verbs: `disasm`, `xrefs`, `touches`, `disp-scan`, `sig-check`,
   names an API call.
 - `touches` needs an address in a native function of the same class (a
   `func` exec). Copies and constructors rank first when the offsets are
-  common: add `reads` for the code that consumes the block. Rows marked
+  common: add `access` `read` for the code that consumes the block. Rows marked
   unlisted are code outside the exception table: confirm each with
   `disasm` with `function`.
 - "Who writes field X": name rbp in `bases` too, or sweep with `disp-scan`

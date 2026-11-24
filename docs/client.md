@@ -170,7 +170,7 @@ lists its options. It needs the MCP Python SDK 2
   included: a wrong engine layout can crash the game).
 - **Left out:** `quit` (the adapter owns the console) and verbs marked
   `blocks`, which would outlast a client's timeout. Captures go as
-  `watch-start`, then `watch-read` or `watch-stop`. A blocking verb with a
+  `watch-start`, then `watch-read` (with `stop` to end it). A blocking verb with a
   `background` argument (`run`) is served as a background run: `run`
   answers `{run, state}` at once and `run_status`, `run_read` and
   `run_stop` (asked first: it ends a process) follow it.

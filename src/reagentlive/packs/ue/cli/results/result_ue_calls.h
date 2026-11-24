@@ -1,5 +1,5 @@
 // reagentlive CLI, Unreal pack: result structs (results/schema.h) of the
-// functions and calls: funcs, func, call and release, trace, calls-start to calls-stop, game-thread.
+// functions and calls: funcs, func, call and release, trace, calls-start, calls-read, game-thread.
 // Built from client results only (no I/O); conventions in results/result_json.h,
 // the verb table naming each verb's type in verbs_ue.h.
 #pragma once
@@ -244,7 +244,7 @@ struct CallsRow {
         v("values", &CallsRow::values);
     }
 };
-// calls-read and calls-stop: the recording's state and its rows.
+// calls-read, with or without stop: the recording's state and its rows.
 struct Calls {
     std::string function, state;
     uint32_t slot = 0;

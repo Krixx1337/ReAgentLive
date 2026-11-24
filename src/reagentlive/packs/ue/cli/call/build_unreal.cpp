@@ -576,16 +576,7 @@ Parsed CallsRead(const Args& args, const ParseContext&) {
     command.callsAfter = args.Int("start");
     command.request.op = ue::op::CallsRead;
     command.kind = Kind::Calls;
-    command.target = "read";
-    return command;
-}
-
-Parsed CallsStop(const Args& args, const ParseContext&) {
-    Command command;
-    if (!CallsSlot(args, command)) return Fail("slot is 0.." + std::to_string(ue::MaxCallsSlots - 1));
-    command.request.op = ue::op::CallsStop;
-    command.kind = Kind::Calls;
-    command.target = "stop";
+    command.target = args.Has("stop") ? "stop" : "read";
     return command;
 }
 

@@ -58,6 +58,14 @@ before 0.6.0 are one line each; git history has the detail.
   filter is gone).
 - **`release` `object` is a string** like `call`'s (a ref, `"0x..."` or a
   `Default__` name).
+- **`watch-stop` and `calls-stop` are gone:** pass `stop` to `watch-read`
+  or `calls-read`; the answer is the same as the old stop verb gave.
+- **`touches` `reads` is `access`:** `write`, `read` or `any` as in
+  `disp-scan`; `reads: true` is `access: "read"`, the default (all uses) is
+  `any`. `write` is new. `read` now counts read-modify-writes and leaves
+  `lea` out.
+- **`timed-writes` moved from the `observe` pack to `modify`**, beside
+  `write` `clear`: add `modify` to `--packs` to list timed writes.
 
 ## 0.6.0
 

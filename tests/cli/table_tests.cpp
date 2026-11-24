@@ -326,8 +326,8 @@ TEST_CASE("every verb is in one tool pack; every writer in modify, none in the o
     // The packs a research session loads by default hold nothing that writes or calls.
     for (const auto pack : {ToolPack::Explore, ToolPack::Native, ToolPack::Observe})
         for (const auto& name : byPack[pack]) CHECK_FALSE_MESSAGE(FindVerb(AllVerbs(), name)->writes, name);
-    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "call", "release", "calls-start", "calls-read",
-                                                             "calls-stop", "game-thread"});
+    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "timed-writes", "call", "release", "calls-start",
+                                                             "calls-read", "game-thread"});
     CHECK(byPack[ToolPack::Native].contains("disasm"));
     CHECK(byPack[ToolPack::Observe].contains("call-pure"));
     // help --json lists the packs, and plain help groups its rows by them.

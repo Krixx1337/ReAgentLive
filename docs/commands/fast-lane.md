@@ -17,7 +17,7 @@ reflected function's native entry), `disasm`, `xrefs`, `touches` and
 ```json
 {"verb": "disasm", "args": {"addr": "0x140001000", "function": true}}
 {"verb": "xrefs", "args": {"addr": "0x140001000", "all": true}}
-{"verb": "touches", "args": {"addr": "0x140001000", "offsets": ["0x3e0", "0x3e4"], "reads": true}}
+{"verb": "touches", "args": {"addr": "0x140001000", "offsets": ["0x3e0", "0x3e4"], "access": "read"}}
 {"verb": "search", "args": {"type": "text", "value": "Fatal error: %s"}}
 ```
 
@@ -124,8 +124,9 @@ plus unlisted code in pieces.
 
 - A use is a `[reg + disp]` operand whose displacement is an asked offset.
   `[rip + disp]` (globals) is never a member; stack bases are left out
-  unless `bases` names them. `reads` looks for the code that consumes a
-  block instead of the code that writes it.
+  unless `bases` names them. `access` is as `disp-scan`'s (`write`, `read`
+  or `any`), default `any`; `read` looks for the code that consumes a block
+  instead of the code that writes it, and drops struct copies.
 - **rbp is not only a frame pointer.** Optimised code uses it as a plain
   register, struct pointers included: in one sweep of a large game image,
   36% of the byte writes to one field went through rbp. For "who writes

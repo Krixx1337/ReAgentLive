@@ -46,8 +46,8 @@ struct Command {
     // console guards those on the object's identity.
     std::vector<uint64_t> guardObjects;
     uint32_t milliseconds = 0;  // write undo and hold, watch-start: duration.
-    // watch-start, watch-read, watch-stop: `target` is "start", "read" or
-    // "stop"; the sample interval (0: every tick) and a host root to follow;
+    // watch-start, watch-read: `target` is "start", "read" or "stop" (watch-read
+    // with `stop`); the sample interval (0: every tick) and a host root to follow;
     // watch-start file: `file`.
     uint32_t interval = 0;
     std::string root;
@@ -73,7 +73,7 @@ struct Command {
     // `target` names the module (empty: the exe). sig-check file: `file`.
     // sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is json, `hashOnly` is hash.
-    // usage: `all` is report all. watch-read, watch-stop: `all` is all (every sample).
+    // usage: `all` is report all. watch-read: `all` is all (every sample).
     bool hashOnly = false;
     bool listSessions = false;  // usage report sessions; session <id> is `target`.
     bool advice = false;        // usage advice: verbs often digested or unfiltered, with a proposed change.
@@ -109,12 +109,12 @@ struct Command {
     std::vector<uint32_t> slots;
     uint32_t partBytes = 0;
     // touches: struct offsets to find and the bytes scanned each side of the
-    // address; `readsOnly` (reads) ranks by offsets read and drops copies.
+    // address.
     std::vector<uint32_t> offsets;
     uint64_t range = 0;
-    bool readsOnly = false;
     // touches and disp-scan: the base registers taken (empty: all but rsp,
-    // and for touches rbp). disp-scan: the access, operand bytes (0: any) and
+    // and for touches rbp) and the access (write, read or any; touches
+    // default any, disp-scan write). disp-scan: the operand bytes (0: any) and
     // immediate asked for; `offsets` holds its disps, request.address its
     // start (0: the first code byte); `sameBase`: only functions using every
     // disp on one base register.
@@ -142,8 +142,8 @@ struct Command {
     uint8_t traceChannel = 0;
     bool traceSimple = false;
     Ref traceIgnore{};
-    // calls-start, calls-read, calls-stop: `target` is "start", "read" or
-    // "stop"; the recording's slot (ue::CallsLatest: the last started) and
+    // calls-start, calls-read: `target` is "start", "read" or "stop" (calls-read
+    // with `stop`); the recording's slot (ue::CallsLatest: the last started) and
     // calls-read's cursor; calls-start's request carries the object, the
     // function and the milliseconds (args[1]); the console adds an instance filter.
     uint64_t callsSlot = 0, callsAfter = 0;

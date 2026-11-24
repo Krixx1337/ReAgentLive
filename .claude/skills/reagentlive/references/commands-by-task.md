@@ -39,7 +39,7 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 | What a Blueprint function reads and calls | `script` |
 | Which Blueprints name a tag or name | `name-refs` |
 | What a line from A to B hits | `line-trace` |
-| What the game passed to a function | `calls-start`, `calls-read`, `calls-stop` (approval) |
+| What the game passed to a function | `calls-start`, `calls-read` (`stop` ends it; approval) |
 | Get the game-thread tick | `game-thread` (approval for `on`) |
 
 ## Memory (`docs/commands/memory.md`, `docs/commands/native-objects.md`)
@@ -54,7 +54,7 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 | Which bytes of a range react to an action | `mem-snap`, then `mem-diff` |
 | A native object's class, bases, virtual table | `vtable` with `rtti` |
 | Change memory once / every tick / once with an undo | `write` / `write` with `hold` / with `undo` (approval) |
-| Which timed writes are active; end them | `timed-writes` (read-only, `observe`); `write` with `clear` (`modify`, approval) |
+| Which timed writes are active; end them | `timed-writes` (read-only, but in `modify`); `write` with `clear` (`modify`, approval) |
 
 ## Over time
 

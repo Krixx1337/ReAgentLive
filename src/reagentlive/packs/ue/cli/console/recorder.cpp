@@ -1,5 +1,5 @@
-// reagentlive CLI console, Unreal pack: calls-start, calls-read and
-// calls-stop (the agent's call recorder, protocol_ue.h). Rows are decoded by
+// reagentlive CLI console, Unreal pack: calls-start and calls-read
+// with its stop (the agent's call recorder, protocol_ue.h). Rows are decoded by
 // the recorded function's reflected parameters through the shared reader, as
 // a copy: names and objects are looked up, memory the block points into is
 // not read (the caller may have freed it since).
@@ -122,7 +122,7 @@ shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<
 void RunCalls(Session& session, const Command& original, std::string_view jsonCommand) {
     Client& client = session.client;
     Command command = original;
-    if (!client.Supports(command.request.op))
+    if (!client.Supports(command.request.op) || (command.target == "stop" && !client.Supports(ue::op::CallsStop)))
         return JsonError(session, jsonCommand, ErrorKind::Unsupported, "this host does not offer the call recorder");
     if (command.target == "start") {
         uint64_t filter = 0;

@@ -683,7 +683,7 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
     }
     std::vector<touch::Row> rows;
     for (auto& [start, row] : functions) rows.push_back(std::move(row));
-    touch::Rank(rows, command.readsOnly);
+    touch::Rank(rows, command.access);
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
     Emit(session, jsonCommand, MakeTouches(address, command.offsets, command.range, from, to, ranges->size(), pieces,
         code.size(), rows, ms, LoadedModules(session)));

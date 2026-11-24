@@ -334,7 +334,7 @@ std::vector<shape::WatchSample> WatchSamples(const WatchSpec& spec, const WatchR
     return samples;
 }
 
-// watch-read and watch-stop: the agent's record of the capture, so any console run can read it.
+// watch-read, with or without stop: the agent's record of the capture, so any console run can read it.
 // Changes only unless `all` (shape::WatchChanges); the summary sees every sample.
 template<class Shape>
 void ReduceRows(Shape& result, bool all) {

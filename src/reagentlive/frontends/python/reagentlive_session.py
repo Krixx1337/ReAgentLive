@@ -61,7 +61,7 @@ object kills them if the process dies).
 `s.call(verb, args)` sends any verb by name; a generated function does the
 same with checked argument names. Three helpers do what a generated function
 cannot: `s.batch_results` (a strict result per batch item), `s.watch` (a
-capture that blocks: watch-start, wait, watch-stop) and `samples` (a
+capture that blocks: watch-start, wait, watch-read with stop) and `samples` (a
 capture's rows as bytes). Nothing else here names a verb; the converters
 (`unhex`, `addr`, `pack`, `f32`...) name none. Paging, filtering and
 retrying are the console's (arguments and cursors), not Python's.
@@ -649,7 +649,7 @@ class Session:
         return items, result['same_tick']
 
     def watch(self, seconds, ranges, every=None, follow=None, file=None, all=None):
-        """A capture that blocks: watch-start for `seconds`, wait it out, then watch-stop's strict result.
+        """A capture that blocks: watch-start for `seconds`, wait it out, then watch-read's strict result with stop.
 
         ranges: watch-start's range objects: {'addr': <addr>, 'len': n} for bytes, {'addr': <addr>, 'type':
         'f32', 'count': n} for decoded values (count optional), {'offset': n, 'len' or 'type': ...} with
@@ -663,4 +663,4 @@ class Session:
             time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
             if not self.call('watch-read')['running']:
                 break
-        return self.call('watch-stop', {'all': all})
+        return self.call('watch-read', {'stop': True, 'all': all})

@@ -95,8 +95,7 @@ Decisions taken where time and context went for no gain in live sessions.
   the values over ticks; resolving first keeps `same_tick` without raising
   host budgets. A batch also says which command moved its tick
   (`spans_ticks`).
-- **Captures belong to the agent instance** (`watch-start`, `watch-read`,
-  `watch-stop`), bounded by the existing buffer, so a long capture and other
+- **Captures belong to the agent instance** (`watch-start`, `watch-read`), bounded by the existing buffer, so a long capture and other
   questions overlap without a second channel. Typed watches decode in the
   console, the type riding in `WatchRange::note`.
 - **Not built:** a tolerance search (a memory scanner's; change over one

@@ -13,7 +13,7 @@ mechanics: `docs/commands/console.md`.
 | Fields or a getter across every instance of one class (T3) | `each` (fields) or `call-each` (a getter): one call, one tick, the whole table |
 | The next step loops, compares, intersects or diffs many objects | Python: generated functions on a `Session`; print only the summary |
 | The same calls repeated over time, or an investigation to replay | a `run` plan (a `batch` step with `repeat`), from Python or the console `-c`; MCP leaves `run` out (it blocks) |
-| A capture over seconds | `watch-start`, then `watch-read` / `watch-stop`; a script that waits: `s.watch(seconds, ranges)` |
+| A capture over seconds | `watch-start`, then `watch-read` (with `stop` to end); a script that waits: `s.watch(seconds, ranges)` |
 | MCP not registered, or a human at the shell | the console `-c` |
 | Writes, calls, `game-thread` `on` | any interface, approval: SKILL.md rules |
 

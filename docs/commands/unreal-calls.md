@@ -115,7 +115,7 @@ class first, then those declared on each native interface, marked
 ## Call recorder
 
 `calls-start` records a reflected function's calls; `calls-read` returns
-them so far, `calls-stop` ends it early. A host offers it by listing the
+them so far, with `stop` it ends the recording early. A host offers it by listing the
 three ops; the start is a write the host approves.
 
 - **What is written:** one pointer, `UFunction::Func`, swapped by

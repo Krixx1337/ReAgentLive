@@ -130,7 +130,7 @@ struct Session {
     // disasm with `save` reads both. `executable`: this console's own path,
     // which a save records.
     std::filesystem::path labels, hostLabels, executable;
-    std::string watchFile;                  // watch-start with `file`: where watch-read and watch-stop write every sample.
+    std::string watchFile;                  // watch-start with `file`: where watch-read writes every sample.
 
     Session(Client& client, const ConsoleConfig& config) : client(client), config(config) {}
 };

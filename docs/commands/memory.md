@@ -1,6 +1,6 @@
 # Memory commands
 
-*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `timed-writes`, `search`, captures (`watch-start`, `watch-read`, `watch-stop`), `mem-snap`/`mem-diff`, typed layouts.
+*Home of:* the core memory commands and their guards: `read`, `peek`, `write` and its timed forms, `timed-writes`, `search`, captures (`watch-start`, `watch-read`), `mem-snap`/`mem-diff`, typed layouts.
 
 **TL;DR:** Read, search and change raw memory in any process the agent
 runs in, with no engine pack (tier T0). Every write is guarded and can
@@ -112,8 +112,8 @@ scanner: no whole-process scan, no tolerance, no pointer scan
 ## Timed writes
 
 `undo` and `hold` run at the start of every host tick, before requests,
-within the limits `help` shows. `timed-writes` lists them (read-only) and
-`write` with `clear` ends one or `"all"`.
+within the limits `help` shows. `timed-writes` lists them (read-only, but
+in the `modify` pack with `write`) and `write` with `clear` ends one or `"all"`.
 
 - **`undo`** writes once, when memory holds `expect` (required), and the
   agent restores the original bytes when `undo.after` is up, on `clear`, or
@@ -145,7 +145,7 @@ within the limits `help` shows. `timed-writes` lists them (read-only) and
 `watch-start` samples ranges inside the agent, every host tick or every
 `every` seconds, and returns at once. The capture belongs to the agent
 instance: it survives the console exiting; `watch-read` from any run
-returns the rows so far, and `watch-stop` ends it and returns them. A new
+returns the rows so far, and with `stop` ends it and returns them. A new
 start replaces it. A caller that wants to block starts, waits and stops: the
 Python session's `watch(seconds, ranges)` does that. The agent samples every
 tick, so no change between ticks is missed, unlike polling from the console.

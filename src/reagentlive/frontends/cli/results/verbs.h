@@ -92,7 +92,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "A refused expect answers found = the bytes there. undo and hold answer timed. undo ends conflict (value "
             "changed) or abandoned (owner or vtable changed); without a pack's owner check it is refused. clear takes "
             "no other key.", true},
-        {"timed-writes", "core", ToolPack::Observe, "timed writes (undo, hold) and their state",
+        {"timed-writes", "core", ToolPack::Modify, "timed writes (undo, hold) and their state",
             {}, Of<shape::Writes>, build::TimedWrites,
             "Rows: undo writes (restored, conflict or abandoned stay until cleared), then hold ones."},
         {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
@@ -143,12 +143,11 @@ inline const std::vector<Verb>& CoreVerbs() {
             "status lists the roots. The capture outlives the console. Typed ranges add a summary (first, last, least, "
             "greatest, change/s). file persists in the cache; a later watch-start without it drops it. For a blocking "
             "capture: start, wait, stop."},
-        {"watch-read", "core", ToolPack::Observe, "the capture so far: first sample, changes, last",
-            {{"all", "bool", "every sample, not only the changes"}}, Of<shape::WatchCapture>, build::WatchRead,
+        {"watch-read", "core", ToolPack::Observe, "the capture so far: first sample, changes, last; stop ends it first",
+            {{"all", "bool", "every sample, not only the changes"},
+             {"stop", "bool", "end the capture first (the answer is the final record)"}},
+            Of<shape::WatchCapture>, build::WatchRead,
             "Past 200 rows the middle is dropped (dropped). samples counts all; the summary covers every sample."},
-        {"watch-stop", "core", ToolPack::Observe, "end the capture and return it: first sample, changes, last",
-            {{"all", "bool", "every sample, not only the changes"}}, Of<shape::WatchCapture>, build::WatchStop,
-            "As watch-read."},
         {"sig-check", "core", ToolPack::Native, "is a byte signature unique in a module and where it lands; file checks a file of them",
             {{"pattern", "pattern", "the signature: \"48 8b ?? 89\" or \"0x48, 0x8B, -1, 0x89\", up to 96 bytes", {}, false, false,
               "\"48 8b 05 ?? ?? ?? ?? 48 85 c0\""},
@@ -205,11 +204,12 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
              {"range", "int", "bytes each side of addr (1..0x400000)", "524288", false, false, "\"0x80000\""},
-             {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"},
+             {"access", "write|read|any", "write: stores and read-modify-writes; read: loads and read-modify-writes, ranked by "
+              "offsets loaded, rows storing every offset they load dropped; any: all uses, lea too", "\"any\""},
              {"bases", registers, bases, {}, false, true}},
             Of<shape::Touches>, build::Touches,
             "Most offsets first, writes marked. Unlisted code is scanned in pieces (rows carry unlisted). Stack slots "
-            "([rsp + d], [rbp + d]) are left out unless bases names their register. reads drops struct copies and "
+            "([rsp + d], [rbp + d]) are left out unless bases names their register. access read drops struct copies and "
             "constructors. The whole image for a few offsets: disp-scan."},
         {"disp-scan", "core", ToolPack::Native, "instructions in the main module with a [reg + disp] operand at these offsets, paged",
             {{"offsets", "int", "the displacements (the fields' offsets; up to 8, each above 0)", {}, true, true},

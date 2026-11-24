@@ -57,7 +57,7 @@ Parsed Touches(const Args& args, const ParseContext& context) {
         if (std::ranges::find(command.offsets, static_cast<uint32_t>(n)) == command.offsets.end())
             command.offsets.push_back(static_cast<uint32_t>(n));
     }
-    command.readsOnly = args.Has("reads");
+    command.access = args.Has("access") ? args.Str("access") : "any";
     command.bases = args.Strs("bases");
     command.kind = Kind::Touches;
     command.request.op = op::ReadBatch;

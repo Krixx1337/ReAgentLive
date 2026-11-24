@@ -341,6 +341,8 @@ TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes an
     CHECK(uses[0].instruction == Base + 0x1000);
     CHECK(uses[0].offset == 0x538);
     CHECK_FALSE(uses[0].write);
+    CHECK(uses[0].load);
+    CHECK_FALSE(uses[1].load);
     CHECK(uses[1].instruction == Base + 0x1006);
     CHECK(uses[1].offset == 0x540);
     CHECK(uses[1].write);
@@ -372,7 +374,7 @@ TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes an
     CHECK(rows[2].start == 1);
 }
 
-TEST_CASE("touches cuts unlisted code at returns and int3 padding, and reads drops copies") {
+TEST_CASE("touches cuts unlisted code at returns and int3 padding, and access read drops copies") {
     const auto code = Join({
         {0x8b, 0x81, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rcx+0x538]
         {0xc3},                                           // ret: the first piece ends here
@@ -435,18 +437,41 @@ TEST_CASE("touches cuts unlisted code at returns and int3 padding, and reads dro
     CHECK(reach->end == Base + 0x8100);
     CHECK(touch::Window(Base + 0x7010, Base + 0x7000, Base + 0x20000, {}, 0x100)->start == Base + 0x7000);
 
-    const touch::Use read{Base, 0x538, false, {}}, write{Base, 0x538, true, {}}, other{Base, 0x540, false, {}};
-    std::vector<touch::Row> rows(4);
-    rows[0].start = 1; rows[0].uses = {read, write, other};   // 0x540 is read and not written: kept
-    rows[1].start = 2; rows[1].uses = {read, write};          // a copy: dropped
-    rows[2].start = 3; rows[2].uses = {write};                // writes only: dropped
-    rows[3].start = 4; rows[3].uses = {read, other};          // two reads, no write
-    touch::Rank(rows, true);
+    const touch::Use read{Base, 0x538, false, {}, true}, write{Base, 0x538, true, {}}, other{Base, 0x540, false, {}, true};
+    const touch::Use rmw{Base, 0x548, true, {}, true}, lea{Base, 0x550, false, {}};
+    const auto make = [&] {
+        std::vector<touch::Row> rows(4);
+        rows[0].start = 1; rows[0].uses = {read, write, other};   // 0x540 is loaded and not stored: kept
+        rows[1].start = 2; rows[1].uses = {read, write};          // a copy: dropped
+        rows[2].start = 3; rows[2].uses = {write};                // writes only: dropped
+        rows[3].start = 4; rows[3].uses = {read, other};          // two loads, no store
+        return rows;
+    };
+    auto rows = make();
+    touch::Rank(rows, "read");
     REQUIRE(rows.size() == 2);
-    CHECK(rows[0].start == 1);   // Two reads each; the row that writes ranks first, as without reads.
+    CHECK(rows[0].start == 1);   // Two loads each, in the order given.
     CHECK(rows[0].distinct == 2);
+    CHECK(rows[0].uses.size() == 2); // Only the loads stay.
     CHECK(rows[1].start == 4);
     CHECK(rows[1].distinct == 2);
+    // read counts a read-modify-write as a load and leaves a lea out; any keeps every use.
+    std::vector<touch::Row> mixed(1);
+    mixed[0].start = 1; mixed[0].uses = {rmw, lea};
+    touch::Rank(mixed, "read");
+    REQUIRE(mixed.size() == 1);
+    CHECK(mixed[0].uses.size() == 1);
+    mixed[0].uses = {rmw, lea};
+    touch::Rank(mixed, "any");
+    CHECK(mixed[0].uses.size() == 2);
+    // write keeps the uses that write, and drops rows with none.
+    rows = make();
+    rows.push_back({});
+    rows.back().start = 5; rows.back().uses = {other};
+    touch::Rank(rows, "write");
+    REQUIRE(rows.size() == 3);
+    for (const auto& row : rows) CHECK(row.writes);
+    CHECK(rows[0].uses.size() == 1);
 }
 
 TEST_CASE("the exception directory lists the entries starting in a range") {
@@ -477,8 +502,11 @@ TEST_CASE("touches call and result") {
     CHECK(touches->offsets == std::vector<uint32_t>{0x538, 0x540});
     CHECK(touches->range == 0x1000);
     CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16]}})")->range == touch::DefaultRange);
-    CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16]}})")->readsOnly);
-    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "reads": true}})")->readsOnly);
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16]}})")->access == "any");
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "access": "read"}})")->access == "read");
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "access": "write"}})")->access == "write");
+    CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "access": "both"}})"));
+    CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [16], "reads": true}})"));
     CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000"}})"));
     CHECK_FALSE(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": []}})"));
     CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x1000", "offsets": [0]}})").error().starts_with("offsets"));

@@ -136,7 +136,7 @@ TEST_CASE("watch-start with file keeps every sample in a file each later read re
         {"ranges", Json::array({{{"addr", address}, {"type", "u32"}}})}, {"file", path}}));
     CHECK(started["file"] == path);
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    const auto stopped = Result(CallText("watch-stop"));      // Another console run: the path comes from the cache file.
+    const auto stopped = Result(CallText("watch-read", {{"stop", true}}));      // Another console run: the path comes from the cache file.
     CHECK(stopped["file"] == path);
     std::ifstream in(path);
     std::string line;
@@ -147,7 +147,7 @@ TEST_CASE("watch-start with file keeps every sample in a file each later read re
     in.close();
     // A start without file drops it.
     Result(CallText("watch-start", {{"duration", 0.05}, {"ranges", Json::array({{{"addr", address}, {"len", 4}}})}}));
-    CHECK_FALSE(Result(CallText("watch-stop")).contains("file"));
+    CHECK_FALSE(Result(CallText("watch-read", {{"stop", true}})).contains("file"));
     std::filesystem::remove(path);
 }
 

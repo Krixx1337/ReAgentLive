@@ -363,7 +363,7 @@ struct WatchStart {
         v("file", &WatchStart::file);
     }
 };
-// watch-read and watch-stop: the agent's record of the capture.
+// watch-read, with or without stop: the agent's record of the capture.
 struct WatchCapture {
     bool running = false;
     std::optional<std::string> stopped;

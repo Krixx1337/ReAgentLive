@@ -26,6 +26,7 @@ struct Use {
     uint32_t offset = 0;
     bool write = false;  // The operand is written (a store or read-modify-write).
     std::string text;
+    bool load = false;   // The operand is read and is not a lea (a load or read-modify-write).
 };
 
 // Whether an instruction's raw displacement can be one of `offsets`. Its
@@ -86,7 +87,8 @@ inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, 
                 !operand.mem.disp.has_displacement || operand.mem.disp.value <= 0 || operand.mem.disp.value > UINT32_MAX) continue;
             const auto disp = static_cast<uint32_t>(operand.mem.disp.value);
             if (std::ranges::find(offsets, disp) == offsets.end()) continue;
-            Use use{address + at, disp, (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0, {}};
+            Use use{address + at, disp, (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0, {},
+                    (operand.actions & ZYDIS_OPERAND_ACTION_MASK_READ) != 0 && operand.mem.type != ZYDIS_MEMOP_TYPE_AGEN};
             char text[256]; // The size Zydis examples use: long AVX text fits.
             if (ZYAN_SUCCESS(ZydisFormatterFormatInstruction(&decoder.formatter, &instruction, operands,
                     instruction.operand_count_visible, text, sizeof(text), address + at, nullptr))) use.text = text;
@@ -196,22 +198,29 @@ struct Row {
     bool writes = false;
     bool listed = true;
 };
-// With `reads`: count only the offsets read, and drop rows that read none or
-// write every offset they read (struct copies, constructors).
-inline void Rank(std::vector<Row>& rows, bool reads = false) {
+// `access` as disp-scan's: write keeps the uses that write (stores and
+// read-modify-writes), read the loads and read-modify-writes (no lea), any all.
+// With read, count only the offsets loaded, and drop rows that load none or
+// store to every offset they load (struct copies, constructors).
+inline void Rank(std::vector<Row>& rows, std::string_view access = "any") {
+    const bool reads = access == "read", writesOnly = access == "write";
     for (auto& row : rows) {
-        std::vector<uint32_t> seen, read, written;
+        std::vector<uint32_t> seen, loaded, stored;
+        for (const auto& use : row.uses) {
+            if (use.write && !use.load && std::ranges::find(stored, use.offset) == stored.end()) stored.push_back(use.offset);
+        }
+        if (reads) std::erase_if(row.uses, [](const Use& use) { return !use.load; });
+        if (writesOnly) std::erase_if(row.uses, [](const Use& use) { return !use.write; });
         for (const auto& use : row.uses) {
             if (std::ranges::find(seen, use.offset) == seen.end()) seen.push_back(use.offset);
-            auto& side = use.write ? written : read;
-            if (std::ranges::find(side, use.offset) == side.end()) side.push_back(use.offset);
+            if (use.load && std::ranges::find(loaded, use.offset) == loaded.end()) loaded.push_back(use.offset);
             row.writes = row.writes || use.write;
         }
-        row.distinct = reads ? read.size() : seen.size();
-        if (reads && std::ranges::all_of(read, [&](uint32_t o) { return std::ranges::find(written, o) != written.end(); }))
+        row.distinct = seen.size();
+        if (reads && std::ranges::all_of(loaded, [&](uint32_t o) { return std::ranges::find(stored, o) != stored.end(); }))
             row.distinct = 0;
     }
-    if (reads) std::erase_if(rows, [](const Row& row) { return row.distinct == 0; });
+    if (reads || writesOnly) std::erase_if(rows, [](const Row& row) { return row.distinct == 0; });
     std::ranges::stable_sort(rows, [](const Row& a, const Row& b) {
         if (a.distinct != b.distinct) return a.distinct > b.distinct;
         if (a.writes != b.writes) return a.writes;

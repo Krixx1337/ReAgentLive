@@ -3,7 +3,7 @@
 ## Choosing the tool
 
 - **Memory or a reflected field, seconds to minutes:** `watch-start`, then
-  `watch-read` while it runs and `watch-stop` to end it. It returns at
+  `watch-read` while it runs (with `stop` to end it). It returns at
   once; the agent keeps sampling while you work, and every interface has
   it. Minutes-long sampling and following a respawn: `help` on `watch-start`
   (`docs/commands/memory.md#watch`). A script that should wait: the Python
@@ -45,7 +45,7 @@
   function a Blueprint calls, or the event that enters it.
 - A container parameter that prints only its header: `call` the function
   yourself while recording, or `get` the state it left.
-- `calls-read` while it runs; `calls-stop` restores at once.
+- `calls-read` while it runs; with `stop` it restores at once.
 
 ## Pitfalls
 

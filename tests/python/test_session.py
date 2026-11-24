@@ -123,7 +123,7 @@ CALLS = [
     [C('watch-start', {'duration': 0.3, 'ranges': [{'object': REF, 'field': ['Health']}, {'addr': '0x9000', 'len': 1}],
                        'file': 'cap.jsonl'}), ok({
         'capacity': 100, 'ms': 300, 'interval_ms': 0, 'ranges': [RANGE, RANGE], 'file': 'cap.jsonl'})],
-    [C('watch-stop'), ok({'running': False, 'stopped': 'stopped', 'capacity': 100, 'ms': 300, 'interval_ms': 0,
+    [C('watch-read', {'stop': True}), ok({'running': False, 'stopped': 'stopped', 'capacity': 100, 'ms': 300, 'interval_ms': 0,
                           'ranges': [RANGE, RANGE], 'file': 'cap.jsonl',
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x28}, 'data': '0000000000000040', 'expect': '000000000000f03f',

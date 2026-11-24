@@ -595,7 +595,7 @@ TEST_CASE("watch-start ranges: an address with a length or a type, a field, or o
     CHECK(Why(many).starts_with("ranges: at most"));
 }
 
-TEST_CASE("watch-start durations are seconds; watch-read and watch-stop take all") {
+TEST_CASE("watch-start durations are seconds; watch-read takes all and stop") {
     auto parsed = Call(R"({"verb": "watch-start", "args": {"duration": 600, "every": 10, "ranges": [{"addr": "0x9000", "len": 8}]}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->milliseconds == 600000);
@@ -624,8 +624,8 @@ TEST_CASE("watch-start durations are seconds; watch-read and watch-stop take all
     CHECK(parsed->target == "read");
     CHECK_FALSE(parsed->all);
     CHECK(Call(R"({"verb": "watch-read", "args": {"all": true}})")->all);
-    CHECK(Call(R"({"verb": "watch-stop"})")->target == "stop");
-    CHECK(Call(R"({"verb": "watch-stop", "args": {"all": true}})")->all);
+    CHECK(Call(R"({"verb": "watch-read", "args": {"stop": true}})")->target == "stop");
+    CHECK(Call(R"({"verb": "watch-read", "args": {"stop": true, "all": true}})")->all);
 }
 
 TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an element type; vtable its options") {

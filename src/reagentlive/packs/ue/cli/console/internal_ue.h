@@ -168,7 +168,7 @@ private:
 void RunOwner(Session& session, const Command& command, std::string_view jsonCommand);
 void RunRoute(Session& session, const Command& command, std::string_view jsonCommand);
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
-// calls-start, calls-read, calls-stop (the agent's call recorder).
+// calls-start, calls-read with its stop (the agent's call recorder).
 void RunCalls(Session& session, const Command& command, std::string_view jsonCommand);
 // script with `decode`: the bytecode as statements, named console-side (no game thread).
 void RunScriptDecode(Session& session, const Command& command, std::string_view jsonCommand, const ue::FunctionInfo& function);

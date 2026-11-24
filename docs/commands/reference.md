@@ -242,7 +242,7 @@ A refused expect answers found = the bytes there. undo and hold answer timed. un
 
 timed writes (undo, hold) and their state.
 
-Pack `observe`.
+Pack `modify`.
 
 Result: `{rows: [TimedWrite]}`
 
@@ -377,13 +377,14 @@ status lists the roots. The capture outlives the console. Typed ranges add a sum
 
 ### watch-read
 
-the capture so far: first sample, changes, last.
+the capture so far: first sample, changes, last; stop ends it first.
 
 Pack `observe`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `all` | `bool` |  |  | every sample, not only the changes |
+| `stop` | `bool` |  |  | end the capture first (the answer is the final record) |
 
 Result: `{running: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [WatchRange], rows: [WatchSample], samples?: u64, dropped?: u64, gaps?: [{from_us: u64, to_us?: u64}], summary?: [WatchSummary], file?: str}`
 
@@ -391,24 +392,6 @@ Past 200 rows the middle is dropped (dropped). samples counts all; the summary c
 
 ```json
 {"args":{},"verb":"watch-read"}
-```
-
-### watch-stop
-
-end the capture and return it: first sample, changes, last.
-
-Pack `observe`.
-
-| Key | Type | Required | Default | What |
-|---|---|---|---|---|
-| `all` | `bool` |  |  | every sample, not only the changes |
-
-Result: `{running: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [WatchRange], rows: [WatchSample], samples?: u64, dropped?: u64, gaps?: [{from_us: u64, to_us?: u64}], summary?: [WatchSummary], file?: str}`
-
-As watch-read.
-
-```json
-{"args":{},"verb":"watch-stop"}
 ```
 
 ### sig-check
@@ -569,12 +552,12 @@ Pack `native`.
 | `addr` | `addr` | yes |  | the address |
 | `offsets` | `[int]` | yes |  | the struct offsets to look for (up to 8, each above 0) |
 | `range` | `int` |  | `524288` | bytes each side of addr (1..0x400000) |
-| `reads` | `bool` |  |  | rank by offsets read; drop rows writing every offset they read |
+| `access` | `write\|read\|any` |  | `"any"` | write: stores and read-modify-writes; read: loads and read-modify-writes, ranked by offsets loaded, rows storing every offset they load dropped; any: all uses, lea too |
 | `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp) |
 
 Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64}`
 
-Most offsets first, writes marked. Unlisted code is scanned in pieces (rows carry unlisted). Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register. reads drops struct copies and constructors. The whole image for a few offsets: disp-scan.
+Most offsets first, writes marked. Unlisted code is scanned in pieces (rows carry unlisted). Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register. access read drops struct copies and constructors. The whole image for a few offsets: disp-scan.
 
 ```json
 {"args":{"addr":"0x140001000","offsets":[16],"range":"0x80000"},"verb":"touches"}
@@ -1043,7 +1026,7 @@ Pack `modify`; **writes or calls**.
 
 Result: `{function: str, slot: u32, exec: addr, thunk: addr, block_size: u32, object?: addr, seconds: f64, dry: bool, note?: str}`
 
-Swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk; restores it at the end or on calls-stop. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. 256 rows per recording.
+Swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk; restores it at the end or on calls-read with stop. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. 256 rows per recording.
 
 ```json
 {"args":{"duration":5,"function":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"calls-start"}
@@ -1051,40 +1034,23 @@ Swaps the function's native pointer (UFunction::Func, heap data) for a forwardin
 
 ### calls-read
 
-a recording's calls so far, decoded by the function's parameters.
+a recording's calls so far, decoded by the function's parameters; stop ends it first.
 
 Pack `modify`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
+| `stop` | `bool` |  |  | end the recording now (restores the pointer) and return its calls |
 | `view` | `obj` |  |  | paging and filters |
 | `view.start` | `int` |  |  | next_cursor of the page before |
 
 Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, ms: f64, thread: u32, object: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
 
-values: in, out and return by name, read after the call. Objects named while they live; strings and containers print headers only. A recording past its time is restored first.
+values: in, out and return by name, read after the call. Objects named while they live; strings and containers print headers only. A recording past its time is restored first. state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
 
 ```json
 {"args":{},"verb":"calls-read"}
-```
-
-### calls-stop
-
-end a recording now (restores the pointer) and return its calls.
-
-Pack `modify`.
-
-| Key | Type | Required | Default | What |
-|---|---|---|---|---|
-| `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
-
-Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, ms: f64, thread: u32, object: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
-
-state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
-
-```json
-{"args":{},"verb":"calls-stop"}
 ```
 
 ### describe
