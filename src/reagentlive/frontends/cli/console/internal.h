@@ -68,6 +68,7 @@ struct Usage {
     // agent's context so far: the log's tool lines at start, then each printed
     // envelope of this run when the caller is tool.
     uint64_t contextLimit = 0, contextChars = 0;
+    std::vector<UsageLine> pending;         // Batch items' lines, written with the batch's own.
 };
 // The line being run: its output so far and how it ended. A batch's items
 // add their own output to `inner`, so the batch's line keeps its wrapper alone.

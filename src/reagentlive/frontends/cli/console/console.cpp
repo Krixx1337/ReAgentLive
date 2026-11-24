@@ -262,10 +262,10 @@ bool OfflineOnly(const std::vector<std::string>& lines) {
     });
 }
 
-// Appends one usage line with a single append-only write, so lines from
+// Appends whole usage lines with a single append-only write, so lines from
 // consoles writing at once never interleave or overwrite each other.
-void AppendUsage(const std::filesystem::path& path, const UsageLine& record) {
-    const std::string text = UsageText(record) + '\n';
+void AppendUsage(const std::filesystem::path& path, const std::string& text) {
+    if (text.empty()) return;
     HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return;
@@ -292,7 +292,7 @@ void LogRefused(const std::filesystem::path& path, std::span<const Verb> verbs, 
     record.ok = false;
     record.refused = (*input.refused)["kind"].get<std::string>();
     if (input.refused->contains("key")) record.refusedKey = (*input.refused)["key"].get<std::string>().substr(0, MaxUsageVerb);
-    AppendUsage(path, record);
+    AppendUsage(path, UsageText(record) + '\n');
 }
 Json RefusedEnvelope(const InputLine& input) {
     Json error = *input.refused;
@@ -457,7 +457,6 @@ struct UsageScope {
         if (internal) return;
         if (outer) outer->inner += line.out;
         if (skip || record.verb.empty() || !session.usage.record || session.usage.path.empty()) return;
-        record.time = UtcNow();
         record.session = session.usage.session;
         record.caller = session.usage.caller;
         record.out = line.out > line.inner ? line.out - line.inner : 0;
@@ -469,7 +468,19 @@ struct UsageScope {
         record.refusedKey = line.refusedKey;
         record.ms = std::chrono::duration<double, std::milli>(Clock::now() - began).count();
         record.slotMs = static_cast<double>(session.client.Stats().slotWaitMicroseconds - slotWaitBefore) / 1000;
-        AppendUsage(session.usage.path, record);
+        // A batch item's line waits for the batch's: formatting and writing it
+        // between two held requests outlasts the agent's short wait for the
+        // next one, and the batch would lose its tick.
+        session.usage.pending.push_back(std::move(record));
+        if (session.usage.pending.back().batch) return;
+        const std::string time = UtcNow();
+        std::string text;
+        for (auto& pendingLine : session.usage.pending) {
+            pendingLine.time = time;
+            text += UsageText(pendingLine) + '\n';
+        }
+        session.usage.pending.clear();
+        AppendUsage(session.usage.path, text);
     }
 };
 

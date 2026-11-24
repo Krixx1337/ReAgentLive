@@ -42,6 +42,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   Each call's wait is in the usage log and `usage` (`slot_ms`)
   ([protocol](docs/protocol.md#handshake)).
 - **Long verbs print progress** on stderr (`progress: 12/40 blocks`).
+- **A `batch` keeps its tick with the usage log on:** its items' usage
+  lines are written after the batch, not between its held requests.
 - **Concurrent consoles keep their files whole:** usage-log lines are one
   append each; the cache file, the usage-log trim and labels rewrites use
   a per-process temporary; `labels-sign` and `labels-port` merge their rows
