@@ -287,9 +287,24 @@ struct VtableRtti {
     }
 };
 
-// vtable: the object (or the table itself with `table`), the table pointer
-// (absent when the qword there points into no module: `found` holds it), and
-// the slots up to the first entry that is not code.
+// vtable with `parts`: one table pointer inside the object, at `offset`, and
+// the slots asked (with `slots`).
+struct VtablePart {
+    HexNum offset;
+    Addr table;
+    Location tableWhere;
+    std::vector<VtableSlot> rows;
+    template<class V> static void Describe(V& v) {
+        v("offset", &VtablePart::offset);
+        v("table", &VtablePart::table);
+        v.flat("table_", &VtablePart::tableWhere);
+        v("rows", &VtablePart::rows);
+    }
+};
+
+// vtable: the object (or the table itself), the table pointer (absent when
+// the qword there points into no module: `found` holds it), and the slots up
+// to the first entry that is not code; with `parts`, the object's tables.
 struct Vtable {
     Addr address;
     Location where;
@@ -299,6 +314,7 @@ struct Vtable {
     std::optional<std::string> stop;
     std::optional<HexNum> stopValue, found;
     std::vector<VtableSlot> rows;
+    std::optional<std::vector<VtablePart>> parts;
     std::optional<VtableRtti> rtti;
     std::optional<std::string> rttiError;
     std::optional<Chain> chain;
@@ -312,6 +328,7 @@ struct Vtable {
         v("stop_value", &Vtable::stopValue);
         v("found", &Vtable::found);
         v("rows", &Vtable::rows);
+        v("parts", &Vtable::parts);
         v("rtti", &Vtable::rtti);
         v("rtti_error", &Vtable::rttiError);
         v("chain", &Vtable::chain);
@@ -576,6 +593,25 @@ inline shape::VtableRtti MakeVtableRtti(uint64_t address, uint64_t offset, const
     return out;
 }
 
+inline std::vector<shape::VtableSlot> MakeVtableRows(std::span<const native::Slot> slots, std::span<const Module> modules) {
+    std::vector<shape::VtableSlot> rows;
+    for (const auto& slot : slots) {
+        shape::VtableSlot row{slot.slot, HexNum(slot.slot * 8), slot.target, Locate(slot.target, modules), {}, {}};
+        if (slot.body) {
+            row.body = Addr(*slot.body);
+            row.bodyWhere = Locate(*slot.body, modules);
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+// vtable with `parts`: each table found in the object, with its picked slots.
+inline shape::VtablePart MakeVtablePart(uint64_t offset, uint64_t table, std::span<const native::Slot> slots,
+                                        std::span<const Module> modules) {
+    return {HexNum(offset), Addr(table), Locate(table, modules), MakeVtableRows(slots, modules)};
+}
+
 inline shape::Vtable MakeVtable(uint64_t address, uint64_t offset, std::optional<uint64_t> table,
                                 std::optional<uint64_t> found, const native::Slots& slots,
                                 std::span<const Module> modules) {
@@ -583,14 +619,7 @@ inline shape::Vtable MakeVtable(uint64_t address, uint64_t offset, std::optional
     out.address = address;
     out.where = Locate(address, modules);
     out.offset = offset;
-    for (const auto& slot : slots.slots) {
-        shape::VtableSlot row{slot.slot, HexNum(slot.slot * 8), slot.target, Locate(slot.target, modules), {}, {}};
-        if (slot.body) {
-            row.body = Addr(*slot.body);
-            row.bodyWhere = Locate(*slot.body, modules);
-        }
-        out.rows.push_back(std::move(row));
-    }
+    out.rows = MakeVtableRows(slots.slots, modules);
     if (table) {
         out.table = Addr(*table);
         out.tableWhere = Locate(*table, modules);

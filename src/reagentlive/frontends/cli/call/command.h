@@ -102,9 +102,12 @@ struct Command {
     // address (<addr>->0x10->0x8); the console resolves it before running.
     std::vector<uint64_t> chain;
     // vtable: `offset` is where the table pointer sits in the object;
-    // `table`: the address is the table itself; `bodies`: resolve jump stubs;
-    // `rtti`: also the run-time type information's class.
-    bool table = false, bodies = false, rtti = false;
+    // `bodies`: resolve jump stubs; `rtti`: also the run-time type
+    // information's class; `slots`: only these slot indices (sorted, empty:
+    // all); `parts`: bytes of the object scanned for table pointers (0: none).
+    bool bodies = false, rtti = false;
+    std::vector<uint32_t> slots;
+    uint32_t partBytes = 0;
     // touches: struct offsets to find and the bytes scanned each side of the
     // address; `readsOnly` (reads) ranks by offsets read and drops copies.
     std::vector<uint32_t> offsets;

@@ -419,7 +419,8 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"addr": "0x1000", "offsets": [16], "bases": ["rcx", "rbp"]})"}},
         {"disp-scan", {R"({"disps": ["0x538"]})", R"({"disps": [16], "access": "any", "bases": ["rcx"], "view": {"start": "0x1000"}})",
             R"({"disps": [16, 24], "access": "read", "width": 4, "imm": 1, "same_base": true})"}},
-        {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "count": 4, "resolve": true, "rtti": true})"}},
+        {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "view": {"limit": 4}, "resolve": true, "rtti": true})",
+                    R"({"addr": "0x1000#5:9", "parts": 256, "slots": [6, 8]})"}},
         {"find", {R"({"text": "Pawn"})", R"({"cls": "Pawn", "live": true, "view": {"limit": 5}})"}},
         {"census", {R"({})", R"({"cls": "Pawn", "diff": true})"}},
         {"name-find", {R"({"text": "Health"})"}},
@@ -1750,7 +1751,7 @@ TEST_CASE("mem-snap takes an address and a length; mem-diff a test and an elemen
     CHECK(vtable->kind == Kind::Vtable);
     CHECK(vtable->rtti);
     CHECK(vtable->offset == 0x620);
-    CHECK(Why(R"({"verb": "vtable", "args": {"addr": "0x10000", "offset": 8, "table": true}})").starts_with("offset reads"));
+    CHECK(Why(R"({"verb": "vtable", "args": {"addr": "0x10000", "offset": 8, "parts": 64}})").starts_with("parts scans"));
 }
 
 TEST_CASE("the version text matches its parts") {

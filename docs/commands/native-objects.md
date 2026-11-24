@@ -1,6 +1,6 @@
 # Native objects
 
-*Home of:* reading a native (non-reflected) object with no engine pack: `vtable` (and `rtti`), pointer chains, the region `read` and `peek` report, C strings.
+*Home of:* reading a native (non-reflected) object with no engine pack: `vtable` (and `rtti`, `parts`), pointer chains, the region `read` and `peek` report, C strings.
 
 **TL;DR:** When a game has no engine pack, or an object is plain C++ that
 reflection does not list, these commands still say what it is: its
@@ -24,17 +24,36 @@ A pointer chain works in `read`, `peek`, `vtable` and `disasm`; `type`
 ## vtable
 
 `vtable` reads the table pointer at `addr` (an object's first 8 bytes;
-`offset` N: at `addr + N`, a secondary base or an interface part), or
-takes `addr` as the table with `table`, and lists its slots (`rows`): `slot`,
-`offset` (slot × 8), `target`, `module`, `rva`. It stops at the first entry
-that does not point into an executable section of a loaded module (`stop`
-`not code`, with `stop_value`), at `count`, or where the read ended; one
-read covers up to 512 slots. Sections come from each module's section
-table, read once with its exception directory and kept in the cache file.
-`resolve` adds `body` (with `body_module`, `body_rva`) where a slot's
-target is a stub of unconditional direct jumps: the address `disasm`
-with `follow` would end at, one read per hop. A qword that points into no
-module is a result: no `table`, and `found` holding the qword.
+`offset` N: at `addr + N`, a secondary base or an interface part) and lists
+its slots (`rows`): `slot`, `offset` (slot × 8), `target`, `module`, `rva`.
+When `addr`'s own first qword already points into code, `addr` is the table
+itself (an object's first qword points into read-only data instead). It
+stops at the first entry that does not point into an executable section of
+a loaded module (`stop` `not code`, with `stop_value`), at `view.limit`, or
+where the read ended; one read covers up to 512 slots. `slots` reads up to
+the highest slot asked and keeps only those rows. Sections come from each
+module's section table, read once with its exception directory and kept in
+the cache file. `resolve` adds `body` (with `body_module`, `body_rva`) where
+a slot's target is a stub of unconditional direct jumps: the address
+`disasm` with `follow` would end at, one read per hop. A qword that points
+into no module is a result: no `table`, and `found` holding the qword.
+
+### parts
+
+A virtual call through an interface lands on a table inside the object,
+not the first one. `parts` N reads the object's first N bytes and lists, in
+`parts`, every offset whose qword points into a module but not into code
+and whose target's first entry is code: `offset`, `table` (with
+`table_module`, `table_rva`), and with `slots` those slots' `rows`. One
+call answers which part's slot 15 an indirect call through `[rax+0x78]` reaches:
+
+```json
+{"verb": "vtable", "args": {"addr": "0x1f2e3d4c50", "parts": 4096, "slots": [6, 8, 15]}}
+```
+
+A pointer into a module's read-only data that happens to start with a code
+address (a function-pointer array) shows up too: confirm a part with
+`vtable` at its `offset`.
 
 ### rtti
 

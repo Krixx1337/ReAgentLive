@@ -620,15 +620,17 @@ Pack `native`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
-| `count` | `int` |  |  | how many slots at most (1..512) |
 | `offset` | `int` |  |  | the table pointer at addr+offset (an interface part; 0..0x100000) |
-| `table` | `bool` |  |  | addr is the table itself |
+| `slots` | `[int]` |  |  | only these slots (each 0..511) |
+| `parts` | `int` |  |  | list the table pointers in the object's first bytes (8..0x10000): its interface parts |
 | `resolve` | `bool` |  |  | where jump stubs lead |
 | `rtti` | `bool` |  |  | also the class and bases its run-time type information names (MSVC images) |
+| `view` | `obj` |  |  | how the result is shown: page, row limit, filters (the shared view keys) |
+| `view.limit` | `int` |  |  | rows at most (the verb's notes say whether 0 means all) |
 
-Result: `{address: addr, module?: str, rva?: hex, offset: hex, table?: addr, table_module?: str, table_rva?: hex, stop?: count\|not code\|end of read, stop_value?: hex, found?: hex, rows: [{slot: u64, offset: hex, target: addr, module?: str, rva?: hex, body?: addr, body_module?: str, body_rva?: hex}], rtti?: {locator: addr, name: str, decorated: str, complete: addr, complete_offset: hex, bases: [{name: str, decorated: str}], capped: bool}, rtti_error?: str, chain?: Chain}`
+Result: `{address: addr, module?: str, rva?: hex, offset: hex, table?: addr, table_module?: str, table_rva?: hex, stop?: count\|not code\|end of read, stop_value?: hex, found?: hex, rows: [{slot: u64, offset: hex, target: addr, module?: str, rva?: hex, body?: addr, body_module?: str, body_rva?: hex}], parts?: [{offset: hex, table: addr, table_module?: str, table_rva?: hex, rows: [{slot: u64, offset: hex, target: addr, module?: str, rva?: hex, body?: addr, body_module?: str, body_rva?: hex}]}], rtti?: {locator: addr, name: str, decorated: str, complete: addr, complete_offset: hex, bases: [{name: str, decorated: str}], capped: bool}, rtti_error?: str, chain?: Chain}`
 
-rtti adds rtti, read from the locator in the slot before the table; complete is the whole object when addr is one of its parts. Where that slot holds no locator (no type information, or not an MSVC image; engines often build without it) it adds rtti_error instead. Options: count bounds what is read (not a view); offset and table say where the table pointer is; resolve and rtti add reads.
+addr is the object, or the table itself when its first qword already points into code (an object's points into read-only data). view.limit reads the first that many slots (1..512; omitted: until the first entry that is not code); slots reads up to the highest asked and keeps those rows. parts reads the object's first bytes and lists, in parts, each offset whose qword is a table (it points into a module, not into code, and its first entry is code), with that table's slots rows when slots is given: the part an indirect call through an interface lands on, and its slot, in one call. rtti adds rtti, read from the locator in the slot before the table; complete is the whole object when addr is one of its parts. Where that slot holds no locator (no type information, or not an MSVC image; engines often build without it) it adds rtti_error instead. resolve and rtti add reads.
 
 ```json
 {"args":{"addr":"0x140001000"},"verb":"vtable"}

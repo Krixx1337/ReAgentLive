@@ -53,6 +53,31 @@ inline Slots ReadSlots(std::span<const uint8_t> bytes, size_t count, const std::
     return out;
 }
 
+// `slots`: keep only the slots asked (sorted); one past the table's end is
+// simply absent.
+inline void Pick(Slots& slots, std::span<const uint32_t> wanted) {
+    if (wanted.empty()) return;
+    std::erase_if(slots.slots, [&](const Slot& slot) {
+        return !std::ranges::binary_search(wanted, static_cast<uint32_t>(slot.slot));
+    });
+}
+
+// `parts`: the offsets in an object's bytes whose qword may be a table
+// pointer: it points into a module (`image`) but not into code. The caller
+// keeps those whose table's first entry is code.
+struct PartCandidate { uint64_t offset = 0, table = 0; };
+inline std::vector<PartCandidate> PartCandidates(std::span<const uint8_t> bytes,
+                                                 const std::function<bool(uint64_t)>& image,
+                                                 const std::function<bool(uint64_t)>& code) {
+    std::vector<PartCandidate> out;
+    for (size_t at = 0; at + 8 <= bytes.size(); at += 8) {
+        uint64_t value;
+        memcpy(&value, bytes.data() + at, 8);
+        if (value && image(value) && !code(value)) out.push_back({at, value});
+    }
+    return out;
+}
+
 // The address each slot's target leads to through unconditional direct
 // jumps (at most dis::MaxFollow), as `disasm` with `follow` would end; set only
 // where a jump was taken. One read per hop, MaxBatchReads per request.

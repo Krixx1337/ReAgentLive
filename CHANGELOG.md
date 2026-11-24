@@ -32,6 +32,11 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   Python `Session`, the `run` tool through MCP, then `run_status` (with
   progress), `run_read` and `run_stop`
   ([client](docs/client.md#python-session)).
+- **`vtable` picks slots and finds an object's interface parts:** `slots`
+  returns only the slots asked; `parts` lists every table pointer in the
+  object's first bytes with its offset (and those slots), so the part a
+  virtual call lands on is one call
+  ([native objects](docs/commands/native-objects.md#vtable)).
 
 ### Improved
 
@@ -75,6 +80,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   is refused as `busy` and the console keeps running. C++:
   `Client::Attach` no longer returns `Busy`; requests do
   (`SetBusyWait` sets the wait).
+- **`vtable` lost `count` and `table`:** pass `view.limit` for the first N
+  slots; drop `table`, since an address whose first qword already points
+  into code is taken as the table itself.
 
 ## 0.5.0
 

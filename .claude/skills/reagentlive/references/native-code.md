@@ -68,6 +68,19 @@ Answer one-address questions live, with no database:
   the previous `ret`). A listing a cap cut gives `next`: continue with
   `disasm` at `next` with `function` and `resume`.
 
+## Where a virtual call lands
+
+- An indirect call through `[rax+N]` after `mov rax, [rcx]`: the receiver is often an
+  interface part inside the object, not its first table. One call lists
+  every part with the slot that matters:
+  `{"verb": "vtable", "args": {"addr": "0x1f2e3d4c50", "parts": 4096, "slots": [15]}}`
+  (slot = N / 8). A slot that is `mov rax, [rcx]; jmp [rax+k]` forwards
+  to another slot of the same part: follow `k`.
+- What a subclass changes: `vtable` an instance and its base class's
+  default object, in one script; slots whose target differs are its
+  overrides, slots past the base's last are the virtuals it adds.
+- Only a slot or two of a long table: `slots`, never the whole table.
+
 ## Naming an unreflected system
 
 Walk references one address at a time; check each answer before the next.

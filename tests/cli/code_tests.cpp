@@ -962,21 +962,58 @@ TEST_CASE("the cache keeps module layouts") {
 }
 
 TEST_CASE("vtable call and result") {
-    auto parsed = Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "count": 12, "offset": "0xf0", "resolve": true}})");
+    auto parsed = Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "view": {"limit": 12}, "offset": "0xf0", "resolve": true}})");
     REQUIRE(parsed);
     CHECK(parsed->kind == Kind::Vtable);
     CHECK(parsed->limit == 12);
     CHECK(parsed->offset == 0xf0);
     CHECK(parsed->bodies);
-    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "table": true}})")->table);
-    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "table": true, "offset": 8}})").error().starts_with("offset"));
-    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "count": 513}})").error().starts_with("count"));
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "view": {"limit": 513}}})").error().starts_with("view.limit"));
+    // slots: sorted and unique; past the table's read, refused; not with view.limit.
+    auto picked = Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "slots": [15, 6, 8, 6]}})");
+    REQUIRE(picked);
+    CHECK(picked->slots == std::vector<uint32_t>{6, 8, 15});
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "slots": [512]}})").error().starts_with("slots"));
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "slots": [1], "view": {"limit": 4}}})").error().starts_with("slots"));
+    // parts: bytes rounded down to whole qwords; never with offset or rtti.
+    auto parts = Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "parts": "0x105", "slots": [6]}})");
+    REQUIRE(parts);
+    CHECK(parts->partBytes == 0x100);
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "parts": 4}})").error().starts_with("parts"));
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "parts": 64, "offset": 8}})").error().starts_with("parts"));
+    CHECK(Call(R"({"verb": "vtable", "args": {"addr": "0x1000", "parts": 64, "rtti": true}})").error().starts_with("parts"));
+
+    // Pick keeps the slots asked; one past the table is absent.
+    native::Slots read{{{0, 1, {}}, {1, 2, {}}, {2, 3, {}}}, "not code", 9};
+    native::Pick(read, std::vector<uint32_t>{1, 2, 7});
+    REQUIRE(read.slots.size() == 2);
+    CHECK(read.slots[0].slot == 1);
+    CHECK(read.slots[1].slot == 2);
+
+    // PartCandidates: qwords into a module but not into code (code at Base+0x1000..0x5000).
+    std::vector<uint8_t> object(32);
+    const uint64_t values[] = {Base + 0x5000, Base + 0x1100, 0x1234, Base + 0x6000};
+    memcpy(object.data(), values, sizeof(values));
+    const auto image = [](uint64_t v) { return v >= Base && v < Base + 0x100000; };
+    const auto code = [](uint64_t v) { return v >= Base + 0x1000 && v < Base + 0x5000; };
+    const auto candidates = native::PartCandidates(object, image, code);
+    REQUIRE(candidates.size() == 2);
+    CHECK(candidates[0].offset == 0);
+    CHECK(candidates[0].table == Base + 0x5000);
+    CHECK(candidates[1].offset == 0x18);
 
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     native::Slots slots{{{0, Base + 0x1100, Base + 0x1800}}, "not code", 5};
     const auto json = Checked(MakeVtable(Base + 0x9000, 0, Base + 0x5000, std::nullopt, slots, modules));
     const auto none = Checked(MakeVtable(0x1000, 0, std::nullopt, 0x1234, {}, modules));
     CHECK_FALSE(none.contains("table"));
+    auto withParts = MakeVtable(Base + 0x9000, 0, std::nullopt, std::nullopt, {}, modules);
+    withParts.parts.emplace();
+    withParts.parts->push_back(MakeVtablePart(0x28, Base + 0x5000, slots.slots, modules));
+    const auto partsJson = Checked(withParts);
+    REQUIRE(partsJson["parts"].size() == 1);
+    CHECK(partsJson["parts"][0]["offset"] == "0x28");
+    CHECK(partsJson["parts"][0]["rows"].size() == 1);
 }
 
 TEST_CASE("pointer chains in read-only commands, refused for writes") {

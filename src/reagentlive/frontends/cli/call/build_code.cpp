@@ -95,19 +95,34 @@ Parsed DispScan(const Args& args, const ParseContext&) {
     return command;
 }
 
-// vtable: slots until the first that is not code.
+// vtable: slots until the first that is not code; or the object's parts.
 Parsed Vtable(const Args& args, const ParseContext& context) {
     Command command;
-    const uint64_t count = args.Int("count");
+    constexpr uint64_t maxSlots = MaxRead / 8;
+    const uint64_t count = args.Int("limit");
     if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
-    if (args.Has("count") && (!count || count > MaxRead / 8)) return Fail("count must be 1.." + std::to_string(MaxRead / 8));
-    command.table = args.Has("table");
+    if (args.Has("limit") && (!count || count > maxSlots)) return Fail("view.limit must be 1.." + std::to_string(maxSlots));
+    for (const auto& value : args.At("slots")) {
+        const uint64_t slot = Args::Number(value);
+        if (slot >= maxSlots) return Fail("slots: each 0.." + std::to_string(maxSlots - 1));
+        command.slots.push_back(static_cast<uint32_t>(slot));
+    }
+    std::ranges::sort(command.slots);
+    command.slots.erase(std::ranges::unique(command.slots).begin(), command.slots.end());
+    if (args.Has("slots") && command.slots.empty()) return Fail("slots: give at least one");
+    if (!command.slots.empty() && args.Has("limit")) return Fail("slots picks the rows; view.limit would cut them");
     command.bodies = args.Has("resolve");
     command.rtti = args.Has("rtti");
     if (args.Has("offset")) {
         command.offset = args.Int("offset");
         if (command.offset > 0x100000) return Fail("offset is 0..0x100000");
-        if (command.table) return Fail("offset reads a table pointer; table says there is none");
+    }
+    if (args.Has("parts")) {
+        const uint64_t parts = args.Int("parts");
+        if (parts < 8 || parts > 0x10000) return Fail("parts is the object's bytes scanned, 8..0x10000");
+        if (args.Has("offset")) return Fail("parts scans every offset; offset picks one: give one of them");
+        if (command.rtti) return Fail("parts lists tables, not classes: rtti one part with offset");
+        command.partBytes = static_cast<uint32_t>(parts - parts % 8);
     }
     command.kind = Kind::Vtable;
     command.limit = static_cast<uint32_t>(count);
