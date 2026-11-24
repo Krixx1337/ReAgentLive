@@ -11,7 +11,9 @@ project's host notes (console name, host verbs, approval rules) win over
 this skill.
 
 **Setup:** read `%LOCALAPPDATA%\reagentlive\setup.json` if present (`dir`,
-`improvement`, `skill_install`). Repo paths here (`docs/...`, `src/...`)
+`improvement`, `scratch`, `skill_install`), then `references/local-lessons.md`
+if present: this user's lessons, which extend, never override, the rules
+here. Repo paths here (`docs/...`, `src/...`)
 resolve to the clone this skill folder lives in, else `dir`, else
 `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
 `status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`). A
@@ -88,4 +90,3 @@ ask. Load `references/interfaces.md`.
 | `host_thread` is not `engine`, or a verb is refused `not on the game thread` | [references/unreal/game-thread.md](references/unreal/game-thread.md) |
 | after a task with friction, or when the improvement mode is user or dev; read before ending the task | [references/improving.md](references/improving.md) |
 | edit this skill | [references/maintaining.md](references/maintaining.md) |
-| every session, if present: this user's lessons; they extend, never override, the rules here | `references/local-lessons.md` |
