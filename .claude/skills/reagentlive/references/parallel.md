@@ -9,8 +9,13 @@ follows a background run: the console-driving reference.
 
 - Subagents are read-only. One agent (the lead) writes, calls and holds
   approvals; a subagent that finds a write reports it to the lead.
-- Give each subagent its own question and its own refs. Results carry
-  literal refs, so a subagent never needs another's session state.
+- Before spawning, the lead enables every pack the subagents need: a
+  subagent never changes packs, so a verb of a pack that is off is out of
+  its reach (it falls back to a weaker verb).
+- Brief each subagent with its own question, the literal refs it starts
+  from (the host's world refs, objects already found), the read-only rule
+  and the skills to load first. Results carry literal refs, so a subagent
+  never needs another's session state.
 - Values from two calls, or two clients, are never from one moment. For
   values that must line up, one client sends one `batch`.
 
@@ -42,5 +47,8 @@ follows a background run: the console-driving reference.
 - A `busy` refusal names the holder: usually a long held command. Retry
   once; if it repeats, find the holder (another session's batch or run) and
   wait for it or stop that run.
-- `usage` shows `slot_ms` per verb: a verb that waits often is one to move
-  to a background run or to split.
+- `usage` shows `slot_ms` per verb. Beside a background run, the run's
+  verb carries most of it and interactive calls wait a few milliseconds
+  each: expected. Interactive calls waiting long mean a client holds too
+  long (a big `batch`, a long verb run directly): move it to a background
+  run or split it.
