@@ -36,6 +36,10 @@
   again. A raw `read` of an old address still returns bytes: it checks
   memory, not identity; a literal ref checks identity.
 - **Separate calls read separate ticks** (SKILL.md rules).
+- **`own` can hide everything.** `get` with `own` lists only the fields the
+  object's own class declares; a small subclass (an effect, a trigger, a
+  data sub-object) often declares none. Empty: drop `own`, keep
+  `view.nonzero`.
 - **Native members may be absent from reflection.** `get` can show a data
   table's row struct and omit its native `RowMap` (`rows` reads it).
 - **UI names differ from internal names.** Map through item tags, not by

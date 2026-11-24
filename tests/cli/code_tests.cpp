@@ -991,16 +991,18 @@ TEST_CASE("vtable call and result") {
     CHECK(read.slots[1].slot == 2);
 
     // PartCandidates: qwords into a module but not into code (code at Base+0x1000..0x5000).
-    std::vector<uint8_t> object(32);
-    const uint64_t values[] = {Base + 0x5000, Base + 0x1100, 0x1234, Base + 0x6000};
+    // A table repeated by embedded structs is one candidate with every offset.
+    std::vector<uint8_t> object(48);
+    const uint64_t values[] = {Base + 0x5000, Base + 0x1100, 0x1234, Base + 0x6000, Base + 0x6000, Base + 0x5000};
     memcpy(object.data(), values, sizeof(values));
     const auto image = [](uint64_t v) { return v >= Base && v < Base + 0x100000; };
     const auto code = [](uint64_t v) { return v >= Base + 0x1000 && v < Base + 0x5000; };
     const auto candidates = native::PartCandidates(object, image, code);
     REQUIRE(candidates.size() == 2);
-    CHECK(candidates[0].offset == 0);
     CHECK(candidates[0].table == Base + 0x5000);
-    CHECK(candidates[1].offset == 0x18);
+    CHECK(candidates[0].offsets == std::vector<uint64_t>{0, 0x28});
+    CHECK(candidates[1].table == Base + 0x6000);
+    CHECK(candidates[1].offsets == std::vector<uint64_t>{0x18, 0x20});
 
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     native::Slots slots{{{0, Base + 0x1100, Base + 0x1800}}, "not code", 5};
@@ -1009,10 +1011,11 @@ TEST_CASE("vtable call and result") {
     CHECK_FALSE(none.contains("table"));
     auto withParts = MakeVtable(Base + 0x9000, 0, std::nullopt, std::nullopt, {}, modules);
     withParts.parts.emplace();
-    withParts.parts->push_back(MakeVtablePart(0x28, Base + 0x5000, slots.slots, modules));
+    const uint64_t partOffsets[]{0x28};
+    withParts.parts->push_back(MakeVtablePart(partOffsets, Base + 0x5000, slots.slots, modules));
     const auto partsJson = Checked(withParts);
     REQUIRE(partsJson["parts"].size() == 1);
-    CHECK(partsJson["parts"][0]["offset"] == "0x28");
+    CHECK(partsJson["parts"][0]["offsets"] == Json::array({"0x28"}));
     CHECK(partsJson["parts"][0]["rows"].size() == 1);
 }
 

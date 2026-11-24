@@ -33,9 +33,9 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   progress), `run_read` and `run_stop`
   ([client](docs/client.md#python-session)).
 - **`vtable` picks slots and finds an object's interface parts:** `slots`
-  returns only the slots asked; `parts` lists every table pointer in the
-  object's first bytes with its offset (and those slots), so the part a
-  virtual call lands on is one call
+  returns only the slots asked; `parts` lists each distinct table in the
+  object's first bytes with the offsets holding it (and those slots), so the
+  part a virtual call lands on is one call
   ([native objects](docs/commands/native-objects.md#vtable)).
 
 ### Improved

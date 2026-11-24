@@ -42,9 +42,10 @@ into no module is a result: no `table`, and `found` holding the qword.
 
 A virtual call through an interface lands on a table inside the object,
 not the first one. `parts` N reads the object's first N bytes and lists, in
-`parts`, every offset whose qword points into a module but not into code
-and whose target's first entry is code: `offset`, `table` (with
-`table_module`, `table_rva`), and with `slots` those slots' `rows`. One
+`parts`, each distinct table found there (a qword that points into a module
+but not into code, whose target's first entry is code): `offsets` (every
+offset holding it, in order: embedded structs repeat one table), `table`
+(with `table_module`, `table_rva`), and with `slots` those slots' `rows`. One
 call answers which part's slot 15 an indirect call through `[rax+0x78]` reaches:
 
 ```json

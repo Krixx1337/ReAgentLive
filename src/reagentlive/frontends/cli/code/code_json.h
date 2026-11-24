@@ -287,15 +287,16 @@ struct VtableRtti {
     }
 };
 
-// vtable with `parts`: one table pointer inside the object, at `offset`, and
-// the slots asked (with `slots`).
+// vtable with `parts`: one distinct table inside the object, every offset
+// that holds it (embedded structs repeat a table), and the slots asked
+// (with `slots`).
 struct VtablePart {
-    HexNum offset;
+    std::vector<HexNum> offsets;
     Addr table;
     Location tableWhere;
     std::vector<VtableSlot> rows;
     template<class V> static void Describe(V& v) {
-        v("offset", &VtablePart::offset);
+        v("offsets", &VtablePart::offsets);
         v("table", &VtablePart::table);
         v.flat("table_", &VtablePart::tableWhere);
         v("rows", &VtablePart::rows);
@@ -607,9 +608,11 @@ inline std::vector<shape::VtableSlot> MakeVtableRows(std::span<const native::Slo
 }
 
 // vtable with `parts`: each table found in the object, with its picked slots.
-inline shape::VtablePart MakeVtablePart(uint64_t offset, uint64_t table, std::span<const native::Slot> slots,
-                                        std::span<const Module> modules) {
-    return {HexNum(offset), Addr(table), Locate(table, modules), MakeVtableRows(slots, modules)};
+inline shape::VtablePart MakeVtablePart(std::span<const uint64_t> offsets, uint64_t table,
+                                        std::span<const native::Slot> slots, std::span<const Module> modules) {
+    shape::VtablePart part{{}, Addr(table), Locate(table, modules), MakeVtableRows(slots, modules)};
+    for (const uint64_t offset : offsets) part.offsets.push_back(HexNum(offset));
+    return part;
 }
 
 inline shape::Vtable MakeVtable(uint64_t address, uint64_t offset, std::optional<uint64_t> table,

@@ -95,7 +95,7 @@ void RunVtable(Session& session, const Command& command, std::string_view jsonCo
                 if (!read) return JsonError(session, jsonCommand, ErrorKind::Read, read.error());
                 slots = std::move(*read);
             }
-            out.parts->push_back(MakeVtablePart(candidate.offset, candidate.table, slots.slots, modules));
+            out.parts->push_back(MakeVtablePart(candidate.offsets, candidate.table, slots.slots, modules));
         }
         return Emit(session, jsonCommand, std::move(out));
     }

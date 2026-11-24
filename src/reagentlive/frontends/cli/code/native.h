@@ -62,10 +62,11 @@ inline void Pick(Slots& slots, std::span<const uint32_t> wanted) {
     });
 }
 
-// `parts`: the offsets in an object's bytes whose qword may be a table
-// pointer: it points into a module (`image`) but not into code. The caller
-// keeps those whose table's first entry is code.
-struct PartCandidate { uint64_t offset = 0, table = 0; };
+// `parts`: the qwords in an object's bytes that may be table pointers (into a
+// module, `image`, but not into code), one per distinct table with every
+// offset holding it, in first-seen order: embedded structs repeat one table.
+// The caller keeps those whose table's first entry is code.
+struct PartCandidate { uint64_t table = 0; std::vector<uint64_t> offsets; };
 inline std::vector<PartCandidate> PartCandidates(std::span<const uint8_t> bytes,
                                                  const std::function<bool(uint64_t)>& image,
                                                  const std::function<bool(uint64_t)>& code) {
@@ -73,7 +74,10 @@ inline std::vector<PartCandidate> PartCandidates(std::span<const uint8_t> bytes,
     for (size_t at = 0; at + 8 <= bytes.size(); at += 8) {
         uint64_t value;
         memcpy(&value, bytes.data() + at, 8);
-        if (value && image(value) && !code(value)) out.push_back({at, value});
+        if (!value || !image(value) || code(value)) continue;
+        auto seen = std::ranges::find(out, value, &PartCandidate::table);
+        if (seen != out.end()) seen->offsets.push_back(at);
+        else out.push_back({value, {at}});
     }
     return out;
 }
