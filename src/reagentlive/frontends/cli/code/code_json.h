@@ -385,6 +385,52 @@ struct Touches {
 };
 }
 
+namespace shape {
+struct DispHit {
+    Addr address;
+    HexNum rva;                         // In the scan's module (the result's module).
+    std::string access;
+    uint64_t width = 0;
+    std::string text;
+    std::optional<HexNum> function;     // The holding function's start rva (exception table); absent outside every entry.
+    template<class V> static void Describe(V& v) {
+        v("address", &DispHit::address);
+        v("rva", &DispHit::rva);
+        v("access", &DispHit::access, "write|read|both|address");
+        v("width", &DispHit::width);
+        v("text", &DispHit::text);
+        v("function", &DispHit::function);
+    }
+};
+// disp-scan: one page of the sweep. from and to bound what this call read;
+// scanned is the share of the module's code behind next_cursor (1 when done).
+struct DispScan {
+    HexNum disp;
+    std::string access;
+    std::string module;
+    Addr from, to;
+    double scanned = 0;
+    uint64_t total = 0;
+    std::vector<DispHit> rows;
+    bool capped = false;
+    std::optional<Addr> nextCursor;
+    int64_t scanMs = 0;
+    template<class V> static void Describe(V& v) {
+        v("disp", &DispScan::disp);
+        v("access", &DispScan::access);
+        v("module", &DispScan::module);
+        v("from", &DispScan::from);
+        v("to", &DispScan::to);
+        v("scanned", &DispScan::scanned);
+        v("total", &DispScan::total);
+        v("rows", &DispScan::rows);
+        v("capped", &DispScan::capped);
+        v("next_cursor", &DispScan::nextCursor);
+        v("scan_ms", &DispScan::scanMs);
+    }
+};
+}
+
 inline std::optional<shape::FunctionBounds> MakeFunction(const std::optional<unwind::Function>& function,
                                                          std::span<const Module> modules) {
     if (!function) return std::nullopt;

@@ -328,10 +328,11 @@ inline Json ExampleCall(const Verb& verb, const Json& given = Json(), std::strin
     }
     // A call that kept nothing also gets the optional args that have an
     // example: a verb that needs one of several (find's text or cls) still
-    // gets a call it takes.
+    // gets a call it takes. So does the arg at fault when it has one: an
+    // optional arg a form of the verb needs (write's addr) is replaced, not dropped.
     const bool bare = args.empty();
     for (const auto& arg : verb.args)
-        if ((arg.required || (bare && !arg.example.empty())) && !args.contains(arg.key))
+        if ((arg.required || ((bare || arg.key == fault) && !arg.example.empty())) && !args.contains(arg.key))
             args[std::string(arg.key)] = check::Example(arg);
     return {{"verb", verb.name}, {"args", std::move(args)}};
 }

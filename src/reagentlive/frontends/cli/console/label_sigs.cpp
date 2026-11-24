@@ -1,6 +1,6 @@
-// reagentlive CLI console: labels-sign and labels-port, byte signatures on a
-// labels file's names so they survive a patch. Both are sig-check's matcher
-// in a loop over the file's rows.
+// reagentlive CLI console: labels-sign, labels-port and labels-check, byte
+// signatures on a labels file's names so they survive a patch. Each is
+// sig-check's matcher in a loop over the file's rows.
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -244,6 +244,53 @@ void RunLabelsPort(Session& session, const Command& command, std::string_view js
         lines.insert(lines.end(), added.begin(), added.end());
         if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, ErrorKind::File, written.error());
     }
+    Emit(session, jsonCommand, std::move(result));
+}
+
+// labels-check: this build's signed rows, each searched in the image (no
+// expect: where it lands is the answer) and compared with its row. Read-only.
+void RunLabelsCheck(Session& session, const Command& command, std::string_view jsonCommand) {
+    Client& client = session.client;
+    if (!client.Supports(op::Search) || !client.Supports(op::ReadBatch))
+        return JsonError(session, jsonCommand, ErrorKind::Unsupported, "labels-check needs an agent with search and read-batch");
+    auto file = OpenLabels(session, command);
+    if (!file) return JsonError(session, jsonCommand, file.error().first, file.error().second);
+    const Module& module = file->module;
+    const Client::Hold hold(client);
+    sig::Checker checker(AgentSearch(session), AgentRead(session), LoadedModules(session));
+    shape::LabelsCheck result;
+    result.path = file->path;
+    result.module = module.name;
+    result.timestamp = file->timestamp;
+    for (const auto& line : file->lines) {
+        const auto row = ParseLabel(line, module, file->timestamp);
+        if (!row) continue;
+        const auto found = row->extra.find("sig");
+        if (found == row->extra.end()) {
+            if (row->kind == "user" || row->kind == "global") ++result.unsignedRows;
+            continue;
+        }
+        shape::LabelCheckRow out{row->name, row->kind, row->rva, "invalid", {}, {}, {}};
+        const auto signature = ParseLabelSig(*found);
+        if (!signature) {
+            out.reason = "its sig is not one sig-check takes";
+            ++result.invalid;
+            result.rows.push_back(std::move(out));
+            continue;
+        }
+        const auto outcome = CheckLabel(*signature,
+            checker.Run(sig::Check{signature->pattern, std::nullopt, 0, signature->resolve}, module), module, row->rva);
+        out.status = outcome.status;
+        if (outcome.found) out.found = *outcome.found;
+        if (outcome.status == "ambiguous") out.matches = outcome.matches;
+        if (!outcome.reason.empty()) out.reason = outcome.reason;
+        if (outcome.status == "ok") ++result.ok;
+        else if (outcome.status == "moved") ++result.moved;
+        else if (outcome.status == "ambiguous") ++result.ambiguous;
+        else ++result.missing;
+        result.rows.push_back(std::move(out));
+    }
+    result.searches = checker.Searches();
     Emit(session, jsonCommand, std::move(result));
 }
 }

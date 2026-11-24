@@ -514,7 +514,19 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             if (!parameters) return CommandError(session, jsonCommand, parameters.error());
             const ue::Signature signature = std::move(*parameters);
             if (!ue::EachFunctionAllowed(function->flags)) return fail("each calls only const or pure functions");
-            if (auto refusal = calls::EachRefusal(signature, structs); !refusal.empty()) return fail(std::move(refusal));
+            // The parameter by its readable name (the names file's), the reflected one beside it as raw.
+            ue::Signature shown = signature;
+            for (auto& parameter : shown.parameters)
+                if (const auto readable = session.names.Find(parameter.owner, parameter.offset, parameter.size, parameter.boolMask);
+                    !readable.empty())
+                    parameter.name = readable;
+            size_t which = 0;
+            if (auto refusal = calls::EachRefusal(shown, structs, &which); !refusal.empty()) {
+                Json error = ErrorEnvelope(jsonCommand, ErrorKind::Validation, refusal)["error"];
+                if (shown.parameters[which].name != signature.parameters[which].name)
+                    error["raw"] = signature.parameters[which].name;
+                return JsonRefusal(session, jsonCommand, std::move(error));
+            }
             if (!signature.size || signature.size > ue::MaxEachValue)
                 return fail(function->owner + ":" + function->name + "'s parameter block is " +
                     std::to_string(signature.size) + " bytes; each takes 1.." + std::to_string(ue::MaxEachValue) +

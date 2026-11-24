@@ -109,7 +109,7 @@ CALLS = [
     [C('write', {'addr': {'base': REF, 'offset': 0x3e4}, 'data': '0000803f', 'expect': '00000000', 'hold': 2.5}),
      ok({'address': '0x10', 'size': 4, 'timed': PIN})],
     [C('timed-writes'), ok({'rows': [TRIAL, PIN]})],
-    [C('timed-writes', {'clear': True, 'id': 'hold:1'}), ok({'cleared': 1, 'rows': [dict(PIN, state='cleared')]})],
+    [C('write', {'clear': 'hold:1'}), ok({'cleared': [dict(PIN, state='cleared')]})],
     [C('watch-start', {'duration': 600, 'ranges': [{'offset': 0x538, 'len': 16}], 'every': 10, 'follow': 'pawn'}), ok({
         'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
         'ranges': [{'offset': '0x538', 'length': 16, 'guarded': True}]})],
@@ -126,7 +126,7 @@ CALLS = [
                           'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x28}, 'data': '0000000000000040', 'expect': '000000000000f03f',
                  'undo': {'after': 5, 'owner': REF, 'object': '0x2000'}}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
-    [C('timed-writes', {'clear': True, 'id': 'undo:1'}), ok({'cleared': 1, 'rows': [dict(TRIAL, state='restored')]})],
+    [C('write', {'clear': 'undo:1'}), ok({'cleared': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
     [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'start': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
     [C('get', {'object': REF, 'mode': 'changed'}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
@@ -354,7 +354,7 @@ class SessionTests(unittest.TestCase):
     def test_calls_go_as_json_with_named_arguments(self):
         self.c.read('0x10', type='cstr')
         self.c.read({'base': REF, 'offset': 0x538}, type='u8 phase, pad 1')
-        self.c.write('0x1000', dl.pack('f32', 1.0))
+        self.c.write(addr='0x1000', data=dl.pack('f32', 1.0))
         self.c.search(type='text', value='Fatal error', max=1)
         self.c.sig_check(file='my sigs.jsonl')           # A space needs no quoting.
         self.c.disasm(GAME, count=8, function=True, follow=True)
@@ -385,19 +385,19 @@ class SessionTests(unittest.TestCase):
 
     def test_write_expect_failure_raises_with_found_bytes(self):
         with self.assertRaises(dl.ReAgentLiveError) as caught:
-            self.c.write('0x1000', b'\x01\x02', expect=b'\xff\xff')
+            self.c.write(addr='0x1000', data=b'\x01\x02', expect=b'\xff\xff')
         self.assertEqual(caught.exception.error['found'], '00 00')
 
     def test_timed_writes_and_captures(self):
-        held = self.c.write({'base': REF, 'offset': 0x3e4}, dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
+        held = self.c.write(addr={'base': REF, 'offset': 0x3e4}, data=dl.pack('f32', 1.0), expect=bytes(4), hold=2.5)
         self.assertEqual(held['timed']['id'], 'hold:1')
         self.assertEqual([row['mode'] for row in self.c.timed_writes()['rows']], ['undo', 'hold'])
-        self.assertEqual(self.c.timed_writes(clear=True, id='hold:1')['cleared'], 1)
-        row = self.c.write({'base': REF, 'offset': 0x28}, dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0),
+        self.assertEqual(len(self.c.write(clear='hold:1')['cleared']), 1)
+        row = self.c.write(addr={'base': REF, 'offset': 0x28}, data=dl.pack('f64', 2.0), expect=dl.pack('f64', 1.0),
                            undo={'after': 5, 'owner': REF, 'object': '0x2000'})['timed']
         self.assertIsNone(row['guard'])
         self.assertIsNone(row['writes'])                     # A --hold key, absent on an --undo write.
-        self.assertEqual(self.c.timed_writes(clear=True, id='undo:1')['rows'][0]['state'], 'restored')
+        self.assertEqual(self.c.write(clear='undo:1')['cleared'][0]['state'], 'restored')
         ranges = [{'object': REF, 'field': ['Health']}, {'addr': '0x9000', 'len': 1}]
         result = self.session.watch(0.3, ranges, file='cap.jsonl')   # start, wait, stop
         self.assertEqual(result['file'], 'cap.jsonl')

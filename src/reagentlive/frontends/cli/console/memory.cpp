@@ -115,7 +115,7 @@ shape::TimedWrite MakePin(const PinState& pin) {
 
 // write's answer for a timed write: the write's place and size, and the write itself.
 shape::Write TimedResult(Session& session, shape::TimedWrite row, uint32_t length) {
-    shape::Write out{row.address, Locate(row.address.value, LoadedModules(session)), length, {}};
+    shape::Write out{row.address, Locate(row.address.value, LoadedModules(session)), length, {}, {}};
     out.timed = std::move(row);
     return out;
 }
@@ -206,35 +206,38 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
     Emit(session, jsonCommand, TimedResult(session, MakeTrial(*trial), request.length));
 }
 
-// writes: every timed write, `undo` ones first; `clear` ends them (all, or the
-// one `id` names: undo:N or hold:N).
+// timed-writes: every timed write, `undo` ones first. write with `clear`
+// ends them (all, or the one its id names: undo:N or hold:N) and answers
+// the rows it ended as `cleared`.
 void RunWrites(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     const bool trials = client.Supports(op::Trial), pins = client.Supports(op::Pin);
     if (!trials && !pins) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support timed writes");
     const bool clear = command.all;
     const auto id = static_cast<uint32_t>(command.request.args[0]);
-    shape::Writes result;
+    std::vector<shape::TimedWrite> rows;
     if (trials && command.target != "hold") {
-        auto rows = clear ? client.TrialClear(id) : client.TrialList();
-        if (!rows) return CommandError(session, jsonCommand, rows.error());
-        for (const auto& trial : *rows) result.rows.push_back(MakeTrial(trial));
+        auto listed = clear ? client.TrialClear(id) : client.TrialList();
+        if (!listed) return CommandError(session, jsonCommand, listed.error());
+        for (const auto& trial : *listed) rows.push_back(MakeTrial(trial));
     }
     if (pins && command.target != "undo") {
-        auto rows = client.PinList();
-        if (!rows) return CommandError(session, jsonCommand, rows.error());
-        std::vector<shape::TimedWrite> listed;
-        for (const auto& pin : *rows)
-            if (!id || pin.id == id) listed.push_back(MakePin(pin));
+        auto listed = client.PinList();
+        if (!listed) return CommandError(session, jsonCommand, listed.error());
+        std::vector<shape::TimedWrite> held;
+        for (const auto& pin : *listed)
+            if (!id || pin.id == id) held.push_back(MakePin(pin));
         if (clear) {
             auto cleared = client.PinClear(id);
             if (!cleared) return CommandError(session, jsonCommand, cleared.error());
-            for (auto& row : listed) if (row.state == "active") row.state = "cleared";
+            for (auto& row : held) if (row.state == "active") row.state = "cleared";
         }
-        result.rows.insert(result.rows.end(), listed.begin(), listed.end());
+        rows.insert(rows.end(), held.begin(), held.end());
     }
-    if (clear) result.cleared = result.rows.size();
-    Emit(session, jsonCommand, std::move(result));
+    if (!clear) return Emit(session, jsonCommand, shape::Writes{std::move(rows)});
+    shape::Write out;
+    out.cleared = std::move(rows);
+    Emit(session, jsonCommand, std::move(out));
 }
 
 namespace {

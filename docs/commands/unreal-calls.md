@@ -69,7 +69,8 @@ on the property or, where it lacks one, on every member of its struct: a
 gameplay tag is plain, a tag container is not); anything else is refused
 and stays with `call`, the message naming the parameter and why ("
 `ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an
-array)"). Instances gone since the scan are skipped. A verb of its own
+array)"); a parameter the names file knows is named by its readable name,
+the reflected one in the error's `raw`. Instances gone since the scan are skipped. A verb of its own
 because its result is `each`'s table, not `call`'s.
 
 ## Named calls

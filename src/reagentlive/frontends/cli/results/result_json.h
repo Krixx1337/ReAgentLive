@@ -233,23 +233,25 @@ struct TimedWrite {
 // writes: every timed write; with clear, `cleared` and the rows it ended.
 struct Writes {
     std::vector<TimedWrite> rows;
-    std::optional<uint64_t> cleared;
     template<class V> static void Describe(V& v) {
         v("rows", &Writes::rows);
-        v("cleared", &Writes::cleared);
     }
 };
 
+// write: the bytes written (address, size; timed for undo and hold), or with
+// `clear` the timed writes it ended (cleared) and nothing written.
 struct Write {
-    Addr address;
+    std::optional<Addr> address;
     Location where;
-    uint64_t size = 0;
+    std::optional<uint64_t> size;
     std::optional<TimedWrite> timed;    // `undo`, `hold`.
+    std::optional<std::vector<TimedWrite>> cleared;
     template<class V> static void Describe(V& v) {
         v("address", &Write::address);
         v.flat("", &Write::where);
         v("size", &Write::size);
         v("timed", &Write::timed);
+        v("cleared", &Write::cleared);
     }
 };
 struct AddressRow {

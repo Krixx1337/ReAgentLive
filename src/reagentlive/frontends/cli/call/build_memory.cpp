@@ -156,7 +156,31 @@ Parsed Peek(const Args& args, const ParseContext& context) {
 }
 
 // write: a plain write, a trial (undo: the agent restores it) or a pin (hold: rewritten every tick).
+namespace {
+// write with clear: end the timed writes, all or the one an id names (undo:N or hold:N).
+Parsed ClearTimed(const Args& args) {
+    Command command;
+    command.kind = Kind::TimedWrites;
+    command.all = true;                         // clear
+    for (const auto* key : {"addr", "data", "expect", "undo", "hold"})
+        if (args.Has(key)) return Fail(std::string(key) + ": clear ends timed writes alone; " + key + " goes with a write");
+    const std::string id = args.Str("clear");
+    if (id == "all") return command;
+    const size_t colon = id.find(':');
+    uint64_t n = 0;
+    const auto mode = std::string_view(id).substr(0, colon);
+    if (colon == std::string::npos || (mode != "undo" && mode != "hold") || !Number(std::string_view(id).substr(colon + 1), n) ||
+        !n || n > UINT32_MAX) return Fail("clear is \"all\" or one id as timed-writes lists it: undo:N or hold:N");
+    command.target = mode;
+    command.request.args[0] = n;
+    return command;
+}
+}
+
 Parsed Write(const Args& args, const ParseContext& context) {
+    if (args.Has("clear")) return ClearTimed(args);
+    if (!args.Has("addr")) return Fail("addr: write needs addr and data (or clear alone, to end timed writes)");
+    if (!args.Has("data")) return Fail("data: write needs addr and data (or clear alone, to end timed writes)");
     Command command;
     Request& request = command.request;
     auto place = value::Address(args.At("addr"), context.modules);
@@ -205,21 +229,9 @@ Parsed Write(const Args& args, const ParseContext& context) {
 }
 
 // writes: the timed writes; clear ends one (id) or all.
-Parsed TimedWrites(const Args& args, const ParseContext&) {
+Parsed TimedWrites(const Args&, const ParseContext&) {
     Command command;
     command.kind = Kind::TimedWrites;
-    if (args.Has("id") && !args.Has("clear")) return Fail("id goes with clear");
-    if (!args.Has("clear")) return command;
-    command.all = true;                         // clear
-    const std::string id = args.Str("id");
-    if (id.empty()) return command;
-    const size_t colon = id.find(':');
-    uint64_t n = 0;
-    const auto mode = std::string_view(id).substr(0, colon);
-    if (colon == std::string::npos || (mode != "undo" && mode != "hold") || !Number(std::string_view(id).substr(colon + 1), n) ||
-        !n || n > UINT32_MAX) return Fail("id is undo:N or hold:N, as timed-writes lists it");
-    command.target = mode;
-    command.request.args[0] = n;
     return command;
 }
 

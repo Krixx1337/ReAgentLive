@@ -23,7 +23,11 @@ Answer one-address questions live, with no database:
   pieces of code outside the exception table: confirm each with `disasm`
   with `function`.
 - Does this signature hold: `sig-check` (making one:
-  the signatures reference).
+  the signatures reference); every signed name of a labels file:
+  `labels-check`.
+- Does anything write this field, anywhere: `disp-scan` (whole image,
+  page by page); near one function: `touches`. Both skip stack-frame
+  bases; `bases` `["rcx"]` narrows to `this`. Confirm a hit with `disasm`.
 
 ## Crossing to and from a static tool
 

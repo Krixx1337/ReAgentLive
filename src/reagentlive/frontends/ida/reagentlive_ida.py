@@ -38,6 +38,10 @@ same folder. Then:
 - `apply_this(path)`: type the first argument `Class *this` on functions a
   labels file names `Class::Method` or `Class_Method`.
 
+- `loader_digest(path=None)`: this file's SHA-256 (or another copy's), so
+  a session checks the installed loader is the repo's
+  (tools/ida_loader_check.py does it from a shell).
+
 Run as a script (File > Script file...) it imports labels, asking for the
 file. The planning below is plain Python, tested without IDA
 (tests/python/test_ida_function.py, test_ida_labels.py, test_ida_types.py).
@@ -48,6 +52,14 @@ import re
 _ALLOWED = re.compile(r'[^A-Za-z0-9_:$?@.]')
 _BUILD = ('module', 'module_size', 'timestamp', 'base')
 _STALE = "this loader is older than the file: copy the new reagentlive_ida.py into IDA's loaders folder"
+
+
+def loader_digest(path=None):
+    """SHA-256 (hex) of a loader file: this one by default. Equal to the repo copy's: the install is current."""
+    import hashlib
+
+    with open(path or __file__, 'rb') as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
 
 
 def sanitize(name):

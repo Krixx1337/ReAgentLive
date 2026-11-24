@@ -1,7 +1,9 @@
 // reagentlive CLI: signatures on labels rows, so a name survives a patch.
 // labels-sign grows each row's pattern until one match lands on the row;
-// labels-port finds signed rows of another build in the running image. Pure:
-// tests pin the growth and the port choices.
+// labels-port finds signed rows of another build in the running image;
+// labels-check searches this build's signed rows again and says whether
+// each still lands on its row. Pure: tests pin the growth, the port and the
+// check choices.
 //
 // labels-sign is the mass signer, frozen as one fixed loop: no later starts,
 // caller signatures, ranking or looser masks. A row it cannot sign is listed
@@ -75,6 +77,42 @@ struct LabelPortRow {
         v("rva", &LabelPortRow::rva);
         v("matches", &LabelPortRow::matches);
         v("reason", &LabelPortRow::reason);
+    }
+};
+struct LabelCheckRow {
+    std::string name, kind;
+    HexNum rva;
+    std::string status;                 // ok, moved, missing, ambiguous or invalid.
+    std::optional<HexNum> found;        // Moved: where its one match lands instead.
+    std::optional<uint64_t> matches;    // Ambiguous: how many.
+    std::optional<std::string> reason;
+    template<class V> static void Describe(V& v) {
+        v("name", &LabelCheckRow::name);
+        v("kind", &LabelCheckRow::kind);
+        v("rva", &LabelCheckRow::rva);
+        v("status", &LabelCheckRow::status, "ok|moved|missing|ambiguous|invalid");
+        v("found", &LabelCheckRow::found);
+        v("matches", &LabelCheckRow::matches);
+        v("reason", &LabelCheckRow::reason);
+    }
+};
+struct LabelsCheck {
+    std::string path, module;
+    uint32_t timestamp = 0;
+    uint64_t ok = 0, moved = 0, missing = 0, ambiguous = 0, invalid = 0, unsignedRows = 0, searches = 0;
+    std::vector<LabelCheckRow> rows;    // Every signed row of this build, in file order.
+    template<class V> static void Describe(V& v) {
+        v("path", &LabelsCheck::path);
+        v("module", &LabelsCheck::module);
+        v("timestamp", &LabelsCheck::timestamp);
+        v("ok", &LabelsCheck::ok);
+        v("moved", &LabelsCheck::moved);
+        v("missing", &LabelsCheck::missing);
+        v("ambiguous", &LabelsCheck::ambiguous);
+        v("invalid", &LabelsCheck::invalid);
+        v("unsigned", &LabelsCheck::unsignedRows);
+        v("searches", &LabelsCheck::searches);
+        v("rows", &LabelsCheck::rows);
     }
 };
 struct LabelsPort {
@@ -267,5 +305,22 @@ inline PortOutcome PortResult(const LabelSig& sig, const std::expected<sig::Chec
     if (!address || *address < module.base || *address - module.base >= module.size)
         return {"missing", std::nullopt, 1, "the match points outside the module"};
     return {"ported", *address - module.base, 1, {}};
+}
+
+// labels-check: one signed row's search in the running image. ok (its one
+// match lands on the row), moved (it lands elsewhere: found), missing or
+// ambiguous as labels-port says them.
+struct CheckOutcome {
+    std::string status;
+    std::optional<uint64_t> found;
+    size_t matches = 0;
+    std::string reason;
+};
+inline CheckOutcome CheckLabel(const LabelSig& sig, const std::expected<sig::CheckResult, std::string>& result,
+                               const Module& module, uint64_t rva) {
+    const auto port = PortResult(sig, result, module);
+    if (port.status != "ported") return {port.status, std::nullopt, port.matches, port.reason};
+    if (*port.rva == rva) return {"ok", std::nullopt, 1, {}};
+    return {"moved", port.rva, 1, "its one match lands elsewhere: the row's rva or its sig is stale"};
 }
 }

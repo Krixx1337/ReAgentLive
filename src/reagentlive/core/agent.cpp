@@ -610,6 +610,8 @@ Progress Watch(const Request& request, Response& response, bool, const Host& hos
     }
     case WatchAction::Info: {
         if (!g_watch || !g_watch->rowSize) { Refuse(response, Status::NotFound, "no watch started"); return Progress::Done; }
+        // Past its deadline the capture has ended, whether or not a tick has sampled since.
+        if (g_watch->running && Microseconds() >= g_watch->endUs) EndWatch(*g_watch, WatchEnd::Deadline);
         const WatchInfo info{g_watch->spec, g_watch->rows, g_watch->maxRows, g_watch->stop, 0};
         memcpy(response.data, &info, sizeof(info));
         response.length = sizeof(info);

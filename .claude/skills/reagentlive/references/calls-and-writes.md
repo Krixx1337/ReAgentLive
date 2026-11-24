@@ -70,10 +70,10 @@ Approval: SKILL.md rules. Call semantics and named inputs:
   3. `write` the value with `undo` and capture the same ranges again.
   4. Compare durations on that one character, with an untouched one in the
      same capture as a control when one is in view.
-- Read the end state with `writes`. Clear them
-  (`{"verb": "timed-writes", "args": {"clear": true}}`) before the host stops or
-  you reinject: a stopped agent no longer ticks, so its `undo` writes never
-  restore.
+- Read the end state with `timed-writes` (read-only). Clear them
+  (`{"verb": "write", "args": {"clear": "all"}}`, approval as for a write)
+  before the host stops or you reinject: a stopped agent no longer ticks,
+  so its `undo` writes never restore.
 
 ## Held writes (`write` with `hold`)
 

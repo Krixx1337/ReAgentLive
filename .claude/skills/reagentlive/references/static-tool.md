@@ -18,8 +18,13 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 - Copy `src/reagentlive/frontends/ida/reagentlive_ida.py` into
   `%APPDATA%\Hex-Rays\IDA Pro\loaders`, and copy it again after every
   ReAgentLive update: an old loader refuses new saves.
-- Set `REAGENTLIVE_CONSOLE` to the console's path, or pass `console=` to
-  `fetch`.
+- Before the first `fetch` of a session check the install is current:
+  `python -I tools/ida_loader_check.py` (`state` `current`; `stale` or
+  `missing`: tell the user), or in IDA
+  `rl.loader_digest() == rl.loader_digest('<repo copy>')`.
+- Pass the console to every `fetch`: `console=` with its absolute path
+  (the host's skill names it). `REAGENTLIVE_CONSOLE` is optional; never
+  set it on the user's machine yourself.
 - Disable any IDA plugin that fails to load under idalib.
 
 ## The loop

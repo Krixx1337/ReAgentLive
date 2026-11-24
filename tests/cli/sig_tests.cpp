@@ -566,4 +566,13 @@ TEST_CASE("labels-port looks for each name this build lacks, from the newest sig
     CHECK(PortResult(global, one, module).rva == 0x9000);
     one.matches[0].resolved = 0x10;
     CHECK(PortResult(global, one, module).status == "missing"); // Resolves outside the module.
+
+    // labels-check: the same search, judged against the row's own rva.
+    one.matches[0].resolved = module.base + 0x9000;
+    CHECK(CheckLabel(global, one, module, 0x9000).status == "ok");
+    const auto moved = CheckLabel(global, one, module, 0x8000);
+    CHECK(moved.status == "moved");
+    CHECK(moved.found == 0x9000u);
+    CHECK(CheckLabel(function, Matches(2, false), module, 0x500).status == "ambiguous");
+    CHECK(CheckLabel(function, Matches(0, false), module, 0x500).status == "missing");
 }

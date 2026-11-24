@@ -343,20 +343,23 @@ the generated functions, the MCP tools), so one log covers them
   per-result cap. `usage` of one session shows `context` (`chars`,
   `limit`, `over`).
 - **Capped:** past 4 MB the oldest sessions are dropped when a console
-  starts, down to three quarters of that. `usage` with `all` gives
+  starts, down to three quarters of that. `usage` with `report` `all` gives
   `since`, the oldest line kept.
 
 `{"verb": "usage"}` reports the session the console is in (with no
 target: the log's latest); with `session` (an id), one session of the log;
-with `all`, every session in the log, plus `never_called`, the verbs of
-this table none of them used; with `sessions`, the log's sessions, newest
-first; with `advice`, also the verbs most often digested or unfiltered,
+with `report` `all`, every session in the log, plus `never_called`, the
+verbs of this table none of them used; with `report` `sessions`, the log's
+sessions, newest first; with `advice`, also the verbs most often digested or unfiltered,
 each with a proposed smaller default `view.limit` or a one-line hint for
 its row or help (a report: nothing changes by itself). `save` writes one
 session's report to a file; `baseline` compares this session (or
 `session`) with such a file and lists in `compare` what got worse and
 better: totals, refusals by kind, and each verb's calls, refusals,
-digests and time per call. Ranked by output,
+digests and time per call. `only` keeps the parts named (`totals`,
+`rows`, `largest`, `refusals`, `advice`, `compare` and the rest of the
+report's keys), so a check of one figure reads only that part:
+`{"verb": "usage", "args": {"only": ["totals", "refusals"]}}`. Ranked by output,
 largest first, with per-verb marks
 (`unfiltered`, `repeated`, `refused`); every key and mark:
 [reference](reference.md#usage).

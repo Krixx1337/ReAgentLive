@@ -1,6 +1,6 @@
 # Fast lane
 
-*Home of:* code questions from live bytes: `disasm` (and saves for a static tool), `xrefs`, `touches`, `search` with `type` `text` and the signature commands. Why the lane is built this way: [design](../design/native.md#fast-lane).
+*Home of:* code questions from live bytes: `disasm` (and saves for a static tool), `xrefs`, `touches`, `disp-scan`, `search` with `type` `text` and the signature commands. Why the lane is built this way: [design](../design/native.md#fast-lane).
 
 **TL;DR:** Ask about one address and get an answer from the code as it is
 loaded right now, in well under a second, with no disassembler database:
@@ -237,8 +237,11 @@ offsets that should appear together.
   piece can start mid-instruction and hold more than one function: confirm
   it with `disasm` and `function` at a use.
 - A use is a memory operand `[reg + disp]` whose displacement is an asked
-  offset; `[rsp + disp]` (stack slots) and `[rip + disp]` (globals) are
-  never members. `write` is set when the operand is written.
+  offset; `[rip + disp]` (globals) is never a member, and the stack
+  frame's bases (`[rsp + disp]`, `[rbp + disp]`: locals) are left out
+  unless `bases` names them. `bases` (a list of 64-bit registers) keeps
+  only operands on those: `["rcx"]` for `this` as a method's first
+  argument. `write` is set when the operand is written.
 - Uses group by function (a continuation joins its function). Rows rank by
   how many distinct asked offsets the function uses, then writers first,
   then by uses: the setup that writes most of a block comes first, its
@@ -250,6 +253,36 @@ offsets that should appear together.
 - Unrelated classes share small offsets: ask for several that only one
   layout has together, and confirm the top row with `disasm` and `function` or
   a decompiler before naming anything.
+
+## disp-scan
+
+`disp-scan` answers "does anything write this field" for the whole main
+module, where `touches` looks near one function:
+
+```json
+{"verb": "disp-scan", "args": {"disp": "0x538", "access": "write", "bases": ["rcx", "rbx"]}}
+```
+
+- Every executable section is swept straight through, 64 KB per read
+  (4 KB per held request), from the first code byte or `start`. One call
+  works for up to 8 s or 128 hits, then answers its page: `rows` (each
+  instruction with `rva`, `access`, `width`, its `text` and `function`, the
+  exception-table entry holding it), `scanned` (the share of the code
+  behind the cursor) and `next_cursor`, which the next call passes as
+  `start`; it is absent once the end is reached. The console does the
+  work: no agent job, nothing left running between calls. Reads go
+  through host ticks, under a megabyte of code a second on a 60-tick
+  host, so a large image takes minutes of pages: `start` near the code
+  you suspect (a class's methods sit together) when one region will do.
+- `access`: `write` (default; stores and read-modify-writes), `read`
+  (loads and read-modify-writes) or `any` (also `lea`: the field's
+  address taken, often passed to a function that writes it). `width`
+  keeps operands of that many bytes, `imm` instructions whose immediate
+  equals it in the operand's width (`mov dword [rcx+0x538], 1`). `bases`
+  as for `touches`; the stack frame's are left out by default.
+- A straight sweep decodes whatever lies in the code sections, jump
+  tables included: a hit in data is rare but possible. Confirm a hit with
+  `disasm` at its `function` before relying on it.
 
 ## search text
 
@@ -358,8 +391,9 @@ Feedback, each pointing at the next correction:
   end to end. The field may lie in the 64 bytes read past the pattern.
   `offset` does not combine with it.
 
-`sig-check` with `file` checks a JSON-lines file, one signature per
-line (it takes no `pattern` or other key): `pattern` (text, or an array of bytes with `-1`), optional `module`,
+`sig-check` with `file` checks a JSON-lines file of bare signatures, one per
+line (it takes no `pattern` or other key; a labels file's signed rows are
+`labels-check`'s, [labels](labels.md#names-that-survive-a-patch)): `pattern` (text, or an array of bytes with `-1`), optional `module`,
 `rva` (number or `0x` string: the expect inside that module), `offset`,
 `resolve` (`"7,3"` or `[7, 3, 4]`); blank and `#` lines are skipped. Each
 line gets its own row in `lines` (`line`, `ok`, then `result` or `error`);

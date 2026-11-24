@@ -240,20 +240,27 @@ def tool_name(row):
     return name.replace('-', '_')
 
 
-def batch_refusal(table, enabled, arguments):
+def batch_refusal(table, packs, arguments):
     """Why a batch call is refused, or None. A batch tool is marked read-only, so a client that allows
     read-only tools unasked must never get a write or call through it (those go as their own tool), and it
-    runs only verbs of the packs enabled here."""
+    runs only verbs of the packs enabled here. The way out it names is one this server allows: enabling a
+    pack inside the ceiling, else a restart by the person who starts the server."""
     rows = {row['verb']: row for row in table['rows']}
     for inner in (arguments or {}).get('calls') or []:
         row = rows.get(inner.get('verb') if isinstance(inner, dict) else None)
         if row is None:
             continue
-        if row['pack'] not in enabled:
-            return (f'batch takes verbs of the enabled packs here; {row["verb"]} is in {row["pack"]}: '
-                    f'packs {{"action": "enable", "pack": "{row["pack"]}"}} first')
+        verb, pack = row['verb'], row['pack']
+        if pack not in packs.enabled and pack not in packs.ceiling:
+            return (f'batch takes verbs of the enabled packs here; {verb} is in {pack}, outside the ceiling '
+                    f'of this server ({packs.listed(packs.ceiling)}): only the person who starts the server can add it, '
+                    f'restarting it with {pack} in --packs or --allow')
+        enable = f'packs {{"action": "enable", "pack": "{pack}"}}'
         if row.get('writes'):
-            return f'batch takes read-only verbs here; send {row["verb"]} as its own tool, so it is approved'
+            then = '' if pack in packs.enabled else f'{enable}, then '
+            return f'batch takes read-only verbs here; {then}send {verb} as its own tool, so it is approved'
+        if pack not in packs.enabled:
+            return f'batch takes verbs of the enabled packs here; {verb} is in {pack}: {enable} first'
     return None
 
 
@@ -478,7 +485,7 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', packs=
         if row is None or not served(row, state.enabled):
             known = row is not None and row['pack'] in state.ceiling
             return failed(f'no tool {name}' + (f' while {row["pack"]} is off: enable it with packs' if known else ''))
-        if row['verb'] == 'batch' and (refusal := batch_refusal(live.table, state.enabled, arguments)):
+        if row['verb'] == 'batch' and (refusal := batch_refusal(live.table, state, arguments)):
             return failed(refusal)
         try:
             raw, changed, warning = await anyio.to_thread.run_sync(live.run, name, arguments)

@@ -155,7 +155,7 @@ struct UsageRefusal {
         v("count", &UsageRefusal::count);
     }
 };
-// usage with sessions: one session of the log.
+// usage with report sessions: one session of the log.
 struct UsageSession {
     std::string session, since, until;  // Its first and last call.
     std::vector<std::string> callers;
@@ -179,9 +179,10 @@ struct UsageReport {
     std::optional<std::string> session;
     std::optional<uint64_t> sessions;
     std::optional<std::string> since;
-    UsageTotals totals;
-    std::vector<UsageVerb> rows;
-    std::vector<UsageCall> largest;
+    // Absent only when `only` leaves them out (rows and largest also in a sessions list).
+    std::optional<UsageTotals> totals;
+    std::optional<std::vector<UsageVerb>> rows;
+    std::optional<std::vector<UsageCall>> largest;
     std::optional<std::vector<std::string>> neverCalled;
     std::optional<std::vector<UsageSession>> sessionRows;
     std::optional<UsageContext> context;
@@ -244,6 +245,9 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
                              std::span<const Verb> verbs) {
     using namespace usage_detail_report;
     shape::UsageReport stats;
+    stats.totals.emplace();
+    stats.rows.emplace();
+    stats.largest.emplace();
     const bool all = !session;
     if (all) {
         stats.sessions = 0;
@@ -292,12 +296,12 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
         if (line.digest) {
             bump(row.digested);
             row.saved = row.saved.value_or(0) + saved;
-            ++stats.totals.digested;
-            stats.totals.saved += saved;
+            ++stats.totals->digested;
+            stats.totals->saved += saved;
         }
         // Top-level calls, as `calls` counts them; one refused for its pack never ran in it: a refusal only.
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && !line.batch && (line.ok || line.refused != "pack"))
-            ++stats.totals.callsByPack[std::string(ToolPackName(verb->pack))];
+            ++stats.totals->callsByPack[std::string(ToolPackName(verb->pack))];
         // A digested call cost its digest only, a refused one its error: neither is worth a mark.
         if (const Verb* verb = FindVerb(verbs, line.verb); verb && line.ok && !line.digest && line.out > UsageUnfilteredChars) {
             const bool filters = std::ranges::any_of(verb->args, [](const Arg& a) {
@@ -310,24 +314,24 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
                 bump(row.unfiltered);
         }
         // Totals count what the agent sent: a batch's items are inside its own call.
-        if (!line.batch) ++stats.totals.calls;
-        else ++stats.totals.batched;
-        if (!line.batch) stats.totals.ms += line.ms;
-        if (!line.ok) ++stats.totals.refused;
-        stats.totals.in += line.batch ? 0 : line.in;
-        stats.totals.out += line.out;
-        stats.totals.outByCaller[line.caller] += line.out;
+        if (!line.batch) ++stats.totals->calls;
+        else ++stats.totals->batched;
+        if (!line.batch) stats.totals->ms += line.ms;
+        if (!line.ok) ++stats.totals->refused;
+        stats.totals->in += line.batch ? 0 : line.in;
+        stats.totals->out += line.out;
+        stats.totals->outByCaller[line.caller] += line.out;
         calls.push_back(&line);
     }
     if (all) stats.sessions = sessions.size();
     else stats.since.reset();
     const auto tenths = [](double ms) { return static_cast<double>(static_cast<int64_t>(ms * 10 + 0.5)) / 10; };
-    stats.totals.ms = tenths(stats.totals.ms);
+    stats.totals->ms = tenths(stats.totals->ms);
     for (auto& [name, row] : byVerb) {
         row.ms = tenths(row.ms);
-        stats.rows.push_back(std::move(row));
+        stats.rows->push_back(std::move(row));
     }
-    std::ranges::stable_sort(stats.rows, std::greater{}, &shape::UsageVerb::out);
+    std::ranges::stable_sort(*stats.rows, std::greater{}, &shape::UsageVerb::out);
     if (!refusals.empty()) {
         stats.refusals.emplace();
         for (const auto& [at, count] : refusals) {
@@ -341,7 +345,7 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
         shape::UsageCall call{calls[i]->verb, calls[i]->caller, calls[i]->keys, calls[i]->out};
         if (calls[i]->batch) call.batch = true;
         if (calls[i]->digest) call.digest = calls[i]->digest;
-        stats.largest.push_back(std::move(call));
+        stats.largest->push_back(std::move(call));
     }
     if (all) {
         // quit is never recorded (a program ends every session with it).
@@ -361,7 +365,8 @@ inline std::vector<shape::UsageAdvice> MakeAdvice(std::span<const UsageLine> lin
                                                   const std::optional<std::string>& session,
                                                   const shape::UsageReport& report, std::span<const Verb> verbs) {
     std::vector<shape::UsageAdvice> out;
-    for (const auto& row : report.rows) {
+    if (!report.rows) return out;
+    for (const auto& row : *report.rows) {
         const Verb* verb = FindVerb(verbs, row.verb);
         const uint64_t digested = row.digested.value_or(0), unfiltered = row.unfiltered.value_or(0);
         const uint64_t heavy = digested + unfiltered;
@@ -480,11 +485,11 @@ inline std::string LatestSession(std::span<const UsageLine> lines) {
 
 constexpr size_t UsageSessionRows = 30;
 
-// usage with sessions: totals over the whole log, and its newest sessions one row each.
+// usage with report sessions: totals over the whole log, and its newest sessions one row each.
 inline shape::UsageReport MakeSessionList(std::span<const UsageLine> lines, std::span<const Verb> verbs) {
     auto stats = MakeUsage(lines, std::nullopt, verbs);
-    stats.rows.clear();
-    stats.largest.clear();
+    stats.rows.reset();
+    stats.largest.reset();
     stats.neverCalled.reset();
     stats.refusals.reset();
     std::map<std::string, shape::UsageSession> bySession;
@@ -514,7 +519,23 @@ inline shape::UsageReport MakeSessionList(std::span<const UsageLine> lines, std:
     return stats;
 }
 
-// What `usage` asked for: `all`, `sessions`, one `session`, or the current
+// usage with `only`: the parts kept (empty: all). The report's identity
+// (session, sessions, since, saved) always stays.
+inline void KeepParts(shape::UsageReport& report, std::span<const std::string> parts) {
+    if (parts.empty()) return;
+    const auto keep = [&](std::string_view part) { return std::ranges::find(parts, part) != parts.end(); };
+    if (!keep("totals")) report.totals.reset();
+    if (!keep("rows")) report.rows.reset();
+    if (!keep("largest")) report.largest.reset();
+    if (!keep("never_called")) report.neverCalled.reset();
+    if (!keep("session_rows")) report.sessionRows.reset();
+    if (!keep("context")) report.context.reset();
+    if (!keep("refusals")) report.refusals.reset();
+    if (!keep("advice")) report.advice.reset();
+    if (!keep("compare")) report.compare.reset();
+}
+
+// What `usage` asked for: report `all` or `sessions`, one `session`, or the current
 // session (`current`; nullopt with no target: the log's latest).
 struct UsageQuery {
     bool all = false, sessions = false, advice = false;
@@ -538,7 +559,7 @@ inline std::expected<shape::UsageReport, std::string> UsageFor(std::span<const U
     };
     if (!query.session.empty()) {
         if (std::ranges::none_of(lines, [&](const UsageLine& line) { return line.session == query.session; }))
-            return std::unexpected("no session '" + query.session + "' in the usage log (usage with sessions lists them)");
+            return std::unexpected("no session '" + query.session + "' in the usage log (usage with report sessions lists them)");
         return one(query.session);
     }
     return one(current ? *current : LatestSession(lines));

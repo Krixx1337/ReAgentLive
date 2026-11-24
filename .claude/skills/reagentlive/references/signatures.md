@@ -9,8 +9,9 @@ files: Unreal pack (`docs/commands/labels.md#names-that-survive-a-patch`).
   (one fixed loop; it never gets smarter). A name it lists `unsigned`, or
   one `labels-port` lists `missing` once found again, gets a signature made
   as below, written into its row's `sig` (`{pattern, offset}` or
-  `{pattern, resolve}`) and checked with `sig-check` with `file`. Never extend the
-  signer for a failure. A failed row is marked and later calls skip it:
+  `{pattern, resolve}`) and re-verified with `labels-check` (every
+  signed name of this build, one call; act on `moved`, `missing`,
+  `ambiguous`, `invalid`). Never extend the signer for a failure. A failed row is marked and later calls skip it:
   rerun `labels-sign` freely; `retry` retries the marked rows; delete
   the mark when you write a hand-made `sig`.
 - **Everything else** (a host's runtime patterns): you make it as below,

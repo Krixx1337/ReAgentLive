@@ -28,6 +28,9 @@ inline const std::vector<Verb>& CoreVerbs() {
     constexpr std::string_view hex = "bytes as hex pairs, spaced or packed: \"00 00 80 3f\"";
     constexpr std::string_view module = "the module (default: the exe)";
     constexpr std::string_view labels = "the labels file (default: the host's names file, else the console's)";
+    constexpr std::string_view registers = "rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r8|r9|r10|r11|r12|r13|r14|r15";
+    constexpr std::string_view bases = "only operands on these base registers (default: any but rsp and rbp, the stack "
+        "frame's)";
     static const std::vector<Verb> verbs = {
         {"help", "core", ToolPack::Explore, "the verbs, one line each; with verb: its args, result, notes and an example",
             {{"verb", "str", "a verb to show in full"},
@@ -39,12 +42,14 @@ inline const std::vector<Verb>& CoreVerbs() {
             "table_hash changes when any verb's args or result change: a cached script or skill is then stale."},
         {"quit", "core", ToolPack::Explore, "end the console", {}, Of<shape::Quit>, build::Quit},
         {"usage", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
-            {{"all", "bool", "every session in the log, and the verbs none called"},
-             {"sessions", "bool", "the log's sessions, newest first: one row each"},
+            {{"report", "sessions|all", "in place of one session: sessions lists the log's sessions, newest first, one "
+              "row each; all is every session in the log together, and the verbs none called"},
              {"session", "str", "one session from the log, by its id"},
              {"advice", "bool", "verbs often digested or unfiltered, with a proposed default view.limit or a hint"},
              {"baseline", "file", "a report save wrote: what got worse (and better) against it"},
-             {"save", "file", "write this report to a file, a baseline for a later session"}},
+             {"save", "file", "write this report to a file, a baseline for a later session"},
+             {"only", "totals|rows|largest|never_called|session_rows|context|refusals|advice|compare",
+              "keep only these parts of the report (advice also turns advice on)", {}, false, true}},
             Of<shape::UsageReport>, build::Usage,
             "From the usage log beside the console; works with no target (then: the log's latest session). calls "
             "counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a "
@@ -56,7 +61,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input and the same result again in its session; the same input with another result is "
             "same_args: the state changed, the call was needed), refused (by "
             "error kind; one refused for its pack is not in calls_by_pack). A batch's "
-            "calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 "
+            "calls count under their own verbs (batched); the batch row holds its wrapper. report sessions lists up to 30 "
             "sessions as session_rows, with totals over the whole log. One session's report adds context: chars "
             "(what its tool-caller results put into an agent's context), limit (the console's --context-limit, "
             "default 400000; 0: none) and over; past it every envelope a tool caller gets carries context_warning, "
@@ -68,7 +73,8 @@ inline const std::vector<Verb>& CoreVerbs() {
             "figures that moved (totals calls, refused, digested, context and ms; refused_by.<kind>; per verb calls, "
             "refused, digested and ms_per_call), totals first, largest move first. A count is worse when it grew, "
             "time when it grew by a quarter and past noise (100 ms in all, 50 ms a call). baseline and save take one "
-            "session (session, or none for this one), never all or sessions. refusals lists refused calls by verb, error "
+            "session (session, or none for this one), never a report. only keeps the parts named (session, sessions, "
+            "since and saved always stay); save still writes the whole report. refusals lists refused calls by verb, error "
             "kind and the arg at fault (key, when the error named one), most first: the help examples and arg texts "
             "to fix first."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
@@ -108,28 +114,30 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Peek>, build::Peek,
             "object needs a pack; value rows carry floats, a double and name_hint. region is the memory the address "
             "lies in, as read gives it."},
-        {"write", "core", ToolPack::Modify, "write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while",
-            {{"addr", "addr", at, {}, true},
-             {"data", "bytes", "bytes as hex pairs, spaced or packed: \"00 00 80 3f\" (up to 256; 64 with undo or hold)", {}, true},
+        {"write", "core", ToolPack::Modify, "write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while; clear ends timed writes",
+            {{"addr", "addr", "the address (required unless clear)", {}, false, false, "\"0x140001000\""},
+             {"data", "bytes", "bytes as hex pairs, spaced or packed: \"00 00 80 3f\" (up to 256; 64 with undo or hold; required unless clear)",
+              {}, false, false, "\"00 00 80 3f\""},
              {"expect", "bytes", "write only while memory still holds these bytes (with undo: required, restored afterwards)"},
              {"undo", "obj", "restore the bytes after a while, guarded on their owner (needs expect)", {}, false, false, {},
               {{"after", "dur", "restore after this long (up to 60 s)", {}, true},
                {"owner", "ref", "the live actor or component holding the address (a pack names it)", {}, true},
                {"object", "addr", "a native object inside the owner whose vtable is guarded too"}}},
-             {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"}},
+             {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"},
+             {"clear", "str", "in place of a write: end timed writes, \"all\" or one id as timed-writes lists it (undo:N or hold:N); "
+              "undo ones are restored"}},
             Of<shape::Write>, build::Write,
             "A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, "
             "the timed write as timed-writes lists it; up to 64 bytes. undo stops as conflict if the game changes the "
             "value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without "
             "one it is refused. hold on an addr based on a literal ref ({\"base\": <ref>, \"offset\": N}) stops "
             "when that object is freed or replaced. Options: expect guards every write; undo and hold are the two "
-            "timed forms (undo's owner and object only guard an undo, so they live inside it).", true},
-        {"timed-writes", "core", ToolPack::Modify, "the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones",
-            {{"clear", "bool", "end them"},
-             {"id", "str", "with clear: one write's id as timed-writes lists it (undo:N or hold:N); default all"}},
-            Of<shape::Writes>, build::TimedWrites,
+            "timed forms (undo's owner and object only guard an undo, so they live inside it). clear takes no other "
+            "key, writes nothing and answers cleared: the rows it ended.", true},
+        {"timed-writes", "core", ToolPack::Observe, "the timed writes (write undo, hold) with their state; write with clear ends them",
+            {}, Of<shape::Writes>, build::TimedWrites,
             "Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. "
-            "clear answers cleared and the rows it ended.", true},
+            "Read-only: ending them is write's clear (modify)."},
         {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
             {}, Of<shape::Modules>, build::Modules},
         {"search", "core", ToolPack::Native, "addresses holding a value in resident, cacheable memory, as a job the agent runs",
@@ -229,6 +237,13 @@ inline const std::vector<Verb>& CoreVerbs() {
             "search per anchor). One match appends a row for this build with the same sig and ported_from (the old "
             "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
             "rows stay."},
+        {"labels-check", "core", ToolPack::Native, "re-verify this build's signed names: does each row's sig still land on it",
+            {{"file", "file", labels}, {"module", "str", module}},
+            Of<shape::LabelsCheck>, build::LabelsCheck,
+            "Each signed row of the running build is searched in the image (one shared search per anchor) and "
+            "compared with its rva: ok (one match, on the row), moved (one match elsewhere: found), missing (none), "
+            "ambiguous (several: matches) or invalid (a sig sig-check would refuse). unsigned counts this build's "
+            "user and global rows with no sig. Read-only: the file is never written."},
         {"disasm", "core", ToolPack::Native, "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
             {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (1..1024; with function: up to 2048)", "24"},
              {"function", "bool", "list the whole containing function (exception table; else walk from addr)"},
@@ -268,11 +283,29 @@ inline const std::vector<Verb>& CoreVerbs() {
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
              {"range", "int", "bytes each side of addr (1..0x400000)", "\"0x80000\""},
-             {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"}},
+             {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"},
+             {"bases", registers, bases, {}, false, true}},
             Of<shape::Touches>, build::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
             "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
             "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
-            "unlisted code. reads leaves out struct copies and constructors."},
+            "unlisted code. reads leaves out struct copies and constructors. Stack slots ([rsp + d], [rbp + d]) "
+            "are left out unless bases names their register; bases [\"rcx\"] keeps only operands on rcx (this, as "
+            "a method's first argument). The whole image for one offset: disp-scan."},
+        {"disp-scan", "core", ToolPack::Native, "every instruction in the main module's code with a [reg + disp] operand of this disp, a page at a time",
+            {{"disp", "int", "the displacement (the field's offset), above 0", {}, true},
+             {"access", "write|read|any", "write: stores and read-modify-writes; read: loads and read-modify-writes; any: also lea "
+              "(the field's address taken)", "\"write\""},
+             {"width", "int", "only operands of this many bytes (1, 2, 4, 8, 16, 32 or 64)"},
+             {"imm", "int", "only instructions with this immediate (compared in its width: 0xffffffff is -1 as 32 bits)"},
+             {"bases", registers, bases, {}, false, true},
+             {"start", "addr", "resume here: a page's next_cursor"}},
+            Of<shape::DispScan>, build::DispScan,
+            "A linear sweep of the executable sections, read from the live image: each call scans for up to 8 s and "
+            "stops early at 128 hits; next_cursor (absent once the end is reached) resumes it as start, and scanned is "
+            "the share of the code behind the cursor. Each row is one instruction: access (write, read, both or "
+            "address), width, its text and the function holding it (function, from the exception table; absent "
+            "outside every entry). A straight sweep can decode data inside code (jump tables) as instructions: check "
+            "a surprising hit with disasm. Near one function instead: touches."},
         {"vtable", "core", ToolPack::Native, "an object's virtual table: slots until the first entry that is not code",
             {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many slots at most (1..512)"},
              {"offset", "int", "the table pointer at addr+offset (an interface part; 0..0x100000)"},

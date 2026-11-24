@@ -23,7 +23,7 @@ shares; each command's behaviour and guards are on its page:
 | [fields](unreal-fields.md) | `get` in every mode, compact values, `entries`, `rows`, text values, readable names, native members (`member-name`), `layout-export`, `layout-check` |
 | [calls](unreal-calls.md) | `call`, `call-pure`, `call-each`, `release`, `func`, `funcs`, named calls, the call recorder, `line-trace`, `game-thread` |
 | [code](unreal-code.md) | `script` (and its `decode`), `name-refs`, exec entries |
-| [labels](labels.md) (core) | `labels-export`, labels files, `peek` with `label`, `labels-sign`, `labels-port` |
+| [labels](labels.md) (core) | `labels-export`, labels files, `peek` with `label`, `labels-sign`, `labels-check`, `labels-port` |
 
 ## Every command
 

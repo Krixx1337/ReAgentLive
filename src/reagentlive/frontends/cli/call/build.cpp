@@ -1,6 +1,7 @@
 // reagentlive CLI: Build, a call's entry point (build.h), the checks a call
 // meets with no target, and the verbs that reach no agent (help, status,
 // quit, usage, batch).
+#include <algorithm>
 #include <string>
 #include <vector>
 #include "reagentlive/frontends/cli/call/build_internal.h"
@@ -124,18 +125,21 @@ Parsed Quit(const Args&, const ParseContext&) {
 Parsed Usage(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::Usage;
-    command.all = args.Has("all");
-    command.listSessions = args.Has("sessions");
+    command.all = args.Str("report") == "all";
+    command.listSessions = args.Str("report") == "sessions";
     command.target = args.Str("session");
-    command.advice = args.Has("advice");
     command.baseline = args.Str("baseline");
     command.file = args.Str("save");
-    if (command.all + command.listSessions + !command.target.empty() > 1)
-        return Fail("all, sessions and session are one at a time");
+    command.parts = args.Strs("only");
+    const auto asked = [&](std::string_view part) { return std::ranges::find(command.parts, part) != command.parts.end(); };
+    command.advice = args.Has("advice") || asked("advice");
+    if ((command.all || command.listSessions) && !command.target.empty())
+        return Fail("report: one session is session alone; report takes sessions or all in its place");
     if ((command.all || command.listSessions) && !command.baseline.empty())
         return Fail("baseline compares one session: give session, or nothing for this one");
     if ((command.all || command.listSessions) && !command.file.empty())
         return Fail("save keeps one session's report: give session, or nothing for this one");
+    if (asked("compare") && command.baseline.empty()) return Fail("only: compare needs baseline");
     return command;
 }
 

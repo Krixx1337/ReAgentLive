@@ -8,6 +8,7 @@
 #include <map>
 #include <cstring>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <span>
@@ -458,6 +459,11 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         text += row.dump() + "\n";
         at = end == std::string::npos ? layouts->lines.size() : end + 1;
     }
+    // A missing parent folder is made, as assets-export makes its own.
+    if (const auto parent = std::filesystem::path(command.file).parent_path(); !parent.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(parent, error);
+    }
     std::ofstream file(command.file, std::ios::binary | std::ios::trunc);
     if (!file || !(file << text))
         return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + command.file);
@@ -641,11 +647,12 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
                 if ((*items)[i]) std::copy((*items)[i]->begin(), (*items)[i]->end(), code.begin() + (spans[i].address - low));
         }
     }
+    const touch::Bases bases{command.bases};
     std::map<uint64_t, touch::Row> functions;
     for (const auto& range : *ranges) {
         if (!touch::Bounds(range.start, range.end)) continue; // A decoy: its byte is scanned with the unlisted code.
         auto uses = touch::InCode(std::span(code).subspan(static_cast<size_t>(range.start - low),
-            static_cast<size_t>(range.end - range.start)), range.start, command.offsets);
+            static_cast<size_t>(range.end - range.start)), range.start, command.offsets, bases);
         if (uses.empty()) continue;
         auto function = FunctionAt(session, range.start);
         if (!function) return JsonError(session, jsonCommand, ErrorKind::Unwind, function.error());
@@ -661,7 +668,7 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
         for (const auto& piece : touch::Pieces(bytes, gap.start)) {
             ++pieces;
             auto uses = touch::InCode(bytes.subspan(static_cast<size_t>(piece.start - gap.start),
-                static_cast<size_t>(piece.end - piece.start)), piece.start, command.offsets);
+                static_cast<size_t>(piece.end - piece.start)), piece.start, command.offsets, bases);
             if (uses.empty()) continue;
             auto& row = functions[piece.start];
             row.start = piece.start;
@@ -676,5 +683,79 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
     Emit(session, jsonCommand, MakeTouches(address, command.offsets, command.range, from, to, ranges->size(), pieces,
         code.size(), rows, ms, LoadedModules(session)));
+}
+
+// disp-scan: a linear sweep of the main module's executable sections from
+// `start` (default: the first), one chunk at a time, until the time budget
+// or the hit cap ends the page; next_cursor resumes it.
+void RunDispScan(Session& session, const Command& command, std::string_view jsonCommand) {
+    constexpr auto Budget = std::chrono::seconds(8);
+    constexpr size_t MaxHits = 128, Chunk = 0x10000;
+    Client& client = session.client;
+    if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "disp-scan needs read-batch");
+    const auto modules = LoadedModules(session);
+    if (modules.empty()) return JsonError(session, jsonCommand, ErrorKind::Module, "modules unavailable");
+    const Module module = modules.front();
+    auto layout = LayoutOf(session, module);
+    if (!layout) return JsonError(session, jsonCommand, ErrorKind::Unwind, layout.error());
+    std::vector<unwind::Range> code;
+    uint64_t codeBytes = 0;
+    for (const auto& section : (*layout)->sections)
+        if (section.Exec() && section.size) {
+            code.push_back({module.base + section.rva, module.base + section.rva + section.size});
+            codeBytes += section.size;
+        }
+    std::ranges::sort(code, {}, &unwind::Range::start);
+    if (code.empty()) return JsonError(session, jsonCommand, ErrorKind::Module, "the module has no executable section");
+    uint64_t at = command.request.address ? command.request.address : code.front().start;
+    if (std::ranges::none_of(code, [&](const unwind::Range& r) { return r.start <= at && at < r.end; }))
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "start: not in the main module's code (pass a next_cursor)");
+    auto& table = session.unwindTables[module.base];
+    if (!table) table = std::make_unique<unwind::Table>(AgentRead(session), module, (*layout)->exception);
+    const touch::Form form{command.offsets.front(), command.access, command.width, command.imm, touch::Bases{command.bases}};
+    const Client::Hold hold(client);
+    const auto started = Clock::now();
+    const auto read = AgentRead(session);
+    std::vector<touch::Hit> hits;
+    const uint64_t from = at;
+    bool done = false;
+    while (true) {
+        const auto section = std::ranges::find_if(code, [&](const unwind::Range& r) { return at < r.end; });
+        if (section == code.end()) { done = true; break; }
+        at = std::max(at, section->start);
+        const uint64_t end = std::min<uint64_t>(section->end, at + Chunk);
+        std::vector<uint8_t> bytes(static_cast<size_t>(end - at), 0xcc); // Unreadable stays int3: nothing decodes.
+        for (uint64_t part = at; part < end;) {
+            const ReadSpan span{part, std::min<uint64_t>(MaxRead - sizeof(Status), end - part)};
+            auto items = read(std::span(&span, 1));
+            if (!items) return JsonError(session, jsonCommand, ErrorKind::Read, items.error());
+            if (!items->empty() && items->front())
+                std::copy(items->front()->begin(), items->front()->end(), bytes.begin() + static_cast<ptrdiff_t>(part - at));
+            part += span.length;
+        }
+        const size_t stopped = touch::Sweep(bytes, at, form, end == section->end, hits, MaxHits);
+        at += std::max<size_t>(stopped, 1);
+        if (hits.size() >= MaxHits || Clock::now() - started >= Budget) break;
+    }
+    shape::DispScan out;
+    out.disp = HexNum(form.disp);
+    out.access = form.access;
+    out.module = module.name;
+    out.from = from;
+    out.to = done ? code.back().end : at;
+    uint64_t behind = 0;
+    for (const auto& r : code) behind += r.end <= at ? r.end - r.start : r.start < at ? at - r.start : 0;
+    out.scanned = done ? 1.0 : static_cast<double>(static_cast<int64_t>(static_cast<double>(behind) * 1000 / static_cast<double>(codeBytes))) / 1000;
+    out.total = hits.size();
+    out.capped = hits.size() >= MaxHits;
+    if (!done) out.nextCursor = Addr(at);
+    for (const auto& hit : hits) {
+        shape::DispHit row{hit.address, HexNum(hit.address - module.base), hit.access, hit.width, hit.text, {}};
+        if (auto function = FunctionAt(session, hit.address); function && *function)
+            row.function = HexNum((*function)->range.start - module.base);
+        out.rows.push_back(std::move(row));
+    }
+    out.scanMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
+    Emit(session, jsonCommand, std::move(out));
 }
 }

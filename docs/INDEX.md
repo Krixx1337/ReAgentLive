@@ -58,15 +58,15 @@ offers (`packs`). **T3** commands also need the game thread
 | Command | Needs | Page |
 |---|---|---|
 | `read`, `peek`, `write`, `modules` | T0 | [memory](commands/memory.md) |
-| `write` with `hold` or `undo`, `timed-writes` | T0; `undo`'s owner check needs T1 | [memory](commands/memory.md#timed-writes) |
+| `write` with `hold`, `undo` or `clear`, `timed-writes` | T0; `undo`'s owner check needs T1 | [memory](commands/memory.md#timed-writes) |
 | `watch-start`, `watch-read`, `watch-stop` | T0 (`<ref>.<Field>` ranges: T2) | [memory](commands/memory.md#watch) |
 | `search`, `search-job` | T0 | [memory](commands/memory.md#search) (text: [fast lane](commands/fast-lane.md#search-text)) |
 | `read` with a layout `type` | T0 | [memory](commands/memory.md#typed-layouts) |
 | `read` with `type` `cstr\|wstr`, pointer chains, `vtable`, its `rtti` | T0 | [native objects](commands/native-objects.md) |
 | `mem-snap`, `mem-diff` | T0 | [memory](commands/memory.md#mem-snap-and-mem-diff) |
-| `disasm`, `xrefs`, `touches` | T0 | [fast lane](commands/fast-lane.md) |
+| `disasm`, `xrefs`, `touches`, `disp-scan` | T0 | [fast lane](commands/fast-lane.md) |
 | `sig-check` (one `pattern` or a `file`), `sig-bytes` | T0 | [fast lane](commands/fast-lane.md#signatures) |
-| `peek` with `label`, `labels-sign`, `labels-port` | T0 | [labels](commands/labels.md) |
+| `peek` with `label`, `labels-sign`, `labels-check`, `labels-port` | T0 | [labels](commands/labels.md) |
 | `labels-export` | T3 (exec thunks); other `kinds` T2 | [labels](commands/labels.md#labels-export) |
 | `find`, `describe`, `name`, `name-find`, `census` (and its `diff`) | T1 | [Unreal objects](commands/unreal-objects.md) |
 | `enum`, `assets-export` | T2 | [Unreal objects](commands/unreal-objects.md) |

@@ -40,7 +40,7 @@ once `{"verb": "get", "args": {"object": "Vector", "mode": "types"}}` answers.
   and pure getters through `call-pure` or `call-each` (say what you call),
   except the first call on a new host or in a new game (a wrong engine
   layout can crash it). Ask first for every `write` (`hold` too; `undo` as
-  the host's rules say), `timed-writes` with `clear`, `calls-start`,
+  the host's rules say), `write` with `clear`, `calls-start`,
   `game-thread` `on` and any `call` that could change state: give the
   address, the bytes now and new, and the effect; for a call, its `dry`
   output. One approval covers one write.

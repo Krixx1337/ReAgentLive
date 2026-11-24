@@ -100,6 +100,7 @@ std::expected<shape::UsageReport, std::string> BuildUsage(const std::filesystem:
         report->saved = command.file;
     }
     if (!command.baseline.empty()) report->compare = CompareUsage(baseline, ToJson(*report), command.baseline);
+    KeepParts(*report, command.parts);
     return report;
 }
 }
@@ -314,7 +315,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
                 {"found", format_detail::Hex(found, found.size())}}}});
         }
         return Emit(session, jsonCommand,
-            shape::Write{request.address, Locate(request.address, LoadedModules(session)), request.length, {}});
+            shape::Write{Addr(request.address), Locate(request.address, LoadedModules(session)), request.length, {}, {}});
     }
     case op::Search: return RunSearch(session, command, jsonCommand);
     case op::Modules: {
@@ -676,8 +677,10 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::Disasm: RunDisasm(session, *parsed, jsonCommand); return false;
     case Kind::Xrefs: RunXrefs(session, *parsed, jsonCommand); return false;
     case Kind::Touches: RunTouches(session, *parsed, jsonCommand); return false;
+    case Kind::DispScan: RunDispScan(session, *parsed, jsonCommand); return false;
     case Kind::LabelsSign: RunLabelsSign(session, *parsed, jsonCommand); return false;
     case Kind::LabelsPort: RunLabelsPort(session, *parsed, jsonCommand); return false;
+    case Kind::LabelsCheck: RunLabelsCheck(session, *parsed, jsonCommand); return false;
     case Kind::Vtable: RunVtable(session, *parsed, jsonCommand); return false;
     case Kind::MemSnap: RunMemSnap(session, *parsed, jsonCommand); return false;
     case Kind::MemDiff: RunMemDiff(session, *parsed, jsonCommand); return false;

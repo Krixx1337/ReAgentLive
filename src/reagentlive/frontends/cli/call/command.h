@@ -17,7 +17,7 @@
 
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
-    Trial, TimedWrites, Script, NameRefs, Peek, Entries, LabelsExport, Sig, Disasm, Xrefs, Vtable, Touches, LabelsSign, LabelsPort, MemberName, Usage, Layout,
+    Trial, TimedWrites, Script, NameRefs, Peek, Entries, LabelsExport, Sig, Disasm, Xrefs, Vtable, Touches, DispScan, LabelsSign, LabelsPort, LabelsCheck, MemberName, Usage, Layout,
     MemSnap, MemDiff, LineTrace, Calls, Rows, Enum, GameThread, AssetsExport, Run };
 struct Verb;
 struct Command {
@@ -73,10 +73,11 @@ struct Command {
     // `target` names the module (empty: the exe). sig-check file: `file`.
     // sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is json, `hashOnly` is hash.
-    // usage: `all` is all. watch-read, watch-stop: `all` is all (every sample).
+    // usage: `all` is report all. watch-read, watch-stop: `all` is all (every sample).
     bool hashOnly = false;
-    bool listSessions = false;  // usage sessions; session <id> is `target`.
+    bool listSessions = false;  // usage report sessions; session <id> is `target`.
     bool advice = false;        // usage advice: verbs often digested or unfiltered, with a proposed change.
+    std::vector<std::string> parts; // usage only: the report's parts kept (empty: all).
     std::string baseline;       // usage baseline: a saved report to compare with. usage save: `file`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;
     bool capped = false;        // sig-bytes: the length asked passed sig::MaxPattern and was cut to it.
@@ -109,6 +110,14 @@ struct Command {
     std::vector<uint32_t> offsets;
     uint64_t range = 0;
     bool readsOnly = false;
+    // touches and disp-scan: the base registers taken (empty: all but rsp and
+    // rbp). disp-scan: the access, operand bytes (0: any) and immediate asked
+    // for; `offsets` holds its one disp, request.address its start (0: the
+    // first code byte).
+    std::vector<std::string> bases;
+    std::string access;
+    uint32_t width = 0;
+    std::optional<uint64_t> imm;
     // call dry: resolve the function and build the block, call nothing.
     bool dry = false;
     // call and rows: the member paths kept in each row (fields a,b.c);

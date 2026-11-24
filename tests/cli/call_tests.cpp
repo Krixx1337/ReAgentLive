@@ -374,7 +374,7 @@ namespace {
 // batch's items are checked as their own verbs when they run.
 bool WritesOrCalls(const Command& command) {
     const auto& request = command.request;
-    if (command.kind == Kind::Pin || command.kind == Kind::Trial || command.kind == Kind::TimedWrites ||
+    if (command.kind == Kind::Pin || command.kind == Kind::Trial || (command.kind == Kind::TimedWrites && command.all) ||
         command.kind == Kind::Release || (command.kind == Kind::TypedCall && !(request.flags & ue::CallPure))) return true;
     if (request.op == reagentlive::op::Write || request.op == reagentlive::op::Pin || request.op == reagentlive::op::Trial)
         return true;
@@ -390,7 +390,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"help", {R"({})", R"({"verb": "read"})", R"({"json": true})", R"({"hash": true})"}},
         {"status", {R"({})"}},
         {"quit", {R"({})"}},
-        {"usage", {R"({})", R"({"all": true})", R"({"sessions": true})", R"({"session": "abc"})"}},
+        {"usage", {R"({})", R"({"report": "all"})", R"({"report": "sessions"})", R"({"session": "abc"})", R"({"only": ["totals", "advice"]})"}},
         {"batch", {R"({"calls": [{"verb": "read", "args": {"addr": "0x1000", "len": 8}}, {"verb": "modules"}]})"}},
         {"run", {R"({"plan": "plan.json"})", R"({"plan": "plan.json", "out": "lines.jsonl"})"}},
         {"read", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 16, "type": "f32"})",
@@ -403,16 +403,21 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"mem-diff", {R"({"compare": "changed", "type": "f32"})", R"({"compare": "increased", "type": "i32", "keep": true, "view": {"limit": 4}})"}},
         {"watch-start", {R"({"duration": 5, "ranges": [{"addr": "0x1000", "len": 8}]})",
             R"({"duration": 5, "ranges": [{"addr": "0x1000", "type": "f32"}], "every": 0.1, "file": "w.jsonl"})"}},
+        {"timed-writes", {R"({})"}},
         {"watch-read", {R"({})", R"({"all": true})"}},
         {"watch-stop", {R"({})", R"({"all": true})"}},
         {"sig-check", {R"({"pattern": "48 8b 05 89 ?? 90"})", R"({"file": "sigs.txt"})"}},
         {"sig-bytes", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 32})"}},
         {"labels-sign", {R"({})", R"({"retry": true})"}},
         {"labels-port", {R"({})"}},
+        {"labels-check", {R"({})", R"({"file": "names.jsonl", "module": "game.exe"})"}},
         {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
             R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": 2}})"}},
         {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
-        {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})"}},
+        {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})",
+            R"({"addr": "0x1000", "offsets": [16], "bases": ["rcx", "rbp"]})"}},
+        {"disp-scan", {R"({"disp": "0x538"})", R"({"disp": 16, "access": "any", "bases": ["rcx"], "start": "0x1000"})",
+            R"({"disp": 16, "access": "read", "width": 4, "imm": 1})"}},
         {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "count": 4, "resolve": true, "rtti": true})"}},
         {"find", {R"({"text": "Pawn"})", R"({"cls": "Pawn", "live": true, "view": {"limit": 5}})"}},
         {"census", {R"({})", R"({"cls": "Pawn", "diff": true})"}},
@@ -441,7 +446,8 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"describe", {R"({"object": "0x1000#5:9"})", R"({"index": 5, "serial": 9})"}},
         {"func", {R"({"object": "0x1000#5:9", "function": "GetHealth"})"}},
         {"script", {R"({"object": "0x1000#5:9", "function": "Tick"})", R"({"object": "0x1000#5:9", "function": "Tick", "decode": true})",
-            R"({"object": "Pawn", "function": "ExecuteUbergraph_Pawn", "decode": true, "entry": "0x1c"})"}},
+            R"({"object": "Pawn", "function": "ExecuteUbergraph_Pawn", "decode": true, "entry": "0x1c"})",
+            R"({"object": "0x1000#5:9", "decode": true})"}},
         {"enum", {R"({"enum": "EMode"})"}},
         {"name-refs", {R"({"name": "Health"})", R"({"index": 42})"}},
         {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"start": 4, "match": "Get"}})"}},
@@ -874,7 +880,7 @@ TEST_CASE("write takes hex bytes, bounded by the agent's write limit; expect gua
         const Json call{{"verb", "write"}, {"args", {{"addr", "0x10"}, {"data", data}}}};
         CHECK_MESSAGE(Why(call).starts_with("data must be hex pairs"), data);
     }
-    CHECK(Why(R"({"verb": "write", "args": {"addr": "0x10"}})").starts_with("missing data"));
+    CHECK(Why(R"({"verb": "write", "args": {"addr": "0x10"}})").starts_with("data: write needs addr and data"));
     const Json tooLong{{"verb", "write"}, {"args", {{"addr", "0x10"}, {"data", std::string((MaxWrite + 1) * 2, '0')}}}};
     CHECK(Why(tooLong).starts_with("data must be hex pairs"));
 
@@ -939,23 +945,27 @@ TEST_CASE("write hold rewrites for seconds and guards a ref-based addr on its ob
     CHECK(Why(R"({"verb": "write", "args": {"addr": "0x5000", "data": "01", "hold": true}})").starts_with("hold: seconds"));
 }
 
-TEST_CASE("writes lists the timed writes; clear ends one id or all") {
+TEST_CASE("timed-writes lists the timed writes; write with clear ends one id or all") {
     auto parsed = Call(R"({"verb": "timed-writes"})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::TimedWrites);
     CHECK_FALSE(parsed->all);
-    parsed = Call(R"({"verb": "timed-writes", "args": {"clear": true}})");
+    CHECK_FALSE(FindVerb(AllVerbs(), "timed-writes")->writes);  // Listing is read-only; clearing is write's.
+    parsed = Call(R"({"verb": "write", "args": {"clear": "all"}})");
     REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::TimedWrites);
     CHECK(parsed->all);
     CHECK(parsed->request.args[0] == 0);
-    parsed = Call(R"({"verb": "timed-writes", "args": {"clear": true, "id": "undo:3"}})");
+    parsed = Call(R"({"verb": "write", "args": {"clear": "undo:3"}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->target == "undo");
     CHECK(parsed->request.args[0] == 3);
-    CHECK(Call(R"({"verb": "timed-writes", "args": {"clear": true, "id": "hold:2"}})")->target == "hold");
-    CHECK(Why(R"({"verb": "timed-writes", "args": {"clear": true, "id": "3"}})").starts_with("id is undo:N"));
-    CHECK(Why(R"({"verb": "timed-writes", "args": {"clear": true, "id": "pin:3"}})").starts_with("id is undo:N"));
-    CHECK(Why(R"({"verb": "timed-writes", "args": {"id": "undo:3"}})").starts_with("id goes with clear"));
+    CHECK(Call(R"({"verb": "write", "args": {"clear": "hold:2"}})")->target == "hold");
+    CHECK(Why(R"({"verb": "write", "args": {"clear": "3"}})").starts_with("clear is \"all\""));
+    CHECK(Why(R"({"verb": "write", "args": {"clear": "pin:3"}})").starts_with("clear is \"all\""));
+    CHECK(Why(R"({"verb": "write", "args": {"clear": "all", "addr": "0x10"}})").starts_with("addr: clear ends"));
+    CHECK(Why(R"({"verb": "write", "args": {"data": "01"}})").starts_with("addr: write needs"));
+    CHECK(Why(R"({"verb": "write", "args": {"addr": "0x10"}})").starts_with("data: write needs"));
 }
 
 TEST_CASE("release is a call with the release flag and an optional block") {
@@ -1256,11 +1266,17 @@ TEST_CASE("local verbs build no request") {
     CHECK(Call(R"({"verb": "quit"})")->kind == Kind::Quit);
     CHECK(Call(R"({"verb": "usage"})")->kind == Kind::Usage);
     CHECK_FALSE(Call(R"({"verb": "usage"})")->all);
-    CHECK(Call(R"({"verb": "usage", "args": {"all": true}})")->all);
-    CHECK(Call(R"({"verb": "usage", "args": {"sessions": true}})")->listSessions);
+    CHECK(Call(R"({"verb": "usage", "args": {"report": "all"}})")->all);
+    CHECK(Call(R"({"verb": "usage", "args": {"report": "sessions"}})")->listSessions);
     CHECK(Call(R"({"verb": "usage", "args": {"session": "mcp-1"}})")->target == "mcp-1");
-    CHECK(Why(R"({"verb": "usage", "args": {"all": true, "sessions": true}})").starts_with("all, sessions and session"));
-    CHECK(Why(R"({"verb": "usage", "args": {"sessions": true, "session": "mcp-1"}})").starts_with("all, sessions and session"));
+    CHECK(Why(R"({"verb": "usage", "args": {"report": "every"}})").starts_with("report: "));
+    CHECK(Why(R"({"verb": "usage", "args": {"report": "sessions", "session": "mcp-1"}})").starts_with("report: one session"));
+    const auto parts = Call(R"({"verb": "usage", "args": {"only": ["totals", "advice"]}})");
+    REQUIRE(parts.has_value());
+    CHECK(parts->parts == std::vector<std::string>{"totals", "advice"});
+    CHECK(parts->advice);                                   // Asking for the part asks for advice.
+    CHECK(Why(R"({"verb": "usage", "args": {"only": ["compare"]}})").starts_with("only: compare needs baseline"));
+    CHECK(Why(R"({"verb": "usage", "args": {"only": ["everything"]}})").starts_with("only: "));
     CHECK(Why(R"({"verb": "usage", "args": {"session": 1}})").starts_with("session: "));
 }
 

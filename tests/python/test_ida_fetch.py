@@ -153,5 +153,33 @@ class Timing(unittest.TestCase):
         self.assertEqual(fetch_timing.opens(lines, since='2026-01-02')['opened'], 1)
 
 
+
+class LoaderCheckTest(unittest.TestCase):
+    """tools/ida_loader_check.py: current, stale or missing, by digest; loader_digest agrees."""
+
+    def test_states(self):
+        import importlib.util
+        tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools', 'ida_loader_check.py')
+        spec = importlib.util.spec_from_file_location('ida_loader_check', tool)
+        check = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(check)
+        folder = tempfile.mkdtemp()
+        try:
+            self.assertEqual(check.check(folder)['state'], 'missing')
+            with open(os.path.join(folder, 'other.py'), 'w') as other:
+                other.write('# another loader' + chr(10))
+            self.assertEqual(check.check(folder)['state'], 'missing')
+            copy = os.path.join(folder, 'any_name.py')
+            shutil.copyfile(check.REPO_LOADER, copy)
+            report = check.check(folder)
+            self.assertEqual(report['state'], 'current')
+            self.assertEqual(report['repo'], loader.loader_digest())
+            self.assertEqual(loader.loader_digest(copy), loader.loader_digest())
+            with open(copy, 'a') as stale:
+                stale.write('# edited' + chr(10))
+            self.assertEqual(check.check(folder)['state'], 'stale')
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
 if __name__ == '__main__':
     unittest.main()

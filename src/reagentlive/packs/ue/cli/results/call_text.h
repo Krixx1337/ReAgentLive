@@ -51,11 +51,12 @@ std::string NotPlain(const ue::Field& field, Lookup&& lookup) {
 }
 
 // Why `each` cannot call a function with these parameters; empty when it can.
-// Every message is about the parameter it names.
+// Every message is about the parameter it names (`which`: its index).
 template<class Lookup>
-std::string EachRefusal(const ue::Signature& signature, Lookup&& lookup) {
+std::string EachRefusal(const ue::Signature& signature, Lookup&& lookup, size_t* which = nullptr) {
     for (const auto& parameter : signature.parameters) {
         const auto flags = parameter.parameterFlags;
+        if (which) *which = static_cast<size_t>(&parameter - signature.parameters.data());
         if (!FilledByCall(flags))
             return parameter.name + " is an input" + (flags & ue::Reference ? " (passed by reference)" : "") +
                 "; each calls only functions with no inputs: use call";

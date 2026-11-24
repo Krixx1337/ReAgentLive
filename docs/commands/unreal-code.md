@@ -59,7 +59,9 @@ and opcode (`Speed = Vehicle.GetSpeedKPH()`, `if !(A > B) goto +0x58`,
 Scans every function's bytecode for `EX_NameConst` with that comparison
 index, one table scan spread over ticks; later pages come from the cached
 result; up to 512 functions (`capped`). `name` must match a pooled name
-exactly (the console resolves it through `name-find`).
+exactly (the console resolves it through `name-find`). Each row's ref is
+the Function itself: `script` takes it as `object` with no `function`
+(it reads the Function's outer and name).
 
 ## Exec entries
 

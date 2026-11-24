@@ -18,7 +18,8 @@ keys: the [reference](reference.md), `help` with `verb`, or
 | `read` | 1..4096 bytes; the whole range must pass the host's `readable` check. `type` `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`, `f64` or `ptr` adds `values`, the bytes decoded as that type (NaN and null pointers as null); the length must be a multiple of its size. A layout string as `type`: a block of mixed types (below). `type` `cstr` or `wstr`, pointer chains and the `region` it adds: [native objects](native-objects.md) |
 | `peek` | console only, held: what 1..64 qwords hold, for globals and fields a static tool shows only as `qword_…`. One `read` (per-qword batched reads when part of the range is unreadable), one `describe` per aligned pointer-shaped value, 1-byte readability probes, one region query for the address and one per readable pointer, and one `name` lookup. Each row gets one label, the first that holds: `object` (with a pack), `module` (`value_module`, `value_rva`), `heap` (readable pointer to private memory; another region kind, such as `mapped`, by name), `value` (`f32` pair, `f64`); an unreadable qword is `unreadable`. **A name is only a hint:** a `value` row whose low 32 bits decode gets `name_hint`, nothing more, since almost any small number decodes to some name. `label` appends one qword as a confirmed global to a labels file (default: the host's names file, else the console's; [labels](labels.md#peek-with-label)) |
 | `write` | 1..256 bytes; committed, writable pages; page protection is never changed. `expect`: written only while memory still holds those bytes (same length); otherwise refused and `error.found` shows what is there. `hold` and `undo`: [timed writes](#timed-writes) |
-| `timed-writes` | every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes`. `clear` ends one (`id`: `undo:N` or `hold:N`) or all, restoring active `undo` ones, and returns the rows it ended |
+| `timed-writes` | read-only (pack `observe`): every timed write as a row (`id`, `mode`, `state`, time left): an `undo` one (`active`, `restored`, `conflict`, `abandoned`, with `guard` when abandoned) adds its `original` bytes and `changed_tick` and stays listed until cleared; a `hold` one (`active`, `expired`, `object changed`, `not writable`, `memory differed from expect`, `access faulted`) adds `guarded` and `writes` |
+| `write` with `clear` | ends one timed write (`"undo:N"` or `"hold:N"`, as `timed-writes` lists it) or `"all"`, restoring active `undo` ones; takes no other key, writes nothing else and answers `cleared`, the rows it ended |
 | `modules` | loaded modules with base, image size and name, the process exe first; 64 per page, the client pages |
 | `search`, `search-job` | committed, readable, cacheable pages in the working set; a job on the agent's worker thread (host opt-in) or at most 2 ms of scanning per host tick; 1..507 hits per job ([below](#search)) |
 | `mem-snap`, `mem-diff` | console only: up to 1 MiB read in held 4 KB requests (refused when part is unreadable), kept in a file beside the cache file; then compared element by element ([below](#mem-snap-and-mem-diff)) |
@@ -142,7 +143,7 @@ pointer scan ([design](../design/architecture.md#place-among-other-tools)).
 
 Both forms take 1..64 bytes for up to 60 s, at most 8 of each at once,
 and run at the start of every host tick, before requests. `timed-writes` lists
-them and `clear` ends them.
+them (read-only) and `write` with `clear` ends them.
 
 - **`undo`** writes once, when memory holds `expect` (required), and the
   agent restores the original bytes when `undo.after` is up, on `clear`,
@@ -189,7 +190,8 @@ does that. Each row has `tick` (agent heartbeat), `us` (since start) and
 guarded like a `hold`: when the object is freed or replaced the capture
 stops with the rows so far. `stopped` says why a capture ended:
 `deadline`, `stopped`, `buffer full`, `object replaced` (absent while it
-runs). A capture that cannot fit (one row per interval for its whole
+runs). Past its duration a read answers `deadline` even when no tick has
+sampled since (a paused host). A capture that cannot fit (one row per interval for its whole
 duration) is refused with the longest duration that would.
 
 ```json

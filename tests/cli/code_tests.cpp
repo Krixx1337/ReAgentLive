@@ -1080,6 +1080,59 @@ TEST_CASE("region kinds, protection text and the region read and peek report") {
     CHECK(Checked(MakePeekRow(mapped, modules))["label"] == "heap");
 }
 
+TEST_CASE("touches and disp-scan take every base but the stack frame's unless bases names them") {
+    const auto code = Join({
+        {0x8b, 0x81, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rcx+0x538]
+        {0x8b, 0x85, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rbp+0x538]: a frame slot
+        {0x89, 0x83, 0x38, 0x05, 0x00, 0x00},             // mov [rbx+0x538], eax
+    });
+    const std::vector<uint32_t> offsets{0x538};
+    CHECK(touch::InCode(code, Base, offsets).size() == 2);           // rcx and rbx; rbp left out.
+    const auto framed = touch::InCode(code, Base, offsets, touch::Bases{{"rbp"}});
+    REQUIRE(framed.size() == 1);
+    CHECK(framed[0].instruction == Base + 6);
+    const auto onRcx = touch::InCode(code, Base, offsets, touch::Bases{{"rcx"}});
+    REQUIRE(onRcx.size() == 1);
+    CHECK(onRcx[0].instruction == Base);
+}
+
+TEST_CASE("disp-scan sweeps code for one instruction form: access, width, immediate, resume point") {
+    const auto code = Join({
+        {0x8b, 0x81, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rcx+0x538]: a read
+        {0xc7, 0x81, 0x38, 0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00}, // mov dword [rcx+0x538], 1
+        {0xcc, 0xcc},                                     // padding
+        {0x88, 0x83, 0x38, 0x05, 0x00, 0x00},             // mov [rbx+0x538], al: a byte store
+        {0x48, 0x8d, 0x91, 0x38, 0x05, 0x00, 0x00},       // lea rdx, [rcx+0x538]: the address
+        {0x89, 0x84, 0x24, 0x38, 0x05, 0x00, 0x00},       // mov [rsp+0x538], eax: a stack slot
+    });
+    const auto run = [&](touch::Form form, bool last = true, size_t most = 16) {
+        std::vector<touch::Hit> hits;
+        const size_t stopped = touch::Sweep(code, Base, form, last, hits, most);
+        return std::pair(hits, stopped);
+    };
+    auto [writes, end] = run({0x538});
+    CHECK(end == code.size());
+    REQUIRE(writes.size() == 2);
+    CHECK(writes[0].address == Base + 6);
+    CHECK(writes[0].access == "write");
+    CHECK(writes[0].width == 4);
+    CHECK(writes[1].width == 1);
+    CHECK(run({0x538, "read"}).first.size() == 1);
+    const auto any = run({0x538, "any"}).first;
+    REQUIRE(any.size() == 4);
+    CHECK(any[3].access == "address");
+    CHECK(run({0x538, "write", 4}).first.size() == 1);
+    const auto one = run({0x538, "write", 0, 1}).first;
+    REQUIRE(one.size() == 1);
+    CHECK(one[0].text.find("0x01") != std::string::npos);
+    CHECK(run({0x538, "write", 0, 2}).first.empty());
+    CHECK(run({0x538, "write", 0, std::nullopt, touch::Bases{{"rsp"}}}).first.size() == 1);
+    // A full page stops right after the hit that filled it; a chunk that is not the last stops
+    // before an instruction that might run past it.
+    CHECK(run({0x538}, true, 1).second == 16);
+    CHECK(run({0x538, "any"}, false).second == 24);              // The lea at 24 could run past: the next chunk starts there.
+}
+
 TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes and ranks functions") {
     const auto code = Join({
         {0x8b, 0x81, 0x38, 0x05, 0x00, 0x00},             // mov eax, [rcx+0x538]

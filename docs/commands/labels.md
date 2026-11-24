@@ -1,6 +1,6 @@
 # Labels
 
-*Home of:* labels files (format, ranks, which file each command reads and writes), `peek` with `label`, `labels-export`, signatures on labels (`labels-sign`) and porting them after a patch (`labels-port`).
+*Home of:* labels files (format, ranks, which file each command reads and writes), `peek` with `label`, `labels-export`, signatures on labels (`labels-sign`), checking them (`labels-check`) and porting them after a patch (`labels-port`).
 
 **TL;DR:** A labels file carries names for one or more builds of a module,
 both ways between ReAgentLive and a static tool: `labels-export` derives
@@ -35,6 +35,7 @@ replaces it):
 | `labels-export` | the console's file | the console's file |
 | `disasm` with `save` | the console's file and the host's names file | |
 | `labels-sign`, `labels-port` | the host's names file, else the console's | the same |
+| `labels-check` | the host's names file, else the console's | nothing |
 | the IDA loader's `export_names` | | the path it is given ([IDA loader](ida-loader.md#names-both-ways)) |
 
 ## peek with label
@@ -72,8 +73,8 @@ counts what was written: `total` rows of this build, of which `globals`,
 A row may carry `sig`, a byte signature in `sig-check`'s terms:
 `{pattern, offset}` for a function (it lies `offset` bytes before the
 match, usually 0) or `{pattern, resolve}` for a global (a reference
-signature at code that loads it). With the row's `rva` as the expected
-address it is a line of a `sig-check` `file`. `labels-export` and
+signature at code that loads it). `labels-check` checks every signed row
+of the running build against its `rva` in one call. `labels-export` and
 `export_names` keep it, and a row's `sig` and `ported_from` stay when it
 is renamed: they follow the address.
 
@@ -94,8 +95,22 @@ A row `labels-sign` lists `unsigned` (with its `reason`, kept in its
 `sig_failed`), or a name `labels-port` lists `missing` once found again,
 is signed by hand: make the signature as for any other
 ([signatures](fast-lane.md#signatures)), write it into the row's `sig`
-(removing `sig_failed`) and check the file's signatures with `sig-check`
-and its `file`.
+(removing `sig_failed`) and re-verify every signed name with
+`labels-check`.
+
+`labels-check` (`file`, `module`) searches each signed row of the
+running build in the image (one shared search per anchor, no expected
+address: where it lands is the answer) and compares the match with the
+row: `ok` (one match, on the row), `moved` (one match elsewhere, `found`:
+the row's `rva` or its `sig` is stale), `missing` (none), `ambiguous`
+(several, `matches`) or `invalid` (a `sig` `sig-check` would refuse).
+`unsigned` counts this build's `user` and `global` rows with no `sig`. It
+never writes the file: fix a row by hand, or `labels-sign` it with
+`retry`.
+
+```json
+{"verb": "labels-check", "args": {}}
+```
 
 `labels-port` (`file`, `module`), after a patch: per name the running
 build lacks, the newest signed row of another build of the module is

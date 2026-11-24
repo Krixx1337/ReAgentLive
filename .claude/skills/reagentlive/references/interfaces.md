@@ -25,8 +25,8 @@ The C++ client is for building tools, not for investigating.
 |---|---|
 | `explore` (always on) | `find`, `get`, `each`, `rows`, `name-find`, `read`, `peek`, `script`, `name-refs`... |
 | `native` | `disasm`, `xrefs`, `touches`, `vtable`, `sig-*`, `search`, `search-job`, `member-name`, `labels-export`, `assets-export`, `labels-*`, `layout-*` |
-| `observe` | `watch-*`, `census`, `mem-snap`, `mem-diff`, `line-trace`, `call-pure`, `call-each` |
-| `modify` | `write`, `timed-writes`, `call`, `release`, `calls-start`/`-read`/`-stop`, `game-thread` |
+| `observe` | `watch-*`, `census`, `mem-snap`, `mem-diff`, `line-trace`, `call-pure`, `call-each`, `timed-writes` |
+| `modify` | `write` (and its `clear`), `call`, `release`, `calls-start`/`-read`/`-stop`, `game-thread` |
 
 - **Enable before the first call that needs it:** MCP: the `packs` tool,
   `{"action": "enable", "pack": "native"}`; Python: `Session(console,
@@ -55,7 +55,7 @@ The C++ client is for building tools, not for investigating.
 | `find` | `ue_find` `{"cls": "Pawn", "view": {"limit": 5}}` | `c.ue.find(cls='Pawn', view={'limit': 5})` |
 | `get` | `ue_get` `{"object": "0x1f2e3d4c50#123:4", "paths": [["Health"]]}` | `c.ue.get(ref, paths=[['Health']])` |
 | `sig-check` | `sig_check` `{"pattern": "48 8b ?? 89", "module": "game.exe"}` | `c.sig_check(pattern='48 8b ?? 89', module='game.exe')` |
-| `batch` | `batch` `{"calls": [{"verb": "read", "args": {"addr": "0x10"}}]}` | `s.batch_results([('read', {'addr': '0x10'})])` |
+| `batch` | `batch` `{"calls": [{"verb": "read", "args": {"addr": "0x10"}}]}` | `items, same_tick = s.batch_results([('read', {'addr': '0x10'})])` |
 | host verb `world` | `host_world` `{}` | `c.host.world()` |
 
 ## MCP tools

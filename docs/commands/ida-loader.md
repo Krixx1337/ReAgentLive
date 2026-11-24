@@ -1,6 +1,6 @@
 # IDA loader
 
-*Home of:* the IDA side, `frontends/ida/reagentlive_ida.py`: installing it, opening a save, the workspace database (`add_saved`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
+*Home of:* the IDA side, `frontends/ida/reagentlive_ida.py`: installing it and checking the installed copy, opening a save, the workspace database (`add_saved`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
 
 **TL;DR:** One Python file in IDA's loaders folder opens what `disasm`'s
 `save` wrote as a small x64 database, so IDA decompiles those functions
@@ -19,8 +19,15 @@ What a save holds: [saving a function](fast-lane.md#saving-a-function-for-a-stat
   refuses it at the first row kind it does not know ("this loader is older
   than the file"), so a save never loads with its chunks or names silently
   missing.
-- For `fetch`, name the console: set `REAGENTLIVE_CONSOLE` to its path, or
-  pass `console=`.
+- **Is the installed copy current?** `python -I tools/ida_loader_check.py`
+  (`--loaders <dir>` for another folder) hashes the repo's file and every
+  ReAgentLive loader in the folder (found by its first docstring line, any
+  file name) and prints `state`: `current`, `stale` (copy the repo's file
+  over it) or `missing`; the exit code is 0, 1 or 2 to match. Inside IDA:
+  `rl.loader_digest() == rl.loader_digest('<repo copy>')`.
+- For `fetch`, pass the console: `console=` with its absolute path (or a
+  command list). `REAGENTLIVE_CONSOLE` is optional, read only when
+  `console` is not given.
 
 ## Opening a save
 

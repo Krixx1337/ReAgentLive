@@ -239,7 +239,7 @@ The full op list with numbers is in [protocol](protocol.md#ops).
   takes the section over ([takeover](protocol.md#section)). `status`
   reports the answering agent's build time and how many it replaced. An
   agent its host has stopped no longer ticks, so it restores nothing:
-  clear `undo` writes (`timed-writes` with `clear`) before stopping it. This holds only for a build with the same protocol:
+  clear `undo` writes (`write` with `clear`) before stopping it. This holds only for a build with the same protocol:
   after a protocol change the section keeps the old layout, so restart the
   process instead ([the update procedure](agents/update.md#7-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.

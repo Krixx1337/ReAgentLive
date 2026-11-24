@@ -109,7 +109,8 @@ class McpTests(unittest.TestCase):
         self.assertIn('rows', tools['ue_find'].output_schema['properties'])
         self.assertEqual(tools['batch'].input_schema['properties']['calls']['type'], 'array')
         write = tools['write'].input_schema
-        self.assertEqual(write['required'], ['addr', 'data'])     # The row's required args only.
+        self.assertNotIn('required', write)                       # The row's required args only: clear needs no addr.
+        self.assertEqual(tools['read'].input_schema['required'], ['addr'])
         self.assertIn('undo', write['properties'])
         self.assertEqual(tools['search'].input_schema['properties']['type']['enum'][:2], ['hex', 'u32'])
         self.assertIn('Example: read {"addr": ', tools['read'].description)
@@ -165,7 +166,7 @@ class McpTests(unittest.TestCase):
             self.assertFalse(any(tool.annotations.destructive_hint for tool in tools.values()), names)
         everything = self.tool_list(packs=ALL)
         self.assertEqual({name for name, tool in everything.items() if tool.annotations.destructive_hint},
-                         {'write', 'timed_writes', 'ue_call', 'ue_release', 'ue_calls_start', 'ue_game_thread'})
+                         {'write', 'ue_call', 'ue_release', 'ue_calls_start', 'ue_game_thread'})
         self.assertEqual(packs['each'], 'explore')
         with self.assertRaisesRegex(ValueError, '--packs: unknown pack nope'):
             reagentlive_mcp.build(sys.executable, ['-I', FAKE], packs=['nope'])
@@ -240,6 +241,18 @@ class McpTests(unittest.TestCase):
         self.assertIn('len: 5000 is past 4096; example: read {"addr": "0x10", "len": 4096}', refused.content[0].text)
         self.assertIn('"kind": "schema"', refused.content[0].text)   # The error object, not only its message.
         self.assertIn('"key": "len"', refused.content[0].text)
+
+    def test_a_batch_refusal_names_only_a_way_out_this_server_allows(self):
+        async def body(client):
+            write = await client.call_tool('batch', {'calls': [{'verb': 'write'}]})
+            native = await client.call_tool('batch', {'calls': [call('disasm', {'addr': '0x1000'})]})
+            return write, native
+        write, native = self.run_client(body, allow=['native'])
+        self.assertTrue(write.is_error)                                # modify is outside the ceiling: no enable.
+        self.assertIn('write is in modify, outside the ceiling of this server', write.content[0].text)
+        self.assertNotIn('"enable"', write.content[0].text)
+        self.assertTrue(native.is_error)                               # native may be enabled: say how.
+        self.assertIn('packs {"action": "enable", "pack": "native"} first', native.content[0].text)
 
     def test_a_session_past_its_context_limit_adds_the_warning_beside_the_result(self):
         async def body(client):

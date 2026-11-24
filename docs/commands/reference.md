@@ -122,16 +122,16 @@ Pack `explore`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `all` | `bool` |  |  | every session in the log, and the verbs none called |
-| `sessions` | `bool` |  |  | the log's sessions, newest first: one row each |
+| `report` | `sessions\|all` |  |  | in place of one session: sessions lists the log's sessions, newest first, one row each; all is every session in the log together, and the verbs none called |
 | `session` | `str` |  |  | one session from the log, by its id |
 | `advice` | `bool` |  |  | verbs often digested or unfiltered, with a proposed default view.limit or a hint |
 | `baseline` | `file` |  |  | a report save wrote: what got worse (and better) against it |
 | `save` | `file` |  |  | write this report to a file, a baseline for a later session |
+| `only` | `[totals\|rows\|largest\|never_called\|session_rows\|context\|refusals\|advice\|compare]` |  |  | keep only these parts of the report (advice also turns advice on) |
 
-Result: `{session?: str, sessions?: u64, since?: str, totals: {calls: u64, batched: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, ms: f64}, rows: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, ms: f64, batched?: u64, unfiltered?: u64, repeated?: u64, same_args?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64, followed?: u64, raised?: u64}], largest: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}], context?: {chars: u64, limit: u64, over: bool}, refusals?: [{verb: str, kind: str, key?: str, count: u64}], advice?: [{verb: str, calls: u64, digested: u64, unfiltered: u64, followed: u64, raised: u64, limit?: {key: str, now: u64, proposed: u64}, hint: str}], saved?: str, compare?: {baseline: str, checked: u64, worse: [{what: str, verb?: str, before: f64, after: f64}], better: [{what: str, verb?: str, before: f64, after: f64}]}}`
+Result: `{session?: str, sessions?: u64, since?: str, totals?: {calls: u64, batched: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, ms: f64}, rows?: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, ms: f64, batched?: u64, unfiltered?: u64, repeated?: u64, same_args?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64, followed?: u64, raised?: u64}], largest?: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}], context?: {chars: u64, limit: u64, over: bool}, refusals?: [{verb: str, kind: str, key?: str, count: u64}], advice?: [{verb: str, calls: u64, digested: u64, unfiltered: u64, followed: u64, raised: u64, limit?: {key: str, now: u64, proposed: u64}, hint: str}], saved?: str, compare?: {baseline: str, checked: u64, worse: [{what: str, verb?: str, before: f64, after: f64}], better: [{what: str, verb?: str, before: f64, after: f64}]}}`
 
-From the usage log beside the console; works with no target (then: the log's latest session). calls counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the result cap (max_chars), and saved the characters their digests kept out (full size less the digest); of the verb's next call after a digest, followed counts one that changed its narrowing args (the digest's narrow) and raised one that only raised max_chars or set big. Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input and the same result again in its session; the same input with another result is same_args: the state changed, the call was needed), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. sessions lists up to 30 sessions as session_rows, with totals over the whole log. One session's report adds context: chars (what its tool-caller results put into an agent's context), limit (the console's --context-limit, default 400000; 0: none) and over; past it every envelope a tool caller gets carries context_warning, one line. Nothing stops: max_chars stays the per-result cap. advice lists verbs with at least two digested or unfiltered calls (or half their calls), most first: limit proposes a smaller default view.limit (the default scaled to what the cap held of the largest digested result), hint one line on what else to change in the row or its help. A report: nothing changes by itself. save writes the report (JSON) and answers saved; baseline compares this session with such a file: compare.worse and compare.better list the figures that moved (totals calls, refused, digested, context and ms; refused_by.<kind>; per verb calls, refused, digested and ms_per_call), totals first, largest move first. A count is worse when it grew, time when it grew by a quarter and past noise (100 ms in all, 50 ms a call). baseline and save take one session (session, or none for this one), never all or sessions. refusals lists refused calls by verb, error kind and the arg at fault (key, when the error named one), most first: the help examples and arg texts to fix first.
+From the usage log beside the console; works with no target (then: the log's latest session). calls counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the result cap (max_chars), and saved the characters their digests kept out (full size less the digest); of the verb's next call after a digest, followed counts one that changed its narrowing args (the digest's narrow) and raised one that only raised max_chars or set big. Marks per verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input and the same result again in its session; the same input with another result is same_args: the state changed, the call was needed), refused (by error kind; one refused for its pack is not in calls_by_pack). A batch's calls count under their own verbs (batched); the batch row holds its wrapper. report sessions lists up to 30 sessions as session_rows, with totals over the whole log. One session's report adds context: chars (what its tool-caller results put into an agent's context), limit (the console's --context-limit, default 400000; 0: none) and over; past it every envelope a tool caller gets carries context_warning, one line. Nothing stops: max_chars stays the per-result cap. advice lists verbs with at least two digested or unfiltered calls (or half their calls), most first: limit proposes a smaller default view.limit (the default scaled to what the cap held of the largest digested result), hint one line on what else to change in the row or its help. A report: nothing changes by itself. save writes the report (JSON) and answers saved; baseline compares this session with such a file: compare.worse and compare.better list the figures that moved (totals calls, refused, digested, context and ms; refused_by.<kind>; per verb calls, refused, digested and ms_per_call), totals first, largest move first. A count is worse when it grew, time when it grew by a quarter and past noise (100 ms in all, 50 ms a call). baseline and save take one session (session, or none for this one), never a report. only keeps the parts named (session, sessions, since and saved always stay); save still writes the whole report. refusals lists refused calls by verb, error kind and the arg at fault (key, when the error named one), most first: the help examples and arg texts to fix first.
 
 ```json
 {"args":{},"verb":"usage"}
@@ -218,24 +218,25 @@ object needs a pack; value rows carry floats, a double and name_hint. region is 
 
 ### write
 
-write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while.
+write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while; clear ends timed writes.
 
 Pack `modify`; **writes or calls**.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `addr` | `addr` | yes |  | the address |
-| `data` | `bytes` | yes |  | bytes as hex pairs, spaced or packed: "00 00 80 3f" (up to 256; 64 with undo or hold) |
+| `addr` | `addr` |  |  | the address (required unless clear) |
+| `data` | `bytes` |  |  | bytes as hex pairs, spaced or packed: "00 00 80 3f" (up to 256; 64 with undo or hold; required unless clear) |
 | `expect` | `bytes` |  |  | write only while memory still holds these bytes (with undo: required, restored afterwards) |
 | `undo` | `obj` |  |  | restore the bytes after a while, guarded on their owner (needs expect) |
 | `undo.after` | `dur` | yes |  | restore after this long (up to 60 s) |
 | `undo.owner` | `ref` | yes |  | the live actor or component holding the address (a pack names it) |
 | `undo.object` | `addr` |  |  | a native object inside the owner whose vtable is guarded too |
 | `hold` | `dur` |  |  | rewrite the bytes every tick for this long (up to 60 s) |
+| `clear` | `str` |  |  | in place of a write: end timed writes, "all" or one id as timed-writes lists it (undo:N or hold:N); undo ones are restored |
 
-Result: `{address: addr, module?: str, rva?: hex, size: u64, timed?: TimedWrite}`
+Result: `{address?: addr, module?: str, rva?: hex, size?: u64, timed?: TimedWrite, cleared?: [TimedWrite]}`
 
-A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, the timed write as timed-writes lists it; up to 64 bytes. undo stops as conflict if the game changes the value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without one it is refused. hold on an addr based on a literal ref ({"base": <ref>, "offset": N}) stops when that object is freed or replaced. Options: expect guards every write; undo and hold are the two timed forms (undo's owner and object only guard an undo, so they live inside it).
+A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, the timed write as timed-writes lists it; up to 64 bytes. undo stops as conflict if the game changes the value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without one it is refused. hold on an addr based on a literal ref ({"base": <ref>, "offset": N}) stops when that object is freed or replaced. Options: expect guards every write; undo and hold are the two timed forms (undo's owner and object only guard an undo, so they live inside it). clear takes no other key, writes nothing and answers cleared: the rows it ended.
 
 ```json
 {"args":{"addr":"0x140001000","data":"00 00 80 3f"},"verb":"write"}
@@ -243,18 +244,13 @@ A refused expect answers an error whose `found` holds the bytes there. undo and 
 
 ### timed-writes
 
-the timed writes (write undo, hold) with their state; clear ends one or all, restoring undo ones.
+the timed writes (write undo, hold) with their state; write with clear ends them.
 
-Pack `modify`; **writes or calls**.
+Pack `observe`.
 
-| Key | Type | Required | Default | What |
-|---|---|---|---|---|
-| `clear` | `bool` |  |  | end them |
-| `id` | `str` |  |  | with clear: one write's id as timed-writes lists it (undo:N or hold:N); default all |
+Result: `{rows: [TimedWrite]}`
 
-Result: `{rows: [TimedWrite], cleared?: u64}`
-
-Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. clear answers cleared and the rows it ended.
+Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. Read-only: ending them is write's clear (modify).
 
 ```json
 {"args":{},"verb":"timed-writes"}
@@ -498,6 +494,25 @@ Per name this build lacks, the newest signed row of another build is matched in 
 {"args":{},"verb":"labels-port"}
 ```
 
+### labels-check
+
+re-verify this build's signed names: does each row's sig still land on it.
+
+Pack `native`.
+
+| Key | Type | Required | Default | What |
+|---|---|---|---|---|
+| `file` | `file` |  |  | the labels file (default: the host's names file, else the console's) |
+| `module` | `str` |  |  | the module (default: the exe) |
+
+Result: `{path: str, module: str, timestamp: u32, ok: u64, moved: u64, missing: u64, ambiguous: u64, invalid: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, rva: hex, status: ok\|moved\|missing\|ambiguous\|invalid, found?: hex, matches?: u64, reason?: str}]}`
+
+Each signed row of the running build is searched in the image (one shared search per anchor) and compared with its rva: ok (one match, on the row), moved (one match elsewhere: found), missing (none), ambiguous (several: matches) or invalid (a sig sig-check would refuse). unsigned counts this build's user and global rows with no sig. Read-only: the file is never written.
+
+```json
+{"args":{},"verb":"labels-check"}
+```
+
 ### disasm
 
 instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function.
@@ -556,13 +571,37 @@ Pack `native`.
 | `offsets` | `[int]` | yes |  | the struct offsets to look for (up to 8, each above 0) |
 | `range` | `int` |  | `"0x80000"` | bytes each side of addr (1..0x400000) |
 | `reads` | `bool` |  |  | rank by offsets read; drop rows writing every offset they read |
+| `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp, the stack frame's) |
 
 Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64}`
 
-Most offsets first, writes marked: the code behind an unreflected member. Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as unlisted code. reads leaves out struct copies and constructors.
+Most offsets first, writes marked: the code behind an unreflected member. Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as unlisted code. reads leaves out struct copies and constructors. Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register; bases ["rcx"] keeps only operands on rcx (this, as a method's first argument). The whole image for one offset: disp-scan.
 
 ```json
 {"args":{"addr":"0x140001000","offsets":[16]},"verb":"touches"}
+```
+
+### disp-scan
+
+every instruction in the main module's code with a [reg + disp] operand of this disp, a page at a time.
+
+Pack `native`.
+
+| Key | Type | Required | Default | What |
+|---|---|---|---|---|
+| `disp` | `int` | yes |  | the displacement (the field's offset), above 0 |
+| `access` | `write\|read\|any` |  | `"write"` | write: stores and read-modify-writes; read: loads and read-modify-writes; any: also lea (the field's address taken) |
+| `width` | `int` |  |  | only operands of this many bytes (1, 2, 4, 8, 16, 32 or 64) |
+| `imm` | `int` |  |  | only instructions with this immediate (compared in its width: 0xffffffff is -1 as 32 bits) |
+| `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp, the stack frame's) |
+| `start` | `addr` |  |  | resume here: a page's next_cursor |
+
+Result: `{disp: hex, access: str, module: str, from: addr, to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], capped: bool, next_cursor?: addr, scan_ms: i64}`
+
+A linear sweep of the executable sections, read from the live image: each call scans for up to 8 s and stops early at 128 hits; next_cursor (absent once the end is reached) resumes it as start, and scanned is the share of the code behind the cursor. Each row is one instruction: access (write, read, both or address), width, its text and the function holding it (function, from the exception table; absent outside every entry). A straight sweep can decode data inside code (jump tables) as instructions: check a surprising hit with disasm. Near one function instead: touches.
+
+```json
+{"args":{"disp":16},"verb":"disp-scan"}
 ```
 
 ### vtable
@@ -1092,8 +1131,8 @@ Pack `explore`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `object` | `str` | yes |  | an object (a literal ref, "0x..."), or a class or struct by name |
-| `function` | `str` | yes |  | the function, as Owner:Function where the name is ambiguous |
+| `object` | `str` | yes |  | an object or class (a literal ref, "0x...", or a class name), or the Function itself (its ref, as name-refs gives it) |
+| `function` | `str` |  |  | the function's name (Owner:Name to pick one; none when object is the Function) |
 | `decode` | `bool` |  |  | read the bytecode as statements with their offsets |
 | `entry` | `int` |  |  | with decode: one uber-graph event, from this offset to its return, pop or goto |
 | `to` | `int` |  |  | with decode: statements before this offset only; with entry, from entry to here, past returns |
@@ -1102,10 +1141,10 @@ Pack `explore`.
 
 Result: `{ref: ref, function: str, size: u32, names: [{offset: hex, count: u32, index: i32, name: str}], functions: [{offset: hex, count: u32, ref: ref, function: str}], properties: [{offset: hex, count: u32, address: addr, property: str, raw?: str}], statements?: [{offset: hex, op: str, text: str}], events?: [{offset: hex, event: str}], stopped?: str, filtered?: {shown: u64, total: u64}}`
 
-Each entry is read right after its opcode and confirmed live. decode reads every expression instead (no game thread): statements, the lists from the decoded operands, properties by their readable name (raw: the reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it (stopped). An uber graph adds events: each event's entry offset, from the calls that enter it. A big decode narrows: view.match keeps the statements whose text or op contains it (filtered counts them), entry and to an offset range; the lists then come from the statements kept.
+Each entry is read right after its opcode and confirmed live. decode reads every expression instead (no game thread): statements, the lists from the decoded operands, properties by their readable name (raw: the reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it (stopped). An uber graph adds events: each event's entry offset, from the calls that enter it. A big decode narrows: view.match keeps the statements whose text or op contains it (filtered counts them), entry and to an offset range; the lists then come from the statements kept. A Function ref as object (name-refs' rows) needs no function: its outer and name are read from it.
 
 ```json
-{"args":{"function":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"script"}
+{"args":{"object":"0x1f2e3d4c50#123:4"},"verb":"script"}
 ```
 
 ### enum

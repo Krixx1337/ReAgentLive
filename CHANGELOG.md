@@ -27,6 +27,17 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **Clearing timed writes moved to `write`:** `timed-writes` only lists
+  (read-only, pack `observe`); end them with `write` and `clear`
+  (`"undo:N"`, `"hold:N"` or `"all"`, pack `modify`), which answers
+  `cleared`. `timed-writes`' `clear` and `id` are gone, and so is its
+  `cleared` count; `write`'s `addr` and `data` are keyword arguments in
+  generated Python (`c.write(addr=..., data=...)`).
+- **`usage`'s `all` and `sessions` are one `report`:** pass
+  `{"report": "all"}` or `{"report": "sessions"}`. A sessions list has no
+  `rows` or `largest` any more ([console](docs/commands/console.md)).
+- **`touches` leaves `[rbp + disp]` out by default** (stack frames, like
+  `[rsp + disp]`): pass `bases` with `rbp` to keep it.
 - **Verbs renamed so no two differ by a letter and families read alike:**
   `stats` is `usage`, `refs` is `name-refs`, `label` is `member-name`,
   `export-labels` is `labels-export`, `export-assets` is `assets-export`,
@@ -103,6 +114,23 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   ([IDA loader](docs/commands/ida-loader.md#install)).
 
 ### New
+
+- **`labels-check` re-verifies signed names in one call:** each signed
+  row of the running build is searched again and reported `ok`, `moved`
+  (with `found`), `missing`, `ambiguous` or `invalid`; read-only
+  ([labels](docs/commands/labels.md#names-that-survive-a-patch)).
+- **`disp-scan` finds every instruction using one field offset** across
+  the main module's code: `access` (write, read, any with `lea`),
+  `width`, `imm` and `bases` narrow it; each call scans up to 8 s and
+  resumes from `next_cursor`
+  ([fast lane](docs/commands/fast-lane.md#disp-scan)).
+- **`touches` takes `bases`:** only operands on the named registers
+  (`["rcx"]` for `this`).
+- **`usage` with `only`** returns just the parts named (`totals`,
+  `refusals`, `compare`...), so a mid-session check costs little context.
+- **Is the IDA loader current:** `tools/ida_loader_check.py` compares the
+  installed copy with the repo's; `loader_digest()` does it inside IDA
+  ([IDA loader](docs/commands/ida-loader.md#install)).
 
 - **`usage` lists `refusals`:** refused calls by verb, error kind and the
   arg at fault, most first, so the help texts that mislead get fixed
@@ -247,6 +275,16 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Fixed
 
+- **`script` takes a Function's own ref** (as `name-refs` gives it) with
+  no `function`; any other object without one is refused saying so.
+- **`disasm` `save.file` makes a missing parent folder.**
+- **MCP `batch` names only a way out the server allows:** a pack outside
+  its ceiling is "restart with it in --packs or --allow", never an enable.
+- **`call-each`'s refusal names a parameter by its readable name**, the
+  reflected one in `raw`.
+- **`watch-read` past the capture's deadline says `stopped`
+  `deadline`**, even before a tick samples again. Rebuild and re-inject
+  for it.
 - **`get` with no `paths` on an address alone** works: the console
   resolves the object as `describe` does (before, the agent refused it as
   a bad request with no reason); an address that holds no object is

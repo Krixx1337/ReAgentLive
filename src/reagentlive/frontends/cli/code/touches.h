@@ -3,7 +3,8 @@
 // function the exception directory lists around a known function (an exec
 // thunk, a getter), and the executable code it leaves out, split into pieces
 // at returns and int3 padding; keep memory operands [reg + disp] whose
-// displacement is one of the offsets. Console only, pure: code bytes come in,
+// displacement is one of the offsets. disp-scan sweeps a whole image's code
+// for one displacement the same way. Console only, pure: code bytes come in,
 // so tests feed fixed bytes.
 #pragma once
 #include <Zydis/Zydis.h>
@@ -39,10 +40,25 @@ inline bool MayUse(const ZydisDecodedInstruction& instruction, std::span<const u
         std::ranges::find(offsets, static_cast<uint32_t>(disp.value)) != offsets.end();
 }
 
+// Which base registers count: `only` names them (64-bit names: "rcx"); empty
+// takes every base but the stack frame's (rsp, rbp), whose slots are locals,
+// not struct members. RIP-relative operands are globals: never taken.
+struct Bases {
+    std::vector<std::string> only;
+};
+inline bool BaseTaken(ZydisRegister base, const Bases& bases) {
+    if (base == ZYDIS_REGISTER_NONE || base == ZYDIS_REGISTER_RIP || base == ZYDIS_REGISTER_EIP) return false;
+    const ZydisRegister wide = ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, base);
+    if (bases.only.empty()) return wide != ZYDIS_REGISTER_RSP && wide != ZYDIS_REGISTER_RBP;
+    const char* name = ZydisRegisterGetString(wide);
+    return name && std::ranges::find(bases.only, std::string_view(name)) != bases.only.end();
+}
+
 // Uses in straight code [address, address + code.size()). Undecodable bytes
-// (data between chunks) are stepped over one at a time. Stack slots
-// ([rsp + disp]) and RIP-relative globals are never struct members.
-inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, std::span<const uint32_t> offsets) {
+// (data between chunks) are stepped over one at a time. Only bases `bases`
+// takes count (default: no stack slots).
+inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, std::span<const uint32_t> offsets,
+                               const Bases& bases = {}) {
     static const dis::detail::Decoder decoder; // Console only: thread-safe statics are fine here.
     std::vector<Use> uses;
     ZydisDecoderContext context;
@@ -61,8 +77,7 @@ inline std::vector<Use> InCode(std::span<const uint8_t> code, uint64_t address, 
         }
         for (uint8_t i = 0; i < instruction.operand_count_visible; ++i) {
             const auto& operand = operands[i];
-            if (operand.type != ZYDIS_OPERAND_TYPE_MEMORY || operand.mem.base == ZYDIS_REGISTER_NONE ||
-                operand.mem.base == ZYDIS_REGISTER_RIP || operand.mem.base == ZYDIS_REGISTER_RSP ||
+            if (operand.type != ZYDIS_OPERAND_TYPE_MEMORY || !BaseTaken(operand.mem.base, bases) ||
                 !operand.mem.disp.has_displacement || operand.mem.disp.value <= 0 || operand.mem.disp.value > UINT32_MAX) continue;
             const auto disp = static_cast<uint32_t>(operand.mem.disp.value);
             if (std::ranges::find(offsets, disp) == offsets.end()) continue;
@@ -197,5 +212,85 @@ inline void Rank(std::vector<Row>& rows, bool reads = false) {
         if (a.writes != b.writes) return a.writes;
         return a.uses.size() > b.uses.size();
     });
+}
+
+// disp-scan: what one instruction form must be. `access` is write (stores
+// and read-modify-writes), read (loads and read-modify-writes) or any (also
+// lea, the field's address taken); `width` the memory operand's bytes (0:
+// any); `imm` an immediate operand's value (compared in the operand's width).
+struct Form {
+    uint32_t disp = 0;
+    std::string access = "write";
+    uint32_t width = 0;
+    std::optional<uint64_t> imm;
+    Bases bases;
+};
+struct Hit {
+    uint64_t address = 0;
+    std::string access;     // write, read, both (read-modify-write) or address (lea).
+    uint32_t width = 0;     // The memory operand's bytes; 0 for lea.
+    std::string text;
+};
+constexpr size_t MaxInstruction = 15;
+
+// One linear sweep over `code` (at `address`, an instruction boundary): the
+// instructions of `form`, up to `most` hits in all. Returns where the sweep
+// stopped, an instruction boundary: the end of the code when `last`, else
+// the first instruction that might run past it (the next chunk starts there),
+// or right after the hit that filled `hits`. Code read straight through can
+// meet data (jump tables): a hit there is possible, so check one with disasm.
+inline size_t Sweep(std::span<const uint8_t> code, uint64_t address, const Form& form, bool last, std::vector<Hit>& hits,
+                    size_t most) {
+    static const dis::detail::Decoder decoder; // Console only: thread-safe statics are fine here.
+    ZydisDecoderContext context;
+    ZydisDecodedInstruction instruction;
+    ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
+    const uint32_t offsets[] = {form.disp};
+    size_t at = 0;
+    while (at < code.size()) {
+        if (!last && code.size() - at < MaxInstruction) break;
+        if (code[at] == 0xcc) { ++at; continue; } // Padding.
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder.decoder, &context, code.data() + at, code.size() - at,
+                &instruction))) {
+            ++at;
+            continue;
+        }
+        const size_t length = instruction.length;
+        if (!MayUse(instruction, offsets) || !ZYAN_SUCCESS(ZydisDecoderDecodeOperands(&decoder.decoder, &context,
+                &instruction, operands, instruction.operand_count_visible))) {
+            at += length;
+            continue;
+        }
+        std::optional<Hit> hit;
+        bool immediate = !form.imm;
+        for (uint8_t i = 0; i < instruction.operand_count_visible; ++i) {
+            const auto& operand = operands[i];
+            if (operand.type == ZYDIS_OPERAND_TYPE_IMMEDIATE && form.imm) {
+                const uint64_t mask = operand.size >= 64 || !operand.size ? ~uint64_t{0} : (uint64_t{1} << operand.size) - 1;
+                if ((operand.imm.value.u & mask) == (*form.imm & mask)) immediate = true;
+                continue;
+            }
+            if (operand.type != ZYDIS_OPERAND_TYPE_MEMORY || !BaseTaken(operand.mem.base, form.bases) ||
+                !operand.mem.disp.has_displacement || operand.mem.disp.value != static_cast<int64_t>(form.disp)) continue;
+            const bool agen = operand.mem.type == ZYDIS_MEMOP_TYPE_AGEN;
+            const bool writes = (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0;
+            const bool reads = (operand.actions & ZYDIS_OPERAND_ACTION_MASK_READ) != 0;
+            const std::string access = agen ? "address" : writes && reads ? "both" : writes ? "write" : "read";
+            if (form.access == "write" && !writes) continue;
+            if (form.access == "read" && (!reads || agen)) continue;
+            const uint32_t width = agen ? 0 : operand.size / 8;
+            if (form.width && width != form.width) continue;
+            hit = Hit{address + at, access, width, {}};
+        }
+        if (hit && immediate) {
+            char text[256]; // The size Zydis examples use: long AVX text fits.
+            if (ZYAN_SUCCESS(ZydisFormatterFormatInstruction(&decoder.formatter, &instruction, operands,
+                    instruction.operand_count_visible, text, sizeof(text), address + at, nullptr))) hit->text = text;
+            hits.push_back(std::move(*hit));
+            if (hits.size() >= most) return at + length;
+        }
+        at += length;
+    }
+    return std::min(at, code.size());
 }
 }

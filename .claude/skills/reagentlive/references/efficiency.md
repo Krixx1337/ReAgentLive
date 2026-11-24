@@ -49,5 +49,7 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 - End the final report with its totals (context cost and what digests
   saved) and the two or three costliest habits.
 - `usage` also reads across sessions: patterns, verbs nobody calls, this
-  session against earlier ones (`usage` with `sessions` or `all`), or
-  against a report kept with `save` (`baseline`: what got worse).
+  session against earlier ones (`usage` with `report` `sessions` or
+  `all`), or against a report kept with `save` (`baseline`: what got
+  worse). A mid-session check needs one part: `only` (`["totals"]`,
+  `["compare"]`) keeps the rest out of context.

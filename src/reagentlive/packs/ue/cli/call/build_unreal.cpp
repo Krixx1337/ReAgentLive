@@ -269,8 +269,20 @@ Parsed Func(const Args& args, const ParseContext&) { return FunctionTarget(args,
 
 // script: a Blueprint function's bytecode; decode reads it as statements, entry one uber-graph event.
 Parsed Script(const Args& args, const ParseContext&) {
-    auto command = FunctionTarget(args, ue::op::Function, Kind::Script);
-    if (!command) return command;
+    // No function: object is the Function itself (a ref name-refs or funcs gave); the console reads its
+    // outer and name. A class name has no function to be.
+    Parsed command = Fail({});
+    if (args.Has("function")) {
+        command = FunctionTarget(args, ue::op::Function, Kind::Script);
+        if (!command) return command;
+    } else {
+        Command own;
+        if (!Object(args.Str("object"), own.request))
+            return Fail("function: give it, unless object is a Function's ref (\"0x...\" or a literal ref)");
+        own.request.op = ue::op::Function;
+        own.kind = Kind::Script;
+        command = std::move(own);
+    }
     command->decode = args.Has("decode");
     if (args.Has("entry")) {
         const uint64_t entry = args.Int("entry");

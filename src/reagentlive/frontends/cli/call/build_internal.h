@@ -46,6 +46,8 @@ Parsed Vtable(const Args& args, const ParseContext& context);
 Parsed SigCheck(const Args& args, const ParseContext& context);
 Parsed LabelsSign(const Args& args, const ParseContext& context);
 Parsed LabelsPort(const Args& args, const ParseContext& context);
+Parsed LabelsCheck(const Args& args, const ParseContext& context);
+Parsed DispScan(const Args& args, const ParseContext& context);
 Parsed SigBytes(const Args& args, const ParseContext& context);
 
 // Unreal pack (packs/ue/cli/call/build_unreal.cpp).

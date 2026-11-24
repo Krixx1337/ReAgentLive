@@ -109,6 +109,15 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
         return PrintDump(session, object, refs, structs, command, baseline);
     }
     if (command.kind == Kind::Script) {
+        if (!command.request.text[0]) { // object is the Function: its outer owns it, its name names it.
+            auto described = ue::Describe(client, ue::GetRef(request));
+            if (!described) return CommandError(session, jsonCommand, described.error());
+            if (!std::string_view(described->className).ends_with("Function") || !described->outer.address)
+                return JsonError(session, jsonCommand, ErrorKind::Validation, "function: object is a " +
+                    described->className + ", not a Function: pass function, or the Function's own ref");
+            ue::SetRef(command.request, described->outer);
+            CopyText(command.request.text, described->name);
+        }
         if (command.decode) return RunScriptDecode(session, command, jsonCommand);
         if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support script");
         const auto object = ue::GetRef(request);

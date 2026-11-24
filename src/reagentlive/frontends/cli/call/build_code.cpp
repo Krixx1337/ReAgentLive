@@ -58,7 +58,31 @@ Parsed Touches(const Args& args, const ParseContext& context) {
             command.offsets.push_back(static_cast<uint32_t>(n));
     }
     command.readsOnly = args.Has("reads");
+    command.bases = args.Strs("bases");
     command.kind = Kind::Touches;
+    command.request.op = op::ReadBatch;
+    return command;
+}
+
+// disp-scan: every instruction in the main module's code with one [reg + disp] form, a page at a time.
+Parsed DispScan(const Args& args, const ParseContext& context) {
+    Command command;
+    const uint64_t disp = args.Int("disp");
+    if (!disp || disp > UINT32_MAX) return Fail("disp is 1..0xffffffff");
+    command.offsets = {static_cast<uint32_t>(disp)};
+    command.access = args.Has("access") ? args.Str("access") : "write";
+    if (args.Has("width")) {
+        const uint64_t width = args.Int("width");
+        if (width != 1 && width != 2 && width != 4 && width != 8 && width != 16 && width != 32 && width != 64)
+            return Fail("width is the operand's bytes: 1, 2, 4, 8, 16, 32 or 64");
+        if (command.access == "any") return Fail("width: a lea has none; give access write or read");
+        command.width = static_cast<uint32_t>(width);
+    }
+    if (args.Has("imm")) command.imm = args.Int("imm");
+    command.bases = args.Strs("bases");
+    if (args.Has("start"))
+        if (auto why = Place(args, "start", context, command, false); !why.empty()) return Fail(why);
+    command.kind = Kind::DispScan;
     command.request.op = op::ReadBatch;
     return command;
 }
@@ -137,6 +161,15 @@ Parsed LabelsSign(const Args& args, const ParseContext&) {
 Parsed LabelsPort(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::LabelsPort;
+    command.request.op = op::Search;
+    command.file = args.Str("file");
+    command.target = args.Str("module");
+    return command;
+}
+
+Parsed LabelsCheck(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::LabelsCheck;
     command.request.op = op::Search;
     command.file = args.Str("file");
     command.target = args.Str("module");

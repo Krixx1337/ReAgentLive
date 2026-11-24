@@ -32,6 +32,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Name an unreflected member for good | `member-name` |
 | Name a native function or global for good | static tool name + `export_names`; `peek` with `label`; then `labels-sign` |
 | Bring confirmed names to a patched build | `labels-port`; re-find only `missing` and `ambiguous` |
+| Do this build's signed names still hold | `labels-check` (one call, read-only) |
 | Did a patch move the fields code reads | `layout-export`, later `layout-check` |
 | Typed structs for a static tool's decompiles | they come with the save (its methods' classes); `layout-export` with `closure`, then `import_layouts`, only for classes no label names |
 
@@ -57,7 +58,8 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Where a value or string lives | `search` (long ones: `search-job` with its `job`) |
 | Which bytes of a range react to an action | `mem-snap`, then `mem-diff` |
 | A native object's class, bases, virtual table | `vtable` with `rtti` |
-| Change memory once / every tick / once with an undo | `write` / `write` with `hold` / with `undo` (approval); `timed-writes`, `timed-writes` with `clear` |
+| Change memory once / every tick / once with an undo | `write` / `write` with `hold` / with `undo` (approval) |
+| Which timed writes are active; end them | `timed-writes` (read-only, `observe`); `write` with `clear` (`modify`, approval) |
 
 ## Over time (`docs/commands/memory.md#watch`, `docs/commands/capture.md`)
 
@@ -73,7 +75,8 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 |---|---|
 | What code is here | `disasm` |
 | What points here | `xrefs` |
-| Which functions use these member offsets | `touches` |
+| Which functions use these member offsets | `touches` (`bases` `["rcx"]`: on `this` only) |
+| Does anything in the image write (or read) this field | `disp-scan` with `disp`; follow `next_cursor` to the end |
 | Where a string is | `search` with `type` `text` |
 | Is a signature unique and does it land there | `sig-check` (`file` for many), `sig-bytes` |
 | Names for a static tool | `labels-export`, `peek` with `label` |

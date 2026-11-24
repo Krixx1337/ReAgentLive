@@ -184,6 +184,8 @@ sig::SearchFn AgentSearch(Session& session);
 // labels-sign and labels-port: signatures on a labels file's names.
 void RunLabelsSign(Session& session, const Command& command, std::string_view jsonCommand);
 void RunLabelsPort(Session& session, const Command& command, std::string_view jsonCommand);
+void RunLabelsCheck(Session& session, const Command& command, std::string_view jsonCommand);
+void RunDispScan(Session& session, const Command& command, std::string_view jsonCommand);
 // The exception-directory entry holding an address (any loaded module),
 // nullopt without one; an error when the table cannot be read.
 std::expected<std::optional<unwind::Function>, std::string> FunctionAt(Session& session, uint64_t address);

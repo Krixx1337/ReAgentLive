@@ -229,7 +229,9 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "params lists the parameters in block order (direction in, out, in ref, in/out ref or return) and block_size "
             "is the call block's size; reading them needs the game thread, so without it params_error says why instead."},
         {"script", "ue", ToolPack::Explore, "a Blueprint function's bytecode: the names, functions and properties it uses; decode: as statements",
-            {{"object", "str", objectOrClass, {}, true, false, ref}, {"function", "str", function, {}, true},
+            {{"object", "str", "an object or class (a literal ref, \"0x...\", or a class name), or the Function itself (its ref, "
+              "as name-refs gives it)", {}, true, false, ref},
+             {"function", "str", "the function's name (Owner:Name to pick one; none when object is the Function)"},
              {"decode", "bool", "read the bytecode as statements with their offsets"},
              {"entry", "int", "with decode: one uber-graph event, from this offset to its return, pop or goto"},
              {"to", "int", "with decode: statements before this offset only; with entry, from entry to here, past returns"},
@@ -240,7 +242,8 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "reflected one), functions as Owner.Function, math operators as infix; an opcode it does not know stops it "
             "(stopped). An uber graph adds events: each event's entry offset, from the calls that enter it. A big "
             "decode narrows: view.match keeps the statements whose text or op contains it (filtered counts them), "
-            "entry and to an offset range; the lists then come from the statements kept."},
+            "entry and to an offset range; the lists then come from the statements kept. A Function ref as object "
+            "(name-refs' rows) needs no function: its outer and name are read from it."},
         {"enum", "ue", ToolPack::Explore, "an enum's names and values, in order",
             {{"enum", "str", "an enum object (a literal ref, \"0x...\"), or an enum by name", {}, true}},
             Of<shape::Enum>, build::Enum,

@@ -152,7 +152,7 @@ TEST_CASE("help rows come from the table: args, an example call, the result in n
     std::set<std::string> writers;
     for (const auto& verb : AllVerbs())
         if (verb.writes) writers.insert(std::string(verb.name));
-    CHECK(writers == std::set<std::string>{"write", "timed-writes", "call", "release", "calls-start", "game-thread"});
+    CHECK(writers == std::set<std::string>{"write", "call", "release", "calls-start", "game-thread"});
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "read"), false, false))["pack"] == "explore");
     CHECK(Checked(MakeHelpRow(*FindVerb(AllVerbs(), "write"), false, false))["writes"] == true);
     CHECK(full["type"]["struct"]["next_cursor"] == Json{{"type", "addr"}, {"optional", true}});
@@ -1034,7 +1034,7 @@ TEST_CASE("every verb is in one tool pack; every writer in modify, none in the o
     // The packs a research session loads by default hold nothing that writes or calls.
     for (const auto pack : {ToolPack::Explore, ToolPack::Native, ToolPack::Observe})
         for (const auto& name : byPack[pack]) CHECK_FALSE_MESSAGE(FindVerb(AllVerbs(), name)->writes, name);
-    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "timed-writes", "call", "release", "calls-start", "calls-read",
+    CHECK(byPack[ToolPack::Modify] == std::set<std::string>{"write", "call", "release", "calls-start", "calls-read",
                                                              "calls-stop", "game-thread"});
     CHECK(byPack[ToolPack::Native].contains("disasm"));
     CHECK(byPack[ToolPack::Observe].contains("call-pure"));
