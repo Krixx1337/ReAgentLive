@@ -72,6 +72,7 @@ ask. Load `references/interfaces.md`.
 | plan more than a few calls, see a `digest`, or end a session | [references/efficiency.md](references/efficiency.md) |
 | choose MCP, Python or the console, need a tool or function name, or a tool is missing or refused as `pack` | [references/interfaces.md](references/interfaces.md) |
 | write a script: console `-c` or Python (setup, strict results, quoting) | [references/console-driving.md](references/console-driving.md) |
+| run subagents or a background run beside other calls, or share the agent with another client | [references/parallel.md](references/parallel.md) |
 | sample a value over time, record a function's calls, or see what changes across an action | [references/capture-and-timing.md](references/capture-and-timing.md) |
 | send any `call` (pure getters too) or `write` (`undo`, `hold`) | [references/calls-and-writes.md](references/calls-and-writes.md) |
 | read an object with no reflection, hunt padding or native state, or `search` memory | [references/hidden-state.md](references/hidden-state.md) |
