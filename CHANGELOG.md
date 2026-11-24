@@ -25,6 +25,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+### Improved
+
+- **MCP agents load the skill first:** the server's instructions are now a
+  short pointer to the `reagentlive` skill (and the host's) plus the
+  write and untrusted-text rules, instead of a usage summary the skill
+  already holds ([client](docs/client.md)).
+
 ## 0.5.0
 
 Your agent gets it right the first time: plain JSON calls with refusals

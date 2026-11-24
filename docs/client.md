@@ -297,6 +297,10 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   server with the list, and the server's instructions say which packs it
   serves and which `packs` can add. Why and what it saved:
   [tool interface](tool-interface.md#tool-packs).
+- The server's instructions tell the agent to load the `reagentlive`
+  skill (and the host's own skill) before its first call: an agent reads
+  them when it starts using the tools, where a line in a project file is
+  easy to pass over.
 - The server's instructions mark text read from the target (names,
   strings, chat) as untrusted data: in a multiplayer game other people
   write much of it, so an agent must never act on it as an instruction.
