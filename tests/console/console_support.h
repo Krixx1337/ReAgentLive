@@ -1,0 +1,167 @@
+// Shared by the console tests: the fixture object every decoding verb reads,
+// and helpers that build calls on it and read their results.
+#pragma once
+#include <span>
+#include <string>
+#include <string_view>
+#include "fake_engine.h"
+
+namespace console_support {
+using namespace fake;
+template<class T> inline std::span<const uint8_t> AsBytes(const T& value) {
+    return {reinterpret_cast<const uint8_t*>(&value), sizeof(value)};
+}
+struct WeakPtr { int32_t index, serial; };
+struct BoxBytes { double center[3]; int32_t name, number; float radius; WeakPtr owner; uint32_t pad; };
+static_assert(sizeof(BoxBytes) == 48);
+struct ScoreSlot { int32_t name, number; int32_t value, pad; int32_t hashNext, hashIndex; };
+static_assert(sizeof(ScoreSlot) == 24);
+
+// The fixture: a Thing whose Info struct holds every kind of value the
+// decoder handles, its own top-level containers, and a crowd of pointers.
+struct Fixture {
+    std::string thing, ghost, package;   // Literal refs.
+    std::string stale;                   // A ref to Thing_0 with a serial that moved on.
+    uint32_t crowd = 0;
+};
+
+inline std::string Text(const Ref& ref) {
+    return std::format("0x{:x}#{}:{}", ref.address, ref.index, ref.serial);
+}
+
+inline const Fixture& TheFixture() {
+    static const Fixture fixture = [] {
+        auto& world = TheWorld();
+        Type& vector = world.AddType("Vector", 24, true);
+        vector.fields = {MakeField("X", "DoubleProperty", 0, 8), MakeField("Y", "DoubleProperty", 8, 8), MakeField("Z", "DoubleProperty", 16, 8)};
+        Type& tag = world.AddType("GameplayTag", 8, true);
+        tag.fields = {MakeField("TagName", "NameProperty", 0, 8)};
+        Type& box = world.AddType("Box", 48, true);
+        box.fields = {StructField("Center", 0, vector), MakeField("Name", "NameProperty", 24, 8),
+            MakeField("Radius", "FloatProperty", 32, 4), MakeField("Owner", "WeakObjectProperty", 36, 8)};
+        const auto scoreKey = MakeField("Key", "NameProperty", 0, 8), scoreValue = MakeField("Value", "IntProperty", 0, 4);
+        Type& info = world.AddType("Info", 152, true);
+        info.fields = {MakeField("Owner", "WeakObjectProperty", 0, 8), MakeField("Stale", "WeakObjectProperty", 8, 8),
+            MakeField("Friend", "ObjectProperty", 16, 8), MapField("Scores", 24, scoreKey, scoreValue, 24, 8),
+            ArrayField("Boxes", 104, "StructProperty", 48, &box), StructField("Tag", 120, tag),
+            StructField("Zero", 128, vector)};
+        Type& instanced = world.AddType("InstancedStruct", 16, true);
+        Type& thingType = world.AddType("Thing", 0x400, false, "Object");
+        thingType.fields = {StructField("Info", 0x30, info), ArrayField("Boxes", 0x100, "StructProperty", 48, &box),
+            MapField("Scores", 0x110, scoreKey, scoreValue, 24, 8), ArrayField("Crowd", 0x160, "ObjectProperty", 8),
+            MakeField("Health", "FloatProperty", 0x170, 4), StructField("Payload", 0x178, instanced),
+            MakeField("Asset", "SoftObjectProperty", 0x188, 40), MakeField("Label", "StrProperty", 0x1b0, 16)};
+
+        Object& package = world.Add("Package_Things", "Package", 64);
+        const Ref packageRef = package.ref;
+        Object& buddy = world.Instance("Buddy", thingType, packageRef);
+        const Ref buddyRef = buddy.ref;
+        Object& ghost = world.Instance("Ghost", thingType, packageRef);
+        const WeakPtr ghostWeak{ghost.ref.index, ghost.ref.serial};
+        ghost.ref.serial = 2; // Freed and its slot reused: the old weak pointer no longer resolves.
+        Object& thing = world.Instance("Thing_0", thingType, packageRef);
+        const Ref thingRef = thing.ref;
+
+        // Values, written into Thing_0's bytes.
+        uint8_t* bytes = world.Bytes(thing);
+        const auto boxOf = [&](double x, const char* name, float radius) {
+            return BoxBytes{{x, 2.0, 3.0}, world.Name(name), 0, radius, {buddyRef.index, buddyRef.serial}, 0};
+        };
+        const BoxBytes boxes[2] = {boxOf(1.5, "hand_r_box", 2.35f), boxOf(-4.0, "head_box", 0.5f)};
+        const ScoreSlot scores[3] = {{world.Name("Kills"), 0, 7, 0, -1, 0}, {world.Name("Deaths"), 0, 0, 0, -1, 0},
+            {world.Name("Assists"), 0, 3, 0, -1, 0}};
+        uint8_t* infoAt = bytes + 0x30;
+        const WeakPtr owner{buddyRef.index, buddyRef.serial};
+        memcpy(infoAt + 0, &owner, 8);
+        memcpy(infoAt + 8, &ghostWeak, 8);
+        const uint64_t friendAddress = buddyRef.address;
+        memcpy(infoAt + 16, &friendAddress, 8);
+        SetSparse(infoAt + 24, AsBytes(scores), 3, 24);
+        SetArray(infoAt + 104, AsBytes(boxes), 2);
+        const int32_t tagName[2] = {world.Name("Item.Weapon.Rifle"), 0};
+        memcpy(infoAt + 120, tagName, 8);
+        SetArray(bytes + 0x100, AsBytes(boxes), 2);
+        SetSparse(bytes + 0x110, AsBytes(scores), 3, 24);
+        const float health = 87.5f;
+        memcpy(bytes + 0x170, &health, 4);
+        // An instanced struct holding a Box, and a soft pointer to Buddy, loaded.
+        uint8_t* payload = world.Alloc(sizeof(BoxBytes));
+        memcpy(payload, &boxes[0], sizeof(BoxBytes));
+        const uint64_t instancedParts[2] = {world.TypeRef(box).address, reinterpret_cast<uint64_t>(payload)};
+        memcpy(bytes + 0x178, instancedParts, 16);
+        const int32_t softParts[6] = {buddyRef.index, buddyRef.serial, world.Name("/Game/Things/Buddy"), 0,
+            world.Name("Buddy"), 0};
+        memcpy(bytes + 0x188, softParts, sizeof(softParts));
+        const char16_t label[] = u"Rifle \u00e9";
+        SetArray(bytes + 0x1b0, {reinterpret_cast<const uint8_t*>(label), sizeof(label)}, static_cast<uint32_t>(std::size(label)));
+        // The crowd: more distinct objects than one command names.
+        std::vector<uint64_t> crowd;
+        for (int i = 0; i < 150; ++i) crowd.push_back(world.Instance("Extra_" + std::to_string(i), vector).ref.address);
+        SetArray(bytes + 0x160, {reinterpret_cast<const uint8_t*>(crowd.data()), crowd.size() * 8},
+            static_cast<uint32_t>(crowd.size()));
+
+        Fixture out;
+        out.thing = Text(thingRef);
+        out.package = Text(packageRef);
+        out.ghost = Text(Ref{0, ghostWeak.index, ghostWeak.serial});
+        out.stale = Text(Ref{thingRef.address, thingRef.index, thingRef.serial + 5});
+        out.crowd = static_cast<uint32_t>(crowd.size());
+        return out;
+    }();
+    return fixture;
+}
+
+// A field path as calls take it: "Info.Tag" is ["Info", "Tag"].
+inline Json PathOf(std::string_view dotted) {
+    Json path = Json::array();
+    for (size_t start = 0;;) {
+        const size_t dot = dotted.find('.', start);
+        path.push_back(std::string(dotted.substr(start, dot == std::string_view::npos ? dot : dot - start)));
+        if (dot == std::string_view::npos) return path;
+        start = dot + 1;
+    }
+}
+// A list of one path, as get's and each's paths take it.
+inline Json PathsOf(std::string_view dotted) { return Json::array({PathOf(dotted)}); }
+// Args with more args (an object, or null for none) merged in.
+inline Json With(Json args, const Json& more) {
+    if (more.is_object()) args.update(more);
+    return args;
+}
+// Thing_0's get args: its paths (a list of them), or none for every field.
+inline Json GetArgs(const Json& paths = {}) {
+    Json args{{"object", TheFixture().thing}};
+    if (paths.is_array()) args["paths"] = paths;
+    return args;
+}
+// each over Thing, Thing_0's row only.
+inline Json EachArgs(const Json& paths) {
+    return {{"cls", "Thing"}, {"paths", paths}, {"where", {{"field", Json::array({"Name"})}, {"contains", "Thing_0"}}}};
+}
+// A get row's value by path; `more` adds args, `keys` the call's own keys (meta).
+inline Json Get(const std::string& path, const Json& more = {}, const Json& keys = {}) {
+    const auto result = Result(CallText("get", With(GetArgs(PathsOf(path)), more), keys));
+    REQUIRE(result["rows"].size() == 1);
+    return result["rows"][0]["value"];
+}
+// Thing_0's cell for one each column.
+inline Json Each(const std::string& path, const Json& more = {}, const Json& keys = {}) {
+    const auto result = Result(CallText("each", With(EachArgs(PathsOf(path)), more), keys));
+    REQUIRE(result["rows"].size() == 1);
+    return result["rows"][0]["values"][0];
+}
+// A row of get with no paths, by field name.
+inline Json DumpRow(const std::string& name, const std::string& key = "value", const Json& more = {}, const Json& keys = {}) {
+    const auto result = Result(CallText("get", With(GetArgs(), more), keys));
+    for (const auto& row : result["rows"])
+        if (row["name"] == name) return row.value(key, Json());
+    FAIL("no get row " << name);
+    return {};
+}
+// The one record a call printed: its envelope, ok or not.
+inline Json Envelope(const std::string& call) {
+    auto records = RunLines(call);
+    REQUIRE(records.size() == 1);
+    return records.front();
+}
+}

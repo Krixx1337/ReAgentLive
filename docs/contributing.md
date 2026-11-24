@@ -41,7 +41,7 @@ never the section directly. ReAgentLive never includes host code.
 3. **Its row** in the verb table (`results/verbs.h`): name, origin, its
    [tool pack](tool-interface.md#tool-packs) (`modify` when it writes or
    calls; a new verb outside `modify` also gets its forms in the
-   `call_tests.cpp` forms test), summary,
+   `check_tests.cpp` forms test), summary,
    args (key, type, help, default, required, list, and an example where
    the type's own would be refused), the result type, the builder,
    `writes` when it writes the target or calls into it, `blocks` when it

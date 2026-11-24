@@ -241,9 +241,10 @@ if(REAGENTLIVE_BUILD_TESTS)
     include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
 
     # One folder per suite: tests/cli, tests/ue, tests/loopback, tests/python (tests/table is a tool they use).
-    add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/call_tests.cpp tests/cli/format_tests.cpp
-        tests/cli/state_tests.cpp tests/cli/result_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp
-        tests/cli/budget_tests.cpp tests/cli/kismet_tests.cpp tests/cli/usage_tests.cpp)
+    add_executable(reagentlive-cli-tests tests/cli/main.cpp tests/cli/check_tests.cpp tests/cli/call_tests.cpp
+        tests/cli/call_ue_tests.cpp tests/cli/format_tests.cpp tests/cli/state_tests.cpp tests/cli/result_tests.cpp
+        tests/cli/table_tests.cpp tests/cli/sig_tests.cpp tests/cli/code_tests.cpp tests/cli/code_save_tests.cpp
+        tests/cli/code_scan_tests.cpp tests/cli/budget_tests.cpp tests/cli/kismet_tests.cpp tests/cli/usage_tests.cpp)
     target_link_libraries(reagentlive-cli-tests PRIVATE reagentlive-cli reagentlive-doctest nlohmann_json::nlohmann_json Zydis)
     # Args::At throws on a key the verb's row lacks (call/verb.h): in the test
     # builds only, so a builder reading a renamed or misspelt key fails a test.
@@ -276,7 +277,8 @@ if(REAGENTLIVE_BUILD_TESTS)
     # The real console against a fake engine: an in-process agent whose pack
     # ops answer from a synthetic world (tests/console/fake_engine.h).
     if(TARGET reagentlive-console AND reagentlive_pack_count EQUAL 1)
-        add_executable(reagentlive-console-tests tests/console/main.cpp tests/console/console_tests.cpp)
+        add_executable(reagentlive-console-tests tests/console/main.cpp tests/console/console_tests.cpp
+            tests/console/console_files_tests.cpp)
         target_link_libraries(reagentlive-console-tests PRIVATE reagentlive-console reagentlive-core reagentlive-doctest)
         target_compile_definitions(reagentlive-console-tests PRIVATE REAGENTLIVE_ARGS_CHECK)
         set_target_properties(reagentlive-console-tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES)
