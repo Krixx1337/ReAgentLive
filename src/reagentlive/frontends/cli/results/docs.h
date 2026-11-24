@@ -11,7 +11,7 @@
 namespace reagentlive::cli {
 // A row's verb and arg keys, as the results page lists them: `read {addr, len?, type?}`
 // (`?` marks an optional key, `[]` a list).
-// An object arg lists its keys the same way: `view{start?, limit?}?`.
+// An object arg lists its keys the same way: `view{cursor?, limit?}?`.
 inline std::string ArgKeys(const Json& args) {
     std::string keys;
     for (const auto& arg : args) {
@@ -139,9 +139,10 @@ inline std::string ResultsMarkdown(const Json& table) {
         "| `Name` | a named type, defined once under [Named types](#named-types); a pack's carry its prefix |\n\n"
         "## Conventions\n\n"
         "- `rows` is a result's list; `total` is how many there are in all when `rows` may show fewer.\n"
-        "- A page carries `from` (where it began) and `next_cursor` (pass it as `view.start`; absent when done).\n"
-        "- `capped`: the rows were cut at a hard limit and there is no cursor. `truncated`: a value in the\n"
-        "  result is incomplete.\n"
+        "- A result that can go on carries `next_cursor` (absent when done): pass it back, as given, as\n"
+        "  `view.cursor` on the same call. A page also carries `from` (where it began).\n"
+        "- `capped`: the rows were cut at a hard limit and there is no cursor, so the rest cannot be reached\n"
+        "  (never the cut of a list that has `next_cursor`). `truncated`: a value in the result is incomplete.\n"
         "- `module` and `rva` stand beside an address inside a loaded module, so it opens at the same RVA\n"
         "  in a static-analysis tool; other prefixes (`value_`, `target_`) locate the address in that key.\n"
         "- A key that does not apply is omitted; results hold no nulls outside game values.\n"

@@ -35,8 +35,8 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
   the file: that call may have changed state, so never repeat it.
 - Read the digest's `status` before running anything: it keeps the
   result's counts and totals (often the answer itself), a `saved` file is
-  already written (open it, do not repeat the call), and `next` there is
-  where a cut listing resumes.
+  already written (open it, do not repeat the call), and `next_cursor`
+  there is where a cut listing goes on (`view.cursor`).
 - Raise `max_chars` only for what `next` cannot narrow.
 - A `context_warning` on a result: this session is past its context
   limit. Stop reading wide results: narrow every call, summarise in a

@@ -12,7 +12,7 @@ a table of fields over every live instance of a class in one tick, and
 
 Objects whose full name (`Base_N`) contains `text` (any case) and/or whose
 class or a parent class is named `cls` (`Character` includes vendors), in
-pages from the object-table slot `view.start`. The first page scans the
+pages from the object-table slot `view.cursor`. The first page scans the
 whole table and counts the total; a later page starts at its cursor, so
 paging a broad class is linear, not quadratic. `live` skips class default
 and archetype objects, as `census` does.
@@ -72,9 +72,9 @@ the scan, `classes` and `instances` stay the whole census.
 
 <a id="census-changes"></a>**Pages and changes.** Every census becomes the
 baseline for its filter (`cls` and `outer`), in the session and the cache
-file. `view.start` is a later page of the last census with the same filter
+file. `view.cursor` is a later page of the last census with the same filter
 (and `diff`): the stored rows, sliced, with no new scan, so the pages of one
-filter join without gaps. A census without `view.start` scans again.
+filter join without gaps. A census without `view.cursor` scans again.
 
 `census` with `diff` runs a new census and prints only the classes whose
 count differs from that baseline, largest change first (`count` now,
@@ -112,7 +112,7 @@ reads: a function column is refused and named to `call-each`
   one pass with no pointer path read every value.
 - **Failed cells.** A cell that cannot be read is null, with an `errors`
   entry. The row stays, so no instance is hidden.
-- **`duration`** (one column, 1..60 s) repeats on the cached instance list and prints
+- **`duration`** (one column, up to 60 s; seconds, fractions allowed) repeats on the cached instance list and prints
   each changed row to stderr as it happens. Not in a `batch`.
 - **`where`** (`{"field": ["Name"], "contains": "text"}`) keeps the instances
   whose field's value contains the text, any case; `matched` counts them. Not

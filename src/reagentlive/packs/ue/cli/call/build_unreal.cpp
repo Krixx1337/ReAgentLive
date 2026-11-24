@@ -12,9 +12,9 @@ namespace reagentlive::cli::build {
 using namespace text;
 static_assert(MaxTypeName == ue::MaxClassName);
 namespace {
-// start: a cursor from a previous page's next_cursor; 0 when absent.
+// cursor: a cursor from a previous page's next_cursor; 0 when absent.
 bool Cursor(const Args& args, uint64_t most, uint64_t& from) {
-    from = args.Int("start");
+    from = args.Int("cursor");
     return from <= most;
 }
 
@@ -107,7 +107,7 @@ std::string RowOptions(const Args& args, Command& command) {
     if (limit > UINT32_MAX) return "limit is a number (0: all)";
     command.limit = static_cast<uint32_t>(limit);
     uint64_t from = 0;
-    if (!Cursor(args, UINT32_MAX, from)) return "start is a row number";
+    if (!Cursor(args, UINT32_MAX, from)) return "view.cursor is a row number";
     command.from = static_cast<uint32_t>(from);
     return {};
 }
@@ -146,12 +146,12 @@ Parsed CallArgs(const Args& args, uint32_t flags) {
     command.request.flags = flags;
     command.dry = args.Has("dry");
     const bool typed = args.Has("params") || ((flags & ue::CallPure) && !args.Has("block"));
-    // fields, start, limit and nonzero (call's view; call-pure has none) pick from a typed call's outputs.
+    // fields, cursor, limit and nonzero (call's view; call-pure has none) pick from a typed call's outputs.
     const bool rows = !(flags & ue::CallPure) &&
-        (args.Has("fields") || args.Has("start") || args.Has("limit") || args.Has("nonzero"));
+        (args.Has("fields") || args.Has("cursor") || args.Has("limit") || args.Has("nonzero"));
     command.limit = DefaultCallRows;
     if (args.Has("params") && args.Has("block")) return Fail("params: params makes a typed call, block a raw one; give one");
-    if (rows && args.Has("block")) return Fail("block: fields, start, limit and nonzero need a typed call (params), not a raw block");
+    if (rows && args.Has("block")) return Fail("block: fields, cursor, limit and nonzero need a typed call (params), not a raw block");
     if (rows)
         if (auto why = RowOptions(args, command); !why.empty()) return Fail(why);
     if (!typed && !rows) return CallBlock(args, std::move(command));
@@ -176,7 +176,7 @@ Parsed CensusOptions(const Args& args) {
     if (limit > UINT32_MAX) return Fail("limit is a number (0: all)");
     command.limit = static_cast<uint32_t>(limit);
     uint64_t from = 0;
-    if (!Cursor(args, UINT32_MAX, from)) return Fail("start is a row number");
+    if (!Cursor(args, UINT32_MAX, from)) return Fail("view.cursor is a row number");
     command.from = static_cast<uint32_t>(from);
     request.op = ue::op::Census;
     return command;
@@ -189,9 +189,9 @@ Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::st
     const auto className = args.Str(classKey);
     if (!ClassName(className)) return Fail(std::string(classKey) + " is a class name");
     if (args.Has("duration")) {
-        const uint64_t seconds = args.Int("duration");
-        if (!seconds || seconds > MaxEachSeconds) return Fail("duration is 1.." + std::to_string(MaxEachSeconds));
-        command.seconds = static_cast<uint32_t>(seconds);
+        const double seconds = static_cast<double>(args.Milliseconds("duration")) / 1000;
+        if (seconds > MaxEachSeconds) return Fail("duration is at most " + std::to_string(MaxEachSeconds) + " s");
+        command.seconds = seconds;
     }
     command.fields = std::move(columns);
     // where and elements are each's alone: call-each's one column is the function's.
@@ -223,7 +223,7 @@ Parsed Find(const Args& args, const ParseContext&) {
     if (!ClassFilter(args, request)) return Fail("cls is one class name, under 64 characters");
     if (auto why = Outer(args, command); !why.empty()) return Fail(std::move(why));
     uint64_t from = 0;
-    if (!Cursor(args, INT32_MAX, from)) return Fail("start is a slot number");
+    if (!Cursor(args, INT32_MAX, from)) return Fail("view.cursor is a slot number");
     request.args[1] = from;
     if (args.Has("limit")) {
         const uint64_t limit = args.Int("limit");
@@ -258,7 +258,7 @@ Parsed Funcs(const Args& args, const ParseContext&) {
     Request& request = command.request;
     if (!ObjectOrClass(args.Str("object"), command)) return Fail(ObjectOrClassWhy);
     uint64_t cursor = 0;
-    if (!Cursor(args, ue::MaxFieldStart, cursor)) return Fail("start is a cursor");
+    if (!Cursor(args, ue::MaxFieldStart, cursor)) return Fail("view.cursor is a cursor");
     request.length = static_cast<uint32_t>(cursor);
     if (args.Str("match").size() >= MaxText) return Fail("match is too long");
     request.op = ue::op::Functions;
@@ -436,7 +436,7 @@ Parsed Entries(const Args& args, const ParseContext&) {
     Command command;
     if (!CallObject(args.Str("object"), command)) return Fail(ObjectWhy);
     uint64_t from = 0;
-    if (!Cursor(args, INT32_MAX, from)) return Fail("start is a cursor");
+    if (!Cursor(args, INT32_MAX, from)) return Fail("view.cursor is a cursor");
     command.kind = Kind::Entries;
     command.target = args.Str("field");
     if (command.target.empty() || command.target.size() >= MaxText) return Fail("field is one field name ([Owner:]Name)");
@@ -573,7 +573,7 @@ Parsed CallsStart(const Args& args, const ParseContext&) {
 Parsed CallsRead(const Args& args, const ParseContext&) {
     Command command;
     if (!CallsSlot(args, command)) return Fail("slot is 0.." + std::to_string(ue::MaxCallsSlots - 1));
-    command.callsAfter = args.Int("start");
+    command.callsAfter = args.Int("cursor");
     command.request.op = ue::op::CallsRead;
     command.kind = Kind::Calls;
     command.target = args.Has("stop") ? "stop" : "read";
@@ -657,7 +657,7 @@ Parsed NameFind(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
     uint64_t from = 0;
-    if (!Cursor(args, INT32_MAX, from)) return Fail("start is a cursor");
+    if (!Cursor(args, INT32_MAX, from)) return Fail("view.cursor is a cursor");
     request.args[1] = from;
     if (args.Str("text").size() >= MaxText) return Fail("text is too long");
     request.op = ue::op::NameFind;

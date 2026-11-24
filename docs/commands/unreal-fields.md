@@ -112,7 +112,7 @@ form.
 
 One page of a reflected `TArray`, `TSet` or `TMap` field on a live instance,
 header and elements read in the same tick. Arrays page by index; sets and
-maps by slot, so `view.start` takes the printed `next_cursor`. Sets and maps
+maps by slot, so `view.cursor` takes the printed `next_cursor`. Sets and maps
 need the layout `mode` `types` reports (`stride`): the header is checked
 first and a failed check is refused with its reason.
 

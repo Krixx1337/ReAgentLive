@@ -13,7 +13,7 @@ same for one verb. Result keys and the notation: [result shapes](results.md); th
 - A call is one JSON object per line: {"verb": "read", "args": {"addr": "0x1000", "len": 16}}; "meta", "timing", "big" as true, "max_chars" a number. A line may be a list of calls.
 - help with verb: args, result, notes, example; with json: the whole table. Unknown keys, missing required ones and wrong types are refused (kind schema) with a corrected example.
 - An int is a number or "0x..." text. An addr is "0x...", a literal ref, {"module": "x.dll", "rva": N} or {"base": <addr>, "offset": N}.
-- A chain is {"base": <addr>, "chain": [N, N]} (read, peek, mem-snap, vtable, disasm): each offset but the last reads a pointer; one alone is refused.
+- A chain is {"base": <addr>, "chain": [N, N]} (read, peek, mem-snap, vtable, disasm, xrefs, touches, sig-bytes): each offset but the last reads a pointer; one alone is refused.
 - A path is a list of field names: ["Info", "Owner"]. Keys that do not apply are omitted from a result.
 - A --caller tool console caps a result at 25000 characters (a digest instead, with next); max_chars sets the cap, big lifts it. Past --context-limit (default 400000) envelopes carry context_warning.
 - One console per agent: a second one is refused as busy.
@@ -28,7 +28,7 @@ verb takes the keys that apply to its result (its row lists them); a key it does
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `start` | `int` |  |  | next_cursor of the page before |
+| `cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `limit` | `int` |  |  | rows at most (0: see notes) |
 | `match` | `str` |  |  | keep rows whose name contains this (any case) |
 | `fields` | `[path]` |  |  | the row members to keep (paths into structs and arrays) |
@@ -275,19 +275,21 @@ Pack `native`.
 | `type` | `hex\|u32\|i32\|u64\|ptr\|f32\|f64\|text\|wtext` | yes |  | the value's type (wtext: text as UTF-16) |
 | `value` | `scalar` | yes |  | a string for text or hex pairs, else a number (u64, ptr also "0x...") |
 | `scope` | `obj` |  |  | where to look (default: main module) |
-| `scope.module` | `str` |  |  | one module, in place of start and to |
-| `scope.start` | `addr` |  |  | start, or a job's next_cursor |
+| `scope.module` | `str` |  |  | one module, in place of from and to |
+| `scope.from` | `addr` |  |  | where to start, in place of module |
 | `scope.to` | `addr` |  |  | end |
 | `scope.writable` | `bool` |  |  | writable memory only, every module and heap |
 | `scope.heap` | `bool` |  |  | private memory only (heaps, stacks) |
 | `scope.paged` | `bool` |  |  | also non-resident pages (slow) |
 | `align` | `int` |  |  | 1, 2, 4, 8 or 16 (default: the type's size) |
-| `wait` | `int` |  | `10` | seconds to wait for the job (0..60) |
+| `wait` | `dur` |  | `10` | how long to wait for the job (up to 60 s) |
+| `view` | `obj` |  |  | paging and filters |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `max` | `int` |  | `64` | hits at most (1..507); the job stops when full |
 
 Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, from: addr, to: addr, scanned: f64, next_cursor?: addr}`
 
-Still running after wait: state running and hits so far; search-job with its id for more or stop. A new search stops the last job. next_cursor resumes as scope.start.
+Still running after wait: state running and hits so far; search-job with its id for more or stop. A new search stops the last job. next_cursor continues it: the same search with view.cursor.
 
 ```json
 {"args":{"type":"hex","value":"00 00 80 3f"},"verb":"search"}
@@ -302,7 +304,7 @@ Pack `native`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `job` | `int` | yes |  | the job a search returned |
-| `stop` | `bool` |  |  | end the job first; its next_cursor resumes it |
+| `stop` | `bool` |  |  | end the job first; its next_cursor continues it (search with view.cursor) |
 
 Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, from: addr, to: addr, scanned: f64, next_cursor?: addr}`
 
@@ -425,10 +427,10 @@ Pack `native`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `addr` | `addr` | yes |  | the address |
+| `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
 | `len` | `int` |  | `64` | bytes |
 
-Result: `{address: addr, module?: str, rva?: hex, length: u64, capped?: bool, pattern: str, list: str, suggested: {pattern: str, list: str, fixed_bytes: u64, fields: [{offset: u64, size: u64, kind: call\|jump\|branch\|rip\|absolute, target: addr, target_module?: str, target_rva?: hex}], decoded?: u64}}`
+Result: `{address: addr, module?: str, rva?: hex, length: u64, capped?: bool, pattern: str, list: str, suggested: {pattern: str, list: str, fixed_bytes: u64, fields: [{offset: u64, size: u64, kind: call\|jump\|branch\|rip\|absolute, target: addr, target_module?: str, target_rva?: hex}], decoded?: u64}, chain?: Chain}`
 
 ```json
 {"args":{"addr":"0x140001000"},"verb":"sig-bytes"}
@@ -504,18 +506,19 @@ Pack `native`.
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
 | `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
-| `count` | `int` |  | `24` | instructions (1..1024; with function: up to 2048) |
-| `function` | `bool` |  |  | the whole containing function (exception table, else a walk from addr) |
-| `resume` | `bool` |  |  | with function: start at addr (a cut listing's next) |
-| `save` | `obj` |  |  | with function: write it and its read-only data to files for a static tool |
+| `count` | `int` |  | `24` | instructions (1..1024; with whole: up to 2048) |
+| `whole` | `bool` |  |  | the whole containing function (exception table, else a walk from addr) |
+| `save` | `obj` |  |  | with whole: write it and its read-only data to files for a static tool |
 | `save.file` | `file` | yes |  | the file to write |
 | `save.callees` | `int` |  |  | also the functions it calls, this many levels (1..3) |
 | `save.labels` | `file` |  |  | name from this labels file |
-| `follow` | `bool` |  |  | step through up to 3 unconditional direct jumps |
+| `jumps` | `bool` |  |  | step through up to 3 unconditional direct jumps |
+| `view` | `obj` |  |  | paging and filters |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
-Result: `{address: addr, module?: str, rva?: hex, size: u64, stop: str, next?: addr, rows?: [{address: addr, module?: str, rva?: hex, bytes?: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, import?: str, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool, value?: f64, value_type?: str, value_hex?: bytes}], strings?: [{text: str, wide?: bool, at: [addr]}], saved?: str, saved_rows?: u64, functions?: [{start: addr, end: addr, rows: u64, depth?: u32}], skipped?: [{address: addr, why: str}], chunks?: [{start: addr, end: addr, rows: u64, depth?: u32}], tables?: [{jump: addr, table: addr, targets: u32}], jumpouts_left?: [addr], capped?: bool, layouts?: {classes: [str], types: u64}, piece?: {start: addr, end: addr}, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{from: addr, to: addr, to_module?: str, to_rva?: hex}], chain?: Chain}`
+Result: `{address: addr, module?: str, rva?: hex, size: u64, stop: str, next_cursor?: addr, rows?: [{address: addr, module?: str, rva?: hex, bytes?: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, import?: str, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool, value?: f64, value_type?: str, value_hex?: bytes}], strings?: [{text: str, wide?: bool, at: [addr]}], saved?: str, saved_rows?: u64, functions?: [{start: addr, end: addr, rows: u64, depth?: u32}], skipped?: [{address: addr, why: str}], chunks?: [{start: addr, end: addr, rows: u64, depth?: u32}], tables?: [{jump: addr, table: addr, targets: u32}], jumpouts_left?: [addr], capped?: bool, layouts?: {classes: [str], types: u64}, piece?: {start: addr, end: addr}, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{from: addr, to: addr, to_module?: str, to_rva?: hex}], chain?: Chain}`
 
-Keep count small: a whole function belongs in save, not a reply. function stops at 2048 instructions or 16 KB (next: continue with resume). save leaves rows out of the result. Without an exception-table entry, save refuses a walk from past padding unless resume.
+Keep count small: a whole function belongs in save, not a reply. whole stops at 2048 instructions or 16 KB (next_cursor: the same call with view.cursor continues there; a cursor also starts a save at that exact address). save leaves rows out of the result. Without an exception-table entry, save refuses a walk from past padding unless view.cursor names the address.
 
 ```json
 {"args":{"addr":"0x140001000"},"verb":"disasm"}
@@ -529,11 +532,11 @@ Pack `native`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `addr` | `addr` | yes |  | the address |
+| `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
 | `module` | `str` |  |  | scan another loaded module |
-| `all` | `bool` |  |  | also list unknown hits (likely chance bytes) |
+| `loose` | `bool` |  |  | also list unverified hits (likely chance bytes) |
 
-Result: `{address: addr, module?: str, rva?: hex, scanned: str, kinds: {<key>: u64}, rows: [{kind: call\|jmp\|jcc\|lea\|load\|store\|rip\|pointer\|unknown, field: addr, instruction?: addr, module?: str, rva?: hex, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool}], capped: bool, scan_ms: i64}`
+Result: `{address: addr, module?: str, rva?: hex, scanned: str, kinds: {<key>: u64}, rows: [{kind: call\|jmp\|jcc\|lea\|load\|store\|rip\|pointer\|unknown, field: addr, instruction?: addr, module?: str, rva?: hex, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool}], capped: bool, scan_ms: i64, chain?: Chain}`
 
 A code row outside every exception-table entry carries unlisted, its function the piece holding it.
 
@@ -549,13 +552,13 @@ Pack `native`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `addr` | `addr` | yes |  | the address |
+| `addr` | `chain` | yes |  | the address, or a pointer chain to follow first |
 | `offsets` | `[int]` | yes |  | the struct offsets to look for (up to 8, each above 0) |
 | `range` | `int` |  | `524288` | bytes each side of addr (1..0x400000) |
 | `access` | `write\|read\|any` |  | `"any"` | write: stores and read-modify-writes; read: loads and read-modify-writes, ranked by offsets loaded, rows storing every offset they load dropped; any: all uses, lea too |
 | `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp) |
 
-Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64}`
+Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64, chain?: Chain}`
 
 Most offsets first, writes marked. Unlisted code is scanned in pieces (rows carry unlisted). Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register. access read drops struct copies and constructors. The whole image for a few offsets: disp-scan.
 
@@ -578,12 +581,12 @@ Pack `native`.
 | `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp) |
 | `same_base` | `bool` |  |  | only functions using every disp on one base register (2+ disps): functions lists them |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `128` | rows at most (0: see notes) |
 
-Result: `{disps: [hex], access: str, module: str, from: addr, to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, disp: hex, base: str, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], functions?: [{function: hex, base: str, hits: u64}], capped: bool, next_cursor?: addr, scan_ms: i64, read_ms: i64}`
+Result: `{disps: [hex], access: str, module: str, from: addr, to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, disp: hex, base: str, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], functions?: [{function: hex, base: str, hits: u64}], next_cursor?: addr, scan_ms: i64, read_ms: i64}`
 
-Each call scans up to 8 s and stops at view.limit hits (default 128, at most 4096). view.start resumes at next_cursor (absent at the end). A full sweep takes seconds through the agent's image window, else about 1 MB/s. Sweeps over many pages belong in a run plan. Jump tables can decode as code: check a surprising hit with disasm. Near one function: touches.
+Each call scans up to 8 s and stops at view.limit hits (default 128, at most 4096). view.cursor continues at next_cursor (absent at the end). A full sweep takes seconds through the agent's image window, else about 1 MB/s. Sweeps over many pages belong in a run plan. Jump tables can decode as code: check a surprising hit with disasm. Near one function: touches.
 
 ```json
 {"args":{"offsets":[16]},"verb":"disp-scan"}
@@ -629,7 +632,7 @@ Pack `explore`.
 | `live` | `bool` |  |  | live instances only: no Default__ or archetype objects |
 | `outer` | `str` |  |  | objects under this outer: a ref or "0x...", or an outer's name text |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  |  | rows at most (0: see notes) |
 
 Result: `{rows: [Object], total?: u64, from: u32, next_cursor?: u32}`
@@ -652,13 +655,13 @@ Pack `observe`.
 | `outer` | `str` |  |  | objects under this outer: a ref or "0x...", or an outer's name text |
 | `diff` | `bool` |  |  | only the classes whose count differs from the last census of that cls and outer |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
 | `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
 
 Result: `{filter?: str, classes: u64, instances: u64, before?: {classes: u64, instances: u64}, ms: i64, rows: [{class: str, ref: ref, count: u32, before?: u32, samples: [ref]}], total: u64, from: u64, next_cursor?: u64, hint?: str}`
 
-view.start (next_cursor) pages the stored census without a rescan. Every census is the next diff's baseline; diff is refused with no earlier census under the same filter.
+view.cursor (next_cursor) pages the stored census without a rescan. Every census is the next diff's baseline; diff is refused with no earlier census under the same filter.
 
 ```json
 {"args":{},"verb":"census"}
@@ -674,7 +677,7 @@ Pack `explore`.
 |---|---|---|---|---|
 | `text` | `text` | yes |  | part of the pooled name |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
 Result: `{rows: [ue.Name], from: u32, next_cursor?: u32}`
 
@@ -710,7 +713,7 @@ Pack `explore`.
 |---|---|---|---|---|
 | `cls` | `str` | yes |  | a class or struct name |
 | `paths` | `[path]` | yes |  | a field path per column, as get takes |
-| `duration` | `int` |  |  | one column: repeat for 1..60 s and report changes |
+| `duration` | `dur` |  |  | one column: repeat for this long (up to 60 s) and report changes |
 | `where` | `filter` |  |  | only instances whose field's value contains the text, any case (JSON text if not a string or name); Outer, Name and Class match the object's own |
 | `outer` | `str` |  |  | objects under this outer: a ref or "0x...", or an outer's name text |
 | `view` | `obj` |  |  | paging and filters |
@@ -718,7 +721,7 @@ Pack `explore`.
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 | `view.elements` | `int` |  | `8` | elements per array, set or map (1..256) |
 
-Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], seconds?: u32, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, matched?: u64, omitted?: u64, unnamed?: u32}`
+Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], seconds?: f64, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, matched?: u64, omitted?: u64, unnamed?: u32}`
 
 Read-only: a function is refused (call-each calls one). A path through a pointer is followed per instance (same_tick false). A failed cell is null with an errors entry.
 
@@ -740,7 +743,7 @@ Pack `modify`; **writes or calls**.
 | `block` | `bytes` |  |  | the raw parameter block as hex pairs (none: zeroed) |
 | `dry` | `bool` |  |  | resolve the function and build the block; call nothing |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
 | `view.fields` | `[path]` |  |  | the row members to keep (paths into structs and arrays) |
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
@@ -785,13 +788,13 @@ Pack `observe`.
 |---|---|---|---|---|
 | `cls` | `str` | yes |  | a class name: its live instances and its subclasses' |
 | `function` | `str` | yes |  | the function, as Owner:Function where the name is ambiguous |
-| `duration` | `int` |  |  | repeat for 1..60 s and report changes |
+| `duration` | `dur` |  |  | repeat for this long (up to 60 s) and report changes |
 | `outer` | `str` |  |  | objects under this outer: a ref or "0x...", or an outer's name text |
 | `view` | `obj` |  |  | paging and filters |
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 
-Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], seconds?: u32, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, matched?: u64, omitted?: u64, unnamed?: u32}`
+Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], seconds?: f64, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, matched?: u64, omitted?: u64, unnamed?: u32}`
 
 call-pure's checks per instance. The function takes no inputs; its block is 1..64 bytes.
 
@@ -928,7 +931,7 @@ Pack `explore`.
 | `object` | `str` | yes |  | an object: ref, "0x..." or Default__ name |
 | `field` | `str` | yes |  | the field, as Owner:Field where the name is ambiguous |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
 Result: `{ref: ref, field: str, kind: array\|set\|map, total: u64, rows: [{key?: value, value: value, key_object?: Object, value_object?: Object}], from: u32, next_cursor?: u32, truncated: bool, unnamed?: u32, tick_accurate?: bool}`
 
@@ -949,7 +952,7 @@ Pack `explore`.
 | `object` | `str` | yes |  | an object: ref, "0x..." or Default__ name |
 | `at` | `num` |  |  | a curve table: each row's value at this time |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
 | `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
 | `view.fields` | `[path]` |  |  | the row members to keep (paths into structs and arrays) |
@@ -1043,7 +1046,7 @@ Pack `modify`.
 | `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
 | `stop` | `bool` |  |  | end the recording now (restores the pointer) and return its calls |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
 Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, ms: f64, thread: u32, object: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
 
@@ -1222,7 +1225,7 @@ Pack `explore`.
 |---|---|---|---|---|
 | `object` | `str` | yes |  | an object (ref or "0x..."), or a class or struct by name |
 | `view` | `obj` |  |  | paging and filters |
-| `view.start` | `int` |  |  | next_cursor of the page before |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
 
 Result: `{ref: ref, rows: [{owner?: str, name: str, via?: str}], from: u32, next_cursor?: u32}`

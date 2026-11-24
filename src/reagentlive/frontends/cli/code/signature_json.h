@@ -167,6 +167,7 @@ struct SigBytes {
     std::string pattern, list;
     SigSuggested suggested;
     std::optional<bool> capped;   // The length asked passed sig::MaxPattern: cut to it.
+    std::optional<Chain> chain;
     template<class V> static void Describe(V& v) {
         v("address", &SigBytes::address);
         v.flat("", &SigBytes::where);
@@ -175,6 +176,7 @@ struct SigBytes {
         v("pattern", &SigBytes::pattern);
         v("list", &SigBytes::list);
         v("suggested", &SigBytes::suggested);
+        v("chain", &SigBytes::chain);
     }
 };
 }

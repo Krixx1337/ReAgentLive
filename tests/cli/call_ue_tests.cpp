@@ -100,7 +100,7 @@ TEST_CASE("a call's object can be a default object by name, never a class") {
 }
 
 TEST_CASE("a typed call's fields, start and limit page its returned arrays") {
-    auto rows = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "view": {"fields": [["ItemTag"], ["Variations", "Price"]], "start": 100, "limit": 0}}})");
+    auto rows = Call(R"({"verb": "call", "args": {"object": "0x1000#5:9", "function": "Vendor:GetEntries", "view": {"fields": [["ItemTag"], ["Variations", "Price"]], "cursor": 100, "limit": 0}}})");
     REQUIRE(rows.has_value());
     CHECK(rows->kind == Kind::TypedCall); // Implied: no params needed.
     CHECK(rows->rowPaths == std::vector<std::string>{"ItemTag", "Variations.Price"});
@@ -249,15 +249,15 @@ TEST_CASE("func resolves a named entry without a call payload") {
 }
 
 TEST_CASE("funcs pages the functions; func reads the signature too") {
-    auto functions = Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"start": 32, "match": "Socket"}}})");
+    auto functions = Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"cursor": 32, "match": "Socket"}}})");
     REQUIRE(functions.has_value());
     CHECK(functions->request.op == ue::op::Functions);
     CHECK(ue::GetRef(functions->request) == One);
     CHECK(std::string_view(functions->request.text) == "Socket");
     CHECK(functions->request.length == 32);
     CHECK(ue::Check(functions->request) == Status::Ok);
-    CHECK(Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"start": 32}}})").has_value());
-    CHECK(Why(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"start": 99999, "match": "Socket"}}})").starts_with("start is"));
+    CHECK(Call(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"cursor": 32}}})").has_value());
+    CHECK(Why(R"({"verb": "funcs", "args": {"object": "0x1000#5:9", "view": {"cursor": 99999, "match": "Socket"}}})").starts_with("view.cursor is"));
     const auto signature = Call(R"({"verb": "func", "args": {"object": "0x1000#5:9", "function": "SceneComponent:GetSocketTransform"}})");
     REQUIRE(signature.has_value());
     CHECK(signature->request.op == ue::op::Function);
@@ -348,7 +348,7 @@ TEST_CASE("outer takes an object or an outer's name, on find, each and census; e
 }
 
 TEST_CASE("find takes text, a class filter, a cursor and a row limit") {
-    const auto both = Call(R"({"verb": "find", "args": {"text": "Vendor", "cls": "Character", "view": {"start": 4096}}})");
+    const auto both = Call(R"({"verb": "find", "args": {"text": "Vendor", "cls": "Character", "view": {"cursor": 4096}}})");
     REQUIRE(both.has_value());
     CHECK(both->request.op == ue::op::Find);
     CHECK(std::string_view(both->request.text) == "Vendor");
@@ -369,10 +369,10 @@ TEST_CASE("find takes text, a class filter, a cursor and a row limit") {
     REQUIRE(live.has_value());
     CHECK(live->request.flags == ue::FindLive);
     CHECK(ue::Check(live->request) == Status::Ok);
-    CHECK(std::string_view(Call(R"({"verb": "find", "args": {"text": "two words", "view": {"start": 1}}})")->request.text) == "two words");
+    CHECK(std::string_view(Call(R"({"verb": "find", "args": {"text": "two words", "view": {"cursor": 1}}})")->request.text) == "two words");
     CHECK(Why(R"({"verb": "find"})").starts_with("text: give text, cls or outer"));
     CHECK(Why(R"({"verb": "find", "args": {"cls": "A B"}})").starts_with("cls is"));
-    CHECK(Why(R"({"verb": "find", "args": {"text": "x", "view": {"start": -1}}})").starts_with("view.start: "));
+    CHECK(Why(R"({"verb": "find", "args": {"text": "x", "view": {"cursor": -1}}})").starts_with("view.cursor: "));
 }
 
 TEST_CASE("object verbs take a bare class name for the console to resolve") {
@@ -412,7 +412,7 @@ TEST_CASE("census takes an optional class, a match, a page and diff") {
     CHECK(parsed->changed);
     CHECK(parsed->match == "proj");
     CHECK(parsed->limit == 5);
-    parsed = Call(R"({"verb": "census", "args": {"cls": "Actor", "view": {"match": "zone", "start": 100, "limit": 50}}})");
+    parsed = Call(R"({"verb": "census", "args": {"cls": "Actor", "view": {"match": "zone", "cursor": 100, "limit": 50}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->from == 100);
     CHECK(parsed->limit == 50);
@@ -424,13 +424,13 @@ TEST_CASE("census takes an optional class, a match, a page and diff") {
 }
 
 TEST_CASE("name-find takes text and a cursor") {
-    const auto parsed = Call(R"({"verb": "name-find", "args": {"text": "Jump", "view": {"start": 131072}}})");
+    const auto parsed = Call(R"({"verb": "name-find", "args": {"text": "Jump", "view": {"cursor": 131072}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.op == ue::op::NameFind);
     CHECK(std::string_view(parsed->request.text) == "Jump");
     CHECK(parsed->request.args[1] == 131072);
     CHECK(ue::Check(parsed->request) == Status::Ok);
-    CHECK(Why(R"({"verb": "name-find", "args": {"view": {"start": 3}}})").starts_with("missing text"));
+    CHECK(Why(R"({"verb": "name-find", "args": {"view": {"cursor": 3}}})").starts_with("missing text"));
     Request empty{};
     empty.op = ue::op::NameFind;
     CHECK(ue::Check(empty) == Status::BadRequest);
@@ -455,7 +455,8 @@ TEST_CASE("each takes a class, its columns and an optional repeat") {
     CHECK(Why(many).starts_with("paths: at most 16 columns"));
     CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn"}})").starts_with("missing paths"));
     CHECK(Why(R"({"verb": "each", "args": {"cls": "0x1000#5:9", "paths": [["Health"]]}})").starts_with("cls is a class name"));
-    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "duration": 0}})").starts_with("duration is"));
+    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "duration": 0}})").starts_with("duration: "));
+    CHECK(Call(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "duration": 0.5}})")->seconds == 0.5);
     CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "duration": 61}})").starts_with("duration is"));
 }
 
@@ -516,7 +517,7 @@ TEST_CASE("calls-start takes an object or class, a function and a duration; read
     CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire"}})").starts_with("missing duration"));
     CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire", "duration": 5, "owner": "7"}})")
               .starts_with("unknown key 'owner'"));
-    const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "view": {"start": 40}}})");
+    const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "view": {"cursor": 40}}})");
     REQUIRE(read.has_value());
     CHECK(read->target == "read");
     CHECK(read->callsSlot == 3);
@@ -525,7 +526,7 @@ TEST_CASE("calls-start takes an object or class, a function and a duration; read
     REQUIRE(latest.has_value());
     CHECK(latest->target == "stop");
     CHECK(latest->callsSlot == ue::CallsLatest);
-    CHECK(Call(R"({"verb": "calls-read", "args": {"stop": true, "view": {"start": 5}}})")->callsAfter == 5);
+    CHECK(Call(R"({"verb": "calls-read", "args": {"stop": true, "view": {"cursor": 5}}})")->callsAfter == 5);
     CHECK(Why(R"({"verb": "calls-stop"})").starts_with("unknown verb"));
     CHECK(Why(R"({"verb": "calls-read", "args": {"slot": 8}})").starts_with("slot is"));
 }
@@ -573,13 +574,13 @@ TEST_CASE("entries takes an object, a field and an optional cursor") {
     CHECK(parsed->request.op == ue::op::Entries);
     CHECK(parsed->target == "Comp:Attributes");
     CHECK(parsed->limit == 0);
-    CHECK(Call(R"({"verb": "entries", "args": {"object": "0x1000#5:9", "field": "Attributes", "view": {"start": 12}}})")->limit == 12);
+    CHECK(Call(R"({"verb": "entries", "args": {"object": "0x1000#5:9", "field": "Attributes", "view": {"cursor": 12}}})")->limit == 12);
     CHECK(Why(R"({"verb": "entries", "args": {"object": "0x1000#5:9"}})").starts_with("missing field"));
     CHECK(Why(R"({"verb": "entries", "args": {"object": "0x1000#5:9", "field": ""}})").starts_with("field is"));
 }
 
 TEST_CASE("rows pages a data table with call's row options") {
-    auto rows = Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "view": {"match": "Rifle", "fields": [["Price"], ["Item", "TagName"]], "start": 10, "limit": 0}}})");
+    auto rows = Call(R"({"verb": "rows", "args": {"object": "0x1000#5:9", "view": {"match": "Rifle", "fields": [["Price"], ["Item", "TagName"]], "cursor": 10, "limit": 0}}})");
     REQUIRE(rows.has_value());
     CHECK(rows->kind == Kind::Rows);
     CHECK(ue::GetRef(rows->request) == One);

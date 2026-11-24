@@ -463,7 +463,7 @@ TEST_CASE("xref kinds from the bytes in front of the field") {
 TEST_CASE("fast-lane calls") {
     const std::vector<Module> modules{{"Game.exe", Base, 0x100000}};
     auto disasm = Call(R"({"verb": "disasm", "args": {"addr": {"module": "Game.exe", "rva": "0x1000"}, "count": 12,
-        "function": true, "follow": true}})", modules);
+        "whole": true, "jumps": true}})", modules);
     REQUIRE(disasm);
     CHECK(disasm->kind == Kind::Disasm);
     CHECK(disasm->request.address == Base + 0x1000);
@@ -473,26 +473,29 @@ TEST_CASE("fast-lane calls") {
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000"}})")->limit == DefaultDisasm);
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 1024}})")->limit == 1024);
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 1025}})").error().starts_with("count"));
-    // function: the whole function by default, a count up to its cap; resume and save need it.
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true}})")->limit == dis::MaxFunctionInstructions);
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 300, "function": true}})")->limit == 300);
-    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 2049, "function": true}})"));
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "resume": true}})")->resume);
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl"}}})")->file == "fn.jsonl");
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "resume": true}})").error().starts_with("resume"));
+    // whole: the whole function by default, a count up to its cap; save needs it. view.cursor starts exactly there.
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true}})")->limit == dis::MaxFunctionInstructions);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 300, "whole": true}})")->limit == 300);
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "count": 2049, "whole": true}})"));
+    const auto cursor = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "view": {"cursor": "0x1200"}}})");
+    REQUIRE(cursor);
+    CHECK(cursor->resume);
+    CHECK(cursor->request.address == 0x1200);
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "save": {"file": "fn.jsonl"}}})")->file == "fn.jsonl");
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "view": {"cursor": "0x1010"}}})")->request.address == 0x1010);
     CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "save": {"file": "fn.jsonl"}}})").error().starts_with("save"));
-    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "fn.jsonl", "callees": 2, "labels": "l.jsonl"}}})");
+    const auto callees = Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "save": {"file": "fn.jsonl", "callees": 2, "labels": "l.jsonl"}}})");
     REQUIRE(callees);
     CHECK(callees->calleeDepth == 2);
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "f", "callees": 0}}})").error().starts_with("callees must be 1..3"));
-    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "f", "callees": 4}}})").error().starts_with("callees must be 1..3"));
-    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"file": "f", "callees": true}}})")); // A depth, not a bool.
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "save": {"file": "f", "callees": 0}}})").error().starts_with("callees must be 1..3"));
+    CHECK(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "save": {"file": "f", "callees": 4}}})").error().starts_with("callees must be 1..3"));
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "save": {"file": "f", "callees": true}}})")); // A depth, not a bool.
     CHECK(callees->labels == "l.jsonl");
-    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "callees": true}})")); // Needs save.
-    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "labels": "l.jsonl"}})"));
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "callees": true}})")); // Needs save.
+    CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "labels": "l.jsonl"}})"));
     CHECK_FALSE(Call(R"({"verb": "disasm", "args": {"addr": "0x1000", "bogus": true}})"));
 
-    auto xrefs = Call(R"({"verb": "xrefs", "args": {"addr": "0x1000", "module": "engine.dll", "all": true}})");
+    auto xrefs = Call(R"({"verb": "xrefs", "args": {"addr": "0x1000", "module": "engine.dll", "loose": true}})");
     REQUIRE(xrefs);
     CHECK(xrefs->kind == Kind::Xrefs);
     CHECK(xrefs->request.op == op::Xrefs);
@@ -569,7 +572,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK(compact["rows"][0]["target_rva"] == "0x1005");
     CHECK(compact["rows"][0]["string"] == "Weapon.cpp");
     CHECK(compact.dump().size() < json.dump().size());
-    // A function listing without meta: no bytes, rva on the first row only, the strings summary, next.
+    // A function listing without meta: no bytes, rva on the first row only, the strings summary, next_cursor.
     dis::Listing more = listing;
     dis::Instruction second = row;
     second.address = Base + 0x1005;
@@ -583,7 +586,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     REQUIRE(whole["strings"].size() == 1);
     CHECK(whole["strings"][0]["text"] == "Weapon.cpp");
     CHECK(whole["strings"][0]["at"].size() == 2);
-    CHECK(whole["next"] == "0x14000100a");
+    CHECK(whole["next_cursor"] == "0x14000100a");
     const auto wholeFull = Checked(MakeDisasm(Base + 0x1000, more, function, modules, true, true));
     CHECK(wholeFull["rows"][1].contains("bytes"));
     CHECK(wholeFull["rows"][1]["rva"] == "0x1005");
@@ -621,7 +624,7 @@ TEST_CASE("fast-lane results have their documented keys") {
     CHECK_FALSE(summary.contains("strings"));
     CHECK(summary["saved"] == "fn.jsonl");
     CHECK(summary["saved_rows"] == listed);
-    CHECK(summary["next"] == "0x14000100a");
+    CHECK(summary["next_cursor"] == "0x14000100a");
     CHECK(summary.contains("function"));
 }
 

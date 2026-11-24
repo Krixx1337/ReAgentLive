@@ -110,14 +110,21 @@ class McpTests(unittest.TestCase):
         self.assertEqual(set(schema['properties']), {'addr', 'len', 'type', 'max_chars'})   # max_chars: every tool's.
         self.assertFalse(schema['additionalProperties'])          # A guessed argument is refused.
         self.assertEqual(schema['properties']['type']['type'], 'string')
-        self.assertIn('rows', tools['ue_find'].output_schema['properties'])
+        self.assertIsNone(tools['ue_find'].output_schema)         # Off by default.
         self.assertEqual(tools['batch'].input_schema['properties']['calls']['type'], 'array')
         write = tools['write'].input_schema
         self.assertNotIn('required', write)                       # The row's required args only: clear needs no addr.
         self.assertEqual(tools['read'].input_schema['required'], ['addr'])
         self.assertIn('undo', write['properties'])
         self.assertEqual(tools['search'].input_schema['properties']['type']['enum'][:2], ['hex', 'u32'])
-        self.assertIn('Example: read {"addr": ', tools['read'].description)
+        self.assertTrue(all('Example:' not in tool.description for tool in tools.values()))   # `help` has them.
+        views = [t.input_schema['properties']['view'] for t in tools.values() if 'view' in t.input_schema['properties']]
+        self.assertTrue(views)
+        for view in views:      # Keys, types and defaults stay; what each key means is in the instructions once.
+            self.assertTrue(view['properties'])
+            self.assertTrue(all('description' not in key for key in view['properties'].values()))
+        for key in {key for view in views for key in view['properties']}:
+            self.assertIn(key + ' (', reagentlive_mcp.INSTRUCTIONS)
         self.assertEqual(schema['properties']['len']['anyOf'][0]['type'], 'integer')   # Or "0x..." text.
 
     def tool_list(self, **options):
@@ -126,7 +133,9 @@ class McpTests(unittest.TestCase):
         return self.run_client(body, **options)
 
     def test_compact_output_schemas_keep_the_top_level_keys_only(self):
-        compact, off = (self.tool_list(output_schemas=p) for p in ('compact', 'off'))
+        compact, off = (self.tool_list(output_schemas=p) for p in ('on', 'off'))
+        default = self.tool_list()
+        self.assertTrue(all(tool.output_schema is None for tool in default.values()))   # Opt in with --output-schemas on.
         del compact['packs'], off['packs']   # The adapter's own tool has no output schema.
         self.assertEqual(set(off), set(compact))
         find = next(row for row in self.table['rows'] if row['verb'] == 'find')

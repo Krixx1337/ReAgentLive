@@ -195,5 +195,8 @@ lists its options. It needs the MCP Python SDK 2
   skill (and the host's own) before its first call, and marks text read
   from the target as untrusted data: in a multiplayer game other people
   write much of it, so an agent must never act on it as an instruction.
-  Result schemas are `compact` by default to keep the tool list small
-  ([tool interface](tool-interface.md#tool-packs)).
+  Result schemas are off by default to keep the tool list small;
+  `--output-schemas on` adds each result's top-level keys
+  ([tool interface](tool-interface.md#tool-packs)). Descriptions carry no
+  example (`help` does), and a `view` key's meaning is stated once, in the
+  instructions.

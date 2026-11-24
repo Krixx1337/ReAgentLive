@@ -111,18 +111,20 @@ std::string SaveFile(const char* name) {
 TEST_CASE("disasm with save walks past a one-byte decoy entry and refuses an empty listing") {
     // A decoy at the function's start: walked to its return and saved.
     const auto file = SaveFile("decoy.jsonl");
-    const auto saved = Result(CallText("disasm", {{"addr", At(0x1000)}, {"function", true}, {"save", {{"file", file}}}}));
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1000)}, {"whole", true}, {"save", {{"file", file}}}}));
     CHECK(saved["saved_rows"] == 4);
     CHECK(saved["stop"] == "walk end");
     CHECK(std::filesystem::file_size(file) > 0);
-    // resume in a one-byte chunk: walked too.
-    const Json resume{{"function", true}, {"resume", true}, {"save", {{"file", file}}}};
-    const auto chunk = Result(CallText("disasm", With({{"addr", At(0x1200)}}, resume)));
+    // view.cursor in a one-byte chunk: walked too.
+    const auto resume = [&](uint32_t rva) {
+        return Json{{"addr", At(rva)}, {"whole", true}, {"view", {{"cursor", At(rva)}}}, {"save", {{"file", file}}}};
+    };
+    const auto chunk = Result(CallText("disasm", resume(0x1200)));
     CHECK(chunk["saved_rows"] == 3);
     // Without save the listing is the same walk.
-    CHECK(Result(CallText("disasm", {{"addr", At(0x1000)}, {"function", true}}))["rows"].size() == 4);
+    CHECK(Result(CallText("disasm", {{"addr", At(0x1000)}, {"whole", true}}))["rows"].size() == 4);
     // Nothing decodes: a refusal, and the console keeps running.
-    const auto records = RunLines(CallsText({CallOf("disasm", With({{"addr", At(0x1300)}}, resume)), CallOf("status")}));
+    const auto records = RunLines(CallsText({CallOf("disasm", resume(0x1300)), CallOf("status")}));
     REQUIRE(records.size() == 2);
     CHECK_FALSE(records[0]["ok"].get<bool>());
     CHECK(records[0]["error"]["kind"] == "start");
@@ -133,7 +135,7 @@ TEST_CASE("disasm with save walks past a one-byte decoy entry and refuses an emp
 TEST_CASE("disasm save callees follows calls and tail jumps breadth-first to the depth, inside the caps") {
     const auto file = SaveFile("callees.jsonl");
     const auto save = [&](uint32_t rva, int depth) {
-        return Result(CallText("disasm", {{"addr", At(rva)}, {"function", true}, {"save", {{"file", file}, {"callees", depth}}}}));
+        return Result(CallText("disasm", {{"addr", At(rva)}, {"whole", true}, {"save", {{"file", file}, {"callees", depth}}}}));
     };
     const auto starts = [](const Json& saved) {
         std::vector<std::pair<std::string, int>> out;
@@ -172,7 +174,7 @@ TEST_CASE("find with limit pages until N rows and continues after the last") {
     REQUIRE(first["rows"].size() == 30);
     CHECK(first["total"] == 150);
     CHECK(first["rows"][29]["name"] == "Extra_29");
-    const auto rest = Result(CallText("find", {{"text", "Extra_"}, {"view", {{"limit", 200}, {"start", first["next_cursor"]}}}}));
+    const auto rest = Result(CallText("find", {{"text", "Extra_"}, {"view", {{"limit", 200}, {"cursor", first["next_cursor"]}}}}));
     REQUIRE(rest["rows"].size() == 120);
     CHECK(rest["rows"][0]["name"] == "Extra_30");
     CHECK_FALSE(rest.contains("next_cursor"));
@@ -501,7 +503,7 @@ TEST_CASE("assets-export writes each object's fields and a table's rows, one fil
 
 TEST_CASE("disasm with save follows a switch: its table is data, each target a chunk, the rest jumpouts_left") {
     const auto file = SaveFile("switch.jsonl");
-    const auto saved = Result(CallText("disasm", {{"addr", At(0x1400)}, {"function", true}, {"save", {{"file", file}}}}));
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1400)}, {"whole", true}, {"save", {{"file", file}}}}));
     REQUIRE(saved.contains("tables"));
     CHECK(saved["tables"] == Json::parse(R"([{"jump": ")" + At(0x141d) + R"(", "table": ")" + At(0x1508) +
                                          R"(", "targets": 5}])"));
@@ -627,7 +629,7 @@ TEST_CASE("disasm save adds layout rows for the classes its labelled functions n
             << LabelLine(0x1740, "LayoutSpot::Get") << "\n";
     }
     const auto file = SaveFile("save-layout.jsonl");
-    const auto saved = Result(CallText("disasm", {{"addr", At(0x1700)}, {"function", true},
+    const auto saved = Result(CallText("disasm", {{"addr", At(0x1700)}, {"whole", true},
         {"save", {{"file", file}, {"callees", 2}, {"labels", labels}}}}));
     // The longest prefix that is a class (LayoutThing, not LayoutThing_Do); `::` names it whole.
     REQUIRE(saved.contains("layouts"));
@@ -638,7 +640,7 @@ TEST_CASE("disasm save adds layout rows for the classes its labelled functions n
         if (row["row"] == "layout" && row["kind"] != "field") types.push_back(row["name"].get<std::string>());
     CHECK(types == std::vector<std::string>{"LayoutThing", "LayoutSpot", "LayoutBase", "LayoutOther", "ELayoutRole"});
     // No label names a class: no layout rows.
-    const auto plain = Result(CallText("disasm", {{"addr", At(0x1760)}, {"function", true}, {"save", {{"file", file}, {"labels", labels}}}}));
+    const auto plain = Result(CallText("disasm", {{"addr", At(0x1760)}, {"whole", true}, {"save", {{"file", file}, {"labels", labels}}}}));
     CHECK_FALSE(plain.contains("layouts"));
     std::filesystem::remove(file);
     std::filesystem::remove(labels);

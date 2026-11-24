@@ -246,7 +246,7 @@ public:
                     names, truncated, depth, 0));
         }
         out["rows"] = std::move(rows);
-        if (first) out["start"] = first;
+        if (first) out["from"] = first;
         if (first + shown < count) {
             if (depth) { out["truncated"] = true; truncated = true; }
             else out["next_cursor"] = first + shown;

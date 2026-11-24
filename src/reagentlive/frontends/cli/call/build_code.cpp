@@ -6,19 +6,23 @@
 
 namespace reagentlive::cli::build {
 using namespace text;
-// disasm: decoded in the console. function lists the whole function: count defaults to its cap.
+// disasm: decoded in the console. whole lists the whole function: count defaults to its cap. view.cursor
+// starts exactly there (a cut listing's next_cursor), without the jump to the function's start.
 Parsed Disasm(const Args& args, const ParseContext& context) {
     Command command;
-    command.function = args.Has("function");
+    command.function = args.Has("whole");
     const uint64_t most = command.function ? MaxFunctionDisasm : MaxDisasm;
     const uint64_t count = args.Int("count", command.function ? MaxFunctionDisasm : DefaultDisasm);
     if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
     if (!count || count > most) return Fail("count must be 1.." + std::to_string(most));
-    command.resume = args.Has("resume");
+    if (args.Has("cursor")) {
+        command.resume = true;
+        command.chain.clear();
+        command.request.address = args.Int("cursor");
+    }
     command.file = args.Str("file"); // save's file.
     if (args.Has("save") && command.file.empty()) return Fail("file: save needs a file");
-    if (!command.function && command.resume) return Fail("resume needs function");
-    if (!command.function && !command.file.empty()) return Fail("save needs function");
+    if (!command.function && !command.file.empty()) return Fail("save needs whole");
     if (args.Has("callees")) {
         const uint64_t depth = args.Int("callees");
         if (!depth || depth > MaxCalleeDepth) return Fail("callees must be 1.." + std::to_string(MaxCalleeDepth));
@@ -26,7 +30,7 @@ Parsed Disasm(const Args& args, const ParseContext& context) {
     }
     command.labels = args.Str("labels");
     if (args.Has("labels") && command.labels.empty()) return Fail("labels needs a file");
-    command.follow = args.Has("follow");
+    command.follow = args.Has("jumps");
     command.kind = Kind::Disasm;
     command.limit = static_cast<uint32_t>(count);
     command.request.op = op::Read;
@@ -36,8 +40,8 @@ Parsed Disasm(const Args& args, const ParseContext& context) {
 // xrefs: relative fields and stored pointers aimed at addr.
 Parsed Xrefs(const Args& args, const ParseContext& context) {
     Command command;
-    if (auto why = Place(args, "addr", context, command, false); !why.empty()) return Fail(why);
-    command.all = args.Has("all");
+    if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
+    command.all = args.Has("loose");
     command.target = args.Str("module");
     command.kind = Kind::Xrefs;
     command.request.op = op::Xrefs;
@@ -47,7 +51,7 @@ Parsed Xrefs(const Args& args, const ParseContext& context) {
 // touches: functions near addr whose [reg + disp] operands use the offsets.
 Parsed Touches(const Args& args, const ParseContext& context) {
     Command command;
-    if (auto why = Place(args, "addr", context, command, false); !why.empty()) return Fail(why);
+    if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
     command.range = args.Int("range", touch::DefaultRange);
     if (!command.range || command.range > touch::MaxRange) return Fail("range must be 1.." + std::to_string(touch::MaxRange));
     for (const auto& offset : args.At("offsets")) {
@@ -87,7 +91,7 @@ Parsed DispScan(const Args& args, const ParseContext&) {
     }
     if (args.Has("imm")) command.imm = args.Int("imm");
     command.bases = args.Strs("bases");
-    command.request.address = args.Int("start");
+    command.request.address = args.Int("cursor");
     command.limit = static_cast<uint32_t>(std::min<uint64_t>(args.Int("limit", 128), 4096));
     if (!command.limit) return Fail("view.limit: hits a page holds, 1..4096");
     command.kind = Kind::DispScan;
@@ -205,7 +209,7 @@ Parsed LabelsCheck(const Args& args, const ParseContext&) {
 Parsed SigBytes(const Args& args, const ParseContext& context) {
     Command command;
     uint64_t length = args.Int("len", sig::DefaultBytes);
-    if (auto why = Place(args, "addr", context, command, false); !why.empty()) return Fail(why);
+    if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
     if (!length) return Fail("len must be at least 1");
     command.capped = length > sig::MaxPattern;
     length = std::min<uint64_t>(length, sig::MaxPattern);

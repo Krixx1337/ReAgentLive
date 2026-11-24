@@ -66,7 +66,7 @@ Decisions taken where time and context went for no gain in live sessions.
   metadata dominated nearly every command's output. One rule for every
   struct, vectors included. `meta` restores the layout; `get` with `mode`
   `types` keeps it.
-- **No Python keyword as an argument name** (`cls`, `from`, `start`, `type`),
+- **No Python keyword as a top-level argument name** (`cls`, `from`, `start`, `type`),
   so a JSON call, a `batch` entry, the generated function and the tool spell
   it the same. Letting the generator append `_` was the cause of a tool
   saying `class_` where `batch` wanted `class`. A table test refuses a

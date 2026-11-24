@@ -9,15 +9,15 @@ bytecode (Unreal): the native-and-blueprint reference.
 Verbs: `disasm`, `xrefs`, `touches`, `disp-scan`, `sig-check`,
 `labels-check`. Non-obvious parts:
 
-- `disasm` with `function` gives every instruction, the constants its
+- `disasm` with `whole` gives every instruction, the constants its
   loads read and its strings: read formulas from it instead of `read`ing
-  each constant. `follow` goes through a jump stub; an `import` target
+  each constant. `jumps` goes through a jump stub; an `import` target
   names an API call.
 - `touches` needs an address in a native function of the same class (a
   `func` exec). Copies and constructors rank first when the offsets are
   common: add `access` `read` for the code that consumes the block. Rows marked
   unlisted are code outside the exception table: confirm each with
-  `disasm` with `function`.
+  `disasm` with `whole`.
 - "Who writes field X": name rbp in `bases` too, or sweep with `disp-scan`
   (which keeps rbp): optimised code holds structs in rbp, and the default
   hides those writers. `bases` `["rcx"]` narrows to `this`.
@@ -42,14 +42,14 @@ Verbs: `disasm`, `xrefs`, `touches`, `disp-scan`, `sig-check`,
 
 ## Following a native getter
 
-- `func` gives its exec; `disasm` of it with `function` lists it, and each
+- `func` gives its exec; `disasm` of it with `whole` lists it, and each
   `call`'s `target` is the next hop. Follow one level at a time; decompile
   once a function needs it (the static-tool reference).
 - Where the exception table has no entry (a leaf function, or a packed
-  image that leaves real functions out), `disasm` with `function` walks
+  image that leaves real functions out), `disasm` with `whole` walks
   from the address you give: give it the function's start (the byte after
-  the previous `ret`). A listing a cap cut gives `next`: continue with
-  `disasm` at `next` with `function` and `resume`.
+  the previous `ret`). A listing a cap cut gives `next_cursor`: the same
+  call with `view.cursor` set to it continues.
 
 ## Where a virtual call lands
 
@@ -72,16 +72,16 @@ Walk references one address at a time; check each answer before the next.
    `{"verb": "search", "args": {"type": "text", "value": "Weapon.cpp", "scope": {"module": "game.exe"}}}`
    (`type` `wtext` for UTF-16), then `xrefs` of the hit: `lea` rows with a
    `function`. Goes wrong: a string shared by several classes (read each
-   with `disasm` with `function`), or the hit is inside a longer string
+   with `disasm` with `whole`), or the hit is inside a longer string
    (`xrefs` the string's start).
 2. **The function → the table slot holding it.** `xrefs` of the function
    start, kind `pointer`, no `function`. A stub in between: `xrefs` the
-   stub (`disasm` with `follow` shows the hop).
+   stub (`disasm` with `jumps` shows the hop).
 3. **The table → the constructor or destructor installing it.**
    `xrefs` of the table start (usually `lea`, then a `store` into the
    object).
 4. **The constructor → the global it stores the object in.**
-   `disasm` with `function` on the constructor's caller: a `store` with a
+   `disasm` with `whole` on the constructor's caller: a `store` with a
    RIP-relative `target` after the call.
 5. **The global → the functions returning it.** `xrefs` of the global:
    `load` and `lea` rows; `peek` it for the live value.

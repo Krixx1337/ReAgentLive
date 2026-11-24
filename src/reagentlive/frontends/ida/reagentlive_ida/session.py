@@ -42,7 +42,7 @@ def fetch_calls(addrs, folder, callees=True, depth=1):
         save = {'file': path}
         if callees and depth:
             save['callees'] = depth
-        calls.append({'verb': 'disasm', 'args': {'addr': _address_text(address), 'function': True, 'save': save}})
+        calls.append({'verb': 'disasm', 'args': {'addr': _address_text(address), 'whole': True, 'save': save}})
         paths.append(path)
     return calls, paths
 

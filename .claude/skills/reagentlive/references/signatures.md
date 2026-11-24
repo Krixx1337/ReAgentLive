@@ -41,7 +41,7 @@ files: Unreal pack (`docs/commands/labels.md#names-that-survive-a-patch`).
 7. Prefer the shortest unique pattern, then the most fixed bytes. Try
    several candidates in one `sig-check` with `file`. Then hand it to the host's checks.
 
-Without a static database: `disasm` of the entry with `function` for
+Without a static database: `disasm` of the entry with `whole` for
 instruction boundaries, `{"verb": "sig-bytes", "args": {"addr": "0x7ff600001000", "len": 96}}`
 at a boundary for `suggested` masks, and `xrefs` of the entry for callers
 to build a reference signature from. Check

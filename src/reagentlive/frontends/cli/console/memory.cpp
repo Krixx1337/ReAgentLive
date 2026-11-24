@@ -595,7 +595,10 @@ void RunSearch(Session& session, const Command& command, std::string_view jsonCo
         const auto* match = text::ModuleNamed(command.target, LoadedModules(session));
         if (!match && RefreshModules(session)) match = text::ModuleNamed(command.target, LoadedModules(session));
         if (!match) return JsonError(session, jsonCommand, ErrorKind::Module, "no loaded module with that name");
-        query.from = match->base;
+        const bool inside = command.cursor >= match->base && command.cursor < match->base + match->size;
+        if (command.cursor && !inside)
+            return JsonError(session, jsonCommand, ErrorKind::Module, "view.cursor: not inside " + command.target);
+        query.from = command.cursor ? command.cursor : match->base;
         query.to = match->base + match->size;
     } else if (!query.to && !query.writableOnly && !query.privateOnly) {
         if (LoadedModules(session).empty()) RefreshModules(session);
@@ -608,7 +611,7 @@ void RunSearch(Session& session, const Command& command, std::string_view jsonCo
     auto job = client.SearchStart(query);
     if (!job) return CommandError(session, jsonCommand, job.error());
     session.searchText = {job->id, request.length, command.textSearch};
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(command.seconds);
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(command.seconds * 1000));
     while (job->state == SearchJobState::Running && std::chrono::steady_clock::now() < until) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         auto next = client.SearchPoll(job->id, false);

@@ -64,7 +64,7 @@ unless `align` says otherwise.
 
 **Range.** The main module unless `scope` says otherwise: another module, an
 address range, `scope.heap` (process-private memory) or `scope.writable`.
-`scope.start` alone ends with the module it lies in. `search-job` answers
+`scope.from` alone ends with the module it lies in. `search-job` answers
 only for the last job; `scanned` is the share of the range's searchable
 bytes (the committed, readable memory `scope` takes) behind the cursor, 0
 while the job first measures them.
@@ -74,7 +74,8 @@ its worker thread when the host allows it, else in small slices at the start
 of every host tick), so a long scan never holds the console or the request
 slot. The console starts it and polls for up to `wait` seconds. One job at a
 time: a new search stops the last one, and `search-job` polls or stops it.
-`next_cursor` is the address to pass as `scope.start` to go on.
+`next_cursor` goes back, as given, as `view.cursor` on the same search to go
+on (inside a named `scope.module` too).
 
 **What is skipped.** Write-combined and uncached pages (GPU and device
 mappings) always. Pages outside the working set unless `scope.paged`:

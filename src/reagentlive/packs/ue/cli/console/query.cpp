@@ -475,9 +475,9 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         std::optional<Error> pollError;
         size_t polls = 0;
         const auto start = Clock::now();
-        const auto deadline = start + std::chrono::seconds(command.seconds);
+        const auto deadline = start + std::chrono::milliseconds(static_cast<int64_t>(command.seconds * 1000));
         query.reuse = true;
-        std::fprintf(stderr, "  watching %zu instances for %u s\n", last.size(), command.seconds);
+        std::fprintf(stderr, "  watching %zu instances for %g s\n", last.size(), command.seconds);
         while (Clock::now() < deadline) {
             Sleep(100);
             auto again = ue::Each(client, query);

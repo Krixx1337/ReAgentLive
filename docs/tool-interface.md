@@ -29,8 +29,10 @@ layer and discovery in the console.
 - **One verb, one result type.** An arg may add optional keys and never
   changes a key's type; a mode that would change one is a verb of its own
   (`sig-bytes`, `watch-start`). One name for a result's list (`rows`), one
-  paging convention (`from`, `next_cursor`), `capped` for a hard-limit cut
-  and `truncated` for an incomplete value.
+  paging convention (`from`, `next_cursor`, passed back as `view.cursor`; a
+  `capped` is never the cut of a list that has one), `capped` for a hard-limit cut with
+  no way to the rest and `truncated` for an incomplete value. Every time arg
+  is a `dur` (seconds, a number).
 - **Result structs have one field list.** A result's `Describe` lists key
   and member once (`results/schema.h`); that list writes the JSON and
   describes it, so a builder cannot emit a key the description lacks. The
@@ -135,8 +137,11 @@ defines what the table did not.
 
 **A smaller tool list.** Result schemas were about two thirds of the tool
 list, and every result of 18 sessions together was smaller than the list.
-So result schemas are compact by default: each result's top-level keys and
-JSON types, widened, never narrowed, so a console result always validates.
+So result schemas are off by default; `--output-schemas on` lists each
+result's top-level keys and JSON types, widened, never narrowed, so a console
+result always validates. Results still carry `structuredContent`. A tool's
+description has no example (`help` and refusals do), and a `view` key's help
+is stated once in the server instructions, not per tool.
 The console still checks every result against its full type, and `help` with
 `verb` and the Python records keep the full shape. Tool packs
 ([below](#tool-packs)) cut the rest.
@@ -199,11 +204,14 @@ caller already had a JSON path. So JSON is the only input.
 - **Plan files for scripted runs** (`call/plan.h`): `run` executes a JSON
   list of steps as its own calls and writes NDJSON and a report
   ([plans](commands/console.md#plans)). Interactive verbs stay one call.
-- **One `view` for output shaping.** What only shapes a result (`start`,
+- **One `view` for output shaping.** What only shapes a result (`cursor`,
   `limit`, `match`, `fields`, `nonzero`, `elements`) is one object with one
   schema (`ViewKeys`) on every list-returning verb. A view key given at the
   top is refused with where it goes. Options that decide what the agent
   reads or does (`disasm`'s `count`, `search`'s `max`) are not a view.
+  `cursor` is the one view key that also says where a read starts, so
+  `disasm` and `search` take a view holding only it: every continuation is
+  the same call plus the previous `next_cursor` as `view.cursor`.
 - **An options budget:** a table test caps own args per verb. Related
   options are one typed object, exclusive flags one enum, and a mode with
   another result shape is another verb (`call-each` beside `call-pure`).

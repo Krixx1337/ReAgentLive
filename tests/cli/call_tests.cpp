@@ -63,7 +63,7 @@ TEST_CASE("a module address needs the module list and stays inside the image") {
     REQUIRE(read.has_value());
     CHECK(read->request.address == 0x7ff600000010);
     CHECK(Why(R"({"verb": "read", "args": {"addr": {"module": "base", "rva": "0x10"}}})").starts_with("addr: no loaded module"));
-    const auto search = Call(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"start": {"module": "app.exe", "rva": "0x20"}}}})",
+    const auto search = Call(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"from": {"module": "app.exe", "rva": "0x20"}}}})",
         Loaded);
     REQUIRE(search.has_value());
     CHECK(search->request.address == 0x7ff600000020);
@@ -91,7 +91,7 @@ TEST_CASE("a pointer chain takes two to sixteen offsets, and never in a write") 
     CHECK(read->chain == std::vector<uint64_t>{16, 8});
     CHECK(Why(R"({"verb": "read", "args": {"addr": {"base": "0x1000", "chain": [16]}}})") ==
           std::string("addr: ") + value::ChainNoHop);
-    for (const char* verb : {"peek", "mem-snap", "vtable", "disasm"}) {
+    for (const char* verb : {"peek", "mem-snap", "vtable", "disasm", "xrefs", "sig-bytes"}) {
         Json call{{"verb", verb}, {"args", Json::parse(R"({"addr": {"base": "0x1000", "chain": [16, 8]}})")}};
         if (std::string_view(verb) == "mem-snap") call["args"]["len"] = 64;
         const auto parsed = BuildCall(AllVerbs(), call);
@@ -100,7 +100,8 @@ TEST_CASE("a pointer chain takes two to sixteen offsets, and never in a write") 
     }
     // write's addr is no chain: the schema refuses it before the builder.
     CHECK(Why(R"({"verb": "write", "args": {"addr": {"base": "0x1000", "chain": [16, 8]}, "data": "01"}})").starts_with("addr: an address"));
-    CHECK(Why(R"({"verb": "xrefs", "args": {"addr": {"base": "0x1000", "chain": [16, 8]}}})").starts_with("addr: an address"));
+    // touches takes a chain as the others do (it also needs offsets).
+    CHECK(Call(R"({"verb": "touches", "args": {"addr": {"base": "0x1000", "chain": [16, 8]}, "offsets": [8]}})")->chain.size() == 2);
 }
 
 TEST_CASE("a path is a list of names joined by '.'; a step holds no '.' and the depth is bounded") {
@@ -207,7 +208,7 @@ TEST_CASE("search values: text and hex as strings, numbers by type, u64 also as 
     CHECK(parsed->seconds == 10);
     CHECK(Check(parsed->request) == Status::Ok);
 
-    parsed = Call(R"({"verb": "search", "args": {"type": "ptr", "value": "0x7ff7bb2a7740", "max": 8, "scope": {"start": "0x10000", "to": "0x20000", "writable": true}}})");
+    parsed = Call(R"({"verb": "search", "args": {"type": "ptr", "value": "0x7ff7bb2a7740", "max": 8, "scope": {"from": "0x10000", "to": "0x20000", "writable": true}}})");
     REQUIRE(parsed.has_value());
     uint64_t pointer = 0;
     memcpy(&pointer, parsed->request.data, 8);
@@ -283,12 +284,20 @@ TEST_CASE("search options: ranges, filters, limits and its job") {
     CHECK((parsed->request.flags & SearchPaged) != 0);
     CHECK(parsed->target == "app.exe");
     CHECK(Check(parsed->request) == Status::Ok);
-    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"module": "app.exe", "start": "0x1000"}}})").starts_with("scope: module replaces"));
+    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"module": "app.exe", "from": "0x1000"}}})").starts_with("scope: module replaces"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "wait": 61}})").starts_with("wait is"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "align": 3}})").starts_with("invalid search"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "max": 0}})").starts_with("max is"));
-    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"start": "0x2000", "to": "0x1000"}}})").starts_with("invalid search"));
+    CHECK(Why(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"from": "0x2000", "to": "0x1000"}}})").starts_with("invalid search"));
     CHECK(Why(R"({"verb": "search", "args": {"type": "u32"}})").starts_with("missing value"));
+    parsed = Call(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"from": "0x1000"}, "view": {"cursor": "0x1800"}}})");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->cursor == 0x1800);
+    CHECK(parsed->request.address == 0x1800);
+    parsed = Call(R"({"verb": "search", "args": {"type": "u32", "value": 1, "scope": {"module": "app.exe"}, "view": {"cursor": "0x1800"}}})");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->cursor == 0x1800);
+    CHECK(parsed->target == "app.exe");
     parsed = Call(R"({"verb": "search-job", "args": {"job": 7, "stop": true}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->request.op == op::Search);

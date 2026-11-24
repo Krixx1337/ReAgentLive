@@ -36,7 +36,8 @@ struct Command {
     // funcs, params; each's class): the console resolves it before the request.
     std::string className;
     std::string target;         // A name the verb acts on (a function, a member, a watch action).
-    uint32_t seconds = 0;       // each, call-each: repeat for this long, printing changes.
+    double seconds = 0;         // each, call-each: repeat for this long, printing changes. search: wait this long for the job.
+    uint64_t cursor = 0;        // search: view.cursor, where a named module's scan goes on (else request.address).
     bool eachCall = false;      // call-each: one function called on every instance (each's call form).
     uint32_t limit = 0;         // census, call: rows to print, 0 = all. find: rows at most, 0 = one agent page.
     uint32_t from = 0;          // census, call: the first row printed (census: a later page of the stored census).
@@ -85,9 +86,11 @@ struct Command {
     std::optional<uint64_t> expect;
     uint64_t offset = 0;
     std::optional<sig::Resolve> resolve;
-    // disasm: start at the containing function's start and stop at its end
-    // (`resume`: start at the address, a cut listing's next; `file`: save);
-    // step through unconditional direct jumps. xrefs: list unknown hits too.
+    // disasm: `function` (arg `whole`) starts at the containing function's
+    // start and stops at its end (`resume`, from view.cursor: start at the
+    // address, a cut listing's next_cursor; `file`: save); `follow` (arg
+    // `jumps`) steps through unconditional direct jumps. xrefs: `all` (arg
+    // `loose`) lists unverified hits too.
     bool function = false, follow = false, all = false, resume = false;
     // disasm save: also save the functions it calls, breadth-first to this
     // depth (callees; 0: none), and name addresses from a labels file
@@ -98,7 +101,7 @@ struct Command {
     bool label = false;
     // search text: 1 for ASCII, 2 for UTF-16 (wide); rows then carry the text around each hit.
     uint8_t textSearch = 0;
-    // read, peek, vtable, disasm: offsets of a pointer chain after the
+    // read, peek, vtable, disasm, xrefs, touches, sig-bytes: offsets of a pointer chain after the
     // address (<addr>->0x10->0x8); the console resolves it before running.
     std::vector<uint64_t> chain;
     // vtable: `offset` is where the table pointer sits in the object;

@@ -60,11 +60,11 @@ database:
 
 | Question | Command |
 |---|---|
-| What are the instructions here, or the whole function? | `disasm` (`function`) |
+| What are the instructions here, or the whole function? | `disasm` (`whole`) |
 | What points here? | `xrefs` |
 | Which code near here uses these member offsets? | `touches` |
 | Is this pattern unique, and does it land here? | `sig-check` |
-| Decompile this function and what it calls | `fetch` in IDA: `disasm` with `function` and `save` (`callees`), added and decompiled in one call |
+| Decompile this function and what it calls | `fetch` in IDA: `disasm` with `whole` and `save` (`callees`), added and decompiled in one call |
 
 - **The fence is invasiveness, not size.** Anything that reads live bytes
   and hands its result on is in scope, however much analysis it does:
@@ -73,7 +73,7 @@ database:
   (breakpoints, debug registers, exception handlers in the target); see
   [principles](principles.md#principles). Decompiling, types and
   whole-program call graphs are borrowed, not rebuilt.
-- **A whole function and its constants** (`disasm` with `function`): decoded
+- **A whole function and its constants** (`disasm` with `whole`): decoded
   linearly to its entry's end, with the values its read-only loads read and
   the strings it points at. Reading every instruction by hand cost more
   calls than any other step in a live session.

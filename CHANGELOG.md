@@ -28,6 +28,8 @@ before 0.6.0 are one line each; git history has the detail.
 
 ### Improved
 
+- **`xrefs`, `touches` and `sig-bytes` take a pointer chain** as `addr`, as
+  `read` does ([native objects](docs/commands/native-objects.md#pointer-chains)).
 - **Setup and update build and check with one script:**
   `tools/build_examples.ps1` builds the examples and, with `-Check`, checks
   each DLL's `status` ([setup](docs/agents/setup.md#3-clone-and-build)).
@@ -64,6 +66,28 @@ before 0.6.0 are one line each; git history has the detail.
   `disp-scan`; `reads: true` is `access: "read"`, the default (all uses) is
   `any`. `write` is new. `read` now counts read-modify-writes and leaves
   `lea` out.
+- **One cursor to continue any result:** a result that can go on says
+  `next_cursor` (absent when done); pass it back as `view.cursor` on the
+  same call. `view.start` is `view.cursor` (find, census, name-find,
+  entries, rows, funcs, calls-read, disp-scan); `search` and `search-job`
+  continue with `view.cursor` instead of `scope.start`, and `scope.start`
+  is `scope.from` (the range's start); `disasm`'s result `next` is
+  `next_cursor`, its `resume` is gone (pass `next_cursor` as `view.cursor`,
+  which also starts a save at that exact address). A `call` result's
+  returned array says `from` instead of `start`.
+- **`capped` is gone from `disp-scan`:** a page that can go on carries
+  `next_cursor`; `capped` now only means a cut with no way to the rest.
+- **Every time arg is seconds as a number** (`dur`): `each` and
+  `call-each` `duration` and `search` `wait` take fractions; `search` `wait`
+  must be above 0 (`0.1` returns almost at once). `each`'s result
+  `seconds` is a number.
+- **Distinct names for the flags that shared one:** `disasm` `function` is
+  `whole`, `disasm` `follow` is `jumps`, `xrefs` `all` is `loose`.
+- **MCP result schemas are opt-in:** `--output-schemas on` (was `compact`;
+  `off` is the default, `compact` is gone). Tool descriptions drop the
+  `Example:` line (`help` and refusals keep examples), and a `view` key's help
+  is stated once in the server instructions; the tool list shrinks by about a
+  third.
 - **`timed-writes` moved from the `observe` pack to `modify`**, beside
   `write` `clear`: add `modify` to `--packs` to list timed writes.
 

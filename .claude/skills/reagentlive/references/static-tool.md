@@ -34,7 +34,7 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 ## The loop
 
 1. **Save the first function by hand:**
-   `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "<abs dir>/fn.jsonl", "callees": 1}}}`.
+   `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "whole": true, "save": {"file": "<abs dir>/fn.jsonl", "callees": 1}}}`.
    Save from the function's start, to an absolute path (a relative one
    lands in the console's working folder).
 2. **Open that file in IDA** (the loader claims it): this database is

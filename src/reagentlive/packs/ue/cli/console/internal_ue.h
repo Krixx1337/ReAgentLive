@@ -71,8 +71,8 @@ struct PackState {
     // match the cached table; only the remaining pages are skipped.
     std::unordered_map<int32_t, FieldList> tables;
     std::vector<ClassRef> classRefs;
-    std::optional<CensusBaseline> census;   // The last census: census with `diff`'s baseline, census with `view.start`'s rows.
-    std::optional<CensusBaseline> censusBefore; // The census before it, for a later page (`view.start`) of census with `diff`.
+    std::optional<CensusBaseline> census;   // The last census: census with `diff`'s baseline, census with `view.cursor`'s rows.
+    std::optional<CensusBaseline> censusBefore; // The census before it, for a later page (`view.cursor`) of census with `diff`.
     std::vector<ClassRef> defaultObjects;  // Default__ objects by exact name, for the session (DefaultObject).
     std::unordered_map<std::string, int32_t> nameIndices; // Pooled names by lowercase text, for the session (NameIndex).
 

@@ -296,15 +296,22 @@ Parsed Search(const Args& args, const ParseContext& context) {
     if (args.Has("writable")) request.flags |= SearchWritable;
     if (args.Has("heap")) request.flags |= SearchPrivate;
     if (args.Has("paged")) request.flags |= SearchPaged;
-    const uint64_t wait = args.Int("wait", 10);
-    if (wait > 60) return Fail("wait is 0..60 seconds");
-    command.seconds = static_cast<uint32_t>(wait);
-    command.target = args.Str("module"); // The console turns it into start and to.
-    for (const auto* key : {"start", "to"}) {
+    const double wait = args.Has("wait") ? static_cast<double>(args.Milliseconds("wait")) / 1000 : 10;
+    if (wait > 60) return Fail("wait is up to 60 seconds");
+    command.seconds = wait;
+    command.target = args.Str("module"); // The console turns it into the module's range.
+    for (const auto* key : {"from", "to"}) {
         if (!args.Has(key)) continue;
         auto place = value::Address(args.At(key), context.modules);
         if (!place) return Fail("scope: " + std::string(key) + ": " + place.error());
-        (key[0] == 's' ? request.address : request.args[0]) = place->address;
+        (key[0] == 'f' ? request.address : request.args[0]) = place->address;
+    }
+    // view.cursor goes on where a result's next_cursor stopped; inside a named module it only moves the start.
+    const bool ranged = request.address || request.args[0];
+    if (!command.target.empty() && ranged) return Fail("scope: module replaces from and to");
+    if (args.Has("cursor")) {
+        command.cursor = args.Int("cursor");
+        if (command.target.empty()) request.address = command.cursor;
     }
     if (args.Has("align")) {
         const uint64_t n = args.Int("align");
@@ -316,11 +323,10 @@ Parsed Search(const Args& args, const ParseContext& context) {
         if (!n || n > MaxSearchJobHits) return Fail("max is 1.." + std::to_string(MaxSearchJobHits));
         request.args[1] = n;
     }
-    if (!command.target.empty() && (request.address || request.args[0])) return Fail("scope: module replaces start and to");
     request.flags |= align | SearchJobStart;
     request.op = op::Search;
     if (Check(request) != Status::Ok) return Fail("invalid search: align 1, 2, 4, 8 or 16; max 1.." +
-        std::to_string(MaxSearchJobHits) + "; to above start");
+        std::to_string(MaxSearchJobHits) + "; to above from");
     return command;
 }
 

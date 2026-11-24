@@ -111,13 +111,13 @@ TEST_CASE("an object arg's keys are checked by path; one given at the top goes i
     CHECK(error["example"]["args"]["view"] == Json{{"match", "Pawn"}});
     CHECK(Builds(error["example"]));
     // A required key inside an object.
-    error = Refused(R"({"verb": "disasm", "args": {"addr": "0x1000", "function": true, "save": {"callees": 1}}})");
+    error = Refused(R"({"verb": "disasm", "args": {"addr": "0x1000", "whole": true, "save": {"callees": 1}}})");
     CHECK(error["key"] == "save.file");
     CHECK(error["message"].get<std::string>().starts_with("missing save.file: "));
     CHECK(Builds(error["example"]));
     // A builder's message about an object's key names its path.
     CHECK(KeyOf(Row("find"), "limit must be 1..1000") == "view.limit");
-    CHECK(KeyOf(Row("search"), "start: bad") == "scope.start");
+    CHECK(KeyOf(Row("search"), "from: bad") == "scope.from");
     CHECK(KeyOf(Row("write"), "after: a timed write lasts at most 60 s") == "undo.after");
     // Once checked, an object's keys read as the verb's own.
     const auto args = CheckCall(Row("rows"), Json::parse(R"({"object": "0x1000#5:9", "view": {"limit": 3, "nonzero": true}})"));
@@ -356,7 +356,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"addr": {"base": "0x1000", "chain": [16, 8]}})"}},
         {"peek", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 1, "label": true, "name": "Foo"})"}},
         {"modules", {R"({})"}},
-        {"search", {R"({"type": "f32", "value": 1.5})", R"({"type": "wtext", "value": "abc", "wait": 0, "max": 8})"}},
+        {"search", {R"({"type": "f32", "value": 1.5})", R"({"type": "wtext", "value": "abc", "wait": 0.5, "max": 8})"}},
         {"search-job", {R"({"job": 3})", R"({"job": 3, "stop": true})"}},
         {"mem-snap", {R"({"addr": "0x1000", "len": 64})"}},
         {"mem-diff", {R"({"compare": "changed", "type": "f32"})", R"({"compare": "increased", "type": "i32", "keep": true, "view": {"limit": 4}})"}},
@@ -369,13 +369,13 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"labels-port", {R"({})"}},
         {"labels-check", {R"({})", R"({"file": "names.jsonl", "module": "game.exe"})",
             R"({"status": ["moved", "missing"], "view": {"limit": 20}})"}},
-        {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
-            R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": 2}})"}},
-        {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
+        {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "whole": true})",
+            R"({"addr": "0x1000", "whole": true, "save": {"file": "f.json", "callees": 2}})"}},
+        {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "loose": true})"}},
         {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "access": "read"})",
             R"({"addr": "0x1000", "offsets": ["0x10"], "access": "write"})",
             R"({"addr": "0x1000", "offsets": [16], "bases": ["rcx", "rbp"]})"}},
-        {"disp-scan", {R"({"offsets": ["0x538"]})", R"({"offsets": [16], "access": "any", "bases": ["rcx"], "view": {"start": "0x1000"}})",
+        {"disp-scan", {R"({"offsets": ["0x538"]})", R"({"offsets": [16], "access": "any", "bases": ["rcx"], "view": {"cursor": "0x1000"}})",
             R"({"offsets": [16, 24], "access": "read", "width": 4, "imm": 1, "same_base": true})"}},
         {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "view": {"limit": 4}, "resolve": true, "rtti": true})",
                     R"({"addr": "0x1000#5:9", "parts": 256, "slots": [6, 8]})"}},
@@ -397,7 +397,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"layout-export", {R"({"file": "out.json", "classes": ["Pawn"]})", R"({"file": "out.json", "classes": ["Pawn"], "closure": 1})",
             R"({"file": "out.json", "classes": ["Pawn"], "closure": 2})"}},
         {"layout-check", {R"({"file": "out.json"})"}},
-        {"entries", {R"({"object": "0x1000#5:9", "field": "Items"})", R"({"object": "0x1000#5:9", "field": "Items", "view": {"start": 8}})"}},
+        {"entries", {R"({"object": "0x1000#5:9", "field": "Items"})", R"({"object": "0x1000#5:9", "field": "Items", "view": {"cursor": 8}})"}},
         {"rows", {R"({"object": "0x1000#5:9"})", R"({"object": "0x1000#5:9", "view": {"match": "a", "fields": [["b"]]}})"}},
         {"get", {R"({"object": "0x1000#5:9"})", R"({"object": "0x1000#5:9", "paths": [["Health"]]})",
             R"({"object": "Pawn", "mode": "types"})", R"({"object": "0x1000#5:9", "mode": "snap"})",
@@ -413,7 +413,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"owner", {R"({"addrs": ["0x1000"]})", R"({"addrs": ["0x1000", "0x2008"], "within": ["0x1000#5:9"]})"}},
         {"route", {R"({"object": "0x1000#5:9"})",
             R"({"object": "0x1000#5:9", "sources": ["pawn", "0x2000"], "depth": 4, "budget": 500, "up": true})"}},
-        {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"start": 4, "match": "Get"}})"}},
+        {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"cursor": 4, "match": "Get"}})"}},
     };
     for (const auto& verb : AllVerbs()) {
         if (verb.pack == ToolPack::Modify) continue;

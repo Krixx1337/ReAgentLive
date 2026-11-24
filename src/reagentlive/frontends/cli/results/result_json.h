@@ -5,8 +5,8 @@
 //
 // Conventions every result follows:
 //   rows          the result's list.           total        how many there are in all, when rows may show fewer.
-//   from, next_cursor   a page: where it began, and what to pass as `view.start` for the next (absent when done).
-//   capped        rows were cut at a hard limit; there is no cursor.
+//   from, next_cursor   a page: where it began, and what to pass back as `view.cursor` for the next (absent when done).
+//   capped        rows were cut at a hard limit; there is no cursor (never the cut of a list that has next_cursor).
 //   truncated     a value in the result is incomplete.
 //   module, rva   beside an address inside a loaded module (absent elsewhere), so it opens in a static tool.
 //   A key that does not apply is omitted; there are no nulls outside game values.

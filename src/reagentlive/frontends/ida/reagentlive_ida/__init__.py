@@ -4,7 +4,7 @@
 stub (reagentlive_loader.py) in IDA's user loaders folder; IDA's headless library reads the same
 folder. Then `import reagentlive_ida as rl` in IDA, and:
 
-- **Open a save** (`disasm` with `function` and `save`):
+- **Open a save** (`disasm` with `whole` and `save`):
   a small x64 database of the saved functions, their chained chunks
   (function tails) and the read-only data they reference, at their live
   addresses, with the file's names, and its layout rows as local types

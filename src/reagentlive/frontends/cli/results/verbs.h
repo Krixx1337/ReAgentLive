@@ -23,7 +23,6 @@ static_assert(MaxSearchJobHits == 507 && MaxRead == 4096 && MaxPeek == 64 && Max
     MaxWatchRanges == 8 && touch::MaxOffsets == 8 && touch::MaxRange == 0x400000);
 inline const std::vector<Verb>& CoreVerbs() {
     using schema::Of;
-    constexpr std::string_view at = "the address";
     constexpr std::string_view atChain = "the address, or a pointer chain to follow first";
     constexpr std::string_view module = "the module (default: the exe)";
     constexpr std::string_view labels = "the labels file (default: names file)";
@@ -102,21 +101,22 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"value", "scalar", "a string for text or hex pairs, else a number (u64, ptr also \"0x...\")", {}, true, false,
               "\"00 00 80 3f\""},
              {"scope", "obj", "where to look (default: main module)", {}, false, false, {},
-              {{"module", "str", "one module, in place of start and to"},
-               {"start", "addr", "start, or a job's next_cursor"},
+              {{"module", "str", "one module, in place of from and to"},
+               {"from", "addr", "where to start, in place of module"},
                {"to", "addr", "end"},
                {"writable", "bool", "writable memory only, every module and heap"},
                {"heap", "bool", "private memory only (heaps, stacks)"},
                {"paged", "bool", "also non-resident pages (slow)"}}},
              {"align", "int", "1, 2, 4, 8 or 16 (default: the type's size)"},
-             {"wait", "int", "seconds to wait for the job (0..60)", "10"},
+             {"wait", "dur", "how long to wait for the job (up to 60 s)", "10"},
+             View("cursor"),
              {"max", "int", "hits at most (1..507); the job stops when full", "64"}},
             Of<shape::Search>, build::Search,
             "Still running after wait: state running and hits so far; search-job with its id for more or stop. A new "
-            "search stops the last job. next_cursor resumes as scope.start."},
+            "search stops the last job. next_cursor continues it: the same search with view.cursor."},
         {"search-job", "core", ToolPack::Native, "a search job's state and hits so far; stop ends it first",
             {{"job", "int", "the job a search returned", {}, true},
-             {"stop", "bool", "end the job first; its next_cursor resumes it"}},
+             {"stop", "bool", "end the job first; its next_cursor continues it (search with view.cursor)"}},
             Of<shape::Search>, build::SearchJob,
             "Only the last job answers. scanned: share of searchable bytes behind the cursor."},
         {"mem-snap", "core", ToolPack::Observe, "keep up to 1 MiB for mem-diff",
@@ -159,7 +159,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::SigCheckResult>, build::SigCheck,
             "Reports mismatches, diverges_at, warnings. file takes no other key: answers file, winner, a row per line."},
         {"sig-bytes", "core", ToolPack::Native, "live bytes in both pattern forms, address fields wildcarded (up to 96; longer is capped)",
-            {{"addr", "addr", at, {}, true}, {"len", "int", "bytes", "64"}},
+            {{"addr", "chain", atChain, {}, true}, {"len", "int", "bytes", "64"}},
             Of<shape::SigBytes>, build::SigBytes},
         {"labels-sign", "core", ToolPack::Native, "sign each user and global name of this build so it survives a patch",
             {{"file", "file", labels}, {"module", "str", module},
@@ -182,27 +182,28 @@ inline const std::vector<Verb>& CoreVerbs() {
             "Per signed row: ok, moved (found), missing, ambiguous (matches) or invalid. unsigned counts rows with no "
             "sig. status keeps only those statuses; view.limit the first rows (0: all). Read-only."},
         {"disasm", "core", ToolPack::Native, "instructions from live bytes (default 24), or a whole function",
-            {{"addr", "chain", atChain, {}, true}, {"count", "int", "instructions (1..1024; with function: up to 2048)", "24"},
-             {"function", "bool", "the whole containing function (exception table, else a walk from addr)"},
-             {"resume", "bool", "with function: start at addr (a cut listing's next)"},
-             {"save", "obj", "with function: write it and its read-only data to files for a static tool",
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "instructions (1..1024; with whole: up to 2048)", "24"},
+             {"whole", "bool", "the whole containing function (exception table, else a walk from addr)"},
+             {"save", "obj", "with whole: write it and its read-only data to files for a static tool",
               {}, false, false, {},
               {{"file", "file", "the file to write", {}, true},
                {"callees", "int", "also the functions it calls, this many levels (1..3)"},
                {"labels", "file", "name from this labels file"}}},
-             {"follow", "bool", "step through up to 3 unconditional direct jumps"}},
+             {"jumps", "bool", "step through up to 3 unconditional direct jumps"},
+             View("cursor")},
             Of<shape::Disasm>, build::Disasm,
-            "Keep count small: a whole function belongs in save, not a reply. function stops at 2048 instructions or "
-            "16 KB (next: continue with resume). save leaves rows out of the result. Without an exception-table "
-            "entry, save refuses a walk from past padding unless resume."},
+            "Keep count small: a whole function belongs in save, not a reply. whole stops at 2048 instructions or "
+            "16 KB (next_cursor: the same call with view.cursor continues there; a cursor also starts a save at that "
+            "exact address). save leaves rows out of the result. Without an exception-table entry, save refuses a "
+            "walk from past padding unless view.cursor names the address."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",
-            {{"addr", "addr", at, {}, true},
+            {{"addr", "chain", atChain, {}, true},
              {"module", "str", "scan another loaded module"},
-             {"all", "bool", "also list unknown hits (likely chance bytes)"}},
+             {"loose", "bool", "also list unverified hits (likely chance bytes)"}},
             Of<shape::Xrefs>, build::Xrefs,
             "A code row outside every exception-table entry carries unlisted, its function the piece holding it."},
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
-            {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
+            {{"addr", "chain", atChain, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
              {"range", "int", "bytes each side of addr (1..0x400000)", "524288", false, false, "\"0x80000\""},
              {"access", "write|read|any", "write: stores and read-modify-writes; read: loads and read-modify-writes, ranked by "
               "offsets loaded, rows storing every offset they load dropped; any: all uses, lea too", "\"any\""},
@@ -219,9 +220,9 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"imm", "int", "only instructions with this immediate (compared in its width)"},
              {"bases", registers, scanBases, {}, false, true},
              {"same_base", "bool", "only functions using every disp on one base register (2+ disps): functions lists them"},
-             View("start limit", "128")},
+             View("cursor limit", "128")},
             Of<shape::DispScan>, build::DispScan,
-            "Each call scans up to 8 s and stops at view.limit hits (default 128, at most 4096). view.start resumes at "
+            "Each call scans up to 8 s and stops at view.limit hits (default 128, at most 4096). view.cursor continues at "
             "next_cursor (absent at the end). A full sweep takes seconds through the agent's image window, else about "
             "1 MB/s. Sweeps over many pages belong in a run plan. Jump tables can decode as code: check a surprising "
             "hit with disasm. Near one function: touches."},
@@ -268,7 +269,7 @@ inline const std::vector<std::string>& GeneralNotes() {
         "ones and wrong types are refused (kind schema) with a corrected example.",
         "An int is a number or \"0x...\" text. An addr is \"0x...\", a literal ref, {\"module\": \"x.dll\", \"rva\": N} "
         "or {\"base\": <addr>, \"offset\": N}.",
-        "A chain is {\"base\": <addr>, \"chain\": [N, N]} (read, peek, mem-snap, vtable, disasm): each offset but "
+        "A chain is {\"base\": <addr>, \"chain\": [N, N]} (read, peek, mem-snap, vtable, disasm, xrefs, touches, sig-bytes): each offset but "
         "the last reads a pointer; one alone is refused.",
         "A path is a list of field names: [\"Info\", \"Owner\"]. Keys that do not apply are omitted from a result.",
         "A --caller tool console caps a result at 25000 characters (a digest instead, with next); max_chars sets the "

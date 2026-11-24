@@ -51,7 +51,7 @@ class Calls(unittest.TestCase):
     def test_one_save_per_address_with_the_depth(self):
         calls, paths = rl.fetch_calls([0x140001000, '140002000'], 'dir', depth=2)
         self.assertEqual(len(paths), 2)
-        self.assertEqual(calls[0], {'verb': 'disasm', 'args': {'addr': '0x140001000', 'function': True,
+        self.assertEqual(calls[0], {'verb': 'disasm', 'args': {'addr': '0x140001000', 'whole': True,
                                                                'save': {'file': paths[0], 'callees': 2}}})
         self.assertEqual(calls[1]['args']['addr'], '0x140002000')
         alone, _ = rl.fetch_calls('0x140001000', 'dir', callees=False)

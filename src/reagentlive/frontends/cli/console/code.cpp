@@ -139,7 +139,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     if (piece && !command.file.empty() && !command.resume)
         return JsonError(session, jsonCommand, ErrorKind::Start, "address is " + save::Hex(address - piece->start) +
             " bytes into unlisted code starting at " + save::Hex(piece->start) + ": save from there (junk bytes may lead), "
-            "or set resume");
+            "or pass it as view.cursor");
     // Read-only: inside a loaded module, in a section that is not writable.
     const dis::ConstantFn constant = [&session, &modules](uint64_t at) {
         const Module* module = ModuleAt(at, modules);
@@ -735,7 +735,7 @@ sig::ReadFn ImageRead(Session& session, const Module& module) {
 }
 
 // disp-scan: a linear sweep of the main module's executable sections from
-// `start` (default: the first), one block at a time, until the time budget
+// `view.cursor` (default: the first), one block at a time, until the time budget
 // or the hit cap ends the page; next_cursor resumes it. Blocks come through
 // the agent's image window when it has one (its worker copies them while the
 // host tick only polls), else in MaxRead reads.
@@ -760,7 +760,7 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     if (code.empty()) return JsonError(session, jsonCommand, ErrorKind::Module, "the module has no executable section");
     uint64_t at = command.request.address ? command.request.address : code.front().start;
     if (std::ranges::none_of(code, [&](const unwind::Range& r) { return r.start <= at && at < r.end; }))
-        return JsonError(session, jsonCommand, ErrorKind::Validation, "start: not in the main module's code (pass a next_cursor)");
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "view.cursor: not in the main module's code (pass a next_cursor)");
     // Function starts for every hit (same_base) or row: lookups through the image window.
     unwind::Table table(ImageRead(session, module), module, (*layout)->exception);
     const touch::Form form{command.offsets, command.access, command.width, command.imm, touch::Bases{command.bases, true}};
@@ -819,7 +819,6 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     // same_base groups need whole functions: a page cut inside one resumes at its start.
     if (command.sameBase && !done) at = touch::KeepWhole(hits, starts, from, at, startOf(at));
     std::vector<touch::Group> groups;
-    bool cut = false;
     if (command.sameBase) {
         groups = touch::SameBase(hits, starts, form.disps);
         // Past view.limit rows: whole functions up to it (one at least), the page resuming at the next.
@@ -829,7 +828,6 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
             at = groups[keep].function;
             groups.resize(keep);
             done = false;
-            cut = true;
         }
     }
     shape::DispScan out;
@@ -841,7 +839,6 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     uint64_t behind = 0;
     for (const auto& r : code) behind += r.end <= at ? r.end - r.start : r.start < at ? at - r.start : 0;
     out.scanned = done ? 1.0 : static_cast<double>(static_cast<int64_t>(static_cast<double>(behind) * 1000 / static_cast<double>(codeBytes))) / 1000;
-    out.capped = hits.size() >= most || cut;
     if (!done) out.nextCursor = Addr(at);
     const auto row = [&](const touch::Hit& hit, std::optional<uint64_t> function) {
         shape::DispHit made{hit.address, HexNum(hit.address - module.base), HexNum(hit.disp), hit.base, hit.access, hit.width,

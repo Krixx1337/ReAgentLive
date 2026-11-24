@@ -27,7 +27,7 @@ struct CensusClass {
 };
 // A census's rows (all of them, before `view.match` and `view.limit`), kept for the
 // console run and in the cache file: the last one is the baseline for
-// census with `diff` and the rows `view.start` pages through; the one before it is what
+// census with `diff` and the rows `view.cursor` pages through; the one before it is what
 // a later page of census with `diff` compares with. Tagged with the `cls` filter it
 // was taken with (empty: the whole table).
 struct CensusBaseline {

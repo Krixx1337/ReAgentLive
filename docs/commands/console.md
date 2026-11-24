@@ -54,7 +54,8 @@ with `;` or a layout is one string.
   `{"module": "game.exe", "rva": "0x1a2b3c"}` (name ignoring case; the
   offset must lie inside the image) or a base and offset
   `{"base": "0x1b3eec26700#185680:9", "offset": "0x330"}`. Where an arg
-  takes a chain (`read`, `peek`, `mem-snap`, `vtable`, `disasm`),
+  takes a chain (`read`, `peek`, `mem-snap`, `vtable`, `disasm`, `xrefs`,
+  `touches`, `sig-bytes`),
   `{"base": <addr>, "chain": [16, 8]}` reads a pointer at each offset but
   the last ([reference](reference.md#general-notes)).
 - **Address bridge to a static tool.** Every address the console prints

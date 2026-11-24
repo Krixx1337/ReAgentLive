@@ -98,9 +98,9 @@ CALLS = [
     [C('sig-bytes', {'addr': GAME, 'len': 32}), ok({'address': '0x10', 'length': 2, 'pattern': '48 8b',
                                                           'list': '0x48, 0x8B', 'suggested': {
         'pattern': '48 8b', 'list': '0x48, 0x8B', 'fixed_bytes': 2, 'fields': []}})],
-    [C('disasm', {'addr': GAME, 'count': 8, 'function': True, 'follow': True}), ok({
+    [C('disasm', {'addr': GAME, 'count': 8, 'whole': True, 'jumps': True}), ok({
         'address': '0x10', 'size': 1, 'stop': 'count', 'rows': [{'address': '0x10', 'bytes': 'c3', 'text': 'ret', 'ends': True}]})],
-    [C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'all': True}), ok({
+    [C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'loose': True}), ok({
         'address': '0x10', 'scanned': 'engine.dll', 'kinds': {'call': 1}, 'rows': [{'kind': 'call', 'field': '0x21',
                                                                                     'instruction': '0x20'}],
         'capped': False, 'scan_ms': 3})],
@@ -130,7 +130,7 @@ CALLS = [
                  'undo': {'after': 5, 'owner': REF, 'object': '0x2000'}}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
     [C('write', {'clear': 'undo:1'}), ok({'cleared': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
-    [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'start': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
+    [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'cursor': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
     [C('get', {'object': REF, 'mode': 'changed'}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
                                                      'truncated': False, 'capped': False})],
     [C('get', {'object': REF, 'mode': 'changed', 'view': {'match': 'Ammo'}}), ok({
@@ -359,19 +359,19 @@ class SessionTests(unittest.TestCase):
         self.c.write(addr='0x1000', data=dl.pack('f32', 1.0))
         self.c.search(type='text', value='Fatal error', max=1)
         self.c.sig_check(file='my sigs.jsonl')           # A space needs no quoting.
-        self.c.disasm(GAME, count=8, function=True, follow=True)
-        self.c.xrefs(GAME, module='engine.dll', all=True)
+        self.c.disasm(GAME, count=8, whole=True, jumps=True)
+        self.c.xrefs(GAME, module='engine.dll', loose=True)
         self.c.touches(GAME, offsets=[0x538, 0x540], range=0x1000)
-        self.c.ue.find(text='A', cls='Pawn', view={'start': 24})
+        self.c.ue.find(text='A', cls='Pawn', view={'cursor': 24})
         self.assertEqual(self.sent(), [
             C('read', {'addr': '0x10', 'type': 'cstr'}),
             C('read', {'addr': {'base': REF, 'offset': 0x538}, 'type': 'u8 phase, pad 1'}),
             C('write', {'addr': '0x1000', 'data': '0000803f'}), C('search', {'type': 'text', 'value': 'Fatal error', 'max': 1}),
             C('sig-check', {'file': 'my sigs.jsonl'}),
-            C('disasm', {'addr': GAME, 'count': 8, 'function': True, 'follow': True}),
-            C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'all': True}),
+            C('disasm', {'addr': GAME, 'count': 8, 'whole': True, 'jumps': True}),
+            C('xrefs', {'addr': GAME, 'module': 'engine.dll', 'loose': True}),
             C('touches', {'addr': GAME, 'offsets': [0x538, 0x540], 'range': 0x1000}),
-            C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'start': 24}})])
+            C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'cursor': 24}})])
 
     def test_converters_and_the_batch_helper(self):
         # The helpers read their results as strict Records, so a key they spell that the table lacks fails here.

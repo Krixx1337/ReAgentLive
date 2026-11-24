@@ -157,15 +157,15 @@ struct SavedLayouts {
     }
 };
 // disasm: the rows, how many bytes they cover, why the listing stopped
-// (`next` where a count or byte limit cut it), the hops `follow` took, the
-// function entry holding the first address, and with `function` the strings
+// (`next_cursor` where a count or byte limit cut it), the hops `jumps` took, the
+// function entry holding the first address, and with `whole` the strings
 // the rows reference.
 struct Disasm {
     Addr address;
     Location where;
     uint64_t size = 0;
     std::string stop;
-    std::optional<Addr> next;
+    std::optional<Addr> nextCursor;
     std::optional<std::vector<Instruction>> rows; // Absent with `save`.
     std::optional<std::vector<DisasmString>> strings;
     std::optional<std::string> saved;    // `save`: the file written; rows and strings are left out.
@@ -187,7 +187,7 @@ struct Disasm {
         v.flat("", &Disasm::where);
         v("size", &Disasm::size);
         v("stop", &Disasm::stop);
-        v("next", &Disasm::next);
+        v("next_cursor", &Disasm::nextCursor);
         v("rows", &Disasm::rows);
         v("strings", &Disasm::strings);
         v("saved", &Disasm::saved);
@@ -233,6 +233,7 @@ struct Xrefs {
     std::vector<XrefRow> rows;
     bool capped = false;
     int64_t scanMs = 0;
+    std::optional<Chain> chain;
     template<class V> static void Describe(V& v) {
         v("address", &Xrefs::address);
         v.flat("", &Xrefs::where);
@@ -241,6 +242,7 @@ struct Xrefs {
         v("rows", &Xrefs::rows);
         v("capped", &Xrefs::capped);
         v("scan_ms", &Xrefs::scanMs);
+        v("chain", &Xrefs::chain);
     }
 };
 
@@ -389,6 +391,7 @@ struct Touches {
     std::vector<TouchRow> rows;
     bool capped = false;
     int64_t scanMs = 0;
+    std::optional<Chain> chain;
     template<class V> static void Describe(V& v) {
         v("address", &Touches::address);
         v.flat("", &Touches::where);
@@ -399,6 +402,7 @@ struct Touches {
         v("rows", &Touches::rows);
         v("capped", &Touches::capped);
         v("scan_ms", &Touches::scanMs);
+        v("chain", &Touches::chain);
     }
 };
 }
@@ -446,7 +450,6 @@ struct DispScan {
     uint64_t total = 0;
     std::vector<DispHit> rows;
     std::optional<std::vector<DispFunction>> functions;
-    bool capped = false;
     std::optional<Addr> nextCursor;
     int64_t scanMs = 0, readMs = 0;
     template<class V> static void Describe(V& v) {
@@ -459,7 +462,6 @@ struct DispScan {
         v("total", &DispScan::total);
         v("rows", &DispScan::rows);
         v("functions", &DispScan::functions);
-        v("capped", &DispScan::capped);
         v("next_cursor", &DispScan::nextCursor);
         v("scan_ms", &DispScan::scanMs);
         v("read_ms", &DispScan::readMs);
@@ -532,7 +534,7 @@ inline shape::Disasm MakeDisasm(uint64_t address, const dis::Listing& listing,
         }
     }
     out.stop = listing.stop;
-    if (listing.next) out.next = Addr(*listing.next);
+    if (listing.next) out.nextCursor = Addr(*listing.next);
     out.function = MakeFunction(function, modules);
     if (listing.end) out.end = shape::DisasmEnd{listing.end->address, listing.end->offset, listing.end->reason};
     if (!listing.followed.empty()) {

@@ -187,7 +187,7 @@ void RunTypedCall(Session& session, const Command& command, const ue::FunctionIn
     if (!result) return CommandError(session, jsonCommand, result.error());
     if (result->size() != bytes.size())
         return CommandError(session, jsonCommand, Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "incomplete typed call result"});
-    // Returned arrays as rows (`view.fields`, `view.start`, `view.limit` pick from them).
+    // Returned arrays as rows (`view.fields`, `view.cursor`, `view.limit` pick from them).
     RowReader rows(session, structs);
     const RowPaths paths = ParsePaths(command.rowPaths);
     const auto arrayOutput = [](const ue::Field& parameter) {

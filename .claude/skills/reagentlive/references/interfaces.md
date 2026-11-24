@@ -100,7 +100,7 @@ with Session(r'<console exe>', packs=['explore', 'native', 'observe']) as s:
 - `caller='tool'` when you read every result yourself (a result past the
   cap is a `Digest`, also in `s.digest`); the default `script` keeps a
   script's output apart in `usage`.
-- Page with the console's cursor: pass `next_cursor` back as `view.start`,
+- Page with the console's cursor: pass `next_cursor` back as `view.cursor`,
   or raise `view.limit`; check a list a verb can cut before treating it as
   complete.
 - `Session` has no timeout and blocking verbs (`run`) block the script.

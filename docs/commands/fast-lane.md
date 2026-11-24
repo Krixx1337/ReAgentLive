@@ -15,8 +15,8 @@ reflected function's native entry), `disasm`, `xrefs`, `touches` and
 [reference](reference.md#disasm).
 
 ```json
-{"verb": "disasm", "args": {"addr": "0x140001000", "function": true}}
-{"verb": "xrefs", "args": {"addr": "0x140001000", "all": true}}
+{"verb": "disasm", "args": {"addr": "0x140001000", "whole": true}}
+{"verb": "xrefs", "args": {"addr": "0x140001000", "loose": true}}
 {"verb": "touches", "args": {"addr": "0x140001000", "offsets": ["0x3e0", "0x3e4"], "access": "read"}}
 {"verb": "search", "args": {"type": "text", "value": "Fatal error: %s"}}
 ```
@@ -38,19 +38,21 @@ slivers.
 `disasm` decodes live memory from `addr`, which must be an instruction
 boundary (the decoder, Zydis, is in the console only).
 
-- `function` lists the whole function holding `addr`; a cap that cuts it
-  gives `next`, and the same call with `next` as `addr` and `"resume": true`
-  lists on. With no entry it walks from `addr` and stops at the first
+- `whole` lists the whole function holding `addr`; a listing a cap cuts (a
+  `count`, or the function's 2048 instructions or 16 KB) gives
+  `next_cursor`, and the same call with `view.cursor` set to it lists on.
+  `view.cursor` starts exactly there, with or without `whole`. With no entry
+  it walks from `addr` and stops at the first
   return or unconditional jump no earlier forward branch passes (`stop`
   `walk end`, `function` absent; an early return before a branch target not
   yet seen can end it short).
-- `follow` continues through unconditional direct jumps only. Calls,
+- `jumps` continues through unconditional direct jumps only. Calls,
   conditional and indirect jumps are never followed.
 - Rows carry targets, RIP-relative strings, import names and constants read
   from read-only sections; a writable target is a global that changes:
   `peek` it. Bytes that do not decode end the listing with `end`, never a
   guess. Row keys: [results](results.md). `sig-bytes` is the tool for masks.
-- `strings` (with `function`) lists each distinct string the code points at
+- `strings` (with `whole`) lists each distinct string the code points at
   directly; text built at run time or held in a name pool is not seen.
 - No summary of what a function does.
 - **Small answers, big listings in files.** `disasm` answers about one
@@ -59,11 +61,11 @@ boundary (the decoder, Zydis, is in the console only).
 
 ### Saving a function for a static tool
 
-`disasm` with `function` and `save` also writes the function for a static
+`disasm` with `whole` and `save` also writes the function for a static
 tool, so it decompiles that one function without analysing the whole image:
 
 ```json
-{"verb": "disasm", "args": {"addr": "0x140001000", "function": true, "save": {"file": "fn.jsonl", "callees": 1}}}
+{"verb": "disasm", "args": {"addr": "0x140001000", "whole": true, "save": {"file": "fn.jsonl", "callees": 1}}}
 ```
 
 The console writes `file` as given, so pass an absolute path (a relative
@@ -89,8 +91,8 @@ file holds. The [IDA loader](ida-loader.md) opens it as a small database.
 - **No partial saves.** A walk starting far past the last return in its
   unlisted piece would save only the rest of a function, so `save` refuses.
   Save from the function's start (an `xrefs` row marked `unlisted` gives the
-  piece holding a call site), or pass `resume` to save from the address
-  anyway. A listing with no rows is never saved.
+  piece holding a call site), or pass the address as `view.cursor` to save
+  from it anyway. A listing with no rows is never saved.
 - The file is JSON lines, one row kind per line (`function`, `chunk`, `code`,
   `data`, `name`, `layout`, and `console`, which holds the console's paths so
   a static tool finds the console and its labels files); the loader is the
@@ -105,9 +107,9 @@ slots, tables).
 
 - Each row's kind comes from the bytes in front of the field. A relative hit
   that matches none is `unknown`, most likely chance bytes: counted in
-  `kinds`, listed only with `all`. `capped` says a scan was cut.
+  `kinds`, listed only with `loose`. `capped` says a scan was cut.
 - `rip` rows carry no `instruction`: a linear decoder cannot walk backwards;
-  `disasm` with `function` shows it in place.
+  `disasm` with `whole` shows it in place.
 - A row with no entry holds `function` as an `unlisted` piece, cut as
   `touches` cuts it: up to 16 KB each side of the hit, so a function with
   several returns spans several pieces. Entries under 4 bytes (a packed
@@ -135,7 +137,7 @@ plus unlisted code in pieces.
 - Rows rank by how many distinct asked offsets a function uses, writers
   first: the setup that writes most of a block comes first.
 - Unrelated classes share small offsets: ask for several that only one
-  layout has together, and confirm the top row with `disasm` and `function`
+  layout has together, and confirm the top row with `disasm` and `whole`
   or a decompiler before naming anything.
 
 ## disp-scan
@@ -148,7 +150,7 @@ module, where `touches` looks near one function:
 ```
 
 - It sweeps every executable section straight through and answers in pages:
-  `next_cursor` is the next call's `view.start`. The console decodes: no
+  `next_cursor` is the next call's `view.cursor`. The console decodes: no
   agent job, nothing left running between calls. With the agent's
   [image window](../protocol.md#handshake) a sweep takes seconds; without it
   reads go through host ticks and take minutes, so start near the code you
@@ -195,7 +197,7 @@ one address at a time:
 | The table → the constructor or destructor installing it | `xrefs` |
 | The constructor → the global it stores the object in | `disasm` |
 | The global → the functions returning it | `xrefs` (`lea`, `load`) |
-| A stub that only jumps → the real body | `disasm` with `follow` |
+| A stub that only jumps → the real body | `disasm` with `jumps` |
 
 No verb learns a reference chain: running it over every table is a script
 over the Python client, or the static tool's job.

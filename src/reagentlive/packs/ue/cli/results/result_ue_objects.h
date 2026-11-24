@@ -204,7 +204,7 @@ struct Each {
     std::vector<EachRow> rows;
     bool sameTick = false, capped = false, truncated = false;
     std::optional<std::vector<EachError>> errors;
-    std::optional<uint32_t> seconds;
+    std::optional<double> seconds;
     std::optional<uint64_t> polls;
     std::optional<std::vector<EachChange>> changes;
     std::optional<std::string> pollError;

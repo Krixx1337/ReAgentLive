@@ -130,7 +130,7 @@ TEST_CASE("help rows come from the table: args, an example call, the result in n
         {"help", "hits at most (1..507); the job stops when full"}});
     // An object arg lists its keys as fields, each as ArgJson gives it.
     CHECK(full["args"][2]["type"] == "obj");
-    CHECK(full["args"][2]["fields"][1] == Json{{"key", "start"}, {"type", "addr"}, {"help", "start, or a job's next_cursor"}});
+    CHECK(full["args"][2]["fields"][1] == Json{{"key", "from"}, {"type", "addr"}, {"help", "where to start, in place of module"}});
     // The example holds every required key, and the row accepts it.
     CHECK(full["example"] == Json{{"verb", "search"}, {"args", {{"type", "hex"}, {"value", "00 00 80 3f"}}}});
     CHECK(CheckCall(*search, full["example"]["args"]).has_value());
@@ -198,7 +198,7 @@ TEST_CASE("an argument's type is checked against the row before the builder runs
     CHECK(Call(R"({"verb": "touches", "args": {"addr": "0x10", "offsets": ["0x538", "x1"]}})").error().starts_with(
         "offsets: a list, each a whole number"));
     CHECK(Call(R"({"verb": "census", "args": {"view": {"limit": "many"}}})").error().starts_with("view.limit: a whole number"));
-    CHECK(Call(R"({"verb": "xrefs", "args": {"addr": "0x10", "all": "yes"}})").error().starts_with("all: true or false"));
+    CHECK(Call(R"({"verb": "xrefs", "args": {"addr": "0x10", "loose": "yes"}})").error().starts_with("loose: true or false"));
     // A decimal string is not an address: the builder's error names the key.
     CHECK(Call(R"({"verb": "read", "args": {"addr": "16"}})").error().starts_with("addr: '16' is not an address"));
     CHECK(Call(R"({"verb": "frobnicate"})").error() == "unknown verb 'frobnicate' (help lists them)");

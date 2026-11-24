@@ -265,13 +265,13 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     // A file the call wrote and a cut listing's resume address survive too.
     Json listing = VendorCall(200);
     listing["saved"] = "fn.jsonl";
-    listing["next"] = "0x140001000";
+    listing["next_cursor"] = "0x140001000";
     Json written = Envelope(listing);
     const auto kept = budget::Replace(written, Text(written).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
         [](const std::string&) { return std::string(); });
     REQUIRE(kept);
     CHECK((*kept)["digest"]["status"]["saved"] == "fn.jsonl");
-    CHECK((*kept)["digest"]["status"]["next"] == "0x140001000");
+    CHECK((*kept)["digest"]["status"]["next_cursor"] == "0x140001000");
     // A search job's id, state and progress survive, so it can still be polled.
     Json job = VendorCall(200);
     job["job"] = 3;

@@ -204,7 +204,7 @@ inline constexpr size_t MaxOwnArgs = 6;
 // take is refused); its notes say what match matches and what limit 0 means.
 inline const std::vector<Arg>& ViewKeys() {
     static const std::vector<Arg> keys = {
-        {"start", "int", "next_cursor of the page before"},
+        {"cursor", "int", "the previous result's next_cursor, as it gave it (a number or \"0x...\")"},
         {"limit", "int", "rows at most (0: see notes)"},
         {"match", "str", "keep rows whose name contains this (any case)"},
         {"fields", "path", "the row members to keep (paths into structs and arrays)", {}, false, true},
@@ -213,7 +213,7 @@ inline const std::vector<Arg>& ViewKeys() {
     };
     return keys;
 }
-// A verb's `view`: the shared keys it takes, by name ("start limit"), and
+// A verb's `view`: the shared keys it takes, by name ("cursor limit"), and
 // its own default for limit.
 inline Arg View(std::string_view keys, std::string_view limit = {}) {
     Arg view{"view", "obj", "paging and filters"};

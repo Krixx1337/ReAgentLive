@@ -21,14 +21,14 @@ constexpr size_t ToolMaxChars = 25000;
 // The keys that say whether a result is complete, what a call left outside
 // its result, and which running thing it is. A digest keeps every one a
 // result has (a list as its length), so a capped or partial result never
-// reads as whole, a file a call wrote is never lost (`saved`; `next` is a
-// cut listing's resume address) and a search job can still be polled (`job`,
+// reads as whole, a file a call wrote is never lost (`saved`; `next_cursor`
+// is where a cut listing goes on) and a search job can still be polled (`job`,
 // `state`, `scanned`). Results name them alike: results.md, Conventions.
 // Beside them a digest keeps every other top-level scalar (a count, a
 // module, a path; text up to MaxStatusText characters) and every top-level
 // object of numbers (counts by kind): the totals a reader acts on.
 inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
-    "tick_accurate", "same_tick", "total", "next_cursor", "next", "filtered", "saved", "job", "state", "scanned"};
+    "tick_accurate", "same_tick", "total", "next_cursor", "filtered", "saved", "job", "state", "scanned"};
 // The verb args that narrow a result, as the digest names them; a list of
 // enum words (labels-check's status) narrows too.
 inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls", "to",

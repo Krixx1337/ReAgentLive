@@ -27,7 +27,7 @@ module and RVA. When `addr`'s own first qword already points into code,
 `addr` is the table itself. It stops at the first entry that does not point
 into an executable section of a loaded module (`stop` `not code`). `resolve`
 adds `body` where a slot's target is a stub of unconditional direct jumps:
-the address `disasm` with `follow` would end at. A qword that points into no
+the address `disasm` with `jumps` would end at. A qword that points into no
 module is a result: no `table`, and `found` holding the qword.
 
 ### parts
@@ -60,7 +60,8 @@ keep it. **Names are hints, not proof:** confirm them against the code.
 ## Pointer chains
 
 An address may be a chain, `{"base": <addr>, "chain": [16, 8]}`, in `read`,
-`peek`, `mem-snap`, `vtable` and `disasm`. Each offset but the last reads a
+`peek`, `mem-snap`, `vtable`, `disasm`, `xrefs`, `touches` and `sig-bytes`
+(not `owner`, whose addresses are search rows, nor `write`). Each offset but the last reads a
 pointer: base X with chain `[a, b]` is `*(X + a) + b`. A chain of one
 (`[a]`) follows no pointer, so it is refused rather than answered with the
 bytes at `X + a`: to read through the pointer at `X`, start with `0` (`[0,
