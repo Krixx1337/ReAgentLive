@@ -3,7 +3,10 @@
 Run as a console: `-c '{"verb":"help","args":{"json":true}}'` prints the
 table and exits (as a real console does with no target), and `-c` with a
 call carrying `refused` (inline or `@<file>`) logs a `refused <session>
-<verb> <kind> <key>` line and answers its error; any other `-c` call is
+<verb> <kind> <key>` line and answers its error; a `-c` call of `run` is
+a background run's console: its plan file ({"sleep": seconds, "envelope":
+{...}}) says how long it takes (two progress lines on stderr around the
+wait) and what it answers; any other `-c` call is
 logged (after its `session <id>` line) and answered, then it exits; on stdin, one JSON
 call per line: `help` with `json` answers the table and with `hash` its hash
 (read at start: a test may change it between runs), `quit` ends it, and any
@@ -17,6 +20,19 @@ REAGENTLIVE_FAKE_LOG.
 import json
 import os
 import sys
+import time
+
+
+def alive(pid):
+    import ctypes
+    kernel32 = ctypes.WinDLL('kernel32')
+    handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+    if not handle:
+        return False
+    try:
+        return kernel32.WaitForSingleObject(handle, 0) == 0x102  # Still running.
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def key(call):
@@ -37,6 +53,21 @@ def main():
             with open(os.environ['REAGENTLIVE_FAKE_LOG'], 'a') as log:
                 log.write(f'refused {session} {one["verb"]} {one["refused"]["kind"]} {one["refused"].get("key", "")}\n')
             print(json.dumps({'command': one['verb'], 'ok': False, 'error': one['refused']}), flush=True)
+        elif one.get('verb') == 'run':  # A background run's console: the plan file scripts it.
+            plan = json.load(open(one['args']['plan']))
+            if '--packs' in sys.argv:
+                with open(os.environ['REAGENTLIVE_FAKE_LOG'], 'a') as log:
+                    log.write(f'run packs {sys.argv[sys.argv.index("--packs") + 1]}\n')
+            print('  progress: 0/2 steps', file=sys.stderr, flush=True)
+            # Ends with its parent: a Store Python started through its alias leaves the run's job object, so
+            # a stopped run (its cmd wrapper killed) would otherwise sleep on, holding the run's files.
+            parent, end = os.getppid(), time.monotonic() + plan.get('sleep', 0)
+            while time.monotonic() < end:
+                time.sleep(0.05)
+                if not alive(parent):
+                    return
+            print('  progress: 2/2 steps', file=sys.stderr, flush=True)
+            print(json.dumps(dict(plan['envelope'], command='run')), flush=True)
         elif key(one) == key({'verb': 'help', 'args': {'hash': True}}):
             print(json.dumps({'command': 'help', 'ok': True,
                               'result': {'rows': [], 'table_hash': replies['table'].get('table_hash')}}), flush=True)

@@ -86,7 +86,9 @@ inline const std::vector<Verb>& CoreVerbs() {
             "status, usage, quit, batch and run are not allowed inside."},
         {"run", "core", ToolPack::Explore, "a plan file's steps, each its own call: one NDJSON line per result, then a report",
             {{"plan", "file", "the plan: a JSON list of {\"verb\", \"args\"?, \"expect\"?, \"repeat\"?: {\"every\", \"for\"}}", {}, true},
-             {"out", "file", "write the lines here (rewritten), not in the result"}},
+             {"out", "file", "write the lines here (rewritten), not in the result"},
+             {"background", "bool", "a frontend's: run the plan in its own console and answer at once with a run id "
+              "(the MCP adapter, a Python Session); a console refuses it"}},
             Of<shape::Run>, build::Run,
             "Each step runs as its own call under this console's --packs: a step of a pack outside them is a "
             "refused line, not a stop, so a plan with modify steps needs modify in --packs (and its approval). "
@@ -99,7 +101,10 @@ inline const std::vector<Verb>& CoreVerbs() {
             "{\"ok\": true, \"result\": {...}}. The report (the result's, and out's last line as {report}) counts "
             "calls, ok, failed, refused by kind and expects, with each step's time and the console's and agent's "
             "builds. Up to 256 steps; run and quit are not allowed in a plan. A plan file is the replay key: run it "
-            "again to repeat an investigation.", false, true},
+            "again to repeat an investigation. With background, the frontend starts the run as its own console, "
+            "which takes the agent's slot in turns like any client, under the packs enabled at the start; "
+            "run_status (its state and progress), run_read (its result, once done) and run_stop (ends it, "
+            "deletes its files) follow it by id. A frontend that exits ends its runs.", false, true},
         {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); type decodes values",
             {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes (1..4096)", "64"},
              {"type", "layout", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": a layout"}},

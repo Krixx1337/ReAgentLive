@@ -41,16 +41,22 @@ ceiling (`--packs`): a verb of another tool pack, through a generated
 function, `call` or a batch item, raises ReAgentLiveError with kind 'pack'.
 The generated module keeps every verb; the console decides.
 
-The agent serves one client at a time. A session holds that slot while it
-lives (`hold=True`, the default: one console process, calls back to back
-with nothing in between). `Session(console, hold=False)` releases it
-between calls instead: every call starts a one-shot console (`-c`), so an
-MCP server or another script on the same agent gets its turn between this
-session's calls; each call then costs a console start and an attach (tens
-of milliseconds), and the console's cache file carries its state from one
-call to the next. A console that finds the slot taken waits for it up to
-`busy_wait` seconds (its --busy-wait, default 10), then raises kind 'busy',
-naming the client that holds it.
+The agent has one request slot, and clients take it in turns: the
+session's console takes it for each request (a held command, such as a
+batch, for its whole length) and gives it up between them, so an MCP
+server or another script on the same agent runs between this session's
+calls, and a long verb gives it up between its blocks. A call that finds
+the slot taken waits for it up to `busy_wait` seconds (the console's
+--busy-wait, default 10), then raises kind 'busy', naming the client that
+holds it.
+
+Background runs: `s.call('run', {'plan': path, 'background': True})`
+starts the plan in its own console process and returns {'run': id} at
+once; `s.run_status(id)` says how far it is, `s.run_read(id)` gives its
+result once done (a Record or Digest, as call does), `s.run_stop(id)` ends
+it and deletes its files. A run takes the slot in turns like any client,
+under the session's packs. Runs end with the session (a Windows job
+object kills them if the process dies).
 
 `s.call(verb, args)` sends any verb by name; a generated function does the
 same with checked argument names. Three helpers do what a generated function
@@ -62,17 +68,23 @@ retrying are the console's (arguments and cursors), not Python's.
 
 Standard library only.
 """
+import atexit
+import ctypes
+import itertools
 import json
 import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 from collections.abc import Mapping
+from functools import wraps
 
-__all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'Digest', 'Session', 'samples', 'addr', 'unhex',
-           'f32', 'f64', 'u32', 'u64', 'i32', 'pack']
+__all__ = ['ReAgentLiveError', 'ResultKeyError', 'StaleTableError', 'Record', 'Digest', 'Session', 'Runs', 'samples', 'addr',
+           'unhex', 'f32', 'f64', 'u32', 'u64', 'i32', 'pack']
 
 
 class ReAgentLiveError(RuntimeError):
@@ -220,6 +232,241 @@ def _line(verb, args=None):
     return json.dumps({'verb': verb, 'args': args or {}}, separators=(',', ':'))
 
 
+class _Job:
+    """One process and everything it starts, in a Windows job object that kills them all when `end` is called or
+    its last handle closes (this process exits or dies). The process starts suspended and is assigned before it
+    runs, so nothing it starts escapes. Elsewhere: the process alone."""
+
+    def __init__(self, command, stdout, stderr):
+        self.handle = None
+        if sys.platform != 'win32':
+            self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr)
+            return
+        from ctypes import wintypes
+
+        class Basic(ctypes.Structure):
+            _fields_ = [('PerProcessUserTimeLimit', ctypes.c_int64), ('PerJobUserTimeLimit', ctypes.c_int64),
+                        ('LimitFlags', wintypes.DWORD), ('MinimumWorkingSetSize', ctypes.c_size_t),
+                        ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', wintypes.DWORD),
+                        ('Affinity', ctypes.c_size_t), ('PriorityClass', wintypes.DWORD),
+                        ('SchedulingClass', wintypes.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [('BasicLimitInformation', Basic), ('IoInfo', ctypes.c_uint64 * 6),
+                        ('ProcessMemoryLimit', ctypes.c_size_t), ('JobMemoryLimit', ctypes.c_size_t),
+                        ('PeakProcessMemoryUsed', ctypes.c_size_t), ('PeakJobMemoryUsed', ctypes.c_size_t)]
+
+        kernel32 = self._kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+                                                       ctypes.c_void_p]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        ntdll = ctypes.WinDLL('ntdll')
+        ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+        info = Extended()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job or not kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            if job:
+                kernel32.CloseHandle(job)
+            raise OSError(f'cannot make a job object (error {ctypes.get_last_error()})')
+        self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                                        creationflags=0x4)  # CREATE_SUSPENDED
+        if not kernel32.AssignProcessToJobObject(job, int(self.process._handle)):
+            error = ctypes.get_last_error()
+            self.process.kill()
+            kernel32.CloseHandle(job)
+            raise OSError(f'cannot put the run in its job object (error {error})')
+        self.handle = job
+        ntdll.NtResumeProcess(int(self.process._handle))
+
+    def _active(self):
+        """Processes still alive in the job (its basic accounting), 0 when it cannot say."""
+        counts = (ctypes.c_uint32 * 12)()  # Four 64-bit times, then page faults, total, active, terminated.
+        if not self._kernel32.QueryInformationJobObject(self.handle, 1, counts, ctypes.sizeof(counts), None):
+            return 0
+        return counts[10]
+
+    def end(self):
+        """Kills the process and all it started; waits until they are gone (their files closed)."""
+        if self.handle is not None:
+            self._kernel32.TerminateJobObject(self.handle, 1)
+            deadline = time.monotonic() + 5
+            while self._active() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self._kernel32.CloseHandle(self.handle)
+            self.handle = None
+        elif self.process.poll() is None:
+            self.process.kill()
+        self.process.wait()
+
+
+def _running(pid):
+    """Whether a process with this id runs now."""
+    if sys.platform != 'win32':
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    kernel32 = ctypes.WinDLL('kernel32')
+    handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+    if not handle:
+        return False
+    try:
+        return kernel32.WaitForSingleObject(handle, 0) == 0x102  # WAIT_TIMEOUT: still running.
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _locked(method):
+    """One call at a time on the object (its `_lock`): a frontend may follow runs from several threads."""
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return call
+
+
+_RUN_IDS = itertools.count(1)  # Per process: every Runs of one console shares its folder.
+
+
+class Runs:
+    """A frontend's background runs: each one plan in its own console process (`run` without background).
+
+    Files go in `<console>.runs/` beside the console: per run its call, its stdout (the final envelope) and its
+    stderr (the progress lines). A run whose stdout and stderr pass `cap` bytes is stopped and says so when its
+    status is read (run_status, run_read). Files
+    stay until `stop` or this frontend exits; a frontend starting deletes those of frontends no longer running.
+    Each run is a job object of its own, so it ends with the frontend however that ends.
+    """
+    CAP = 16 << 20
+
+    def __init__(self, console, cap=CAP):
+        self.folder = os.path.splitext(os.path.abspath(console))[0] + '.runs'
+        self.cap = cap
+        self._lock = threading.RLock()
+        self._runs = {}
+        os.makedirs(self.folder, exist_ok=True)
+        for name in os.listdir(self.folder):  # <pid>-<n>.<part>: a frontend gone leaves its files.
+            owner = name.split('-', 1)[0]
+            if owner.isdigit() and int(owner) != os.getpid() and not _running(int(owner)):
+                try:
+                    os.remove(os.path.join(self.folder, name))
+                except OSError:
+                    pass
+        atexit.register(self.close)
+
+    def _path(self, run, part):
+        return os.path.join(self.folder, f'{run}.{part}')
+
+    @_locked
+    def start(self, command, args, max_chars=None):
+        """Starts `run` with args (background left out) on `command` (the console and its arguments); the run id."""
+        run = f'{os.getpid()}-{next(_RUN_IDS)}'
+        call = {'verb': 'run', 'args': {key: value for key, value in args.items() if key != 'background'}}
+        if max_chars is not None:
+            call['max_chars'] = max_chars
+        with open(self._path(run, 'call.json'), 'w', encoding='utf-8') as file:
+            json.dump(call, file)
+        out = open(self._path(run, 'out'), 'w', encoding='utf-8')
+        err = open(self._path(run, 'err'), 'w', encoding='utf-8')
+        try:
+            job = _Job([*command, '-c', f'@{self._path(run, "call.json")}'], out, err)
+        except OSError as error:
+            out.close()
+            err.close()
+            self._remove(run)
+            raise ReAgentLiveError('run', {'kind': 'startup', 'message': f'the run did not start: {error}'}) from None
+        out.close()
+        err.close()
+        self._runs[run] = {'job': job, 'process': job.process, 'started': time.monotonic(), 'stopped': None}
+        return run
+
+    def _get(self, run):
+        entry = self._runs.get(run)
+        if entry is None:
+            known = ', '.join(self._runs) or 'none'
+            raise ReAgentLiveError('run_status', {'kind': 'schema', 'message': f'no run {run!r}; runs: {known}'})
+        return entry
+
+    @_locked
+    def status(self, run):
+        """{run, state (running, done or stopped), progress (the newest progress line, or None), seconds,
+        stopped (why, when stopped)}."""
+        entry = self._get(run)
+        process = entry['process']
+        if process.poll() is None and entry['stopped'] is None:
+            size = sum(os.path.getsize(self._path(run, part)) for part in ('out', 'err')
+                       if os.path.exists(self._path(run, part)))
+            if size > self.cap:
+                self._end(entry, f'its output passed the cap ({self.cap} bytes)')
+        state = 'stopped' if entry['stopped'] else 'running' if process.poll() is None else 'done'
+        progress = None
+        try:
+            with open(self._path(run, 'err'), encoding='utf-8', errors='replace') as file:
+                for text in file:
+                    if text.strip().startswith('progress:'):
+                        progress = text.strip()[len('progress:'):].strip()
+        except OSError:
+            pass
+        out = {'run': run, 'state': state, 'progress': progress,
+               'seconds': round(time.monotonic() - entry['started'], 1)}
+        if entry['stopped']:
+            out['stopped'] = entry['stopped']
+        return out
+
+    @_locked
+    def read(self, run):
+        """The finished run's envelope; ReAgentLiveError while it runs, or once stopped."""
+        state = self.status(run)
+        if state['state'] == 'running':
+            raise ReAgentLiveError('run_read', {'kind': 'running', 'message': f'run {run} is still running '
+                                                f'({state["progress"] or "no progress yet"}): run_status shows how far'})
+        if state['state'] == 'stopped':
+            raise ReAgentLiveError('run_read', {'kind': 'stopped', 'message': f'run {run} was stopped: {state["stopped"]}'})
+        try:
+            with open(self._path(run, 'out'), encoding='utf-8', errors='replace') as file:
+                for text in file:
+                    if text.lstrip().startswith('{'):
+                        return json.loads(text)
+        except OSError:
+            pass
+        code = self._runs[run]['process'].returncode
+        raise ReAgentLiveError('run_read', {'kind': 'internal', 'message': f'run {run} ended ({code}) with no result'})
+
+    def _end(self, entry, why):
+        if entry['process'].poll() is None:
+            entry['stopped'] = entry['stopped'] or why
+        entry['job'].end()  # Also whatever it started, and the job's handle.
+
+    @_locked
+    def stop(self, run):
+        """Ends the run if it still runs and deletes its files; its last status."""
+        entry = self._get(run)
+        self._end(entry, 'run_stop')
+        state = self.status(run)
+        del self._runs[run]
+        self._remove(run)
+        return state
+
+    def _remove(self, run):
+        for part in ('call.json', 'out', 'err'):
+            try:
+                os.remove(self._path(run, part))
+            except OSError:
+                pass
+
+    @_locked
+    def close(self):
+        """Ends every run and deletes their files."""
+        for run in list(self._runs):
+            self.stop(run)
+
+
 class Session:
     """One console process; not thread-safe. Use as a context manager.
 
@@ -230,14 +477,12 @@ class Session:
     session then asks only for its hash (`help` with `hash`) and reads the whole
     table again only when it changed. `console` is a path (relative to the
     current directory) or a name on PATH. `packs`: the tool packs the console
-    runs (its --packs; explore always); None runs every pack. `hold`: keep the
-    agent's one client slot for the session's life (True), or release it
-    between calls with a one-shot console per call (False). `busy_wait`:
-    seconds a console waits for a slot another client holds (None: the
-    console's default).
+    runs (its --packs; explore always); None runs every pack; a background
+    run gets the same. `busy_wait`: seconds a call waits for the slot another
+    client holds (None: the console's default).
     """
 
-    def __init__(self, console, args=(), caller='script', table=None, packs=None, hold=True, busy_wait=None):
+    def __init__(self, console, args=(), caller='script', table=None, packs=None, busy_wait=None):
         console = os.fspath(console)
         found = shutil.which(console) if not os.path.dirname(console) else None
         path = os.path.abspath(found or console)
@@ -251,12 +496,10 @@ class Session:
         self.packs = list(packs) if packs is not None else None
         ceiling = ['--packs', ','.join(self.packs)] if self.packs is not None else []
         wait = ['--busy-wait', str(int(busy_wait))] if busy_wait is not None else []
-        self.hold = hold
         self._command = [console, *args, *ceiling, *wait, '--caller', caller]
-        if not hold:  # One usage-log session for the one-shot consoles, as one console would have.
-            self._command += ['--session', f'py-{time.strftime("%Y%m%dT%H%M%S")}-{os.getpid()}']
+        self._runs = None  # Runs, from the first background run.
         self._process = subprocess.Popen(self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                         stderr=self._stderr, text=True, bufsize=1) if hold else None
+                                         stderr=self._stderr, text=True, bufsize=1)
         self._types = {}
         self.digest = None  # The last call's Digest (its result was past max_chars), or None.
         # The last call's context_warning (the session is past the console's --context-limit), or None.
@@ -287,8 +530,6 @@ class Session:
 
     def _started_badly(self, error):
         """Why the console did not start: the error, its exit code and the end of its stderr."""
-        if self._process is None:
-            return f'{os.path.basename(self._command[0])} did not start: {error}'
         text = f'{console_name(self._process)} did not start: {error}'
         if self._process.returncode is not None:
             text += f'; exit code {self._process.returncode}'
@@ -307,6 +548,8 @@ class Session:
         self.close()
 
     def close(self):
+        if self._runs is not None:
+            self._runs.close()
         if self._process is None or self._process.poll() is not None:
             return
         try:
@@ -326,8 +569,6 @@ class Session:
     # Raw exchange.
     def send(self, line):
         """The full JSON envelope for one line (a JSON call, or a JSON list of calls), as plain dicts."""
-        if self._process is None:
-            return self._send_once(line)
         try:
             self._process.stdin.write(line + '\n')
             self._process.stdin.flush()
@@ -339,26 +580,6 @@ class Session:
                 raise ReAgentLiveError(line, {'message': 'console exited'})
             if text.lstrip().startswith('{'):
                 return json.loads(text)
-
-    def _send_once(self, line):
-        """One line through a one-shot console (hold=False): it attaches, answers and exits, freeing the slot."""
-        handle, path = tempfile.mkstemp(suffix='.json', prefix='reagentlive-call-')
-        try:
-            with os.fdopen(handle, 'w', encoding='utf-8') as file:
-                file.write(line)
-            done = subprocess.run([*self._command, '-c', f'@{path}'], stdin=subprocess.DEVNULL, capture_output=True,
-                                  text=True, encoding='utf-8', errors='replace')
-        except OSError as error:
-            raise ReAgentLiveError(line, {'message': f'console did not run: {error}'}) from None
-        finally:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-        for text in done.stdout.splitlines():
-            if text.lstrip().startswith('{'):
-                return json.loads(text)
-        raise ReAgentLiveError(line, {'message': f'console exited ({done.returncode}): {done.stderr[-400:].strip()}'})
 
     def wrap(self, verb, result):
         """A verb's result object as a strict Record (a plain dict for a verb the table lacks)."""
@@ -373,18 +594,42 @@ class Session:
         characters (0: none; None: the caller's default).
         """
         call = {'verb': verb, 'args': {key: _value(value) for key, value in (args or {}).items() if value is not None}}
+        if verb == 'run' and call['args'].get('background'):
+            return {'run': self.runs.start(self._command, call['args'], max_chars)}
         if meta:
             call['meta'] = True
         if timing:
             call['timing'] = True
         if max_chars is not None:
             call['max_chars'] = max_chars
-        envelope = self.send(json.dumps(call, separators=(',', ':')))
+        return self._result(verb, self.send(json.dumps(call, separators=(',', ':'))))
+
+    def _result(self, verb, envelope):
+        """An envelope as call returns it: the strict result or a Digest; ReAgentLiveError when not ok."""
         self.digest = Digest(envelope['digest']) if 'digest' in envelope else None
         self.context_warning = envelope.get('context_warning')
         if not envelope.get('ok'):
             raise ReAgentLiveError(verb, envelope.get('error'))
         return self.digest if self.digest is not None else self.wrap(verb, envelope.get('result', {}))
+
+    @property
+    def runs(self):
+        """This session's background runs (Runs)."""
+        if self._runs is None:
+            self._runs = Runs(self._command[0])
+        return self._runs
+
+    def run_status(self, run):
+        """A background run's state (running, done or stopped), its newest progress line and its seconds."""
+        return self.runs.status(run)
+
+    def run_read(self, run):
+        """A finished background run's result, as call returns run's; raises while it runs."""
+        return self._result('run', self.runs.read(run))
+
+    def run_stop(self, run):
+        """Ends a background run and deletes its files; its last status."""
+        return self.runs.stop(run)
 
     def help(self, verb=None):
         """Every verb in one line each, or one verb's arguments, result notation, named types and notes."""

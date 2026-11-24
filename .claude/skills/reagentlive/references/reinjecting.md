@@ -20,10 +20,10 @@
   ("agent layout differs"); after an update, `docs/agents/update.md#7-running-targets`.
   Restart the target, then inject: never load a DLL with a changed
   protocol into a process that runs the old agent.
-- A console that finds the agent taken by another client waits up to its
+- A call that finds the slot taken waits up to its console's
   `--busy-wait`, then is refused as `busy`, naming the holder (caller
-  kind, pid, since when): end that client, or run the script's session
-  with `hold=False` so MCP calls get the slot between its calls.
+  kind, pid, since when): usually a long held command; retry, or end that
+  client if it hangs.
 - Re-injecting into the same process stacks host copies; prefer a fresh
   game start for behaviour checks.
 - `status` shows the answering agent's `build` time and `replaced_agents`.

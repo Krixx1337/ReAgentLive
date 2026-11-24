@@ -329,4 +329,19 @@ inline CheckOutcome CheckLabel(const LabelSig& sig, const std::expected<sig::Che
     if (*port.rva == rva) return {"ok", std::nullopt, 1, {}};
     return {"moved", port.rva, 1, "its one match lands elsewhere: the row's rva or its sig is stale"};
 }
+
+// labels-sign and labels-port work for minutes, and another console may add
+// or change rows meanwhile: their own rows go over the file as it is now.
+// A row the verb changed (`changed`: its line as read, its new line)
+// replaces that line where it still stands; `added` rows go at the end
+// unless already there. A row another console changed or removed keeps that.
+inline std::vector<std::string> MergeLabelLines(std::vector<std::string> fresh,
+                                                const std::map<std::string, std::string>& changed,
+                                                std::span<const std::string> added) {
+    for (auto& line : fresh)
+        if (const auto found = changed.find(line); found != changed.end()) line = found->second;
+    for (const auto& line : added)
+        if (std::ranges::find(fresh, line) == fresh.end()) fresh.push_back(line);
+    return fresh;
+}
 }

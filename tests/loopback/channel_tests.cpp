@@ -80,16 +80,109 @@ TEST_CASE("heartbeat and pid identify the agent") {
     CHECK(client.AgentPid() == GetCurrentProcessId());
 }
 
-TEST_CASE("a second client is refused as busy until the first detaches") {
-    {
-        Client first = Attach();
-        const auto second = Client::Attach(SectionName(), Layout);
-        REQUIRE_FALSE(second.has_value());
-        CHECK(second.error().kind == Error::Kind::Busy);
-        Client moved = std::move(first); // Moving keeps the hold.
-        CHECK_FALSE(Client::Attach(SectionName(), Layout).has_value());
+namespace {
+// Another client on its own thread (the slot is a mutex, which belongs to a
+// thread), holding the slot from `held` until `release`.
+struct OtherHolder {
+    std::atomic<bool> held{false}, release{false};
+    std::thread thread;
+    explicit OtherHolder(const char* caller = "") {
+        thread = std::thread([this, caller] {
+            auto other = Client::Attach(SectionName(), Layout, caller);
+            if (!other) { held = true; return; } // The case's own requests then find the slot free and fail.
+            const Client::Hold hold(*other);
+            held = true;
+            while (!release) Sleep(1);
+        });
+        while (!held) Sleep(1);
     }
-    CHECK(Client::Attach(SectionName(), Layout).has_value());
+    ~OtherHolder() {
+        release = true;
+        thread.join();
+    }
+};
+// Whether a fresh client on another thread finds the slot taken within `wait`.
+bool BusyFromAnotherThread(std::chrono::milliseconds wait) {
+    bool busy = false;
+    std::thread([&] {
+        Client other = Attach();
+        other.SetBusyWait(wait);
+        const uint8_t byte = 7;
+        const auto read = other.Read(reinterpret_cast<uint64_t>(&byte), 1);
+        busy = !read && read.error().kind == Error::Kind::Busy;
+    }).join();
+    return busy;
+}
+}
+
+TEST_CASE("clients attach together and take turns: a request waits out another client's hold") {
+    Client client = Attach();
+    const uint8_t buffer[4] = {1, 2, 3, 4};
+    std::optional<OtherHolder> other(std::in_place);
+    const auto before = client.Stats();
+    std::thread releaser([&] { Sleep(100); other->release = true; });
+    REQUIRE(client.Read(reinterpret_cast<uint64_t>(buffer), 4));
+    CHECK(client.Stats().slotWaitMicroseconds - before.slotWaitMicroseconds >= 80000);
+    releaser.join();
+    other.reset();
+    // Free slot: no wait.
+    const auto free = client.Stats();
+    REQUIRE(client.Read(reinterpret_cast<uint64_t>(buffer), 4));
+    CHECK(client.Stats().slotWaitMicroseconds - free.slotWaitMicroseconds < 20000);
+}
+
+TEST_CASE("past the busy wait a request is refused as busy, naming the holder") {
+    Client client = Attach();
+    client.SetBusyWait(30ms);
+    const uint8_t byte = 1;
+    {
+        OtherHolder other("script");
+        const auto read = client.Read(reinterpret_cast<uint64_t>(&byte), 1);
+        REQUIRE_FALSE(read);
+        CHECK(read.error().kind == Error::Kind::Busy);
+        CHECK(read.error().message.find("a script client, pid " + std::to_string(GetCurrentProcessId())) != std::string::npos);
+        const auto holder = Client::Holder(SectionName());
+        REQUIRE(holder);
+        CHECK(holder->caller == "script");
+        CHECK(holder->since > 0);
+    }
+    CHECK(client.Read(reinterpret_cast<uint64_t>(&byte), 1));
+}
+
+TEST_CASE("a client that dies holding the slot frees it") {
+    // Never destroyed: its thread ends owning the mutex, as a killed process does.
+    std::thread([] {
+        auto* lost = new Client(Attach());
+        new Client::Hold(*lost);
+    }).join();
+    Client client = Attach();
+    client.SetBusyWait(2s);
+    const uint8_t byte = 1;
+    CHECK(client.Read(reinterpret_cast<uint64_t>(&byte), 1));
+}
+
+TEST_CASE("a turn frees a lone hold's slot for another client, then takes it back") {
+    Client client = Attach();
+    const uint8_t byte = 1;
+    std::optional<Client::Hold> hold(std::in_place, client);
+    CHECK(BusyFromAnotherThread(20ms));
+    {
+        const Client::Turn turn(client);
+        CHECK_FALSE(BusyFromAnotherThread(1s));
+        // A request inside the turn takes the slot for itself.
+        CHECK(client.Read(reinterpret_cast<uint64_t>(&byte), 1));
+    }
+    CHECK(BusyFromAnotherThread(20ms));
+    hold.reset();
+    CHECK_FALSE(BusyFromAnotherThread(1s));
+}
+
+TEST_CASE("a turn inside a nested hold keeps the slot: a batch keeps its moment") {
+    Client client = Attach();
+    const Client::Hold outer(client);
+    const Client::Hold inner(client);
+    const Client::Turn turn(client);
+    CHECK(BusyFromAnotherThread(20ms));
 }
 
 TEST_CASE("long waits report whether the agent is ticking") {

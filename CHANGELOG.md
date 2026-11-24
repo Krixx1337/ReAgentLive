@@ -25,12 +25,43 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+### New
+
+- **Background runs:** a plan (or one long call as a one-step plan) runs in
+  its own console while you keep exploring: `run` with `background` in a
+  Python `Session`, the `run` tool through MCP, then `run_status` (with
+  progress), `run_read` and `run_stop`
+  ([client](docs/client.md#python-session)).
+
 ### Improved
+
+- **Clients share the agent in short turns:** any number of consoles,
+  sessions and MCP calls attach at once and take the agent's slot per
+  request; long verbs (`disp-scan`, `labels-*`, `sig-check` with a file)
+  give it up between blocks, so a call beside one waits about a block.
+  Each call's wait is in the usage log and `usage` (`slot_ms`)
+  ([protocol](docs/protocol.md#handshake)).
+- **Long verbs print progress** on stderr (`progress: 12/40 blocks`).
+- **Concurrent consoles keep their files whole:** usage-log lines are one
+  append each; the cache file, the usage-log trim and labels rewrites use
+  a per-process temporary; `labels-sign` and `labels-port` merge their rows
+  into the file as it is when they finish, so a label added meanwhile
+  survives.
 
 - **MCP agents load the skill first:** the server's instructions are now a
   short pointer to the `reagentlive` skill (and the host's) plus the
   write and untrusted-text rules, instead of a usage summary the skill
   already holds ([client](docs/client.md)).
+
+### Breaking
+
+- **`Session(hold=...)` is gone:** a session's console now frees the slot
+  between calls by itself. Drop the argument.
+- **A busy agent refuses the call, not the console:** a console no longer
+  waits to attach or ends as `busy`; a call that waits past `--busy-wait`
+  is refused as `busy` and the console keeps running. C++:
+  `Client::Attach` no longer returns `Busy`; requests do
+  (`SetBusyWait` sets the wait).
 
 ## 0.5.0
 

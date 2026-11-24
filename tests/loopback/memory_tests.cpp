@@ -547,15 +547,62 @@ TEST_CASE("image copy reads an image through the window, on the worker only with
     CHECK(reagentlive::detail::ThreadsStarted() == 1);
 }
 
-TEST_CASE("a busy agent names the client that holds it") {
+TEST_CASE("two clients copying the image at once each read their own block") {
+    TheAgent().background = false;
+    const auto base = reinterpret_cast<const uint8_t*>(GetModuleHandleW(nullptr));
+    // The image window is one per agent: each copy keeps the slot until it has read it.
+    std::atomic<int> wrong{0}, failed{0};
+    const auto copier = [&](uint64_t offset) {
+        Client client = Attach();
+        client.SetBusyWait(10s);
+        for (int i = 0; i < 40; ++i) {
+            auto block = client.CopyImage(reinterpret_cast<uint64_t>(base) + offset, 0x1000, 10s);
+            if (!block) { ++failed; continue; }
+            if (!std::equal(block->bytes.begin(), block->bytes.end(), base + offset)) ++wrong;
+        }
+    };
+    std::thread first(copier, 0), second(copier, 0x1000);
+    first.join();
+    second.join();
+    CHECK(failed == 0);
+    CHECK(wrong == 0);
+}
+
+TEST_CASE("beside a sweep that takes turns, held calls wait about one block and stay in one tick") {
+    TheAgent().background = false;
+    const auto base = reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr));
+    std::atomic<bool> stop{false};
+    // A long verb as the console runs one: held, a copy per block, its
+    // console-side work in a turn.
+    std::thread sweep([&] {
+        Client sweeper = Attach();
+        const Client::Hold hold(sweeper);
+        while (!stop) {
+            if (!sweeper.CopyImage(base, 0x4000, 10s)) break;
+            const Client::Turn turn(sweeper);
+            Sleep(5);
+        }
+    });
+    Sleep(20);
     Client client = Attach();
-    auto second = Client::Attach(SectionName(), Layout, "script");
-    REQUIRE_FALSE(second);
-    CHECK(second.error().kind == Error::Kind::Busy);
-    const auto holder = Client::Holder(SectionName());
-    REQUIRE(holder);
-    CHECK(holder->pid == GetCurrentProcessId());
-    CHECK(holder->since > 0);
+    client.SetBusyWait(5s);
+    const uint8_t bytes[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    uint64_t longest = 0;
+    int sameTick = 0;
+    for (int i = 0; i < 10; ++i) {
+        const auto before = client.Stats();
+        {
+            const Client::Hold held(client);
+            for (int r = 0; r < 3; ++r) REQUIRE(client.Read(reinterpret_cast<uint64_t>(bytes), 8));
+            sameTick += held.SameTick();
+        }
+        longest = std::max(longest, client.Stats().slotWaitMicroseconds - before.slotWaitMicroseconds);
+        Sleep(3);
+    }
+    stop = true;
+    sweep.join();
+    CHECK(longest < 200000); // One block and its turn, not the sweep.
+    CHECK(sameTick >= 8);    // Best effort, as any hold.
 }
 
 TEST_CASE("search skips other views of the agent's own section") {

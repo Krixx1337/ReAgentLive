@@ -135,6 +135,7 @@ void PrintJson(Session& session, Json record) {
         const auto total = std::chrono::duration<double, std::milli>(Clock::now() - session.timing->began).count();
         record["timing"] = {{"trips", stats.trips - session.timing->start.trips},
             {"wait_ms", static_cast<double>(stats.waitMicroseconds - session.timing->start.waitMicroseconds) / 1000.0},
+            {"slot_ms", static_cast<double>(stats.slotWaitMicroseconds - session.timing->start.slotWaitMicroseconds) / 1000.0},
             {"total_ms", total}};
     }
     std::string text = Text(record);

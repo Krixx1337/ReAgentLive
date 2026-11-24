@@ -101,23 +101,27 @@ a layout is one string.
 
 ## Agent and console
 
-- One console per agent ([one client at a time](../protocol.md#handshake)).
-  A console that finds the agent taken waits for the slot, asking again
-  every 20 ms, for up to `--busy-wait <seconds>` (default 10, 0 to 600),
-  so it runs as soon as the other client's call or session ends; then it
-  gives up with an error of kind `busy` that names the holder (its caller
-  kind, pid and since when, as it said when it attached) and how long this
-  console waited. A wait past a second prints one line to stderr. Waits
-  for a running request longer than a second print a line each second
-  saying whether the agent is ticking (the request is running) or not.
-- **Sharing one agent between MCP and a script.** The slot stays one client
-  at a time: a long-lived Python session holds it for its whole life, and
-  an MCP call meanwhile waits up to its console's `--busy-wait`, then is
-  refused. A script that should let MCP calls in between runs
-  `Session(console, hold=False)`: each call starts a one-shot console, so
-  the slot is free between calls, at the price of a console start and an
-  attach per call (tens of milliseconds) and a session whose state lives in
-  the cache file instead of one process
+- Any number of consoles attach to one agent; they take its one request
+  slot in turns ([one request at a time](../protocol.md#handshake)). A
+  request takes it for its own length, a held command (a `batch`, `get`,
+  `peek`...) for its whole length. A long verb (`disp-scan`,
+  `labels-sign`, `labels-port`, `labels-check`, `sig-check` with a file,
+  `touches`) gives it up while it works on a block or row in the console,
+  so a call beside it waits about one block, not the whole verb; inside a
+  `batch` it keeps it, so the batch stays one moment.
+- A call that finds the slot taken waits up to `--busy-wait <seconds>`
+  (default 10, 0 to 600), then that call is refused with kind `busy`,
+  naming the holder (its caller kind, pid and since when it took the slot)
+  and how long it waited; the console keeps running. Every call's wait is
+  in its usage line (`slot_ms`). Waits for a running request longer than a
+  second print a line each second saying whether the agent is ticking (the
+  request is running) or not.
+- Long verbs print `  progress: <done>/<total> <unit>` to stderr at most
+  once a second (blocks, rows, bytes, plan steps); a background run's
+  status reads the newest.
+- **Sharing one agent between MCP and a script.** A long-lived Python
+  session frees the slot between its calls, so MCP calls run in between;
+  a plan or a long verb can also run as a frontend's background run
   ([Python client](../client.md#python-session)).
 - The console checks the agent's op list first and refuses ops the agent does
   not have.
@@ -153,7 +157,8 @@ request costs up to a host tick. The console cuts both:
   structs in one call, values read back to back; with no paths, `view` and
   `own` filter every field ([Unreal fields](unreal-fields.md#get)).
 - **`"timing": true`** on any call adds `timing` to its envelope:
-  `trips` (requests sent), `wait_ms` (time waiting for responses) and
+  `trips` (requests sent), `wait_ms` (time waiting for responses),
+  `slot_ms` (time waiting for the slot another client held) and
   `total_ms`.
 - **The result cap (`max_chars`).** A console started with `--caller tool`
   prints at most 25,000 characters a result; scripts and shells have no
@@ -292,7 +297,7 @@ table reads it to know whether the console changed.
 **No target.** When the target is not running or the agent cannot be
 attached, the console answers `help` and `usage` from its table and its
 log; any other verb is refused with an error of kind `startup` (why there
-is no target), or `busy` while another client holds the agent, and the console ends, so a client starts it again once the
+is no target), and the console ends, so a client starts it again once the
 target runs. `-c` calls that are all `help`, `usage` or a frontend's
 refusal (`refused`, below) never attach.
 
@@ -315,7 +320,8 @@ the generated functions, the MCP tools), so one log covers them
   verb and origin, caller, the names of the keys given, a hash of the
   input line and of its output (`out_hash`: what it printed, without
   `timing` or a context warning), input and output characters, `ok` or the refusal's error
-  kind, milliseconds, `batch` for a call that ran inside one, and
+  kind, milliseconds, `slot_ms` when it waited for the slot another
+  client held, `batch` for a call that ran inside one, and
   `digest`, the result's full size, when a [digest](#fewer-round-trips)
   stood in for it (`out` is then the digest's). No addresses, names, paths
   or results.
@@ -374,7 +380,8 @@ the generated functions, the MCP tools), so one log covers them
   `limit`, `over`).
 - **Capped:** past 4 MB the oldest sessions are dropped when a console
   starts, down to three quarters of that. `usage` with `report` `all` gives
-  `since`, the oldest line kept.
+  `since`, the oldest line kept. A line another console appends while one
+  trims can be lost: accepted, a few lines at most.
 
 `{"verb": "usage"}` reports the session the console is in (with no
 target: the log's latest); with `session` (an id), one session of the log;

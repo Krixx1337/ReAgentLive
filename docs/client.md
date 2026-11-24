@@ -56,13 +56,19 @@ auto fields = reagentlive::ue::Fields(*client, found->objects[0].ref);   // all 
 auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 ```
 
-- Synchronous, one request in flight per `Client`, not thread-safe.
+- Synchronous, one request in flight per `Client`, not thread-safe, and
+  used from one thread (the slot is a mutex, which belongs to a thread).
 - Results are `std::expected<T, reagentlive::Error>`. `Error::kind` is
   `Agent` (a refusal, with its status and reason), `Timeout`, `Attach` or
-  `Busy` (another client holds the agent). `Attach`'s third argument
+  `Busy` (another client held the slot past the busy wait).
+- **Clients take turns:** any number attach; a request takes the agent's
+  slot for its own length, a `Client::Hold` for its life, and
+  `Client::Turn` gives a lone hold's slot up for console-side work
+  ([one request at a time](protocol.md#handshake)). `SetBusyWait` sets how
+  long a request waits for it (default 10 s). `Attach`'s third argument
   describes this client (a caller kind such as `script`), and
-  `Client::Holder(section)` says who holds a busy agent: pid, caller kind
-  and since when ([one client at a time](protocol.md#handshake)).
+  `Client::Holder(section)` says who holds the slot: pid, caller kind and
+  since when. `Stats().slotWaitMicroseconds` counts the waits.
 - **Whole images:** `CopyImage(address, length, timeout)` reads up to 4 MB
   of a loaded image a request through the
   [image window](protocol.md#handshake), with a bitmap of the pages it
@@ -175,17 +181,25 @@ module calls through it; scripts use it for the rest.
   packs (a `batch` item too) raises `ReAgentLiveError` whose `kind` is
   `pack`. A script that must not change the target leaves `modify` out.
 - **No timeout:** a call waits until the console answers or exits. The
-  console's own waits still apply: `busy_wait` seconds for an agent
+  console's own waits still apply: `busy_wait` seconds for the slot
   another client holds (default 10), then `busy`, naming the holder.
-- **Sharing the agent:** a session holds the agent's one client slot for
-  its life (`hold=True`). `Session(console, hold=False)` releases it
-  between calls: each call runs a one-shot console (one usage-log session
-  for all of them), so an MCP server or another script gets its turn in
-  between. The cost is a console start and an attach per call (tens of
-  milliseconds), and state from one call to the next lives in the console's
-  cache file, as for any one-shot run. Keep `hold=True` for tight loops
-  and same-moment reads; pick `hold=False` for a long-lived session beside
-  MCP tools ([console](commands/console.md#agent-and-console)).
+- **Sharing the agent:** a session's console takes the agent's slot per
+  request (a held command such as a batch for its length) and frees it
+  between calls, so an MCP server or another script runs in between
+  ([console](commands/console.md#agent-and-console)). Values from two
+  calls are never from one moment: make one `batch` for that.
+- **Background runs:** `s.call('run', {'plan': path, 'background':
+  True})` starts the plan in its own console and returns `{'run': id}` at
+  once. `s.run_status(id)` gives `state` (`running`, `done` or `stopped`),
+  `progress` (the newest progress line, such as `12/40 blocks`) and
+  `seconds`; `s.run_read(id)` the result once done, as `call` returns
+  `run`'s (raises kind `running` before); `s.run_stop(id)` ends it and
+  deletes its files. A run gets the session's packs and takes the slot in
+  turns like any client. Its files (`<console>.runs/`: the call, stdout,
+  stderr) stay until `run_stop` or the session ends; past 16 MB of output
+  it is stopped and says so (checked whenever its status is read). Each run is a Windows job object, so a
+  session that dies ends its runs, and the next frontend deletes their
+  files.
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
   value into bytes, `f32`/`u64`/... decode those bytes, and `pack` goes
   the other way: `f32(unhex(c.read(a, len=4)['hex']))`.
@@ -250,6 +264,8 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 - **Left out:** `quit` (the adapter owns the console) and verbs marked
   `blocks` (a host's countdown capture): a call would outlast a client's
   timeout. Captures go as `watch-start`, then `watch-read` or `watch-stop`.
+  A blocking verb with a `background` argument (`run`) is served as a
+  background run instead.
 - **`batch`** takes a list of `{verb, args}` (console verb names:
   `sig-check`, not `sig_check`) and runs them in as few host ticks as
   possible, one envelope each. It takes only verbs of the packs that are
@@ -258,11 +274,16 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
 - **State in arguments:** tools take the literal refs results carry and
   the ids of timed writes and captures.
 - **A console per call:** each tool call starts the console and ends it,
-  one call at a time. Another client on the same agent (a script, a second
-  server) makes the console wait for the slot up to its `--busy-wait`
-  (default 10 s; pass `-- --busy-wait N` to the server), then refuse as
-  `busy`, naming the holder; a script that runs beside the server should
-  use `hold=False`.
+  one call at a time. Clients take the agent's slot in turns: a call that
+  finds it taken (a script's held batch, a run's block) waits up to its
+  console's `--busy-wait` (default 10 s; pass `-- --busy-wait N` to the
+  server), then is refused as `busy`, naming the holder.
+- **Background runs:** `run` is served as a background run only: the call
+  starts the plan in its own console, with the packs enabled at that
+  moment, and answers `{run, state}` at once. `run_status`, `run_read`
+  (the result once done, digested past the `max_chars` given to `run`) and
+  `run_stop` (asked first: it ends a process) follow it, as in the [Python session](#python-session).
+  Runs end with the server.
 - **Refusals made here are logged:** a tool of a pack that is off, a batch
   item past the packs, or arguments the input schema refuses never reach
   the target, but each goes to a one-shot console as a call with

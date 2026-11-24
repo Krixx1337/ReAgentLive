@@ -13,7 +13,12 @@ come from the table: a verb that writes the target's memory or calls into
 it is destructive, every other one read-only, so a client can allow the
 read-only tools and ask first for the rest. A verb that holds the console
 for seconds (`blocks`) is left out: a call would outlast the client's
-timeout; use `watch-start` and read it later.
+timeout; use `watch-start` and read it later. One that can run in the
+background (its row has `background`, as `run` has) is served as a
+background run only: the call starts it in its own console and answers at
+once with a run id, and `run_status`, `run_read` and `run_stop` follow it
+(Runs in reagentlive_session.py). A run gets the packs enabled when it
+starts, never the whole ceiling; runs end with the server.
 
 Arguments carry the literal refs results print (a call takes no session
 state from an earlier one). `batch` takes a list of calls
@@ -22,9 +27,11 @@ ticks as possible.
 
 A console per call, never one kept open: nothing holds the executable
 between calls, so a rebuilt console links and the next call runs it.
-Calls run one at a time. A console that finds another client on the agent
-(a Python session) waits for its slot up to its --busy-wait (default 10 s;
-pass it after `--`), then refuses as busy, naming the holder.
+Calls run one at a time; background runs beside them. Clients take the
+agent's one slot in turns, a request at a time: a console that finds it
+taken (a Python session's held batch, a run's block) waits up to its
+--busy-wait (default 10 s; pass it after `--`), then refuses as busy,
+naming the holder.
 Refusals made here (a tool of a disabled pack, a batch item past the packs,
 an argument the input schema refuses) never reach the target, but each is
 handed to a console as a call with `refused`, so the usage log and `usage`
@@ -70,7 +77,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'python'))
-from reagentlive_session import Digest, ReAgentLiveError, Record, Session  # noqa: E402
+from reagentlive_session import Digest, ReAgentLiveError, Record, Runs, Session  # noqa: E402
 
 import anyio  # noqa: E402
 import jsonschema  # noqa: E402
@@ -154,10 +161,17 @@ def arg_schema(arg):
     return dict(schema, description=text.strip()) if text.strip() else schema
 
 
+def backgrounded(row):
+    """A blocking verb that a frontend runs in the background (its row has `background`): served as that only."""
+    return bool(row.get('blocks')) and any(arg['key'] == 'background' for arg in row['args'])
+
+
 def input_schema(row):
-    """A verb's arguments as JSON Schema, keyed as the console's JSON calls take them."""
-    properties = {arg['key']: arg_schema(arg) for arg in row['args']}
-    required = [arg['key'] for arg in row['args'] if arg.get('required')]
+    """A verb's arguments as JSON Schema, keyed as the console's JSON calls take them (a background-only verb's
+    without `background`: always on)."""
+    args = [arg for arg in row['args'] if not (backgrounded(row) and arg['key'] == 'background')]
+    properties = {arg['key']: arg_schema(arg) for arg in args}
+    required = [arg['key'] for arg in args if arg.get('required')]
     properties.setdefault('max_chars', MAX_CHARS)
     out = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
@@ -228,6 +242,9 @@ def description(row):
     """What a tool's caller reads: the summary, an example call, the notes and the marks. Each argument's help
     is in the input schema, so it is not written twice."""
     lines = [row['summary'] + '.', '', 'Example: ' + example_text(row['example'], tool_name(row))]
+    if backgrounded(row):
+        lines += ['', 'Runs in the background: answers at once with a run id; run_status says how far it is, '
+                      'run_read gives its result once done, run_stop ends it.']
     if row.get('notes'):
         lines += ['', row['notes']]
     if row.get('writes'):
@@ -265,8 +282,35 @@ def batch_refusal(table, packs, arguments):
 
 
 def served(row, enabled):
-    """Whether the server offers a tool for this verb: its pack is enabled, and it neither quits nor blocks."""
-    return row['verb'] != 'quit' and not row.get('blocks') and row['pack'] in enabled
+    """Whether the server offers a tool for this verb: its pack is enabled, and it neither quits nor blocks (a
+    background-only verb aside)."""
+    return row['verb'] != 'quit' and (not row.get('blocks') or backgrounded(row)) and row['pack'] in enabled
+
+
+RUN_TOOLS = {
+    'run_status': ('A background run\'s state (running, done or stopped), its newest progress line '
+                   '(done/total and unit) and its seconds so far.', True),
+    'run_read': ('A finished background run\'s result, as its tool would answer (a digest past the max_chars '
+                 'given to run); refused while it runs. Its files stay until run_stop, so it can be read again.', True),
+    'run_stop': ('Ends a background run if it still runs and deletes its files; its last status. Never touches '
+                 'the target.', False),
+}
+
+
+def run_tools(table, enabled):
+    """run_status, run_read and run_stop, while a background-only verb is served. They follow a run, never the
+    target; run_stop ends a process and deletes files, so it is not marked read-only (a client asks first)."""
+    if not any(backgrounded(row) and served(row, enabled) for row in table['rows']):
+        return []
+    tools = []
+    for name, (text, reads) in RUN_TOOLS.items():
+        properties = {'run': {'type': 'string', 'description': 'the run id its start answered'}}
+        tools.append(types.Tool(name=name, description=text,
+                                input_schema={'type': 'object', 'properties': properties, 'required': ['run'],
+                                              'additionalProperties': False},
+                                annotations=types.ToolAnnotations(read_only_hint=reads, destructive_hint=False,
+                                                                  idempotent_hint=reads, open_world_hint=False)))
+    return tools
 
 
 PACKS_TOOL = 'packs'
@@ -307,8 +351,7 @@ class Packs:
         for pack in table.get('packs', []):
             name = pack['pack']
             state = 'on' if name in self.enabled else 'off' if name in self.ceiling else 'outside'
-            tools = [tool_name(row) for row in table['rows'] if row['pack'] == name and row['verb'] != 'quit'
-                     and not row.get('blocks')]
+            tools = [tool_name(row) for row in table['rows'] if row['pack'] == name and served(row, {name})]
             rows.append({'pack': name, 'job': pack['job'], 'state': state, 'tools': tools})
         return {'packs': rows}
 
@@ -352,8 +395,16 @@ class Live:
         self.console, self.args = os.path.abspath(console), list(args)
         self.session_id = f'mcp-{time.strftime("%Y%m%dT%H%M%S")}-{os.getpid()}'
         self.lock = threading.Lock()
+        self._runs = None
         with Session(self.console, self.args, caller='tool') as session:
             self.table = session.table
+
+    @property
+    def runs(self):
+        """The server's background runs (Runs), from the first one."""
+        if self._runs is None:
+            self._runs = Runs(self.console)
+        return self._runs
 
     def row(self, name):
         return next((row for row in self.table['rows'] if tool_name(row) == name), None)
@@ -376,6 +427,27 @@ class Live:
                 os.remove(path)
             except OSError:
                 pass
+
+    def start_run(self, row, arguments, packs):
+        """A background run of a background-only verb: checked against its row, started on a console with the
+        packs enabled now; its id."""
+        arguments = {key: value for key, value in arguments.items() if value is not None}
+        max_chars = arguments.pop('max_chars', None)
+        try:
+            jsonschema.validate(arguments if max_chars is None else dict(arguments, max_chars=max_chars), input_schema(row))
+        except jsonschema.ValidationError as error:
+            text = f'{tool_name(row)}: {error.message}; example: {example_text(row["example"], tool_name(row))}'
+            self.record_refusal(row['verb'], arguments, 'schema', text)
+            raise RuntimeError(text) from None
+        args = [arg for arg in self.args if arg]
+        if '--packs' in args:  # The ceiling the server was given: a run gets what is enabled now.
+            at = args.index('--packs')
+            del args[at:at + 2]
+        command = [self.console, *args, '--packs', packs, '--caller', 'tool', '--session', self.session_id]
+        try:
+            return self.runs.start(command, arguments, max_chars)
+        except ReAgentLiveError as error:
+            raise RuntimeError(str(error)) from None
 
     def run(self, name, arguments):
         """One tool call on a fresh console: (its result or Digest, True when the table changed since the last call)."""
@@ -441,10 +513,16 @@ def instructions(packs):
     return text
 
 
+# What a background-only verb's tool answers: the run it started.
+STARTED = {'type': 'object', 'properties': {'run': {'type': 'string'}, 'state': {'type': 'string'}},
+           'required': ['run', 'state']}
+
+
 def tool(row, named, output_schemas):
     """A verb's tool, as the server lists it."""
+    schema = None if output_schemas != 'compact' else STARTED if backgrounded(row) else output_schema(row, named)
     return types.Tool(name=tool_name(row), description=description(row), input_schema=input_schema(row),
-                      output_schema=output_schema(row, named) if output_schemas == 'compact' else None,
+                      output_schema=schema,
                       annotations=types.ToolAnnotations(read_only_hint=not row.get('writes'),
                                                         destructive_hint=bool(row.get('writes')),
                                                         idempotent_hint=False, open_world_hint=False))
@@ -465,7 +543,7 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', packs=
     def tools():
         named = live.table.get('types', {})
         return [packs_tool(state)] + [tool(row, named, output_schemas) for row in live.table['rows']
-                                      if served(row, state.enabled)]
+                                      if served(row, state.enabled)] + run_tools(live.table, state.enabled)
 
     tools()  # A type this file lacks stops the server at start, not at the client's first list.
 
@@ -499,12 +577,44 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', packs=
         return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(report))],
                                     structured_content=report)
 
+    def answer(raw, name, warning=None):
+        """A result as the tool's caller reads it: the JSON, or what to call instead of a digest."""
+        if isinstance(raw, Digest):  # Past max_chars: what to call instead, not the result.
+            raw = {'digest': dict(raw)}
+            content = [types.TextContent(type='text', text=digest_text(raw['digest'], name))]
+        else:
+            content = [types.TextContent(type='text', text=json.dumps(raw))]
+        if warning:  # Past the session's --context-limit: one line beside the result.
+            content.append(types.TextContent(type='text', text=f'Context warning: {warning}'))
+        return types.CallToolResult(content=content, structured_content=raw)
+
+    def call_run_tool(name, arguments):
+        """run_status, run_read or run_stop. run_read's envelope is the run's console's, digested by it."""
+        run = arguments.get('run')
+        if not isinstance(run, str):
+            return failed(f'{name} needs run: the id its start answered')
+        try:
+            if name == 'run_status':
+                return answer(live.runs.status(run), name)
+            if name == 'run_stop':
+                return answer(live.runs.stop(run), name)
+            envelope = live.runs.read(run)
+        except ReAgentLiveError as error:
+            return failed(refusal(name, error))
+        if not envelope.get('ok'):
+            return failed(refusal(name, ReAgentLiveError('run', envelope.get('error'))))
+        if 'digest' in envelope:
+            return answer(Digest(envelope['digest']), name, envelope.get('context_warning'))
+        return answer(envelope.get('result', {}), name, envelope.get('context_warning'))
+
     # No get_tool_input_schema: the SDK checks no arguments. Live.run checks them against the row of the
     # console it started, which may be newer than the list the client holds.
     async def call_tool(ctx, params):
         name, arguments = params.name, params.arguments or {}
         if name == PACKS_TOOL:
             return await call_packs(ctx, arguments)
+        if name in RUN_TOOLS:
+            return await anyio.to_thread.run_sync(call_run_tool, name, arguments)
         row = live.row(name)
         if row is None or not served(row, state.enabled):
             known = row is not None and row['pack'] in state.ceiling
@@ -515,20 +625,19 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', packs=
         if row['verb'] == 'batch' and (refusal := batch_refusal(live.table, state, arguments)):
             await anyio.to_thread.run_sync(live.record_refusal, 'batch', arguments, 'pack', refusal, 'calls')
             return failed(refusal)
+        if backgrounded(row):  # Outside the call lock: it answers at once, and runs beside later calls.
+            try:
+                run = await anyio.to_thread.run_sync(live.start_run, row, arguments, state.listed(state.enabled))
+            except RuntimeError as error:
+                return failed(str(error))
+            return answer({'run': run, 'state': 'running'}, name)
         try:
             raw, changed, warning = await anyio.to_thread.run_sync(live.run, name, arguments)
         except RuntimeError as error:
             changed = False
             result = failed(str(error))
         else:
-            if isinstance(raw, Digest):  # Past max_chars: what to call instead, not the result.
-                raw = {'digest': dict(raw)}
-                content = [types.TextContent(type='text', text=digest_text(raw['digest'], name))]
-            else:
-                content = [types.TextContent(type='text', text=json.dumps(raw))]
-            if warning:  # Past the session's --context-limit: one line beside the result.
-                content.append(types.TextContent(type='text', text=f'Context warning: {warning}'))
-            result = types.CallToolResult(content=content, structured_content=raw)
+            result = answer(raw, name, warning)
         if changed:
             await changed_list(ctx.session)
         return result

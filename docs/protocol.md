@@ -86,15 +86,23 @@ changes but no size does. So a client built before a change is refused
 instead of misreading it; a new wire struct is added to `LayoutCore` or the
 pack's `LayoutPart`. Build agent and client from the same source.
 
-**One client at a time.** A client that attaches creates the named mutex
-`<section>-client`; while another client holds it, the attach is refused
-as `Busy` (two clients would overwrite each other's request). Windows
-closes it when the client exits. The holder also writes who it is (pid,
-caller kind, when it attached) to the mapping `<section>-client-info`,
-client to client: the agent never reads it, and `Client::Holder` names the
-holder to a client that finds the slot taken. The console waits for the
-slot up to `--busy-wait` (default 10 s) before it reports `busy`, naming
-the holder ([console](commands/console.md#agent-and-console)).
+**One request at a time, clients in turns.** Any number of clients
+attach; one request is in flight. The slot is the named mutex
+`<section>-client` every client opens: a request takes it for its own
+length, a `Client::Hold` for its life (a held command stays in one host
+tick), an image copy until it has read the window (one window per agent).
+Two clients sending at once would overwrite each other's request. A long
+verb gives the slot up for its console-side work (`Client::Turn`: decoding
+a block, matching a row), at least 1 ms each time, so another client's
+call waits about one block, not the whole verb. A request that finds the
+slot taken waits up to the client's busy wait (`--busy-wait` in the
+console, default 10 s), then is refused as `Busy`, naming the holder. A
+client that dies holding it abandons the mutex, and the next waiter takes
+it. Whoever takes the slot writes who it is (pid, caller kind, since when)
+to the mapping `<section>-client-info`, client to client: the agent never
+reads it, and `Client::Holder` names the holder. Each client's wait for
+the slot is counted (`ClientStats::slotWaitMicroseconds`; `slot_ms` in the
+[usage log](commands/console.md#agent-and-console)).
 
 **The image window.** `ImageCopy` answers with the bytes of a loaded image
 in a second mapping, `<section>-image` (4 MB), so a console scan that needs

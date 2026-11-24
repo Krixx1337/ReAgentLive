@@ -23,6 +23,9 @@ struct UsageTotals {
     std::map<std::string, uint64_t> callsByPack;    // The top-level calls by their verb's tool pack, but those refused for it.
     uint64_t digested = 0, saved = 0;   // Results past max_chars; what their digests kept out.
     double ms = 0;
+    // Waited for the agent's slot while another client held it: in all, and
+    // the longest one call waited.
+    double slotMs = 0, slotMsMax = 0;
     template<class V> static void Describe(V& v) {
         v("calls", &UsageTotals::calls);
         v("batched", &UsageTotals::batched);
@@ -34,12 +37,15 @@ struct UsageTotals {
         v("digested", &UsageTotals::digested);
         v("saved", &UsageTotals::saved);
         v("ms", &UsageTotals::ms);
+        v("slot_ms", &UsageTotals::slotMs);
+        v("slot_ms_max", &UsageTotals::slotMsMax);
     }
 };
 struct UsageVerb {
     std::string verb, origin;
     uint64_t calls = 0, out = 0, largest = 0;
     double ms = 0;
+    std::optional<double> slotMs;       // Slot wait in all, when its calls waited at all.
     // repeated: the same input and the same result as an earlier call of the
     // session; sameArgs: the same input with another result (state changed).
     std::optional<uint64_t> batched, unfiltered, repeated, sameArgs, refused, digested, saved;
@@ -54,6 +60,7 @@ struct UsageVerb {
         v("out", &UsageVerb::out);
         v("largest", &UsageVerb::largest);
         v("ms", &UsageVerb::ms);
+        v("slot_ms", &UsageVerb::slotMs);
         v("batched", &UsageVerb::batched);
         v("unfiltered", &UsageVerb::unfiltered);
         v("repeated", &UsageVerb::repeated);
@@ -274,6 +281,7 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
         row.out += line.out;
         row.largest = std::max(row.largest, line.out);
         row.ms += line.ms;
+        if (line.slotMs > 0) row.slotMs = row.slotMs.value_or(0) + line.slotMs;
         if (line.batch) bump(row.batched);
         if (!line.ok) {
             bump(row.refused);
@@ -316,7 +324,11 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
         // Totals count what the agent sent: a batch's items are inside its own call.
         if (!line.batch) ++stats.totals->calls;
         else ++stats.totals->batched;
-        if (!line.batch) stats.totals->ms += line.ms;
+        if (!line.batch) {
+            stats.totals->ms += line.ms;
+            stats.totals->slotMs += line.slotMs;
+            stats.totals->slotMsMax = std::max(stats.totals->slotMsMax, line.slotMs);
+        }
         if (!line.ok) ++stats.totals->refused;
         stats.totals->in += line.batch ? 0 : line.in;
         stats.totals->out += line.out;
@@ -327,8 +339,11 @@ inline shape::UsageReport MakeUsage(std::span<const UsageLine> lines, const std:
     else stats.since.reset();
     const auto tenths = [](double ms) { return static_cast<double>(static_cast<int64_t>(ms * 10 + 0.5)) / 10; };
     stats.totals->ms = tenths(stats.totals->ms);
+    stats.totals->slotMs = tenths(stats.totals->slotMs);
+    stats.totals->slotMsMax = tenths(stats.totals->slotMsMax);
     for (auto& [name, row] : byVerb) {
         row.ms = tenths(row.ms);
+        if (row.slotMs) row.slotMs = tenths(*row.slotMs);
         stats.rows->push_back(std::move(row));
     }
     std::ranges::stable_sort(*stats.rows, std::greater{}, &shape::UsageVerb::out);

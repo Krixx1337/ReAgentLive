@@ -770,6 +770,7 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     };
     const uint64_t from = at;
     bool done = false;
+    ProgressLine progress("bytes", codeBytes);
     while (true) {
         const auto section = std::ranges::find_if(code, [&](const unwind::Range& r) { return at < r.end; });
         if (section == code.end()) { done = true; break; }
@@ -783,13 +784,22 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
         });
         reading += Clock::now() - readStart;
         if (!read) return JsonError(session, jsonCommand, ErrorKind::Read, read.error());
-        const size_t stopped = touch::Sweep(bytes, at, form, end == section->end, hits, most);
-        at += std::max<size_t>(stopped, 1);
-        // Out of time while resolving: the page ends at the first hit left (an instruction start).
         bool late = false;
-        if (command.sameBase)
-            while (starts.size() < hits.size() && !(late = Clock::now() - started >= Budget))
-                starts.push_back(startOf(hits[starts.size()].address));
+        {
+            // The sweep and the function lookups are console-side work: the slot is free meanwhile.
+            const Client::Turn turn(client);
+            const size_t stopped = touch::Sweep(bytes, at, form, end == section->end, hits, most);
+            at += std::max<size_t>(stopped, 1);
+            // Out of time while resolving: the page ends at the first hit left (an instruction start).
+            if (command.sameBase)
+                while (starts.size() < hits.size() && !(late = Clock::now() - started >= Budget))
+                    starts.push_back(startOf(hits[starts.size()].address));
+        }
+        {
+            uint64_t behind = 0;
+            for (const auto& r : code) behind += r.end <= at ? r.end - r.start : r.start < at ? at - r.start : 0;
+            progress.Done(behind);
+        }
         if (late) {
             at = hits[starts.size()].address;
             hits.resize(starts.size());

@@ -182,6 +182,9 @@ Parsed Run(const Args& args, const ParseContext&) {
     command.target = args.Str("out");
     if (command.file.empty()) return Fail("plan is the plan file's path");
     if (args.Has("out") && command.target.empty()) return Fail("out is a file path");
+    if (args.Has("background"))
+        return Fail("background: a frontend starts background runs (the MCP adapter, a Python Session); "
+                    "a console runs the plan here: leave background out");
     return command;
 }
 }

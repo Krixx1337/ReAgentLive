@@ -92,11 +92,15 @@ class McpTests(unittest.TestCase):
         async def body(client):
             return {tool.name: tool for tool in (await client.list_tools()).tools}
         tools = self.run_client(body, packs=ALL)
-        rows = [row for row in self.table['rows'] if row['verb'] != 'quit' and not row.get('blocks')]
+        rows = [row for row in self.table['rows'] if row['verb'] != 'quit' and (not row.get('blocks') or row['verb'] == 'run')]
         expected = {(row['verb'] if row['origin'] == 'core' else f'{row["origin"]}_{row["verb"]}').replace('-', '_')
                     for row in rows}
-        self.assertEqual(set(tools), expected | {'packs'})
+        self.assertEqual(set(tools), expected | {'packs', 'run_status', 'run_read', 'run_stop'})
         self.assertIn('watch_start', tools)                   # A capture returns at once: a tool.
+        self.assertNotIn('background', tools['run'].input_schema['properties'])   # Always in the background.
+        self.assertIn('Runs in the background', tools['run'].description)
+        self.assertFalse(tools['run_stop'].annotations.read_only_hint)             # It ends a process: asked first.
+        self.assertFalse(tools['run_stop'].annotations.destructive_hint)          # Never the target.
         self.assertTrue(tools['read'].annotations.read_only_hint)
         self.assertFalse(tools['read'].annotations.destructive_hint)
         self.assertTrue(tools['write'].annotations.destructive_hint)
@@ -154,8 +158,10 @@ class McpTests(unittest.TestCase):
 
     def test_packs_pick_the_list_and_only_modify_writes(self):
         packs = {row['verb']: row['pack'] for row in self.table['rows']}
+        # run (explore) is served as a background run, with run_status, run_read and run_stop beside it.
         servable = lambda names: {row['verb'] for row in self.table['rows'] if row['pack'] in names
-                                  and row['verb'] != 'quit' and not row.get('blocks')}
+                                  and row['verb'] != 'quit' and (not row.get('blocks') or row['verb'] == 'run')} | {
+                                  'run_status', 'run_read', 'run_stop'}
         explore = self.tool_list()                                # Default: explore.
         self.assertEqual(len(explore) - 1, len(servable({'explore'})))
         self.assertIn('ue_get', explore)
@@ -316,6 +322,51 @@ class McpTests(unittest.TestCase):
         self.assertEqual(sessions[0], sessions[1])               # ...in one usage-log session.
         self.assertEqual(lines.count('packs explore'), 2)        # Each with the server's ceiling.
         self.assertEqual(lines.count('quit'), 3)                 # Each ended: the table read at start, then each call.
+
+    def test_run_starts_in_the_background_with_the_packs_enabled_now_and_the_run_tools_follow_it(self):
+        console = os.path.join(self.dir.name, 'console.cmd')   # A console file: its runs go in a folder beside it.
+        with open(console, 'w') as f:
+            f.write(f'@"{sys.executable}" -I "{FAKE}" %*\n')
+        plan = os.path.join(self.dir.name, 'plan.json')
+        with open(plan, 'w') as f:
+            json.dump({'sleep': 0.5, 'envelope': {'ok': True, 'result': {'lines': 2, 'file': 'C:/out.jsonl'}}}, f)
+
+        async def body(client):
+            await client.call_tool('packs', {'action': 'enable', 'pack': 'native'})
+            started = await client.call_tool('run', {'plan': plan})
+            self.assertFalse(started.is_error, started.content[0].text)
+            run = started.structured_content['run']
+            self.assertEqual(started.structured_content['state'], 'running')
+            early = await client.call_tool('run_read', {'run': run})
+            self.assertTrue(early.is_error)
+            self.assertIn('still running', early.content[0].text)
+            for _ in range(200):
+                status = (await client.call_tool('run_status', {'run': run})).structured_content
+                if status['state'] == 'done':
+                    break
+                await asyncio.sleep(0.05)
+            self.assertEqual(status['state'], 'done')
+            self.assertEqual(status['progress'], '2/2 steps')
+            read = await client.call_tool('run_read', {'run': run})
+            self.assertEqual(read.structured_content['lines'], 2)
+            stopped = await client.call_tool('run_stop', {'run': run})
+            self.assertEqual(stopped.structured_content['state'], 'done')
+            gone = await client.call_tool('run_status', {'run': run})
+            self.assertTrue(gone.is_error)
+            return run
+
+        server = reagentlive_mcp.build(console, allow=['native', 'observe'])
+
+        async def main():
+            async with Client(server) as client:
+                return await body(client)
+        open(self.log, 'w').close()
+        run = asyncio.run(main())
+        self.assertEqual(os.listdir(server.live.runs.folder), [])     # run_stop deleted its files.
+        self.assertTrue(run.startswith(f'{os.getpid()}-'))
+        with open(self.log) as file:
+            # The run's console got the packs enabled when it started, not the ceiling (observe).
+            self.assertIn('run packs explore,native', file.read().splitlines())
 
     def rebuilt_run(self, body, notices=None, mode='auto'):
         """`body` on a client whose console is rebuilt (one verb fewer) after its first list."""

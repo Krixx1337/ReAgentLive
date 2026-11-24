@@ -118,6 +118,19 @@ std::filesystem::path CachePath(uint32_t pid) {
     return std::filesystem::path(folder) / (L"reagentlive-" + std::to_wstring(pid) + L".cache");
 }
 
+void ProgressLine::Done(uint64_t done) {
+    const auto now = Clock::now();
+    if (now - last_ < std::chrono::seconds(1) && !(done >= total_ && now - began_ >= std::chrono::seconds(1))) return;
+    last_ = now;
+    std::fprintf(stderr, "  progress: %llu/%llu %s\n", static_cast<unsigned long long>(done),
+        static_cast<unsigned long long>(total_), unit_.c_str());
+    std::fflush(stderr);
+}
+
+std::filesystem::path TemporaryBeside(const std::filesystem::path& path) {
+    return std::filesystem::path(path).concat(L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp");
+}
+
 // %TEMP%\reagentlive-<pid>-<owner>.results: the whole results of lines that
 // must not run again (output.cpp), per agent instance as the cache file is.
 // The first run against an instance removes the same pid's earlier folders.
@@ -249,21 +262,19 @@ bool OfflineOnly(const std::vector<std::string>& lines) {
     });
 }
 
-// The usage line of a frontend's refusal, appended as a call's would be.
-// Why the agent is busy: who holds its slot and since when, how long this
-// console waited, and the way out.
-std::string BusyMessage(const std::optional<SlotHolder>& holder, std::chrono::seconds waited) {
-    std::string text = "another client holds the agent";
-    if (holder) {
-        const auto since = std::chrono::sys_seconds(std::chrono::seconds(holder->since));
-        const auto held = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()) - since;
-        text += std::format(": a {} console, pid {}, since {:%T}Z ({} s)", holder->caller.empty() ? "client" : holder->caller,
-            holder->pid, since, held.count());
-    }
-    return text + std::format("; waited {} s (--busy-wait). One client at a time: let it finish, or have a long "
-        "Python session release the slot between calls (Session hold=False)", waited.count());
+// Appends one usage line with a single append-only write, so lines from
+// consoles writing at once never interleave or overwrite each other.
+void AppendUsage(const std::filesystem::path& path, const UsageLine& record) {
+    const std::string text = UsageText(record) + '\n';
+    HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
+    CloseHandle(file);
 }
 
+// The usage line of a frontend's refusal, appended as a call's would be.
 void LogRefused(const std::filesystem::path& path, std::span<const Verb> verbs, const InputLine& input,
                 const std::string& session, const std::string& caller) {
     if (path.empty() || session.empty()) return;
@@ -281,8 +292,7 @@ void LogRefused(const std::filesystem::path& path, std::span<const Verb> verbs, 
     record.ok = false;
     record.refused = (*input.refused)["kind"].get<std::string>();
     if (input.refused->contains("key")) record.refusedKey = (*input.refused)["key"].get<std::string>().substr(0, MaxUsageVerb);
-    std::ofstream file(path, std::ios::binary | std::ios::app);
-    file << UsageText(record) << '\n';
+    AppendUsage(path, record);
 }
 Json RefusedEnvelope(const InputLine& input) {
     Json error = *input.refused;
@@ -396,6 +406,7 @@ struct UsageScope {
     LineUsage line;
     LineUsage* outer;
     Clock::time_point began = Clock::now();
+    const uint64_t slotWaitBefore = session.client.Stats().slotWaitMicroseconds;
     UsageLine record;
     bool skip = false;
     const bool internal = session.usage.internal;
@@ -457,8 +468,8 @@ struct UsageScope {
         record.refused = line.refused;
         record.refusedKey = line.refusedKey;
         record.ms = std::chrono::duration<double, std::milli>(Clock::now() - began).count();
-        std::ofstream file(session.usage.path, std::ios::binary | std::ios::app);
-        file << UsageText(record) << '\n';
+        record.slotMs = static_cast<double>(session.client.Stats().slotWaitMicroseconds - slotWaitBefore) / 1000;
+        AppendUsage(session.usage.path, record);
     }
 };
 
@@ -517,11 +528,14 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
     std::vector<Json> rows;
     const auto write = [&](const Json& line) {
         ++result.lines;
-        if (out.is_open()) out << line.dump(-1, ' ', true, Json::error_handler_t::replace) << '\n';
+        // Flushed per line: a background run's lines are read while it runs.
+        if (out.is_open()) out << line.dump(-1, ' ', true, Json::error_handler_t::replace) << '\n' << std::flush;
         else rows.push_back(line);
     };
     std::vector<Json>* outer = session.capture;
+    ProgressLine progress("steps", steps->size());
     for (size_t index = 0; index < steps->size(); ++index) {
+        progress.Done(index);
         const plan::Step& step = (*steps)[index];
         plan::Tally::StepTime time{index + 1, step.verb};
         const size_t runs = step.Runs();
@@ -566,6 +580,7 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
         }
         tally.steps.push_back(std::move(time));
     }
+    progress.Done(steps->size());
     shape::RunReport& report = result.report;
     report.steps = steps->size();
     report.calls = tally.calls;
@@ -777,7 +792,7 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
         if (std::ranges::any_of(session.modules, [base](const Module& m) { return m.base == base; }))
             data.layouts.emplace_back(base, layout);
     data.packs = SavePackCache(session);
-    const auto temporary = std::filesystem::path(path).concat(L".tmp");
+    const auto temporary = TemporaryBeside(path);
     {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
         file << SaveCache(data);
@@ -886,7 +901,7 @@ int RunCheck(std::span<const Verb> verbs, const std::vector<std::string>* lines,
 void TrimUsageFile(const std::filesystem::path& path) {
     const auto trimmed = TrimUsage(ReadFile(path));
     if (!trimmed) return;
-    const auto temporary = std::filesystem::path(path).concat(L".tmp");
+    const auto temporary = TemporaryBeside(path);
     {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
         file << *trimmed;
@@ -1033,26 +1048,13 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
                 return startupError("malformed names file at line " + std::to_string(bad));
         }
     }
-    // One client per agent. Another console (a script's, a second tool server's) usually ends within a
-    // call, so a busy agent is asked again for up to --busy-wait before the call is refused as busy,
-    // naming the client that holds it.
+    // Clients share the agent's one slot in turns: each request takes it for its own length, a held
+    // command for its life. A request that finds it taken waits up to --busy-wait, then that call
+    // is refused as busy, naming the holder; the console keeps running.
     const auto section = std::wstring(config.sectionPrefix) + std::to_wstring(pid);
     auto client = Client::Attach(section, config.layout, caller);
-    const auto waitStart = Clock::now();
-    bool told = false;
-    while (!client && client.error().kind == Error::Kind::Busy && Clock::now() - waitStart < busyWait) {
-        if (!told && Clock::now() - waitStart >= std::chrono::seconds(1)) {
-            std::fprintf(stderr, "  agent busy: waiting up to %lld s for the slot\n", static_cast<long long>(busyWait.count()));
-            std::fflush(stderr);
-            told = true;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        client = Client::Attach(section, config.layout, caller);
-    }
-    if (!client && client.error().kind == Error::Kind::Busy)
-        return offline(BusyMessage(Client::Holder(section), std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - waitStart)),
-            ErrorKind::Busy);
     if (!client) return offline(client.error().message, ErrorKind::Startup);
+    client->SetBusyWait(busyWait);
     client->SetWaitNotice([](std::chrono::milliseconds waited, bool ticking) {
         std::fprintf(stderr, "  waiting %lld s (%s)\n", static_cast<long long>(waited.count() / 1000),
             ticking ? "agent ticking, request running" : "agent not ticking");

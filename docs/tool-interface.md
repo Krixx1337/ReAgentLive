@@ -139,7 +139,8 @@ defines what the table did not.
   only file that needs the dependency): each tool is made from its row at
   run time, so no tool or JSON Schema is written by hand or exported, and
   no module file can go stale. Verbs marked `blocks` are left out: a call
-  would outlast a client's timeout, while a script may wait. What the
+  would outlast a client's timeout, while a script may wait. One with a
+  `background` argument (`run`) is served as a background run instead. What the
   adapter serves: [MCP tools](client.md#mcp-tools).
 - **`batch` carries reads only.** Its row is not marked `writes`, so its
   tool is read-only and a client may allow it unasked; a write, call or

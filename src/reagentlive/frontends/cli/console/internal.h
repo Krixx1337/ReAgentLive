@@ -38,6 +38,19 @@ struct Timing {
     Clock::time_point began;
 };
 
+// A long verb's progress on stderr, at most one line a second (and the
+// last one), as "  progress: <done>/<total> <unit>": a background run's
+// status reads the newest. Nothing for work that ends within a second.
+class ProgressLine {
+public:
+    ProgressLine(std::string unit, uint64_t total) : unit_(std::move(unit)), total_(total) {}
+    void Done(uint64_t done);
+private:
+    std::string unit_;
+    uint64_t total_;
+    Clock::time_point began_ = Clock::now(), last_ = began_;
+};
+
 // Heartbeat and time at attach, then at the last status: the tick rate is
 // measured over that interval, at least 100 ms.
 struct Beat { uint64_t ticks; Clock::time_point at; };
@@ -168,6 +181,9 @@ void RunVtable(Session& session, const Command& command, std::string_view jsonCo
 std::filesystem::path CachePath(uint32_t pid);
 // %TEMP%\reagentlive-<pid>-<owner>.results: whole results kept by the result cap.
 std::filesystem::path ResultsFolder(uint32_t pid, uint32_t owner);
+// A file to write whole and then rename over `path`: named per process, so two
+// consoles replacing the same file never write into one temporary.
+std::filesystem::path TemporaryBeside(const std::filesystem::path& path);
 // mem-snap and mem-diff: a raw range kept in a file beside the cache, then compared.
 void RunMemSnap(Session& session, const Command& command, std::string_view jsonCommand);
 void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand);

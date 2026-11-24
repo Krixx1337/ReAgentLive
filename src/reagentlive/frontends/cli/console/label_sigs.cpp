@@ -7,6 +7,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -30,6 +31,18 @@ struct LabelsFile {
     uint32_t timestamp = 0;
 };
 
+// A labels file's non-empty lines; nullopt when it cannot be opened.
+std::optional<std::vector<std::string>> ReadLabelLines(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return std::nullopt;
+    std::vector<std::string> lines;
+    for (std::string line; std::getline(in, line);) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty()) lines.push_back(std::move(line));
+    }
+    return lines;
+}
+
 // The file (default: the host's names file, else the console's), its lines,
 // and the module and build its rows are matched against.
 std::expected<LabelsFile, std::pair<ErrorKind, std::string>> OpenLabels(Session& session, const Command& command) {
@@ -37,12 +50,9 @@ std::expected<LabelsFile, std::pair<ErrorKind, std::string>> OpenLabels(Session&
     file.path = !command.file.empty() ? command.file
         : !session.hostLabels.empty() ? session.hostLabels.string() : session.labels.string();
     if (file.path.empty()) return std::unexpected(std::pair(ErrorKind::File, "no labels file: give one"));
-    std::ifstream in(file.path, std::ios::binary);
-    if (!in) return std::unexpected(std::pair(ErrorKind::File, "cannot open " + file.path));
-    for (std::string line; std::getline(in, line);) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!line.empty()) file.lines.push_back(std::move(line));
-    }
+    auto lines = ReadLabelLines(file.path);
+    if (!lines) return std::unexpected(std::pair(ErrorKind::File, "cannot open " + file.path));
+    file.lines = std::move(*lines);
     const auto modules = LoadedModules(session);
     const Module* module = command.target.empty() ? (modules.empty() ? nullptr : &modules.front())
                                                   : text::ModuleNamed(command.target, modules);
@@ -123,7 +133,7 @@ std::expected<std::pair<LabelSig, uint64_t>, std::string> SignGlobal(Session& se
 }
 
 std::expected<void, std::string> Rewrite(const std::string& path, std::span<const std::string> lines) {
-    const auto temporary = std::filesystem::path(path).concat(".tmp");
+    const auto temporary = TemporaryBeside(path);
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         for (const auto& line : lines) out << line << '\n';
@@ -133,6 +143,14 @@ std::expected<void, std::string> Rewrite(const std::string& path, std::span<cons
     std::filesystem::rename(temporary, path, error);
     if (error) return std::unexpected("cannot replace " + path + ": " + error.message());
     return {};
+}
+
+// The verb's rows over the file read again just before the write (MergeLabelLines).
+std::expected<void, std::string> MergeInto(const std::string& path, const std::map<std::string, std::string>& changed,
+                                           std::span<const std::string> added) {
+    auto fresh = ReadLabelLines(path);
+    if (!fresh) return std::unexpected("cannot open " + path);
+    return Rewrite(path, MergeLabelLines(std::move(*fresh), changed, added));
 }
 }
 
@@ -150,12 +168,16 @@ void RunLabelsSign(Session& session, const Command& command, std::string_view js
     result.module = module.name;
     result.timestamp = file->timestamp;
     auto lines = file->lines;
-    bool changed = false;
+    std::map<std::string, std::string> changed; // A row's line as read, and its new line.
+    ProgressLine progress("rows", lines.size());
+    uint64_t done = 0;
     for (auto& line : lines) {
+        progress.Done(done++);
         const auto row = ParseLabel(line, module, file->timestamp);
         if (!row || (row->kind != "user" && row->kind != "global")) continue;
         if (row->extra.contains("sig") && !command.all) { ++result.skipped; continue; }
         if (FailedBefore(row->extra, file->timestamp) && !command.all) { ++result.failedBefore; continue; }
+        const Client::Turn turn(client); // A turn per row: its searches and reads take the slot each.
         const uint64_t address = module.base + row->rva;
         shape::LabelSignRow out{row->name, row->kind, row->rva, "unsigned", {}, {}, {}};
         std::optional<LabelSig> signature;
@@ -189,14 +211,16 @@ void RunLabelsSign(Session& session, const Command& command, std::string_view js
             ++result.unsignedRows;
         }
         if (auto text = json.dump(); text != line) {
+            changed[line] = text;
             line = std::move(text);
-            changed = true;
         }
         result.rows.push_back(std::move(out));
     }
+    progress.Done(done);
     result.searches = checker.Searches();
-    if (changed)
-        if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, ErrorKind::File, written.error());
+    if (!changed.empty())
+        if (auto written = MergeInto(file->path, changed, {}); !written)
+            return JsonError(session, jsonCommand, ErrorKind::File, written.error());
     Emit(session, jsonCommand, std::move(result));
 }
 
@@ -217,7 +241,11 @@ void RunLabelsPort(Session& session, const Command& command, std::string_view js
     result.present = plan.present.size();
     result.unsignedNames = plan.unsignedNames;
     std::vector<std::string> added;
+    ProgressLine progress("rows", plan.candidates.size());
+    uint64_t done = 0;
     for (const auto& candidate : plan.candidates) {
+        progress.Done(done++);
+        const Client::Turn turn(client); // A turn per row, as labels-sign.
         const auto outcome = PortResult(candidate.sig,
             checker.Run(sig::Check{candidate.sig.pattern, std::nullopt, 0, candidate.sig.resolve}, module), module);
         shape::LabelPortRow row{candidate.name, candidate.kind, candidate.from, outcome.status, {}, {}, {}};
@@ -239,12 +267,11 @@ void RunLabelsPort(Session& session, const Command& command, std::string_view js
         }
         result.rows.push_back(std::move(row));
     }
+    progress.Done(done);
     result.searches = checker.Searches();
-    if (!added.empty()) {
-        auto lines = file->lines;
-        lines.insert(lines.end(), added.begin(), added.end());
-        if (auto written = Rewrite(file->path, lines); !written) return JsonError(session, jsonCommand, ErrorKind::File, written.error());
-    }
+    if (!added.empty())
+        if (auto written = MergeInto(file->path, {}, added); !written)
+            return JsonError(session, jsonCommand, ErrorKind::File, written.error());
     Emit(session, jsonCommand, std::move(result));
 }
 
@@ -310,6 +337,8 @@ void RunLabelsCheck(Session& session, const Command& command, std::string_view j
         return command.statuses.empty() || std::ranges::find(command.statuses, status) != command.statuses.end();
     };
     uint64_t matched = 0;
+    // Matching against the scan's hits is console-side: the slot is free meanwhile.
+    std::optional<Client::Turn> turn(std::in_place, client);
     for (const auto& [row, signature] : rows) {
         shape::LabelCheckRow out{row.name, row.kind, row.rva, "invalid", {}, {}, {}};
         if (!signature) {
@@ -335,6 +364,7 @@ void RunLabelsCheck(Session& session, const Command& command, std::string_view j
         }
         result.rows.push_back(std::move(out));
     }
+    turn.reset();
     if (!command.statuses.empty()) result.matched = matched;
     result.searches = checker.Searches();
     result.scanMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();

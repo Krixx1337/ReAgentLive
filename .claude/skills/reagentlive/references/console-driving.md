@@ -60,10 +60,12 @@ with Session(r'<console exe>', packs=['explore', 'native', 'observe']) as s:
   complete.
 - `Session` has no timeout: a call waits until the console answers or
   exits. Blocking verbs (`run`, a host's) block the script.
-- A session holds the agent's one client slot for its life: MCP tools
-  wait, then fail as `busy`. Beside MCP, open it with `hold=False` (a
-  console per call, the slot free in between); keep the default for tight
-  loops and same-moment reads.
+- Clients take the agent's slot in turns, per request: a session beside
+  MCP needs nothing special. For same-moment reads use one `batch`.
+- Long work (a plan, a sweep): `s.call('run', {'plan': p, 'background':
+  True})`, keep exploring, poll `s.run_status(id)`, then
+  `s.run_read(id)` and `s.run_stop(id)`. Through MCP: the `run` tool, then
+  `run_status`, `run_read`, `run_stop`.
 - Stop after three identical refusals and fix the call.
 - Never parse console JSON by hand or write your own session loop: hand
   parsers crashed six times in one session.

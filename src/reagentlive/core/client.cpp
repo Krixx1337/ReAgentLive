@@ -11,7 +11,10 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <ctime>
+#include <format>
+#include <optional>
 #include <utility>
 #include "reagentlive/core/client.h"
 
@@ -54,28 +57,19 @@ Result<Client> Client::Attach(std::wstring_view sectionName, uint32_t layout, st
         UnmapViewOfFile(section);
         return std::unexpected(Fail(Error::Kind::Attach, "agent layout differs; build agent and client from the same source"));
     }
-    // Two clients would overwrite each other's request and both time out. The
-    // first holder creates the named object; Windows closes it if the client dies.
+    // Two clients sending at once would overwrite each other's request and
+    // both time out: the slot (a named mutex every client opens) lets one
+    // request or Hold through at a time. Windows abandons it if its owner dies.
     HANDLE guard = CreateMutexW(nullptr, FALSE, (name + L"-client").c_str());
-    if (!guard || GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (guard) CloseHandle(guard);
+    if (!guard) {
         UnmapViewOfFile(section);
-        return std::unexpected(Fail(Error::Kind::Busy, "another client is attached to this agent (one console at a time)"));
+        return std::unexpected(Fail(Error::Kind::Attach, "cannot open the slot (error " + std::to_string(GetLastError()) + ")"));
     }
-    // Who holds the slot, for a client that finds it busy. Best effort: a
-    // client that cannot say is still attached.
+    // Who holds the slot, for a client that finds it taken. Best effort: a
+    // client that cannot say still takes turns.
     HANDLE holder = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(HolderInfo),
         (name + L"-client-info").c_str());
-    if (holder) {
-        if (auto* info = static_cast<HolderInfo*>(MapViewOfFile(holder, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(HolderInfo)))) {
-            info->pid = GetCurrentProcessId();
-            info->since = static_cast<int64_t>(time(nullptr));
-            CopyText(info->caller, caller);
-            std::atomic_ref(info->magic).store(HolderMagic, std::memory_order_release);
-            UnmapViewOfFile(info);
-        }
-    }
-    return Client(section, guard, holder, name);
+    return Client(section, guard, holder, name, std::string(caller.substr(0, sizeof(HolderInfo::caller) - 1)));
 }
 
 std::optional<SlotHolder> Client::Holder(std::wstring_view sectionName) {
@@ -92,6 +86,9 @@ std::optional<SlotHolder> Client::Holder(std::wstring_view sectionName) {
 }
 
 void Client::Release() {
+    if (owned_) ReleaseMutex(guard_);
+    owned_ = false;
+    slotDepth_ = 0;
     if (section_) UnmapViewOfFile(section_);
     if (image_) UnmapViewOfFile(image_);
     if (holder_) CloseHandle(holder_);
@@ -105,9 +102,10 @@ void Client::Release() {
 }
 Client::Client(Client&& other) noexcept
     : section_(std::exchange(other.section_, nullptr)), guard_(std::exchange(other.guard_, nullptr)),
-      holder_(std::exchange(other.holder_, nullptr)), name_(std::move(other.name_)),
+      holder_(std::exchange(other.holder_, nullptr)), name_(std::move(other.name_)), caller_(std::move(other.caller_)),
       image_(std::exchange(other.image_, nullptr)),
-      timeout_(other.timeout_), notice_(other.notice_), stats_(other.stats_),
+      timeout_(other.timeout_), busyWait_(other.busyWait_), slotDepth_(std::exchange(other.slotDepth_, 0)),
+      owned_(std::exchange(other.owned_, false)), notice_(other.notice_), stats_(other.stats_),
       timerRaised_(std::exchange(other.timerRaised_, false)) {}
 Client& Client::operator=(Client&& other) noexcept {
     if (this != &other) {
@@ -116,8 +114,12 @@ Client& Client::operator=(Client&& other) noexcept {
         guard_ = std::exchange(other.guard_, nullptr);
         holder_ = std::exchange(other.holder_, nullptr);
         name_ = std::move(other.name_);
+        caller_ = std::move(other.caller_);
         image_ = std::exchange(other.image_, nullptr);
         timeout_ = other.timeout_;
+        busyWait_ = other.busyWait_;
+        slotDepth_ = std::exchange(other.slotDepth_, 0);
+        owned_ = std::exchange(other.owned_, false);
         notice_ = other.notice_;
         stats_ = other.stats_;
         timerRaised_ = std::exchange(other.timerRaised_, false);
@@ -149,9 +151,70 @@ uint32_t Client::AgentOwner() const {
     return section_ ? std::atomic_ref(section_->owner).load(std::memory_order_acquire) : 0;
 }
 
+namespace {
+int64_t NowMicroseconds() {
+    LARGE_INTEGER frequency, now;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&now);
+    return now.QuadPart / frequency.QuadPart * 1000000 + now.QuadPart % frequency.QuadPart * 1000000 / frequency.QuadPart;
+}
+// Why the slot was not free: who holds it and since when, and how long this
+// client waited.
+std::string BusyText(const std::optional<SlotHolder>& holder, int64_t waitedMicroseconds) {
+    std::string text = "another client holds the agent";
+    if (holder) {
+        const auto since = std::chrono::sys_seconds(std::chrono::seconds(holder->since));
+        const auto held = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()) - since;
+        text += std::format(": a {} client, pid {}, since {:%T}Z ({} s)", holder->caller.empty() ? "client" : holder->caller,
+            holder->pid, since, held.count());
+    }
+    return text + std::format("; waited {:.1f} s for the slot", static_cast<double>(waitedMicroseconds) / 1e6);
+}
+}
+
+Result<void> Client::TakeSlot() {
+    if (!guard_) return std::unexpected(Fail(Error::Kind::Attach, "not attached"));
+    if (owned_) {
+        ++slotDepth_;
+        return {};
+    }
+    // A free slot is taken at once and counts no wait; only a taken one is waited for.
+    DWORD waited = WaitForSingleObject(guard_, 0);
+    if (waited == WAIT_TIMEOUT) {
+        const int64_t began = NowMicroseconds();
+        waited = WaitForSingleObject(guard_, static_cast<DWORD>(std::max<int64_t>(0, busyWait_.count())));
+        const int64_t spent = NowMicroseconds() - began;
+        stats_.slotWaitMicroseconds += static_cast<uint64_t>(spent);
+        if (waited != WAIT_OBJECT_0 && waited != WAIT_ABANDONED)
+            return std::unexpected(Fail(Error::Kind::Busy, BusyText(Holder(name_), spent)));
+    } else if (waited != WAIT_OBJECT_0 && waited != WAIT_ABANDONED) {
+        return std::unexpected(Fail(Error::Kind::Busy, "cannot take the slot (error " + std::to_string(GetLastError()) + ")"));
+    }
+    owned_ = true;
+    slotDepth_ = 1;
+    if (holder_) {
+        if (auto* info = static_cast<HolderInfo*>(MapViewOfFile(holder_, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(HolderInfo)))) {
+            std::atomic_ref(info->magic).store(0, std::memory_order_relaxed);
+            info->pid = GetCurrentProcessId();
+            info->since = static_cast<int64_t>(time(nullptr));
+            CopyText(info->caller, caller_);
+            std::atomic_ref(info->magic).store(HolderMagic, std::memory_order_release);
+            UnmapViewOfFile(info);
+        }
+    }
+    return {};
+}
+
+void Client::DropSlot() {
+    if (!slotDepth_ || --slotDepth_ || !owned_) return;
+    owned_ = false;
+    ReleaseMutex(guard_);
+}
+
 // While held, the agent waits only briefly for the next request; a
 // descheduled client thread would miss it, so the outermost hold raises it.
 Client::Hold::Hold(Client& client) : client_(client) {
+    slot_ = client_.TakeSlot().has_value();
     if (client_.holdDepth_++) return;
     client_.holdFirstTick_ = client_.holdLastTick_ = client_.holdSpanTick_ = 0;
     client_.holdPriority_ = GetThreadPriority(GetCurrentThread());
@@ -160,19 +223,32 @@ Client::Hold::Hold(Client& client) : client_(client) {
 Client::Hold::~Hold() {
     if (!--client_.holdDepth_ && client_.holdPriority_ != THREAD_PRIORITY_ERROR_RETURN)
         SetThreadPriority(GetCurrentThread(), client_.holdPriority_);
+    if (slot_) client_.DropSlot();
 }
 uint64_t Client::Hold::FirstTick() const { return client_.holdFirstTick_; }
 uint64_t Client::Hold::LastTick() const { return client_.holdLastTick_; }
 void Client::Hold::BeginSpan() { client_.holdSpanTick_ = 0; }
 uint64_t Client::Hold::SpanFirstTick() const { return client_.holdSpanTick_; }
 
-namespace {
-int64_t NowMicroseconds() {
-    LARGE_INTEGER frequency, now;
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&now);
-    return now.QuadPart / frequency.QuadPart * 1000000 + now.QuadPart % frequency.QuadPart * 1000000 / frequency.QuadPart;
+// Only the one Hold's own take is open here (single-threaded: no request is
+// in flight), so the mutex is released whole and taken back whole.
+Client::Turn::Turn(Client& client) : client_(client) {
+    if (client_.holdDepth_ != 1 || !client_.owned_ || client_.slotDepth_ != 1) return;
+    client_.owned_ = false;
+    client_.slotDepth_ = 0;
+    ReleaseMutex(client_.guard_);
+    released_ = true;
+    began_ = NowMicroseconds();
 }
+Client::Turn::~Turn() {
+    if (!released_) return;
+    if (const int64_t left = 1000 - (NowMicroseconds() - began_); left > 0) Sleep(static_cast<DWORD>((left + 999) / 1000));
+    // Taken back for the Hold, whose drop then releases it. Not taken: the
+    // Hold's drop finds no depth and does nothing; its requests take it each.
+    (void)client_.TakeSlot();
+}
+
+namespace {
 // Spinning catches a response within microseconds; after this, sleep instead
 // of burning a core. Held requests spin longer: the agent waits only briefly
 // for the next one, and a client that woke late from a sleep would miss every
@@ -182,6 +258,11 @@ constexpr int64_t SpinMicroseconds = 2000, HeldSpinMicroseconds = 50000;
 
 Result<Response> Client::Send(const Request& request, std::chrono::milliseconds timeout) {
     if (!section_) return std::unexpected(Fail(Error::Kind::Attach, "not attached"));
+    if (auto slot = TakeSlot(); !slot) return std::unexpected(slot.error());
+    struct Drop {
+        Client& client;
+        ~Drop() { client.DropSlot(); }
+    } drop{*this};
     if (!timerRaised_) {
         // Sleep(1) otherwise rounds up to the ~15.6 ms system timer. This
         // process only; released at exit.
@@ -402,6 +483,13 @@ Result<ImageBlock> Client::CopyImage(uint64_t address, uint32_t length, std::chr
     request.length = length;
     if (Check(request) != Status::Ok)
         return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid image copy"});
+    // The window is one per agent: keep the slot from the copy to the read,
+    // so another client's copy cannot overwrite it in between.
+    if (auto slot = TakeSlot(); !slot) return std::unexpected(slot.error());
+    struct Drop {
+        Client& client;
+        ~Drop() { client.DropSlot(); }
+    } drop{*this};
     auto response = Send(request, timeout);
     if (!response) return std::unexpected(response.error());
     if (response->status != Status::Ok) return std::unexpected(AgentError(*response));

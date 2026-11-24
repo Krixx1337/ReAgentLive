@@ -369,3 +369,36 @@ TEST_CASE("usage refusals: by verb, kind and the arg at fault, most first") {
     CHECK(ParseUsageLine(UsageText(lines[0]))->refusedKey == "view.limit");
     CHECK_FALSE(MakeUsage({}, std::string("s"), AllVerbs()).refusals.has_value());   // None: no list.
 }
+
+TEST_CASE("usage sums the slot wait: per verb when it waited, in all and the longest") {
+    UsageLine waited;
+    waited.time = "2026-01-02T03:04:05Z";
+    waited.session = "s";
+    waited.verb = "read";
+    waited.origin = "core";
+    waited.caller = "tool";
+    waited.hash = "h";
+    waited.ms = 120;
+    waited.slotMs = 100.04;
+    const auto text = UsageText(waited);
+    CHECK(text.find("\"slot_ms\":100.0") != std::string::npos);
+    const auto parsed = ParseUsageLine(text);
+    REQUIRE(parsed);
+    CHECK(parsed->slotMs == doctest::Approx(100.0));
+    UsageLine free = waited;
+    free.verb = "modules";
+    free.slotMs = 0;
+    CHECK(UsageText(free).find("slot_ms") == std::string::npos); // No wait: no key.
+    UsageLine second = waited;
+    second.slotMs = 20;
+    const auto stats = MakeUsage(std::vector<UsageLine>{*parsed, free, second}, std::string("s"), AllVerbs());
+    Checked(stats);
+    CHECK(stats.totals->slotMs == doctest::Approx(120.0));
+    CHECK(stats.totals->slotMsMax == doctest::Approx(100.0));
+    const auto read = std::ranges::find(*stats.rows, std::string("read"), &shape::UsageVerb::verb);
+    REQUIRE(read != stats.rows->end());
+    CHECK(read->slotMs == doctest::Approx(120.0));
+    const auto modules = std::ranges::find(*stats.rows, std::string("modules"), &shape::UsageVerb::verb);
+    REQUIRE(modules != stats.rows->end());
+    CHECK_FALSE(modules->slotMs.has_value());
+}

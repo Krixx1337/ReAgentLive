@@ -576,3 +576,14 @@ TEST_CASE("labels-port looks for each name this build lacks, from the newest sig
     CHECK(CheckLabel(function, Matches(2, false), module, 0x500).status == "ambiguous");
     CHECK(CheckLabel(function, Matches(0, false), module, 0x500).status == "missing");
 }
+
+TEST_CASE("labels-sign and labels-port merge their rows over the file as it is now") {
+    // Read at the start: A, B. Meanwhile another console changed B and added C.
+    const std::vector<std::string> fresh = {"A", "B2", "C"};
+    // labels-sign changed A and B; B's change loses to the other console's.
+    const auto signedRows = MergeLabelLines(fresh, {{"A", "A-signed"}, {"B", "B-signed"}}, {});
+    CHECK(signedRows == std::vector<std::string>{"A-signed", "B2", "C"});
+    // labels-port adds D, and C, which the other console added too.
+    const std::vector<std::string> added = {"C", "D"};
+    CHECK(MergeLabelLines(fresh, {}, added) == std::vector<std::string>{"A", "B2", "C", "D"});
+}

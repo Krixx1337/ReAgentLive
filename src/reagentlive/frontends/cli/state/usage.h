@@ -28,6 +28,7 @@ struct UsageLine {
     std::string refused;                // The error's kind; empty when ok.
     std::string refusedKey;             // The arg at fault (the error's key, view.limit), when it names one.
     double ms = 0;
+    double slotMs = 0;                  // Waited for the agent's slot while another client held it.
     bool batch = false;                 // Ran inside a batch.
     // The call's max_chars when it set one (big: 0), else the cap a digest
     // stood for; nullopt otherwise.
@@ -59,6 +60,7 @@ inline std::string UsageText(const UsageLine& line) {
         {"ok", line.ok}, {"ms", static_cast<double>(static_cast<int64_t>(line.ms * 10 + 0.5)) / 10}};
     if (!line.refused.empty()) json["refused"] = line.refused;
     if (!line.refusedKey.empty()) json["refused_key"] = line.refusedKey;
+    if (line.slotMs >= 0.05) json["slot_ms"] = static_cast<double>(static_cast<int64_t>(line.slotMs * 10 + 0.5)) / 10;
     if (line.batch) json["batch"] = true;
     if (line.digest) json["digest"] = line.digest;
     if (line.cap) json["cap"] = *line.cap;
@@ -88,6 +90,7 @@ inline std::optional<UsageLine> ParseUsageLine(std::string_view text) {
         return std::nullopt;
     line.ok = json["ok"].get<bool>();
     line.ms = json["ms"].get<double>();
+    if (json.contains("slot_ms") && json["slot_ms"].is_number()) line.slotMs = json["slot_ms"].get<double>();
     for (const auto& key : json["keys"])
         if (key.is_string()) line.keys.push_back(key.get<std::string>());
     str("refused", line.refused);

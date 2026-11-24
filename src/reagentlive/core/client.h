@@ -12,8 +12,9 @@
 
 // Every frontend (CLI, GUI, tools, tests) talks to the agent through this API,
 // never through the section directly. Synchronous: one request in flight per
-// Client; not thread-safe. Results are values or an Error, never exceptions
-// for agent or transport failures.
+// Client; not thread-safe, and used from one thread (the slot is a mutex,
+// which belongs to a thread). Results are values or an Error, never
+// exceptions for agent or transport failures.
 namespace reagentlive {
 struct Error {
     enum class Kind { Agent, Timeout, Attach, Busy } kind;
@@ -78,23 +79,27 @@ struct ImageBlock {
     std::vector<bool> copied;
 };
 // The client holding an agent's one slot, as it described itself when it
-// attached: its process, its caller kind (tool, script, shell; empty when
-// it gave none) and when it attached (Unix seconds).
+// took it: its process, its caller kind (tool, script, shell; empty when
+// it gave none) and when it took the slot (Unix seconds).
 struct SlotHolder {
     uint32_t pid = 0;
     std::string caller;
     int64_t since = 0;
 };
-// Round trips since attach and time spent waiting for responses.
-struct ClientStats { uint64_t trips, waitMicroseconds; };
+// Round trips since attach, time spent waiting for responses, and time spent
+// waiting for the slot while another client held it.
+struct ClientStats { uint64_t trips, waitMicroseconds, slotWaitMicroseconds; };
 
 class Client {
 public:
-    // Opens the named section; refuses one without magic or with another layout,
-    // and refuses while another client is attached (one request slot per agent).
-    // `caller` describes this client to one that finds the agent busy (Holder).
+    // Opens the named section; refuses one without magic or with another layout.
+    // Any number of clients attach; they share the agent's one request slot
+    // in turns: a request takes it for its own length, a Hold for its life
+    // (Send, Hold, Turn). `caller` describes this client to one that finds
+    // the slot taken (Holder).
     static Result<Client> Attach(std::wstring_view sectionName, uint32_t layout, std::string_view caller = {});
-    // Who holds the slot now; nullopt when no client does, or it has not said yet.
+    // The client that took the slot last (the holder while it is taken; it is
+    // not cleared on release); nullopt before any client said.
     static std::optional<SlotHolder> Holder(std::wstring_view sectionName);
     Client(Client&&) noexcept;
     Client& operator=(Client&&) noexcept;
@@ -104,6 +109,9 @@ public:
 
     void SetTimeout(std::chrono::milliseconds timeout) { timeout_ = timeout; }
     std::chrono::milliseconds Timeout() const { return timeout_; }
+    // How long a request waits for the slot another client holds before it
+    // is refused as Busy (naming the holder). Default 10 s.
+    void SetBusyWait(std::chrono::milliseconds wait) { busyWait_ = wait; }
     // Called about once a second while a request waits longer than a second;
     // ticking says whether the agent's heartbeat moved since the last call.
     using WaitNotice = void (*)(std::chrono::milliseconds waited, bool ticking);
@@ -117,15 +125,18 @@ public:
     ClientStats Stats() const { return stats_; }
 
     // Raw exchange for pack and game ops. Transport failures are errors; the
-    // agent's status is in the response. Waits by spinning briefly, then
-    // sleeping in 1 ms steps (the client raises the timer resolution).
+    // agent's status is in the response. Takes the slot for its own length
+    // unless a Hold has it. Waits by spinning briefly, then sleeping in 1 ms
+    // steps (the client raises the timer resolution).
     Result<Response> Send(const Request& request, std::chrono::milliseconds timeout);
     Result<Response> Send(const Request& request) { return Send(request, timeout_); }
 
-    // While a Hold is alive, every request asks the agent to wait briefly for
-    // the next one and run it in the same host tick (within the host's
-    // budget). Best effort: the ticks show whether every response shared one.
-    // Nests; the outermost one records the ticks.
+    // While a Hold is alive, this client keeps the slot, and every request
+    // asks the agent to wait briefly for the next one and run it in the same
+    // host tick (within the host's budget). Best effort: the ticks show
+    // whether every response shared one; a Hold that cannot take the slot in
+    // the busy wait leaves each request to take it. Nests; the outermost one
+    // records the ticks.
     class Hold {
     public:
         explicit Hold(Client& client);
@@ -141,6 +152,25 @@ public:
         uint64_t SpanFirstTick() const;
     private:
         Client& client_;
+        bool slot_ = false;
+    };
+    // A long verb's console-side work (decoding a block, matching a row):
+    // while it lives, the slot the verb's Hold keeps is free for another
+    // client, and a request sent inside takes it for its own length. It
+    // lasts at least 1 ms, so a waiting client gets its turn, then takes the
+    // slot back for the Hold (if it cannot in the busy wait, the Hold's
+    // requests take it each). Does nothing unless exactly one Hold is alive:
+    // inside a batch, the batch keeps its moment.
+    class Turn {
+    public:
+        explicit Turn(Client& client);
+        ~Turn();
+        Turn(const Turn&) = delete;
+        Turn& operator=(const Turn&) = delete;
+    private:
+        Client& client_;
+        bool released_ = false;
+        int64_t began_ = 0;
     };
 
     Result<std::vector<uint8_t>> Read(uint64_t address, uint32_t length);
@@ -196,15 +226,24 @@ public:
     bool Supports(uint32_t op) const;
 
 private:
-    Client(Section* section, void* guard, void* holder, std::wstring name)
-        : section_(section), guard_(guard), holder_(holder), name_(std::move(name)) {}
+    Client(Section* section, void* guard, void* holder, std::wstring name, std::string caller)
+        : section_(section), guard_(guard), holder_(holder), name_(std::move(name)), caller_(std::move(caller)) {}
     void Release();
+    // The slot, depth-counted: the first take waits for the mutex (up to the
+    // busy wait), the last drop releases it. A mutex its holder abandoned
+    // (the process died) counts as taken.
+    Result<void> TakeSlot();
+    void DropSlot();
     Section* section_ = nullptr;
-    void* guard_ = nullptr;  // Named object held while attached; marks the agent as in use.
+    void* guard_ = nullptr;  // The slot: a named mutex, owned while a request or Hold has it.
     void* holder_ = nullptr; // Named mapping saying who holds the slot (SlotHolder).
     std::wstring name_;      // The section's name; the image window's is derived from it.
+    std::string caller_;     // What the holder info says about this client.
     const uint8_t* image_ = nullptr; // The image window, mapped on the first CopyImage.
     std::chrono::milliseconds timeout_{5000};
+    std::chrono::milliseconds busyWait_{10000};
+    uint32_t slotDepth_ = 0; // Takes not yet dropped while the slot is owned.
+    bool owned_ = false;     // This client owns the slot's mutex now.
     WaitNotice notice_ = nullptr;
     ClientStats stats_{};
     uint32_t holdDepth_ = 0;

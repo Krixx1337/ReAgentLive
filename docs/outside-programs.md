@@ -5,8 +5,8 @@
 **TL;DR:** You can keep a tool's logic and window outside the game and
 load only a small, stable DLL inside it that reads, writes and calls on
 request. That works for values that change over seconds, not for anything
-that must happen inside a frame. Expect about one request per host tick
-and one client at a time.
+that must happen inside a frame. Expect about one request per host tick,
+shared in turns with any other client.
 
 The console is one such program; this page is for the others.
 
@@ -39,8 +39,9 @@ JSON mode instead of linking the client, as the Python client does.
 - **Throughput.** About one request per host tick, with short held bursts,
   each response up to 4 KB ([limits](protocol.md#limits)). A program that
   reads many values every frame is unmeasured; measure before planning one.
-- **One client at a time** ([protocol](protocol.md#handshake)): the
-  console and an outside program cannot run together.
+- **One request at a time** ([protocol](protocol.md#handshake)): the
+  console and an outside program take the slot in turns, so a long held
+  command of one delays the other's requests.
 - **No drawing.** Visuals are drawn in the program's own window, never over
   the game.
 - **Engine calls need the game thread.** A host ticking elsewhere offers
@@ -74,5 +75,5 @@ Each waits for a real program that needs it:
   registered per-tick reads: the client names ranges once, the agent
   samples them every tick (`watch-start` is the start), and they expire when the
   client's heartbeat stops;
-- a second channel, so the console and a program run together: the core's
+- a second channel, so two requests are in flight at once: the core's
   state moves into a per-channel context.

@@ -29,18 +29,28 @@ requests inside a command.
   do not change under it ([native code](native.md#fast-lane)).
 - **No `ReadProcessMemory` from the client.** Fastest for raw reads, but the
   client would open the target process, which the design avoids.
-- **One client at a time, kept short** ([protocol](../protocol.md#handshake)).
-  A console that finds the agent busy waits for the slot up to
-  `--busy-wait` (default 10 s), then refuses as `busy`, naming the holder
-  (caller kind, pid, since when), so an MCP call beside a script waits
-  for the script's call instead of failing at once. A long-lived Python
-  session held the slot for its whole life and every MCP call failed;
-  `hold=False` releases it between calls (a one-shot console per call).
-  Trade-off: tens of milliseconds a call and state carried by the cache
-  file, against a slot others can take. Rejected: two clients at once (the
-  core's state would need a context per channel: the second channel in
-  [outside programs](../outside-programs.md#not-built-yet)), and an
-  unbounded wait (a stuck holder would hang every tool call).
+- **One request at a time, clients in short turns**
+  ([protocol](../protocol.md#handshake)). Clients take the one slot per
+  request, a held command for its length, and a long verb gives it up for
+  each block's or row's console-side work, so a call beside a sweep waits
+  about one block. Measured before: no `busy` refusal in about 6000 calls;
+  the cost was long verbs blocking their caller, not clients blocking each
+  other. So long work runs as a frontend's background run (its own
+  console, beside other calls) and the agent is unchanged: one request in
+  flight, so its multi-tick state needs no context per client. Earlier, a
+  client held the slot for its whole life, and a Python session either
+  blocked every MCP call or paid a console start per call (`hold=False`).
+  A call waits up to `--busy-wait` (default 10 s), then refuses as `busy`,
+  naming the holder; every call's wait is in the usage log (`slot_ms`).
+  Rejected: two requests in flight (a context per channel: the second
+  channel in [outside programs](../outside-programs.md#not-built-yet),
+  only if `slot_ms` shows real waiting), an agent job table (the slow
+  verbs are console-side loops it would not help), a broker process that
+  queues every client (one more process to keep alive), and an unbounded
+  wait (a stuck holder would hang every tool call). Trade-offs: two sweeps
+  take turns block by block, so each runs slower; one long agent request
+  (a sliced `search` of the whole address space) still blocks everyone, so
+  background work uses `search-job`.
 - **Every refusal reaches the usage log.** The MCP adapter refuses some
   calls itself (a pack that is off, a batch item past the packs, an
   argument its input schema refuses); those never ran a console, so

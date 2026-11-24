@@ -9,6 +9,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +50,30 @@ class CoreConsoleTests(unittest.TestCase):
         for row in self.core['rows']:
             self.assertEqual(row, self.full_rows[row['verb']], row['verb'])
         self.assertNotEqual(self.core['table_hash'], self.full['table_hash'])
+
+    def test_consoles_writing_the_usage_log_at_once_keep_every_line_whole(self):
+        # Each refused call is one usage line; with no target the console only logs it. Every line goes
+        # in one append-only write, so lines from consoles writing at once never interleave.
+        consoles, calls = 6, 25
+        session = f'append-{os.getpid()}-{time.time_ns()}'
+        line = json.dumps([{'verb': 'read', 'args': {}, 'refused': {'kind': 'schema', 'message': 'x' * 300}}] * calls)
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, 'calls.json')
+            with open(path, 'w', encoding='utf-8') as file:
+                file.write(line)
+            runs = [subprocess.Popen([CONSOLE, '--session', f'{session}-{i}', '-c', f'@{path}'],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(consoles)]
+            for run in runs:
+                run.wait(60)
+        usage = os.path.splitext(CONSOLE)[0] + '.usage.jsonl'
+        counts = {}
+        with open(usage, encoding='utf-8') as file:
+            for text in file:
+                if session not in text:
+                    continue
+                record = json.loads(text)  # A torn or interleaved line would not parse.
+                counts[record['session']] = counts.get(record['session'], 0) + 1
+        self.assertEqual(counts, {f'{session}-{i}': calls for i in range(consoles)})
 
     def test_the_generated_module_has_no_pack_verbs(self):
         source = reagentlive_gen.generate(self.core, 'reagentlive-core-console')

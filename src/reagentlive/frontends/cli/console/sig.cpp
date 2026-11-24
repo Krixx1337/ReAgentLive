@@ -80,6 +80,8 @@ std::expected<void, std::string> ImageBlocks(Session& session, uint64_t from, ui
     const bool window = client.Supports(op::ImageCopy);
     block = std::max<uint64_t>(1, window ? std::min(block, ImageWindowBytes) : block);
     std::vector<uint8_t> bytes;
+    ProgressLine progress("blocks", (to - from + block - 1) / block);
+    uint64_t done = 0;
     for (uint64_t at = from; at < to;) {
         const uint64_t end = std::min(to, at + block);
         bytes.assign(static_cast<size_t>(end - at), fill);
@@ -105,7 +107,12 @@ std::expected<void, std::string> ImageBlocks(Session& session, uint64_t from, ui
                 part += span.length;
             }
         }
-        if (!each(at, bytes)) break;
+        {
+            // The block's console-side work leaves the slot to other clients.
+            const Client::Turn turn(client);
+            if (!each(at, bytes)) break;
+        }
+        progress.Done(++done);
         at = end;
     }
     return {};
@@ -145,6 +152,7 @@ void RunSigFile(Session& session, const Command& command, std::string_view jsonC
     for (size_t number = 1; std::getline(file, line); ++number) {
         const auto trimmed = text::Trim(line);
         if (trimmed.empty() || trimmed.starts_with('#')) continue;
+        const Client::Turn turn(session.client); // A turn per pattern: its searches take the slot each.
         shape::SigFileRow row;
         row.line = number;
         const auto failed = [&](std::string message) {

@@ -14,6 +14,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -428,20 +430,122 @@ class SessionTests(unittest.TestCase):
             self.session.call('bogus')
         self.assertEqual(self.c.status()['packs'], ['ue'])
 
-    def test_a_session_without_hold_runs_a_console_per_call_in_one_usage_session(self):
-        open(self.log, 'w').close()
-        with dl.Session(sys.executable, ['-I', FAKE], hold=False, busy_wait=30) as session:
-            self.assertIsNone(session._process)                       # Nothing holds the agent between calls.
-            c = self.gen.Console(session)
-            self.assertEqual(c.ue.describe(object=REF)["ref"], REF)
-            self.assertEqual(c.modules()['rows'][0]['name'], 'Game.exe')
+    def console_cmd(self):
+        """The fake as a console file of its own: a session's runs go in a folder beside it."""
+        console = os.path.join(self.work.name, 'console.cmd')
+        with open(console, 'w') as f:
+            f.write(f'@"{sys.executable}" -I "{FAKE}" %*\n')
+        return console
+
+    def plan(self, name, sleep, envelope=None):
+        path = os.path.join(self.work.name, name)
+        with open(path, 'w') as f:
+            json.dump({'sleep': sleep, 'envelope': envelope or ok({'lines': 3, 'file': 'C:/out.jsonl'})}, f)
+        return path
+
+    def wait_for(self, session, run, state, seconds=20):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            status = session.run_status(run)
+            if status['state'] == state:
+                return status
+            time.sleep(0.05)
+        self.fail(f'run {run} never reached {state}: {status}')
+
+    def test_busy_wait_reaches_the_console(self):
+        with dl.Session(sys.executable, ['-I', FAKE], busy_wait=30) as session:
             self.assertIn('--busy-wait', session._command)
-        with open(self.log) as f:
-            lines = f.read().splitlines()
-        sessions = [line for line in lines if line.startswith('session ')]
-        self.assertEqual(len(sessions), 2)                            # One console per call...
-        self.assertEqual(sessions[0], sessions[1])                    # ...in one usage-log session.
-        self.assertTrue(sessions[0].startswith('session py-'))
+            self.assertEqual(self.gen.Console(session).modules()['rows'][0]['name'], 'Game.exe')
+
+    def test_a_background_run_answers_at_once_then_reports_progress_and_its_result(self):
+        with dl.Session(self.console_cmd(), packs=['explore']) as session:
+            started = time.monotonic()
+            run = session.call('run', {'plan': self.plan('slow.json', 1.0), 'background': True})['run']
+            self.assertLess(time.monotonic() - started, 1.0)               # At once, not after the plan.
+            self.assertEqual(session.run_status(run)['state'], 'running')
+            with self.assertRaises(dl.ReAgentLiveError) as caught:
+                session.run_read(run)
+            self.assertEqual(caught.exception.kind, 'running')
+            done = self.wait_for(session, run, 'done')
+            self.assertEqual(done['progress'], '2/2 steps')                 # The newest progress line.
+            self.assertEqual(session.run_read(run)['lines'], 3)
+            self.assertEqual(session.run_read(run)['lines'], 3)            # Its files stay until run_stop.
+            folder = session.runs.folder
+            self.assertEqual(os.path.dirname(folder), self.work.name)     # Beside the console.
+            self.assertTrue(os.listdir(folder))
+            self.assertEqual(session.run_stop(run)['state'], 'done')
+            self.assertEqual(os.listdir(folder), [])
+            with self.assertRaises(dl.ReAgentLiveError):
+                session.run_status(run)
+
+    def test_a_background_run_gets_the_session_packs_and_its_error_raises_on_read(self):
+        envelope = error(kind='schema', message='plan: step 1 is not a call')
+        with dl.Session(self.console_cmd(), packs=['explore', 'native']) as session:
+            run = session.call('run', {'plan': self.plan('bad.json', 0, envelope), 'background': True})['run']
+            self.wait_for(session, run, 'done')
+            with self.assertRaises(dl.ReAgentLiveError) as caught:
+                session.run_read(run)
+            self.assertEqual(caught.exception.kind, 'schema')
+            with open(session.runs._path(run, 'call.json')) as f:
+                self.assertNotIn('background', f.read())                  # The console never sees it.
+            self.assertIn('explore,native', session._command)
+
+    def pinger(self):
+        """A console of plain executables (cmd, then ping for a minute, printing a line a second): every process
+        of it stays in its run's job object, as a real console's does."""
+        console = os.path.join(self.work.name, 'pinger.cmd')
+        with open(console, 'w') as f:
+            f.write('@ping -n 60 127.0.0.1\n')
+        return console
+
+    def test_a_run_stopped_or_past_its_cap_ends_with_all_it_started_and_says_why(self):
+        console = self.pinger()
+        runs = dl.Runs(console)
+        try:
+            long = runs.start([console], {'plan': 'p.json'})
+            time.sleep(0.5)
+            stopped = runs.stop(long)
+            self.assertEqual(stopped['state'], 'stopped')
+            self.assertEqual(stopped['stopped'], 'run_stop')
+            self.assertEqual(os.listdir(runs.folder), [])                    # Nothing left holding its files.
+            runs.cap = 10                                                     # Past it at ping's first line.
+            capped = runs.start([console], {'plan': 'p.json'})
+            deadline = time.monotonic() + 20
+            while runs.status(capped)['state'] != 'stopped' and time.monotonic() < deadline:
+                time.sleep(0.05)
+            status = runs.status(capped)
+            self.assertEqual(status['state'], 'stopped')
+            self.assertIn('passed the cap', status['stopped'])
+            with self.assertRaises(dl.ReAgentLiveError) as caught:
+                runs.read(capped)
+            self.assertEqual(caught.exception.kind, 'stopped')
+        finally:
+            runs.close()
+        self.assertEqual(os.listdir(runs.folder), [])
+
+    def test_a_frontend_killed_with_runs_alive_ends_them_and_the_next_one_deletes_their_files(self):
+        console = self.pinger()
+        script = os.path.join(self.work.name, 'frontend.py')
+        with open(script, 'w') as f:
+            f.write(textwrap.dedent(f"""
+                import os, sys, time
+                sys.path.insert(0, {PYTHON!r})
+                import reagentlive_session as dl
+                runs = dl.Runs({console!r})
+                runs.start([{console!r}], {{'plan': 'p.json'}})
+                time.sleep(0.5)
+                print(runs.folder, flush=True)
+                os._exit(1)                                                    # Killed: no close, no atexit.
+            """))
+        out = subprocess.run([sys.executable, '-I', script], capture_output=True, text=True, timeout=60)
+        folder = out.stdout.strip()
+        self.assertTrue(os.listdir(folder))                                   # Its files outlive the killed frontend...
+        deadline = time.monotonic() + 10                                      # (the job's processes end at its close)
+        while os.listdir(folder) and time.monotonic() < deadline:
+            dl.Runs(console)
+            time.sleep(0.05)
+        # ...until the next frontend starts: deletable, so no process of the run (ping too) holds them any more.
+        self.assertEqual(os.listdir(folder), [])
 
     def test_packs_reach_the_console_and_a_refusal_is_kind_pack(self):
         open(self.log, 'w').close()

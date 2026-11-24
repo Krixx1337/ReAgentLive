@@ -197,7 +197,7 @@ void RunExportLabels(Session& session, const Command& command, std::string_view 
     }
 
     rows = MergeLabels(std::move(rows));
-    const auto temporary = std::filesystem::path(path).concat(".tmp");
+    const auto temporary = TemporaryBeside(path);
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         for (const auto& line : kept.otherBuilds) out << line << '\n';
