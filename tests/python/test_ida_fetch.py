@@ -181,6 +181,31 @@ class Fetch(unittest.TestCase):
             rl.fetch(0x140001000, depth=4, console=self.console)
 
 
+class NameTest(unittest.TestCase):
+    """name: the function named as yours, then `this` typed, with the IDA steps stubbed."""
+
+    def test_names_then_types_this_or_says_why_not(self):
+        import types
+        from unittest import mock
+        named, calls = {}, []
+        fake = types.SimpleNamespace(SN_NOCHECK=1, SN_NOWARN=2,
+                                     set_name=lambda ea, text, flags: named.setdefault(ea, text) == text)
+        typed = {'typed': 1, 'skipped': [], 'left': [], 'bodies': []}
+        with mock.patch.dict(sys.modules, {'ida_name': fake}),                 mock.patch.object(rl.session, '_target', lambda target: (0x140001200, None)),                 mock.patch.object(rl.session, '_type_this', lambda pairs: calls.append(pairs) or typed):
+            self.assertEqual(rl.name('0x140001234', 'Thing::Tick'),
+                             {'address': '0x140001200', 'name': 'Thing::Tick', 'typed': True})
+            self.assertEqual(calls, [[(0x140001200, 'Thing::Tick')]])
+            typed.update(typed=0)
+            self.assertIn('no local struct type', rl.name(0x140001200, 'Thing::Tick')['why'])
+            typed.update(left=[(0x140001200, 'Thing::Tick')])
+            self.assertEqual(rl.name(0x140001200, 'Thing::Tick')['why'], 'Thing::Tick: no decompiler')
+            with self.assertRaises(ValueError):   # Taken: IDA refuses it.
+                rl.name(0x140001200, 'Other::Name')
+        with mock.patch.object(rl.session, '_target', lambda target: (None, "no name 'x'")):
+            with self.assertRaises(ValueError):
+                rl.name('x', 'Thing::Tick')
+
+
 class StartAndFinish(unittest.TestCase):
     """workspace and finish over the recorded console row, with the IDA steps stubbed."""
 

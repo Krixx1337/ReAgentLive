@@ -30,6 +30,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 - **IDA names a UFunction's native function:** a save from an exec thunk
   names the function it calls `Class::Method` and types its `this`, so it
   decompiles as `this->Field` ([IDA loader](docs/commands/ida-loader.md#opening-a-save)).
+  `rl.name(addr, 'Class::Method')` does the same for a function you found
+  yourself ([names](docs/commands/ida-loader.md#names-both-ways)).
 - **IDA start and finish in one call each:** `workspace()` imports the
   labels files the saves' console reads; `finish()` exports your names
   and signs them with `labels-sign`. Saves now record their console, so

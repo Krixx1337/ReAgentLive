@@ -15,8 +15,13 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 - A UFunction's native code: `ue_func`'s `exec` is the thunk that unpacks
   the parameters, not the body. Save from `exec` with `callees` 1: the
   loader names the body `Class::Method` and types its `this`
-  (`bodies_named`). None named (a virtual call, the body not saved):
-  `disasm` the thunk and save its call target.
+  (`bodies_named`). None named: the thunk reaches the body through the
+  vtable (an indirect call through `[reg+0xA50]`, reg loaded from `this`):
+  slot = offset / 8, so `vtable` with `slots` `[330]` on the live object
+  gives the address;
+  `rl.fetch` it, then `rl.name(<addr>, 'Class::Method')`. A thunk save
+  ending `stop` `walk end` is normal: small thunks have no exception
+  entry (`docs/commands/fast-lane.md`).
 
 ## One-time setup (the user's; ask, never edit their install)
 
@@ -49,7 +54,8 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
    comes from the pseudocode. `depth` 0 for the function alone, 2 or 3
    only when the callees matter; `skipped` says what the depth or caps left out. A `FetchError`
    carries the console's refusal: fix the call it names.
-4. **Name as you go** (`ida_name.set_name`), then **before closing:**
+4. **Name as you go** (`rl.name(<addr>, 'Class::Method')`: your name, and
+   `this` typed when the save holds the class), then **before closing:**
    `rl.finish()`: your names into the host's names file, then signed, so
    later saves show them and they survive a patch. Report its
    `unsigned_rows` to the user; then close the database.

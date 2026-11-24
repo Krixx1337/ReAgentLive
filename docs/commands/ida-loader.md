@@ -1,6 +1,6 @@
 # IDA loader
 
-*Home of:* the IDA side, the `reagentlive_ida` package in `frontends/ida/` and its loader stub: setting it up and checking the setup, reloading it, opening a save, the workspace database (`add_saved`, `workspace`, `finish`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`).
+*Home of:* the IDA side, the `reagentlive_ida` package in `frontends/ida/` and its loader stub: setting it up and checking the setup, reloading it, opening a save, the workspace database (`add_saved`, `workspace`, `finish`), `fetch`, `decompile_to`, types (`import_layouts`, `apply_this`) and names both ways (`import_labels`, `export_names`, `name`).
 
 **TL;DR:** A loader stub in IDA's loaders folder, calling the repo's
 `reagentlive_ida` package, opens what `disasm`'s `save` wrote as a small x64 database, so IDA decompiles those functions
@@ -199,6 +199,15 @@ the return type stay as IDA has them. It returns `typed` (a count) and
 
 ## Names both ways
 
+- `name(target, new_name)` names the function holding `target` (an
+  address, `'0x..'` text or a name) as yours, so `export_names` and
+  `finish` carry it, then types its first argument `Class *this` when the
+  name is `Class::Method` or `Class_Method` of a local struct type (a
+  save's layouts, `import_layouts`), as `apply_this` does for a labels
+  file. It returns `address`, `name`, `typed` and, when not typed, `why`;
+  a name IDA refuses (taken at another address) raises `ValueError`. Use
+  it for a function found by hand, such as the native function an exec
+  thunk reaches through its vtable.
 - `import_labels(path)` (a path, or a list: the console's file and the
   host's names file; asked for in a dialog when none is given)
   names a full database of the build (size and timestamp from the PE

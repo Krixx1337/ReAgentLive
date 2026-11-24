@@ -2,8 +2,9 @@
 import json
 
 from .database import recorded_console
-from .decompile import decompile_to
+from .decompile import _target, decompile_to
 from .labels import export_names, import_labels
+from .layout_types import _type_this
 from .loader import add_saved
 
 _CONSOLE_ENV = 'REAGENTLIVE_CONSOLE'
@@ -161,6 +162,27 @@ def fetch(addrs, callees=True, depth=1, decompile_dir=None, console=None, grep=N
         return out
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+
+def name(target, new_name):
+    """IDA: name the function holding `target` (an address, '0x..' text or a name) `new_name` as
+    yours (export_names writes it, finish signs it), then type its first argument `Class *this`
+    when the name is `Class::Method` or `Class_Method` of a local struct type (a save's layouts,
+    import_layouts): one call for a function found by hand, such as a native function an exec
+    thunk reaches through its vtable. Returns {'address', 'name', 'typed', 'why' when not typed}."""
+    ea, why = _target(target)
+    if why:
+        raise ValueError(why)
+    import ida_name
+
+    if not ida_name.set_name(ea, new_name, ida_name.SN_NOCHECK | ida_name.SN_NOWARN):
+        raise ValueError(f'IDA refused the name {new_name!r} at {ea:#x} (taken at another address?)')
+    typed = _type_this([(ea, new_name)])
+    out = {'address': f'{ea:#x}', 'name': new_name, 'typed': bool(typed['typed'])}
+    if not out['typed']:
+        reasons = typed['skipped'] + [f'{label}: no decompiler' for _, label in typed['left']]
+        out['why'] = reasons[0] if reasons else f'{new_name}: no local struct type names its class'
+    return out
 
 
 # --- One call to start, one to finish ---------------------------------------

@@ -41,6 +41,7 @@ folder. Then `import reagentlive_ida as rl` in IDA, and:
   struct per class or struct and an enum per enum.
 - `apply_this(path)`: type the first argument `Class *this` on functions a
   labels file names `Class::Method` or `Class_Method`.
+- `name(target, 'Class::Method')`: name a function you found as yours and type its `this`.
 - `reload()`: load the repo's code again, so an update runs without restarting IDA.
 
 Modules: save (a save as a plan, plain Python), database (what a database keeps), loader,
@@ -55,7 +56,7 @@ from .layout_types import (apply_this, c_name, declarations, exec_method, import
                            thunk_body)
 from .loader import FORMAT, SaveError, accept_file, add_saved, load_file, saved_types
 from .save import additions, join, methods, parse, sanitize, stubs
-from .session import (FetchError, console_command, console_results, fetch, fetch_calls, finish, run_console,
+from .session import (FetchError, console_command, console_results, fetch, fetch_calls, finish, name, run_console,
                       sign_summary, workspace, workspace_files)
 
 # Dependencies first: reload() reloads them in this order.
