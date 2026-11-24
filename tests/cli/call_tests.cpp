@@ -452,6 +452,9 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"object": "0x1000#5:9", "decode": true})"}},
         {"enum", {R"({"enum": "EMode"})"}},
         {"name-refs", {R"({"name": "Health"})", R"({"index": 42})"}},
+        {"owner", {R"({"addrs": ["0x1000"]})", R"({"addrs": ["0x1000", "0x2008"], "within": ["0x1000#5:9"]})"}},
+        {"route", {R"({"object": "0x1000#5:9"})",
+            R"({"object": "0x1000#5:9", "sources": ["pawn", "0x2000"], "depth": 4, "budget": 500, "outer": true})"}},
         {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"start": 4, "match": "Get"}})"}},
     };
     for (const auto& verb : AllVerbs()) {

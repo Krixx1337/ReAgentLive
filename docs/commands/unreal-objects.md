@@ -1,6 +1,6 @@
 # Unreal objects
 
-*Home of:* how the Unreal pack finds and counts objects: `find` and its class index, `describe`, `name`, `name-find`, `enum`, the object filters, `census` and its baselines, `each`, class names as arguments, and `assets-export`.
+*Home of:* how the Unreal pack finds and counts objects: `find` and its class index, `describe`, `name`, `name-find`, `enum`, the object filters, `census` and its baselines, `each`, where objects live (`owner`, `route`), class names as arguments, and `assets-export`.
 
 **TL;DR:** `find` lists objects by name or class, `census` counts live
 instances per class (and what changed since the last count), `each` reads
@@ -172,6 +172,49 @@ verb.
 - **`view.limit`** caps the rows shown (default 100, 0 for all); `omitted`
   counts the rest. Unfiltered output over a whole class is large: locate
   the object first, or filter.
+
+## owner and route
+
+Two questions that otherwise take hundreds of reads: which object holds
+this address, and how does the engine reach this object. Both read
+reflection only; neither scans raw memory for pointers.
+
+```json
+{"verb": "owner", "args": {"addrs": ["0x1f2e3d4c78", "0x2a0b1c0008"], "within": ["0x1f2e3d4c50#123:4"]}}
+{"verb": "route", "args": {"object": "0x1f2e3d4c50#123:4", "sources": ["pawn"], "depth": 6}}
+```
+
+- **owner** takes addresses as `search` rows give them. One object-table
+  scan per 64 addresses keeps, for each address, the nearest object at
+  or below it, and accepts it when the offset is inside the object's
+  class size (objects do not overlap). The console then names the slot
+  through the field tables: `path` into structs (readable names, `raw`
+  beside them where they differ), `outer` for the object's `Outer`
+  pointer (the usual back-pointer behind many `search` hits), and the
+  offset. No index is kept between calls: a scan is pointer compares
+  only, so a fresh one is cheap and never stale.
+- **Heap storage** (an array's, set's or map's elements) belongs to no
+  object. For those addresses the console reads the arrays, sets and maps
+  of the `within` objects and of the other rows' owners, and names the
+  element (`Items[3].Member`, `container`). Give the searched object's
+  outer, or the object you suspect, as `within`.
+- **route** walks breadth-first from the sources (host roots by name,
+  as `status` lists them, or objects; by default every root) over
+  reflected references: object and interface fields, arrays, sets and map
+  values of objects or of structs holding them, and structs holding any
+  of these. Class, weak, soft and lazy pointers are not followed (they
+  lead into the asset graph), nor are containers inside a container's
+  elements; `outer` adds each object's `Outer` as a last resort.
+- **Bounds:** `depth` hops and `budget` objects visited. It answers up
+  to 4 routes of the shortest length, or `end` says why there is none
+  (`depth`, `budget`, or `none` when every reachable object was visited),
+  never a partial guess. The walk spans ticks: each object is identified
+  when found and resolved again before its fields are read, but one can
+  still die between the walk and your next call, so check a route with
+  `get` before writing it into code.
+- **Paths:** each step's `field` is relative to the previous object, and
+  `path` joins them from the root. `get` follows the field steps; an
+  indexed step (`Items[3]`) is an `entries` read.
 
 ## Class names
 

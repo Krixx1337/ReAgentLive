@@ -84,6 +84,10 @@ Progress Entries(const Request&, Response&, bool first, const Host&);
 Progress Enum(const Request&, Response&, bool first, const Host&);
 // Every native function's exec entry (multi-tick scan, cached pages).
 Progress ExecEntries(const Request&, Response&, bool first, const Host&);
+// Where objects live (multi-tick): the object holding each address, and the
+// shortest reflected references from a source to an object.
+Progress Owner(const Request&, Response&, bool first, const Host&);
+Progress Route(const Request&, Response&, bool first, const Host&);
 // The call recorder (protocol_ue.h): opt-in by listing these ops. Each
 // recording swaps one UFunction's native pointer (heap data) for a fixed
 // thunk and puts it back; nothing in code, vtables or imports is written.

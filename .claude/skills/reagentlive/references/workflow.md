@@ -8,7 +8,12 @@
    narrow. Name text matches anywhere, so short text floods the page: use a
    distinctive suffix or a class.
 3. **Navigate.** `get` an owner object and follow the printed refs instead
-   of computing offsets.
+   of computing offsets. To find where instances of a class live, start
+   from the engine, never a memory sweep: `describe` one instance and walk
+   its outer chain, `get` with `view.nonzero` on each outer for container
+   fields, then `{"verb": "route", "args": {"object": "0x1f2e3d4c50#123:4"}}`.
+   `search` for its address only when that fails, and pass the hits to
+   `owner` (with the instance's outer as `within`).
 4. **Decode.** Names print as text; `name` resolves a leftover `#N`.
    Readable names for obfuscated fields are hints: trust offsets, sizes and
    types.

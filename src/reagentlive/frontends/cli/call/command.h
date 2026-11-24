@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, TimedWrites, Script, NameRefs, Peek, Entries, LabelsExport, Sig, Disasm, Xrefs, Vtable, Touches, DispScan, LabelsSign, LabelsPort, LabelsCheck, MemberName, Usage, Layout,
-    MemSnap, MemDiff, LineTrace, Calls, Rows, Enum, GameThread, AssetsExport, Run };
+    MemSnap, MemDiff, LineTrace, Calls, Rows, Enum, GameThread, AssetsExport, Run, Owner, Route };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -152,7 +152,13 @@ struct Command {
     // offset only (with entry: from entry to it, past returns).
     bool decode = false;
     std::optional<uint32_t> entry, to;
+    // owner: the addresses asked, and objects whose containers to check
+    // (`within`). route: the request carries the target and the spec; a
+    // spec with no source takes every root the host offers.
+    std::vector<uint64_t> addresses;
+    std::vector<Ref> within;
 };
+constexpr size_t MaxOwnerRows = 256, MaxOwnerWithin = 16;
 constexpr uint32_t MaxEachSeconds = 60;
 // A class or struct name as the console accepts it (the Unreal pack's wire limit).
 constexpr size_t MaxTypeName = 128;

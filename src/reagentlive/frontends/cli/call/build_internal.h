@@ -79,4 +79,6 @@ Parsed NameRefs(const Args& args, const ParseContext& context);
 Parsed NameFind(const Args& args, const ParseContext& context);
 Parsed Each(const Args& args, const ParseContext& context);
 Parsed EachCall(const Args& args, const ParseContext& context);
+Parsed Owner(const Args& args, const ParseContext& context);
+Parsed Route(const Args& args, const ParseContext& context);
 }

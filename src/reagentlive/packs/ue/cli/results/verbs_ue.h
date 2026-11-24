@@ -258,6 +258,28 @@ inline const std::vector<Verb>& UnrealVerbs() {
             {{"name", "str", "the exact pooled name", {}, false, false, "\"None\""},
              {"index", "int", "in place of name: its comparison index"}},
             Of<shape::Refs>, build::NameRefs, "Give name or index."},
+        {"owner", "ue", ToolPack::Explore, "the object holding each address: the field, the Outer pointer or the container element",
+            {{"addrs", "addr", "addresses, as search rows give them (up to 256)", {}, true, true},
+             {"within", "ref", "objects whose arrays, sets and maps to check for an address no object holds (up to 16)",
+              {}, false, true}},
+            Of<shape::Owner>, build::Owner,
+            "One object-table scan per 64 addresses: an address is held by the nearest object at or below it when the "
+            "offset is inside its class's size. An address in heap storage (an array's elements) has no such owner; "
+            "the arrays, sets and maps of the within objects and of the other rows' objects are checked for it "
+            "(container). Needs the game thread."},
+        {"route", "ue", ToolPack::Explore, "the shortest routes of reflected references from a root or object to an object",
+            {{"object", "ref", "the object to reach", {}, true},
+             {"sources", "str", "up to 4: host roots by name (status lists them) or objects (a literal ref or "
+              "\"0x...\"); default: every root", {}, false, true, "[\"pawn\"]"},
+             {"depth", "int", "hops at most (1..16)", "8"},
+             {"budget", "int", "objects visited at most (1..1048576)", "20000"},
+             {"outer", "bool", "also follow each object's Outer, when no field route exists"}},
+            Of<shape::Route>, build::Route,
+            "Breadth-first over object fields, arrays, sets and map values of objects or of structs holding them; "
+            "no class, weak, soft or lazy pointers, and no containers inside a container's elements. Up to 4 "
+            "routes of the shortest length. end says why there is none: depth or budget ran out, or none (every "
+            "reachable object visited). Objects can die while it walks: check a route with get before relying on "
+            "it. Needs the game thread."},
         {"funcs", "ue", ToolPack::Explore, "functions on the class chain, then on the native interfaces it implements",
             {{"object", "str", objectOrClass, {}, true, false, ref}, View("match start")},
             Of<shape::Funcs>, build::Funcs,

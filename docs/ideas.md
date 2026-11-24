@@ -246,6 +246,10 @@ interactive calls waiting on the slot (`slot_ms`), not only background runs.
 
 ## Done
 
+- **39 · Where objects live:** `owner` (the object and field holding an
+  address) and `route` (the shortest reflected path from a root to an
+  object) replace naming `search` hits through the whole object table
+  by hand ([owner and route](commands/unreal-objects.md#owner-and-route)).
 - **36 · The `game-thread` state as a read:** `status` carries the mode as
   `game_thread`; `game-thread` only arms and removes the tick.
 - **18 · Best-effort pack reads off the engine's thread:** shipped behind

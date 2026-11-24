@@ -547,6 +547,87 @@ inline Progress Modules(const Request& request, Response& response, bool, const 
     return Progress::Done;
 }
 
+// owner: the instance whose class size covers each address.
+inline Progress OwnerOp(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    const auto& world = TheWorld();
+    const size_t count = request.length / 8;
+    for (size_t i = 0; i < count; ++i) {
+        uint64_t address = 0;
+        memcpy(&address, request.data + i * 8, 8);
+        ue::OwnerEntry entry{};
+        for (const auto& object : world.objects) {
+            const uint32_t size = object.type >= 0 ? world.types[static_cast<size_t>(object.type)].size : 0;
+            if (address >= object.ref.address && address - object.ref.address < size) {
+                entry.object = object.ref;
+                entry.offset = static_cast<uint32_t>(address - object.ref.address);
+                entry.size = size;
+            }
+        }
+        memcpy(response.data + i * sizeof(entry), &entry, sizeof(entry));
+    }
+    response.length = static_cast<uint32_t>(count * sizeof(ue::OwnerEntry));
+    return Progress::Done;
+}
+
+// route: breadth-first over object fields and arrays of objects (no structs,
+// sets or maps), from the spec's object sources; the first route found.
+inline Progress RouteOp(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    const auto& world = TheWorld();
+    ue::RouteSpec spec;
+    memcpy(&spec, request.data, sizeof(spec));
+    struct Node { const Object* object; int parent; ue::RouteHop hop; uint32_t source; };
+    std::vector<Node> nodes;
+    for (uint32_t i = 0; i < spec.sources; ++i)
+        if (const auto* source = world.Resolve(spec.from[i])) nodes.push_back({source, -1, {}, i});
+    std::vector<uint64_t> seen;
+    for (size_t head = 0; head < nodes.size(); ++head) {
+        const Object* object = nodes[head].object;
+        if (object->type < 0) continue;
+        std::vector<std::pair<uint64_t, ue::RouteHop>> pointers;
+        for (const auto& field : world.types[static_cast<size_t>(object->type)].fields) {
+            const auto* at = reinterpret_cast<const uint8_t*>(object->ref.address) + field.numbers.offset;
+            if (field.type == "ObjectProperty") {
+                uint64_t pointer = 0;
+                memcpy(&pointer, at, 8);
+                pointers.push_back({pointer, {object->ref, 0, field.numbers.offset, 0, 0}});
+            } else if (field.type == "ArrayProperty" && field.elementType == "ObjectProperty") {
+                ue::ArrayHeader header{};
+                memcpy(&header, at, sizeof(header));
+                for (int32_t k = 0; k < header.count; ++k) {
+                    uint64_t pointer = 0;
+                    memcpy(&pointer, reinterpret_cast<const uint8_t*>(header.data) + k * 8, 8);
+                    pointers.push_back({pointer, {object->ref, 1, field.numbers.offset, static_cast<uint32_t>(k), 0}});
+                }
+            }
+        }
+        for (const auto& [pointer, hop] : pointers) {
+            if (pointer == request.address) {
+                std::vector<ue::RouteHop> hops{hop};
+                int at = static_cast<int>(head);
+                for (; nodes[static_cast<size_t>(at)].parent >= 0; at = nodes[static_cast<size_t>(at)].parent)
+                    hops.insert(hops.begin(), nodes[static_cast<size_t>(at)].hop);
+                const ue::RouteHeader header{1, static_cast<uint32_t>(nodes.size()), static_cast<uint32_t>(hops.size()), 0};
+                const ue::RoutePath path{nodes[static_cast<size_t>(at)].source, static_cast<uint32_t>(hops.size())};
+                memcpy(response.data, &header, sizeof(header));
+                memcpy(response.data + sizeof(header), &path, sizeof(path));
+                memcpy(response.data + sizeof(header) + sizeof(path), hops.data(), hops.size() * sizeof(ue::RouteHop));
+                response.length = static_cast<uint32_t>(sizeof(header) + sizeof(path) + hops.size() * sizeof(ue::RouteHop));
+                return Progress::Done;
+            }
+            const Object* next = world.Resolve({static_cast<uintptr_t>(pointer), -1, 0});
+            if (!next || std::ranges::find(seen, pointer) != seen.end()) continue;
+            seen.push_back(pointer);
+            nodes.push_back({next, static_cast<int>(head), hop, nodes[head].source});
+        }
+    }
+    const ue::RouteHeader header{0, static_cast<uint32_t>(nodes.size()), 0, static_cast<uint32_t>(ue::RouteEnd::None)};
+    memcpy(response.data, &header, sizeof(header));
+    response.length = sizeof(header);
+    return Progress::Done;
+}
+
 inline bool Readable(const void* pointer, size_t bytes) {
     auto cursor = reinterpret_cast<uintptr_t>(pointer);
     const uintptr_t end = cursor + bytes;
@@ -579,6 +660,8 @@ constexpr reagentlive::Command Commands[] = {
     {ue::op::Parameters, "parameters", &Parameters},
     {ue::op::CallsRead, "calls read", &CallsRead},
     {ue::op::Enum, "enum", &EnumOp},
+    {ue::op::Owner, "owner", &OwnerOp},
+    {ue::op::Route, "route", &RouteOp},
 };
 
 inline std::wstring SectionPrefix() { return L"Local\\reagentlive-fake-"; }

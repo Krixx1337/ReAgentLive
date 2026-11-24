@@ -157,6 +157,19 @@ Result<RefsResult> Refs(Client& client, int32_t nameIndex, std::chrono::millisec
 // A row whose function is gone has exec 0.
 struct ExecFunction { uint64_t exec; std::string owner, name; };
 Result<std::vector<ExecFunction>> ExecEntries(Client& client, std::chrono::milliseconds timeout = std::chrono::minutes(2));
+// The object holding each address (one table scan), in order; an entry
+// with a zero object has none. Up to MaxOwnerAddresses per request: more
+// take one scan per batch.
+Result<std::vector<OwnerEntry>> Owners(Client& client, std::span<const uint64_t> addresses,
+                                       std::chrono::milliseconds timeout = std::chrono::minutes(2));
+// route: the shortest reflected routes from the spec's sources to `target`.
+struct RoutePathResult { uint32_t source; std::vector<RouteHop> hops; };
+struct RouteResult {
+    RouteHeader header;
+    std::vector<RoutePathResult> routes;
+};
+Result<RouteResult> Route(Client& client, const Ref& target, const RouteSpec& spec,
+                          std::chrono::milliseconds timeout = std::chrono::minutes(2));
 struct NameMatch { int32_t index; std::string name; };
 struct NameFindResult {
     std::vector<NameMatch> names;

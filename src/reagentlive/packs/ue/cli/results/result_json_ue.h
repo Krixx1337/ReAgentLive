@@ -534,6 +534,73 @@ struct RefsRow {
         v("count", &RefsRow::count);
     }
 };
+// owner: one row per address, in the order asked. path: the field holding
+// it (readable names; raw: the reflected path where it differs), into
+// structs and a container's element; outer: the object's Outer pointer;
+// container: the address is in a container's elements, and object holds
+// the container (offset then absent).
+struct OwnerRow {
+    Addr address;
+    std::optional<Object> object;
+    std::optional<HexNum> offset;
+    std::optional<std::string> path, raw, type;
+    std::optional<bool> outer, container;
+    template<class V> static void Describe(V& v) {
+        v("address", &OwnerRow::address);
+        v("object", &OwnerRow::object);
+        v("offset", &OwnerRow::offset);
+        v("path", &OwnerRow::path);
+        v("raw", &OwnerRow::raw);
+        v("type", &OwnerRow::type);
+        v("outer", &OwnerRow::outer);
+        v("container", &OwnerRow::container);
+    }
+};
+struct Owner {
+    std::vector<OwnerRow> rows;
+    uint32_t owned = 0;                 // Rows with an object.
+    template<class V> static void Describe(V& v) {
+        v("rows", &Owner::rows);
+        v("owned", &Owner::owned);
+    }
+};
+// route: one hop, the field of the previous object (Name, Name.Member,
+// Name[3].Member, or Outer) and the object it reaches.
+struct RouteStep {
+    std::string field;
+    Object object;
+    template<class V> static void Describe(V& v) {
+        v("field", &RouteStep::field);
+        v("object", &RouteStep::object);
+    }
+};
+struct RouteRow {
+    std::optional<std::string> root;    // The root it starts at, by name.
+    Object source;
+    std::string path;                   // The root's name (else the source's ref), then each step's field.
+    std::vector<RouteStep> steps;
+    template<class V> static void Describe(V& v) {
+        v("root", &RouteRow::root);
+        v("source", &RouteRow::source);
+        v("path", &RouteRow::path);
+        v("steps", &RouteRow::steps);
+    }
+};
+// end: found (rows follow), depth (none within depth hops), budget (none
+// before budget objects), none (every object the sources reach visited).
+struct Route {
+    Object object;
+    std::vector<RouteRow> rows;
+    std::string end;
+    uint32_t visited = 0, depth = 0;
+    template<class V> static void Describe(V& v) {
+        v("object", &Route::object);
+        v("rows", &Route::rows);
+        v("end", &Route::end, "found|depth|budget|none");
+        v("visited", &Route::visited);
+        v("depth", &Route::depth);
+    }
+};
 struct Refs {
     int32_t index = 0;
     std::optional<std::string> name;

@@ -71,6 +71,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `find`, `describe`, `name`, `name-find`, `census` (and its `diff`) | T1 | [Unreal objects](commands/unreal-objects.md) |
 | `enum`, `assets-export` | T2 | [Unreal objects](commands/unreal-objects.md) |
 | `each` | T3 | [Unreal objects](commands/unreal-objects.md#each) |
+| `owner`, `route` | T3 | [Unreal objects](commands/unreal-objects.md#owner-and-route) |
 | `get` (every mode), `entries`, `rows`, `member-name`, `layout-export`, `layout-check` | T2 | [Unreal fields](commands/unreal-fields.md) (snapshots over time: [capture](commands/capture.md)) |
 | `func`, `funcs` | T2 (`func`'s `params`: T3) | [Unreal calls](commands/unreal-calls.md#func-and-funcs) |
 | `call`, `call-pure`, `call-each`, `release`, `line-trace` | T3 | [Unreal calls](commands/unreal-calls.md) |

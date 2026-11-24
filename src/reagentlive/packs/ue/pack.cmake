@@ -26,7 +26,7 @@ target_sources(reagentlive-ue-base INTERFACE "${reagentlive_ue_dir}/agent_ue.cpp
     "${reagentlive_ue_dir}/agent_ue_check.cpp" "${reagentlive_ue_dir}/agent_ue_entries.cpp"
     "${reagentlive_ue_dir}/agent_ue_reflect.cpp" "${reagentlive_ue_dir}/agent_ue_scan.cpp"
     "${reagentlive_ue_dir}/agent_ue_script.cpp" "${reagentlive_ue_dir}/agent_ue_calls.cpp"
-    "${reagentlive_ue_dir}/agent_ue_index.cpp")
+    "${reagentlive_ue_dir}/agent_ue_index.cpp" "${reagentlive_ue_dir}/agent_ue_route.cpp")
 target_link_libraries(reagentlive-ue-base INTERFACE reagentlive-core)
 set_property(GLOBAL APPEND PROPERTY REAGENTLIVE_AGENT_TARGETS reagentlive-ue-base)
 
@@ -57,5 +57,5 @@ set(reagentlive_pack_console_sources "${reagentlive_ue_dir}/cli/console/pack.cpp
     "${reagentlive_ue_dir}/cli/console/labels.cpp" "${reagentlive_ue_dir}/cli/console/members.cpp"
     "${reagentlive_ue_dir}/cli/console/layout.cpp" "${reagentlive_ue_dir}/cli/console/text.cpp"
     "${reagentlive_ue_dir}/cli/console/rows.cpp" "${reagentlive_ue_dir}/cli/console/script.cpp"
-    "${reagentlive_ue_dir}/cli/console/export.cpp")
+    "${reagentlive_ue_dir}/cli/console/export.cpp" "${reagentlive_ue_dir}/cli/console/route.cpp")
 set(reagentlive_pack_console_link reagentlive-ue-client)

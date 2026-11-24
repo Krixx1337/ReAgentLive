@@ -43,7 +43,8 @@ constexpr uint32_t Entries = Find + 17;
 constexpr uint32_t CallsStart = Find + 18, CallsRead = Find + 19, CallsStop = Find + 20;
 constexpr uint32_t Enum = Find + 21;
 constexpr uint32_t GameThread = Find + 22;
-static_assert(GameThread < reagentlive::op::PackSlot(1), "the Unreal pack's ops stay in its slot");
+constexpr uint32_t Owner = Find + 23, Route = Find + 24;
+static_assert(Route < reagentlive::op::PackSlot(1), "the Unreal pack's ops stay in its slot");
 }
 
 // A UObject ref: core's Ref, with the object-table index and its serial.
@@ -741,6 +742,88 @@ struct CallsRow {
     uint8_t via, reserved[7];
 };
 
+// Owner: data = 1..MaxOwnerAddresses addresses (uint64 each). One object-table
+// scan (budgeted per tick, like Census) finds, per address, the object whose
+// memory holds it: the nearest object at or below the address, accepted when
+// the offset is inside its class's size. The reply is one OwnerEntry per
+// address, in the request's order; detail = addresses with an owner.
+// Addresses in heap buffers (an array's elements) have no owner here: the
+// client checks candidate objects' containers itself.
+constexpr uint32_t MaxOwnerAddresses = 64;
+constexpr uint32_t OwnerOuter = 1;  // The address is the owner's Outer pointer.
+struct OwnerEntry {
+    Ref object;          // Zero: no object holds the address.
+    uint32_t offset;     // The address minus the object.
+    uint32_t size;       // The object's class size.
+    uint32_t flags, reserved;
+};
+static_assert(MaxOwnerAddresses * sizeof(OwnerEntry) <= MaxRead);
+// For addresses sorted ascending: visit(i) for each address an object at
+// `object` could hold (at or above it, within MaxObjectBytes). Pure; tested.
+template<class Visit> void Covered(const uint64_t* sorted, size_t count, uint64_t object, Visit&& visit) {
+    size_t low = 0, high = count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (sorted[middle] < object) low = middle + 1;
+        else high = middle;
+    }
+    for (size_t i = low; i < count && sorted[i] - object < MaxObjectBytes; ++i) visit(i);
+}
+
+// Route: object ref = the target; data = RouteSpec. A breadth-first walk
+// over reflected object references (budgeted per tick, like Census) from the
+// sources: object properties (strong and interface pointers; no class, weak,
+// soft or lazy ones), arrays, sets and map values of them or of structs
+// holding them, and structs holding any of these, to MaxRouteStructDepth.
+// Containers inside a container's element are not followed. RouteOuter also
+// follows each object's Outer. A source is an object or a host root by name
+// (Host::root). Every object is identified when found and resolved again
+// before its fields are read, so one freed between ticks is skipped.
+// The reply is a RouteHeader, then per route a RoutePath and its hops, the
+// shortest routes only (all the same length), at most MaxRoutes.
+constexpr uint32_t MaxRouteSources = 4, MaxRoutes = 4, MaxRouteDepth = 16, MaxRouteRoot = 32;
+constexpr uint32_t MaxRouteBudget = 1u << 20;      // Objects visited.
+constexpr uint32_t MaxRouteStructDepth = 4;
+constexpr uint32_t MaxRouteElements = 1u << 16;    // Elements or slots read per container.
+constexpr uint32_t RouteOuter = 1;
+struct RouteSpec {
+    uint32_t depth, budget, flags, sources;
+    Ref from[MaxRouteSources];                 // A source object (index -1: identified by the agent), or zero.
+    char roots[MaxRouteSources][MaxRouteRoot]; // Else a host root by name.
+};
+// Found: routes follow. Depth: none within depth hops (objects were left
+// past it). Budget: none before budget objects were visited. None: every
+// object reachable from the sources was visited.
+enum class RouteEnd : uint32_t { Found, Depth, Budget, None };
+struct RouteHeader {
+    uint32_t routes;
+    uint32_t visited;    // Objects reached, the sources included.
+    uint32_t depth;      // Found: each route's hops; else the deepest level walked.
+    uint32_t end;        // RouteEnd.
+};
+struct RoutePath { uint32_t source, hops; };      // The source's index in the spec.
+// One hop: the pointer to the next object, read from `holder`.
+enum class HopKind : uint32_t { Field, Array, Set, Map, Outer };
+struct RouteHop {
+    Ref holder;
+    uint32_t kind;       // HopKind.
+    uint32_t offset;     // Field: the pointer's offset in the holder; a container: the container's.
+    uint32_t index;      // A container: the element (an array) or slot (a set or map).
+    uint32_t inner;      // A container: the pointer's offset in the element or slot.
+};
+static_assert(sizeof(RouteHeader) + MaxRoutes * (sizeof(RoutePath) + MaxRouteDepth * sizeof(RouteHop)) <= MaxRead);
+// Every source is an object or a root name (terminated, not both); bounds. Pure; tested.
+inline bool RouteSpecValid(const RouteSpec& spec) {
+    if (!spec.depth || spec.depth > MaxRouteDepth || !spec.budget || spec.budget > MaxRouteBudget ||
+        (spec.flags & ~RouteOuter) || !spec.sources || spec.sources > MaxRouteSources) return false;
+    for (uint32_t i = 0; i < MaxRouteSources; ++i) {
+        const bool root = spec.roots[i][0] != 0, object = spec.from[i].address != 0;
+        if (!memchr(spec.roots[i], 0, MaxRouteRoot)) return false;
+        if (i < spec.sources ? root == object : root || object) return false;
+    }
+    return true;
+}
+
 // The pack's part of the layout check (added to reagentlive::LayoutCore by the host).
 // New ops need no change here: the section header lists the ops an agent handles.
 // Every struct the pack sends is in the sum (see reagentlive::LayoutCore).
@@ -749,7 +832,8 @@ constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + si
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
     sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + sizeof(CallsState) * 97 + sizeof(CallsRow) * 103 +
-    sizeof(EnumEntry) * 113 + sizeof(GameThreadState) * 127 +
+    sizeof(EnumEntry) * 113 + sizeof(GameThreadState) * 127 + sizeof(OwnerEntry) * 131 + sizeof(RouteSpec) * 137 +
+    sizeof(RouteHeader) * 139 + sizeof(RoutePath) * 149 + sizeof(RouteHop) * 151 +
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);
 
 namespace detail {
@@ -870,6 +954,15 @@ inline Status Check(const Request& request) {
         return request.address && GetRef(request).index >= 0 && request.length &&
             request.length <= MaxRead && offset <= MaxObjectBytes - request.length &&
             request.address <= UINT64_MAX - offset - request.length ? Status::Ok : Status::BadRequest;
+    }
+    case op::Owner:
+        return !request.address && request.length && request.length % sizeof(uint64_t) == 0 &&
+            request.length / sizeof(uint64_t) <= MaxOwnerAddresses ? Status::Ok : Status::BadRequest;
+    case op::Route: {
+        if (!request.address || request.length != sizeof(RouteSpec)) return Status::BadRequest;
+        RouteSpec spec;
+        memcpy(&spec, request.data, sizeof(spec));
+        return RouteSpecValid(spec) ? Status::Ok : Status::BadRequest;
     }
     case op::DescribeMany:
         return request.length && request.length % sizeof(Ref) == 0 && request.length / sizeof(Ref) <= MaxDescribeMany

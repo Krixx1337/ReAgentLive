@@ -20,6 +20,8 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Objects by name or class; one asset's subobjects | `find` (`cls`, `live`, `outer`) |
 | Live instances per class; what spawned during an action | `census`, then `census` with `diff` |
 | Name, class and ref of an address | `describe` |
+| Which object and field hold an address (`search` hits) | `owner` (heap hits: add `within`) |
+| How the engine reaches an object: the field path from a root | `route` |
 | FName index to text / text to index | `name` / `name-find` |
 | An object's layout / its values | `get` with `mode` `types` / `get` (filter it with `view`, or name `paths`) |
 | Typed values along pointer and struct paths, one moment | `get` |

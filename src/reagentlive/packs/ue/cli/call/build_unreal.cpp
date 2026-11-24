@@ -597,6 +597,57 @@ Parsed CallsStop(const Args& args, const ParseContext&) {
 // census: diff answers only the classes whose count differs from the last census of that cls.
 Parsed Census(const Args& args, const ParseContext&) { return CensusOptions(args); }
 
+// owner: addresses (as search rows give them) and objects whose containers to check.
+Parsed Owner(const Args& args, const ParseContext& context) {
+    Command command;
+    command.kind = Kind::Owner;
+    command.request.op = ue::op::Owner;
+    for (const auto& item : args.At("addrs")) {
+        if (command.addresses.size() == MaxOwnerRows) return Fail("addrs: at most " + std::to_string(MaxOwnerRows));
+        auto place = value::Address(item, context.modules);
+        if (!place) return Fail("addrs: " + place.error());
+        command.addresses.push_back(place->address);
+    }
+    if (command.addresses.empty()) return Fail("addrs: give at least one address");
+    for (const auto& item : args.Strs("within")) {
+        Request object{};
+        if (command.within.size() == MaxOwnerWithin) return Fail("within: at most " + std::to_string(MaxOwnerWithin) + " objects");
+        if (!Object(item, object)) return Fail("within: '" + item + "' is not a literal ref or \"0x...\"");
+        command.within.push_back(ue::GetRef(object));
+    }
+    return command;
+}
+
+// route: the target, its sources (roots by name or objects), depth, budget and outer.
+Parsed Route(const Args& args, const ParseContext&) {
+    Command command;
+    command.kind = Kind::Route;
+    Request& request = command.request;
+    request.op = ue::op::Route;
+    if (!Object(args.Str("object"), request)) return Fail("object is a literal ref or \"0x...\"");
+    ue::RouteSpec spec{};
+    const uint64_t depth = args.Int("depth", 8), budget = args.Int("budget", 20000);
+    if (!depth || depth > ue::MaxRouteDepth) return Fail("depth is 1.." + std::to_string(ue::MaxRouteDepth));
+    if (!budget || budget > ue::MaxRouteBudget) return Fail("budget is 1.." + std::to_string(ue::MaxRouteBudget));
+    spec.depth = static_cast<uint32_t>(depth);
+    spec.budget = static_cast<uint32_t>(budget);
+    spec.flags = args.Has("outer") ? ue::RouteOuter : 0;
+    for (const auto& source : args.Strs("sources")) {
+        if (spec.sources == ue::MaxRouteSources) return Fail("sources: at most " + std::to_string(ue::MaxRouteSources) + " sources");
+        Request object{};
+        if (Object(source, object)) {
+            spec.from[spec.sources++] = ue::GetRef(object);
+            continue;
+        }
+        if (source.empty() || source.size() >= ue::MaxRouteRoot)
+            return Fail("sources: a root name is 1.." + std::to_string(ue::MaxRouteRoot - 1) + " characters, else a literal ref or \"0x...\"");
+        CopyText(spec.roots[spec.sources++], source);
+    }
+    request.length = sizeof(spec);
+    memcpy(request.data, &spec, sizeof(spec));
+    return command;
+}
+
 // name-refs: functions whose bytecode names a pooled name (by text or index); the console resolves it.
 Parsed NameRefs(const Args& args, const ParseContext&) {
     Command command;

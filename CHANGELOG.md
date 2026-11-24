@@ -27,6 +27,14 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### New
 
+- **Where objects live, in two calls:** `owner` names the object, field
+  path or container element holding each address (`search` rows as they
+  come, `Outer` back-pointers marked), and `route` prints the shortest
+  field paths from a root such as the pawn to an object
+  ([owner and route](docs/commands/unreal-objects.md#owner-and-route)).
+  Hosts list the new `Owner` and `Route` ops in their command table.
+  Protocol change: rebuild and re-inject.
+
 - **IDA names a UFunction's native function:** a save from an exec thunk
   names the function it calls `Class::Method` and types its `this`, so it
   decompiles as `this->Field` ([IDA loader](docs/commands/ida-loader.md#opening-a-save)).

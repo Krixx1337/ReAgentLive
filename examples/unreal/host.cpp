@@ -57,6 +57,8 @@ constexpr Command Commands[] = {
     {ue::op::Each, "each", &ue::Each, false},
     {ue::op::Script, "script", &ue::Script, false},
     {ue::op::Refs, "refs", &ue::Refs, false},
+    {ue::op::Owner, "owner", &ue::Owner, false},
+    {ue::op::Route, "route", &ue::Route, false},
     {ue::op::ExecEntries, "exec entries", &ue::ExecEntries, false},
     {ue::op::CallsStart, "calls-start", &ue::CallsStart},
     {ue::op::CallsRead, "calls-read", &ue::CallsRead, false},

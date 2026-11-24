@@ -104,6 +104,8 @@ one, `[]` a list, `{...}` an object's keys (`view` is the shared output-shaping 
 | `enum {enum}` | explore | an enum's names and values, in order | `{ref: ref, name: str, rows: [{name: str, value: i64}]}` |
 | `game-thread {action}` | modify | arm or remove the host's game-thread tick through the game viewport's Draw (status shows it) **Writes or calls.** | `{mode: off\|waiting\|conflict\|on\|stopped, text: str, thread?: u32, viewport?: addr, table?: addr, draw?: addr, draw_module?: str, draw_rva?: hex}` |
 | `name-refs {name?, index?}` | explore | Blueprint functions whose bytecode names a pooled name (EX_NameConst) | `{index: i32, name?: str, rows: [{ref: ref, owner: str, name: str, offset: hex, count: u32}], capped: bool}` |
+| `owner {addrs[], within[]?}` | explore | the object holding each address: the field, the Outer pointer or the container element | `{rows: [{address: addr, object?: Object, offset?: hex, path?: str, raw?: str, type?: str, outer?: bool, container?: bool}], owned: u32}` |
+| `route {object, sources[]?, depth?, budget?, outer?}` | explore | the shortest routes of reflected references from a root or object to an object | `{object: Object, rows: [{root?: str, source: Object, path: str, steps: [{field: str, object: Object}]}], end: found\|depth\|budget\|none, visited: u32, depth: u32}` |
 | `funcs {object, view{start?, match?}?}` | explore | functions on the class chain, then on the native interfaces it implements | `{ref: ref, rows: [{owner?: str, name: str, via?: str}], from: u32, next_cursor?: u32}` |
 
 ## Named types

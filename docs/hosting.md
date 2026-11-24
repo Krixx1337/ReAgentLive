@@ -206,6 +206,8 @@ constexpr reagentlive::Command Commands[] = {
     {reagentlive::ue::op::DescribeMany, "describe many", &reagentlive::ue::DescribeMany, false},
     {reagentlive::ue::op::ExecEntries, "exec entries", &reagentlive::ue::ExecEntries, false},
     {reagentlive::ue::op::Entries, "entries", &reagentlive::ue::Entries, false},
+    {reagentlive::ue::op::Owner, "owner", &reagentlive::ue::Owner, false},
+    {reagentlive::ue::op::Route, "route", &reagentlive::ue::Route, false},
     {reagentlive::ue::op::Function, "func", &reagentlive::ue::Function},
     {reagentlive::ue::op::PreviewArray, "preview array", &reagentlive::ue::PreviewArray, false},
     {reagentlive::ue::op::Functions, "funcs", &reagentlive::ue::Functions},

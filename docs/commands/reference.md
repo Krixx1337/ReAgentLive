@@ -1211,6 +1211,47 @@ Give name or index.
 {"args":{"name":"None"},"verb":"name-refs"}
 ```
 
+### owner
+
+the object holding each address: the field, the Outer pointer or the container element.
+
+Pack `explore`.
+
+| Key | Type | Required | Default | What |
+|---|---|---|---|---|
+| `addrs` | `[addr]` | yes |  | addresses, as search rows give them (up to 256) |
+| `within` | `[ref]` |  |  | objects whose arrays, sets and maps to check for an address no object holds (up to 16) |
+
+Result: `{rows: [{address: addr, object?: Object, offset?: hex, path?: str, raw?: str, type?: str, outer?: bool, container?: bool}], owned: u32}`
+
+One object-table scan per 64 addresses: an address is held by the nearest object at or below it when the offset is inside its class's size. An address in heap storage (an array's elements) has no such owner; the arrays, sets and maps of the within objects and of the other rows' objects are checked for it (container). Needs the game thread.
+
+```json
+{"args":{"addrs":["0x140001000"]},"verb":"owner"}
+```
+
+### route
+
+the shortest routes of reflected references from a root or object to an object.
+
+Pack `explore`.
+
+| Key | Type | Required | Default | What |
+|---|---|---|---|---|
+| `object` | `ref` | yes |  | the object to reach |
+| `sources` | `[str]` |  |  | up to 4: host roots by name (status lists them) or objects (a literal ref or "0x..."); default: every root |
+| `depth` | `int` |  | `8` | hops at most (1..16) |
+| `budget` | `int` |  | `20000` | objects visited at most (1..1048576) |
+| `outer` | `bool` |  |  | also follow each object's Outer, when no field route exists |
+
+Result: `{object: Object, rows: [{root?: str, source: Object, path: str, steps: [{field: str, object: Object}]}], end: found\|depth\|budget\|none, visited: u32, depth: u32}`
+
+Breadth-first over object fields, arrays, sets and map values of objects or of structs holding them; no class, weak, soft or lazy pointers, and no containers inside a container's elements. Up to 4 routes of the shortest length. end says why there is none: depth or budget ran out, or none (every reachable object visited). Objects can die while it walks: check a route with get before relying on it. Needs the game thread.
+
+```json
+{"args":{"object":"0x1f2e3d4c50#123:4","sources":["pawn"]},"verb":"route"}
+```
+
 ### funcs
 
 functions on the class chain, then on the native interfaces it implements.

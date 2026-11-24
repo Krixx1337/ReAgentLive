@@ -1222,3 +1222,51 @@ TEST_CASE("get with no paths on an address alone resolves the object as describe
     CHECK_FALSE(nothing[0].value("ok", true));
     CHECK_FALSE(nothing[0]["error"].value("message", std::string()).empty());
 }
+
+TEST_CASE("owner names fields, structs and container elements, and route prints the field path") {
+    using namespace fake;
+    using reagentlive::cli::RefText;
+    auto& world = TheWorld();
+    Type& link = world.AddType("RouteLink", 16, true);
+    link.fields = {MakeField("Target", "ObjectProperty", 8, 8)};
+    Type& node = world.AddType("RouteNode", 0x100, false, "Object");
+    node.fields = {MakeField("Next", "ObjectProperty", 0x30, 8), StructField("Link", 0x40, link),
+        ArrayField("Members", 0x60, "ObjectProperty", 8)};
+    const Ref endRef = world.Instance("RouteEnd", node).ref;
+    const Ref middleRef = world.Instance("RouteMiddle", node).ref;
+    const Ref startRef = world.Instance("RouteStart", node).ref;
+    auto* middle = reinterpret_cast<uint8_t*>(middleRef.address);
+    auto* start = reinterpret_cast<uint8_t*>(startRef.address);
+    const uint64_t members[2] = {startRef.address, endRef.address};
+    SetArray(middle + 0x60, std::span(reinterpret_cast<const uint8_t*>(members), sizeof(members)), 2);
+    memcpy(start + 0x30, &middleRef.address, 8);
+    memcpy(start + 0x48, &endRef.address, 8);
+    uint64_t buffer = 0;
+    memcpy(&buffer, middle + 0x60, 8);
+    const auto hex = [](uint64_t value) {
+        char text[32];
+        snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(value));
+        return std::string(text);
+    };
+
+    const auto owner = Result(CallText("owner", {{"addrs", {hex(startRef.address + 0x30), hex(startRef.address + 0x48),
+        hex(buffer + 8)}}, {"within", {RefText(middleRef)}}}));
+    REQUIRE(owner["rows"].size() == 3);
+    CHECK(owner["rows"][0]["path"] == "Next");
+    CHECK(owner["rows"][0]["object"]["name"] == "RouteStart");
+    CHECK(owner["rows"][1]["path"] == "Link.Target");
+    CHECK(owner["rows"][2]["path"] == "Members[1]");
+    CHECK(owner["rows"][2]["container"] == true);
+    CHECK(owner["rows"][2]["object"]["name"] == "RouteMiddle");
+    CHECK(owner["owned"] == 3);
+
+    const auto route = Result(CallText("route", {{"object", RefText(middleRef)}, {"sources", {RefText(startRef)}}}));
+    CHECK(route["end"] == "found");
+    REQUIRE(route["rows"].size() == 1);
+    CHECK(route["rows"][0]["steps"][0]["field"] == "Next");
+    CHECK(route["rows"][0]["steps"][0]["object"]["name"] == "RouteMiddle");
+    CHECK(route["rows"][0]["path"] == RefText(startRef) + ".Next");
+    const auto back = Result(CallText("route", {{"object", RefText(startRef)}, {"sources", {RefText(middleRef)}}}));
+    REQUIRE(back["rows"].size() == 1);
+    CHECK(back["rows"][0]["steps"][0]["field"] == "Members[0]");
+}

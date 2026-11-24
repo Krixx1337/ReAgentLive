@@ -152,7 +152,7 @@ pages link here. A host that ticks elsewhere (its own thread, as
 
 | Answer off the game thread (with `offThreadReads`) | Need the game thread |
 |---|---|
-| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `get` in every mode, array previews), `entries`, `enum`, `func` (its metadata), `funcs`, `script` with `decode` | `call`, `call-pure`, `call-each`, `release`, `func`'s `params`, `each`, `script`, `name-refs`, `exec entries` (and `labels-export`, which uses them), the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `line-trace` and text values |
+| `find`, `describe` (and its batch form), `census`, `name`, `name-find`, object reads (`read` of an object ref, `get` in every mode, array previews), `entries`, `enum`, `func` (its metadata), `funcs`, `script` with `decode` | `call`, `call-pure`, `call-each`, `release`, `func`'s `params`, `each`, `script`, `name-refs`, `exec entries` (and `labels-export`, which uses them), `owner`, `route`, the call recorder (`calls-start`, `calls-read`, `calls-stop`), and what rides `call`: `line-trace` and text values |
 
 Commands that need the game thread are refused off it with `not on the
 game thread`. A host gets onto the game thread by ticking there (an SDK

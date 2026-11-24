@@ -771,3 +771,71 @@ TEST_CASE("pack handlers need the host's engine-thread check") {
     ue::Context engine{nullptr, [] { return true; }};
     CHECK(ue::EngineThreadProblem(engine) == nullptr);
 }
+
+TEST_CASE("owner requests carry 1..64 addresses") {
+    Request request{};
+    request.op = ue::op::Owner;
+    CHECK(ue::Check(request) == Status::BadRequest); // None.
+    request.length = sizeof(uint64_t);
+    CHECK(ue::Check(request) == Status::Ok);
+    request.length = 12;
+    CHECK(ue::Check(request) == Status::BadRequest); // Not whole addresses.
+    request.length = (ue::MaxOwnerAddresses + 1) * sizeof(uint64_t);
+    CHECK(ue::Check(request) == Status::BadRequest);
+    request.length = sizeof(uint64_t);
+    request.address = 0x1000;
+    CHECK(ue::Check(request) == Status::BadRequest); // Owner takes no object.
+}
+
+TEST_CASE("an object covers the addresses at or above it within the object bytes") {
+    const uint64_t sorted[] = {0x1000, 0x1008, 0x5000, 0x5000 + ue::MaxObjectBytes, 0x90000};
+    std::vector<size_t> seen;
+    ue::Covered(sorted, std::size(sorted), 0x5000, [&](size_t i) { seen.push_back(i); });
+    CHECK(seen == std::vector<size_t>{2});
+    seen.clear();
+    ue::Covered(sorted, std::size(sorted), 0x1000, [&](size_t i) { seen.push_back(i); });
+    CHECK(seen == std::vector<size_t>{0, 1, 2}); // 0x5000 is inside 64 KB of 0x1000 too.
+    seen.clear();
+    ue::Covered(sorted, std::size(sorted), 0x100000, [&](size_t i) { seen.push_back(i); });
+    CHECK(seen.empty());
+    ue::Covered(sorted, 0, 0x1000, [&](size_t i) { seen.push_back(i); });
+    CHECK(seen.empty());
+}
+
+TEST_CASE("a route spec names each source once, as an object or a root") {
+    ue::RouteSpec spec{};
+    spec.depth = 8;
+    spec.budget = 20000;
+    spec.sources = 2;
+    spec.from[0] = ue::AddressRef(0x1000);
+    memcpy(spec.roots[1], "pawn", 5);
+    CHECK(ue::RouteSpecValid(spec));
+    auto bad = spec;
+    memcpy(bad.roots[0], "x", 2); // Both an object and a root.
+    CHECK_FALSE(ue::RouteSpecValid(bad));
+    bad = spec;
+    bad.sources = 1; // A source past the count.
+    CHECK_FALSE(ue::RouteSpecValid(bad));
+    bad = spec;
+    bad.depth = ue::MaxRouteDepth + 1;
+    CHECK_FALSE(ue::RouteSpecValid(bad));
+    bad = spec;
+    bad.budget = 0;
+    CHECK_FALSE(ue::RouteSpecValid(bad));
+    bad = spec;
+    bad.flags = 2;
+    CHECK_FALSE(ue::RouteSpecValid(bad));
+    bad = spec;
+    memset(bad.roots[1], 'a', ue::MaxRouteRoot); // Unterminated.
+    CHECK_FALSE(ue::RouteSpecValid(bad));
+
+    Request request{};
+    request.op = ue::op::Route;
+    request.length = sizeof(spec);
+    memcpy(request.data, &spec, sizeof(spec));
+    CHECK(ue::Check(request) == Status::BadRequest); // No target.
+    request.address = 0x2000;
+    CHECK(ue::Check(request) == Status::Ok);
+    request.length = sizeof(spec) - 4;
+    CHECK(ue::Check(request) == Status::BadRequest);
+}

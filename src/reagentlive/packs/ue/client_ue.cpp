@@ -7,6 +7,7 @@ namespace reagentlive::ue {
 namespace {
 template<size_t N> std::string Text(const char (&field)[N]) { return std::string(field, strnlen(field, N)); }
 
+Error BadResponse(const char* what) { return {Error::Kind::Agent, Status::BadRequest, 0, {}, what}; }
 Error TooLong(const char* what) { return {Error::Kind::Agent, Status::BadRequest, 0, std::string(what) + " too long"}; }
 }
 
@@ -262,6 +263,60 @@ Result<std::vector<std::optional<Object>>> DescribeMany(Client& client, std::spa
     return objects;
 }
 
+Result<std::vector<OwnerEntry>> Owners(Client& client, std::span<const uint64_t> addresses, std::chrono::milliseconds timeout) {
+    std::vector<OwnerEntry> owners;
+    for (size_t start = 0; start < addresses.size(); start += MaxOwnerAddresses) {
+        const size_t count = std::min<size_t>(MaxOwnerAddresses, addresses.size() - start);
+        Request request{};
+        request.op = op::Owner;
+        request.length = static_cast<uint32_t>(count * sizeof(uint64_t));
+        memcpy(request.data, addresses.data() + start, request.length);
+        auto response = client.Send(request, timeout);
+        if (!response) return std::unexpected(response.error());
+        if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+        if (response->length != count * sizeof(OwnerEntry)) return std::unexpected(BadResponse("invalid owner reply"));
+        for (size_t i = 0; i < count; ++i) {
+            OwnerEntry entry{};
+            memcpy(&entry, response->data + i * sizeof(entry), sizeof(entry));
+            owners.push_back(entry);
+        }
+    }
+    return owners;
+}
+
+Result<RouteResult> Route(Client& client, const Ref& target, const RouteSpec& spec, std::chrono::milliseconds timeout) {
+    Request request{};
+    request.op = op::Route;
+    SetRef(request, target);
+    request.length = sizeof(spec);
+    memcpy(request.data, &spec, sizeof(spec));
+    auto response = client.Send(request, timeout);
+    if (!response) return std::unexpected(response.error());
+    if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+    RouteResult result{};
+    const auto invalid = [] { return std::unexpected(BadResponse("invalid route reply")); };
+    if (response->length < sizeof(RouteHeader)) return invalid();
+    memcpy(&result.header, response->data, sizeof(RouteHeader));
+    if (result.header.routes > MaxRoutes || result.header.end > static_cast<uint32_t>(RouteEnd::None)) return invalid();
+    size_t at = sizeof(RouteHeader);
+    for (uint32_t i = 0; i < result.header.routes; ++i) {
+        RoutePath path{};
+        if (response->length - at < sizeof(path)) return invalid();
+        memcpy(&path, response->data + at, sizeof(path));
+        at += sizeof(path);
+        if (path.hops > MaxRouteDepth || path.source >= spec.sources || response->length - at < path.hops * sizeof(RouteHop))
+            return invalid();
+        RoutePathResult route{path.source, std::vector<RouteHop>(path.hops)};
+        memcpy(route.hops.data(), response->data + at, path.hops * sizeof(RouteHop));
+        at += path.hops * sizeof(RouteHop);
+        for (const auto& hop : route.hops)
+            if (hop.kind > static_cast<uint32_t>(HopKind::Outer)) return invalid();
+        result.routes.push_back(std::move(route));
+    }
+    if (at != response->length) return invalid();
+    return result;
+}
+
 Result<std::vector<uint8_t>> ReadObject(Client& client, const Ref& object, uint32_t offset, uint32_t length) {
     Request request{};
     request.op = op::ReadObject;
@@ -274,10 +329,6 @@ Result<std::vector<uint8_t>> ReadObject(Client& client, const Ref& object, uint3
     if (response->length != length)
         return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "incomplete object read"});
     return std::vector<uint8_t>(response->data, response->data + length);
-}
-
-namespace {
-Error BadResponse(const char* what) { return {Error::Kind::Agent, Status::BadRequest, 0, {}, what}; }
 }
 
 Result<CensusResult> Census(Client& client, std::string_view className, OuterFilter outer, std::chrono::milliseconds timeout) {

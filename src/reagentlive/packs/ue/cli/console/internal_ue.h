@@ -161,6 +161,9 @@ private:
     std::string why_; // Why none was converted.
 };
 
+// owner and route (route.cpp).
+void RunOwner(Session& session, const Command& command, std::string_view jsonCommand);
+void RunRoute(Session& session, const Command& command, std::string_view jsonCommand);
 void RunTrace(Session& session, const Command& command, std::string_view jsonCommand);
 // calls-start, calls-read, calls-stop (the agent's call recorder).
 void RunCalls(Session& session, const Command& command, std::string_view jsonCommand);

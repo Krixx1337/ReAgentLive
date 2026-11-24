@@ -169,6 +169,8 @@ stays inside its slot.
 | `calls-start`, `calls-read`, `calls-stop` | 274, 275, 276 | Unreal pack |
 | `enum` | 277 | Unreal pack |
 | `game-thread` | 278 | Unreal pack, hosts that link `reagentlive::ue-draw` |
+| `owner` | 279 | Unreal pack |
+| `route` | 280 | Unreal pack |
 
 Ops not in the host's command table are answered with `unsupported op`.
 Adding an op does not change the layout sum: the `ops` list advertises it.
@@ -207,6 +209,10 @@ show in one place:
   gives another function. `CallPure` (2) refuses, before calling, a
   function that is neither const nor blueprint-pure or whose outputs own
   memory. A fault inside `ProcessEvent` answers `access faulted`.
+- **`owner` and `route`** run over ticks like the paged scans but answer
+  in one reply: one `OwnerEntry` per address asked, or a `RouteHeader`
+  then each route's `RoutePath` and `RouteHop`s. The console names the
+  fields; the agent only finds objects and offsets.
 - **`game-thread`** takes its action in `flags` (0 status, 1 on, 2 off)
   and answers a `GameThreadState`.
 

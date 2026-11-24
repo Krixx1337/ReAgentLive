@@ -361,7 +361,7 @@ bool PackCommand(const Command& command) {
     case Kind::TypedCall: case Kind::Release: case Kind::Dump: case Kind::Snap: case Kind::Each:
     case Kind::Get: case Kind::Script: case Kind::NameRefs: case Kind::Entries: case Kind::LabelsExport: case Kind::MemberName:
     case Kind::Layout: case Kind::LineTrace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::GameThread:
-    case Kind::AssetsExport:
+    case Kind::AssetsExport: case Kind::Owner: case Kind::Route:
         return true;
     case Kind::Remote:
         return !command.className.empty() ||
@@ -375,7 +375,7 @@ bool PackHeld(const Command& command) {
     switch (command.kind) {
     case Kind::Dump: case Kind::Snap: case Kind::Get: case Kind::TypedCall: case Kind::Release:
     case Kind::Script: case Kind::Entries: case Kind::LabelsExport: case Kind::MemberName: case Kind::Layout:
-    case Kind::LineTrace: case Kind::Calls: case Kind::Rows: case Kind::Enum: return true;
+    case Kind::LineTrace: case Kind::Calls: case Kind::Rows: case Kind::Enum: case Kind::Owner: case Kind::Route: return true;
     case Kind::Each: return !command.seconds;
     case Kind::Remote: break;
     default: return false;
@@ -431,6 +431,14 @@ void RunPackCommand(Session& session, const Command& given, std::string_view jso
     }
     if (command.kind == Kind::Enum) {
         RunEnum(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::Owner) {
+        RunOwner(session, command, jsonCommand);
+        return;
+    }
+    if (command.kind == Kind::Route) {
+        RunRoute(session, command, jsonCommand);
         return;
     }
     if (command.kind == Kind::GameThread) {
