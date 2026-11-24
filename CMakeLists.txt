@@ -119,7 +119,8 @@ set(reagentlive_call_sources "${reagentlive_cli_dir}/call/build.cpp"
 set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
     "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp" "${reagentlive_cli_dir}/console/label_sigs.cpp"
     "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp"
-    "${reagentlive_cli_dir}/console/snapshot.cpp")
+    "${reagentlive_cli_dir}/console/snapshot.cpp" "${reagentlive_cli_dir}/console/batch.cpp"
+    "${reagentlive_cli_dir}/console/offline.cpp" "${reagentlive_cli_dir}/console/session_files.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")
 target_sources(reagentlive-cli INTERFACE ${reagentlive_call_sources})
 if(reagentlive_pack_count EQUAL 1)

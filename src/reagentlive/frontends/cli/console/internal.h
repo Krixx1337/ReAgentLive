@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -190,6 +191,47 @@ std::filesystem::path TemporaryBeside(const std::filesystem::path& path);
 void RunMemSnap(Session& session, const Command& command, std::string_view jsonCommand);
 void RunMemDiff(Session& session, const Command& command, std::string_view jsonCommand);
 void RunUsage(Session& session, const Command& command, std::string_view jsonCommand);
+// One call, read once: its JSON, its verb and the console's call flags.
+struct InputLine {
+    std::string original;       // As given: the usage log's size and hash.
+    std::optional<Json> call;
+    std::string name;           // The verb as given; empty for a blank line.
+    bool meta = false, timing = false, big = false;
+    std::optional<size_t> maxChars;
+    std::optional<Json> refused;  // A frontend's own refusal: logged and answered, never run.
+    std::string problem;        // Not a call: refused under the verb "call".
+
+    const Json& Args() const {
+        static const Json none;
+        return call && call->contains("args") ? (*call)["args"] : none;
+    }
+};
+InputLine ReadLine(std::string_view line);
+// A call checked against its verb's row and built into a command (build.h).
+std::expected<Command, Json> BuildLine(std::span<const Verb> verbs, const InputLine& input, std::span<const Module> modules);
+// The envelope answering a frontend's own refusal (a call with `refused`).
+Json RefusedEnvelope(const InputLine& input);
+// One command line; true on quit. Inside a batch the batch's hold covers it.
+bool Execute(Session& session, const InputLine& input, bool inBatch);
+// batch and run (batch.cpp).
+void RunBatch(Session& session, const Command& command, std::string_view jsonCommand);
+void RunPlan(Session& session, const Command& command, std::string_view jsonCommand);
+// help from the table (offline.cpp).
+void RunHelp(Session& session, const Command& command, std::string_view jsonCommand);
+// The runs with no target (offline.cpp): help and usage only, or --check.
+int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, const std::string& hash,
+               const std::filesystem::path& usagePath, uint64_t contextLimit, const std::vector<std::string>* lines,
+               const std::function<bool(std::string&)>& readStdin, ErrorKind kind, std::string_view why,
+               const std::string& session, const std::string& caller);
+int RunCheck(std::span<const Verb> verbs, const std::vector<std::string>* lines,
+             const std::function<bool(std::string&)>& readStdin);
+// Files a run keeps (session_files.cpp): a whole file, empty when unreadable;
+// usage lines appended in one write; the log trimmed to its cap; the cache file.
+std::string ReadFile(const std::filesystem::path& path);
+void AppendUsage(const std::filesystem::path& path, const std::string& text);
+void TrimUsageFile(const std::filesystem::path& path);
+void LoadSessionCache(Session& session, const std::filesystem::path& path);
+void SaveSessionCache(const Session& session, const std::filesystem::path& path);
 // The region kind at an address (code, data, private, mapped...), nullopt
 // when the agent has no region op or the query fails.
 std::optional<std::string> RegionKind(Session& session, uint64_t address);
