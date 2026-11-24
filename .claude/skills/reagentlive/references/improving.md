@@ -14,7 +14,7 @@ Read `improvement` and `scratch` from the setup record
 |---|---|---|---|---|
 | `off` | nothing | nothing | nothing | anything |
 | `user` (default) | only the [lessons folder](#local-lessons) | nothing written (scratch notes only with `scratch: true`) | writes its lessons itself, asking nothing: the lessons are the agent's own memory. One closing line says what it learned; anything that is not a lesson (docs or code problems, missing verbs, host notes, findings) joins that line as a suggestion, never a question | any other file: ReAgentLive code, docs, tests, build files, tracked skill files, host notes, the project's findings |
-| `dev` | anything: skill, docs, ReAgentLive code, tests, backlog | scratch notes | interactive: proposals as diffs or a plan, one yes each; code changes on a branch with the build and tests run, diff shown | committing or pushing unless asked; silently changing approval or safety rules |
+| `dev` | anything: skill, docs, ReAgentLive code, tests, backlog | scratch notes | interactive, the core first (skill, docs, console): proposals as diffs or a plan, one yes each; code changes on a branch with the build and tests run, diff shown. Local lessons only for what has no tracked home | committing or pushing unless asked; silently changing approval or safety rules |
 
 `off`: skip this file. Change the mode: set `improvement` (and
 `scratch`) in `%LOCALAPPDATA%\reagentlive\setup.json`, for example
@@ -100,9 +100,11 @@ game, mod or host.
    (vendor rows need a view); suggestion: modules could take a limit`.
    Never post an issue.
 5. `dev`: propose at most 3, the strongest first (one sentence, the exact
-   text, the target file; a diff or plan), and write only the items the
-   user says yes to, one yes per item. Code changes: on a branch, build
-   and run the tests, show the diff; never commit or push unless asked.
+   text, the target file; a diff or plan), and list the rest in one line
+   each. Write only the items the user says yes to, one yes per item; a
+   declined one is dropped, never kept as a local lesson. Code changes: on
+   a branch, build and run the tests, show the diff; never commit or push
+   unless asked.
 6. Delete the scratch file, if any (`dev`: once the PR is written).
 
 ## Local lessons
