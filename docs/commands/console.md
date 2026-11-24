@@ -92,7 +92,7 @@ request costs up to a host tick. The console cuts both:
 
 - **Hold.** Calls that make several requests (`get`, `batch`, `call` with
   `params`, `funcs`, `func`, `name`, `read`, `peek`, `census`, `each`
-  without `seconds`, any call that resolves a class name) mark their
+  without `duration`, any call that resolves a class name) mark their
   requests held: the agent runs the next one in the same host tick, within
   the host's budgets ([protocol](../protocol.md#exchange)). Every response
   carries the agent tick it finished in.
@@ -148,14 +148,26 @@ investigation.
 
 `{"verb": "run", "args": {"plan": "plan.json", "out": "lines.jsonl"}}`
 
-- One line per result: the call's envelope with the step and its timing.
-  With `out` the lines go to the file, followed by a report; without it
-  they come back as `rows`.
-- **`expect`** is a subset of the envelope; a line says whether it was
-  met and where the envelope departed.
+- One line per result: `{step, run?, at_ms, ms, command, ok,
+  result|error|digest}`. With `out` the lines go to the file, followed by a
+  `{report}` line; without it they come back as `rows`. The report counts
+  calls, ok, failed, refused by kind and expects, with each step's time and
+  the console's and agent's builds.
+- **`expect`** is a subset of the envelope (`{"ok": true, "result": {...}}`);
+  a line says whether it was met (`expect`) and where the envelope departed
+  (`expect_failed`).
 - **Steps run one after another:** values from two steps are never from the
   same moment. For one moment, make one `batch` step.
-- **`repeat`** runs a step every `every` seconds for `for` seconds.
+- **`repeat`** runs a step at 0, `every`, 2*`every`... seconds while before
+  `for`: ceil(`for` / `every`) runs, so `every` 1 for 5 is 5. Up to 600 s
+  and 1000 runs; a plan holds up to 256 steps, and `run` and `quit` are not
+  allowed in one.
+- **`background`** (a frontend's: the MCP adapter, a Python session) starts
+  the run as its own console, which takes the agent's slot in turns like any
+  client under the packs enabled at the start. `run_status` (state and
+  progress), `run_read` (the result, once done) and `run_stop` (ends it,
+  deletes its files) follow it by id. A frontend that exits ends its runs; a
+  console refuses `background`.
 - **The packs ceiling applies per step:** a step of a pack outside
   `--packs` is a refused line (kind `pack`) and the plan goes on, so a plan
   with `modify` steps needs `modify` in `--packs` and the user's approval.
@@ -215,13 +227,30 @@ session cost. Every path ends in the console, so one log covers them
   default). Only `tool` output is context cost.
 - **A batch** writes a line per call and one for its wrapper, so no output
   counts twice.
-- **Marks** (`repeated`, `unfiltered`, `followed`, `raised`...) state what
-  happened; what to do about them is the
-  [`reagentlive` skill](../../.claude/skills/reagentlive/SKILL.md)'s. Their
-  meanings and every key: [reference](reference.md#usage).
-- **Context limit:** `--context-limit <chars>` is a soft limit on a
-  session's `tool` output; past it every envelope carries `context_warning`.
-  Nothing stops: `max_chars` stays the per-result cap.
+- **Marks** state what happened; what to do about them is the
+  [`reagentlive` skill](../../.claude/skills/reagentlive/SKILL.md)'s. Result
+  keys: [results](results.md). Per verb:
+  - `digested` counts results past the cap (`max_chars`); `saved` the
+    characters their digests kept out. Of the next call after a digest,
+    `followed` counts one that changed its narrowing args and `raised` one
+    that only raised `max_chars` or set `big`.
+  - `unfiltered`: the verb takes a view (own or `cls`) and the call gave none
+    of `match`, `nonzero` or `limit`, `own`, `cls` or an optional `paths`
+    (`get`'s), and it printed whole, past 2000 characters. Never a refused
+    call.
+  - `repeated`: the same input and result again in its session. The same
+    input with another result is `same_args`: the state changed, the call was
+    needed.
+  - `refused` counts by error kind; one refused for its pack is not in
+    `calls_by_pack`.
+- **Counting:** `calls` counts top-level calls (a batch is one, its calls
+  are `batched`), as do `calls_by_pack` and `ms`; a verb's row counts its
+  calls wherever they ran, and the `batch` row holds its wrapper. `out` is
+  characters; `out_by_caller.tool` is what reached an agent's context.
+- **Context limit:** `--context-limit <chars>` (default 400000; 0: none) is
+  a soft limit on a session's `tool` output; past it every envelope carries
+  `context_warning`. Nothing stops: `max_chars` stays the per-result cap. One
+  session's report adds `context`: `chars`, `limit` and `over`.
 - **Capped:** the log is trimmed to its newest sessions at 4 MB; a line
   another console appends mid-trim can be lost, accepted.
 
@@ -232,6 +261,22 @@ session, `advice` proposes smaller defaults for verbs often digested,
 the console's JSON Lines: the MCP adapter hands a client each result twice
 (as text and as structured content), and which one a model sees is the
 client's choice.
+
+- `report` `sessions` lists up to 30 sessions as `session_rows`, with totals
+  over the whole log. `only` keeps the parts named (`session`, `sessions`,
+  `since` and `saved` always stay); `save` still writes the whole report.
+- `advice` lists verbs with at least two digested or unfiltered calls (or
+  half their calls), most first: `limit` proposes a smaller default
+  `view.limit` (the default scaled to what the cap held of the largest
+  digested result), `hint` says what else to change in the row or its help.
+- `save` writes the report (JSON) and answers `saved`; `baseline` compares
+  this session with such a file. `compare.worse` and `compare.better` list
+  the figures that moved (totals `calls`, `refused`, `digested`, `context`
+  and `ms`; `refused_by.<kind>`; per verb `calls`, `refused`, `digested` and
+  `ms_per_call`), totals first, largest move first. A count is worse when it
+  grew, time when it grew by a quarter and past noise (100 ms in all, 50 ms
+  a call). `baseline` and `save` take one session, never a report.
+- `refusals` lists refused calls by verb, error kind and the arg at fault.
 
 ## JSON Lines
 

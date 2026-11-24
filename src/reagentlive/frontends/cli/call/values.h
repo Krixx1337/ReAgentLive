@@ -140,9 +140,8 @@ inline uint64_t Int(const Json& value) {
 
 // Each offset but the last reads a pointer, so a chain of one reads none: it
 // would answer the bytes at base+off as if a pointer had been followed.
-constexpr auto ChainNoHop = "a chain of one offset follows no pointer (each but the last reads one): "
-    "{\"base\": <addr>, \"chain\": [0, N]} reads the pointer at base and adds N; {\"base\": <addr>, \"offset\": N} "
-    "is the address itself";
+constexpr auto ChainNoHop = "chain needs 2+ offsets (each but the last reads a pointer); "
+    "one offset is {\"base\": <addr>, \"offset\": N}";
 constexpr auto ChainRefused = "a write goes to an address you resolved and read first, never through a pointer chain";
 
 // An addr ("0x..." hex, a literal ref, {module, rva}, {base, offset}); with

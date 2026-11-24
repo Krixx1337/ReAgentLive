@@ -125,15 +125,21 @@ void RunCalls(Session& session, const Command& original, std::string_view jsonCo
     if (!client.Supports(command.request.op))
         return JsonError(session, jsonCommand, ErrorKind::Unsupported, "this host does not offer the call recorder");
     if (command.target == "start") {
+        uint64_t filter = 0;
         if (!command.className.empty()) {
             auto type = ResolveObjectOrClass(session, command.className);
             if (!type) return CommandError(session, jsonCommand, type.error());
             ue::SetRef(command.request, *type);
+        } else {
+            // An instance narrows the recording to it; a class or a class default object (by ref)
+            // records every instance.
+            const auto described = ue::Describe(client, ue::GetRef(command.request));
+            if (!described) return CommandError(session, jsonCommand, described.error());
+            if (!described->className.ends_with("Class") && !described->name.starts_with("Default__"))
+                filter = described->ref.address;
         }
         const Request& request = command.request;
         const bool dry = (request.flags & ue::CallsDry) != 0;
-        uint64_t filter = 0;
-        if (request.length == sizeof(filter)) memcpy(&filter, request.data, sizeof(filter));
         auto started = ue::CallsStart(client, ue::GetRef(request), request.text, request.args[1], filter, dry);
         if (!started) return CommandError(session, jsonCommand, started.error());
         shape::CallsStart out;

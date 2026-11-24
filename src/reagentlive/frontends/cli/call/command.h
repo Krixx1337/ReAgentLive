@@ -145,7 +145,7 @@ struct Command {
     // calls-start, calls-read, calls-stop: `target` is "start", "read" or
     // "stop"; the recording's slot (ue::CallsLatest: the last started) and
     // calls-read's cursor; calls-start's request carries the object, the
-    // function, the milliseconds (args[0]) and the object filter (args[1]).
+    // function and the milliseconds (args[1]); the console adds an instance filter.
     uint64_t callsSlot = 0, callsAfter = 0;
     // script decode: the bytecode as statements; entry: from this offset
     // to the event's end (an uber-graph entry); to: statements before this

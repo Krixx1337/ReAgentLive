@@ -124,12 +124,15 @@ arrays ([named calls](unreal-calls.md#named-calls)); `view.match` keeps row
 names containing text. `RowMap` is unreflected (`get` shows only
 `RowStruct`): the console reads it as the stock UE5 `TMap<FName, uint8*>`
 right after `RowStruct` and checks the sparse header as `entries` does; a
-table whose header fails is refused, never guessed.
+table whose header fails is refused, never guessed. Nested arrays decode up
+to 256 elements and 3 levels deep, names resolved.
 
 On a `CurveTable` the same verb reads the unreflected `RowMap` and
 `CurveTableMode` at the offsets of the engine layout's `curvetable` group
 (`engine_layout.h`); each row carries its keys, and `at` adds each row's
-value at that time, evaluated as the engine does. `view.fields` and
+value at that time, evaluated per key `interp` (constant, linear, cubic; the
+end keys' values outside them). A `simple` curve's rows carry `interp`; a
+`rich` curve's keys are `[t, v, interp, arrive, leave]`. `view.fields` and
 `view.nonzero` apply to data tables only, `at` to curve tables only.
 
 ## Text values

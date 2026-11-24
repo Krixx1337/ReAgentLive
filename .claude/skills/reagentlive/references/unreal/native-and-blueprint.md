@@ -32,7 +32,7 @@ reference.
 - If the decode reports it stopped, the statements before the stop are
   sound; read past it by hand only around the offset it names.
 - **Which Blueprints read a value:** `name-refs` with `name` (the tag text) or
-  `index`, then `script` with `decode` on each hit (its ref as `object`,
+  `name_index`, then `script` with `decode` on each hit (its ref as `object`,
   no `function`).
 - With an SDK dump: the parameter struct's `CallFunc_*` locals name every
   call the function makes; `grep` the SDK `*_parameters.hpp` for a

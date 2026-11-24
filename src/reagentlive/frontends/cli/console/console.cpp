@@ -245,7 +245,7 @@ void Run(Session& session, const Command& command, std::string_view jsonCommand)
 
 // Commands that make several round trips run held, so they finish in as few
 // host ticks as the agent's budget allows. Single requests and timed loops
-// (each with `seconds`) do not: a hold would only add one wait.
+// (each with `duration`) do not: a hold would only add one wait.
 bool Held(const Command& command) {
     if (command.kind == Kind::Peek) return true;
     // read: the bytes, then the region they lie in.
@@ -436,7 +436,7 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     // The table and the verbs' docs are what a client reads to call at all: never digested.
     if (parsed->kind == Kind::Help) session.input.maxChars = 0;
     if (inBatch && parsed->kind == Kind::Each && parsed->seconds) {
-        JsonError(session, jsonCommand, ErrorKind::Schema, "seconds: each with seconds is not allowed in a batch");
+        JsonError(session, jsonCommand, ErrorKind::Schema, "duration: each with duration is not allowed in a batch");
         return false;
     }
     // A pointer chain: resolved here, then the command runs at its end.

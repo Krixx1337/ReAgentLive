@@ -9,10 +9,10 @@
   Pick a base class to keep engine churn out; changed rows' samples are
   only new for classes absent before (else `find` with `cls`). Objects
   living a tick or two fall between censuses: capture them, or `each` with
-  `seconds`.
+  `duration`.
 - "Which instance has state X?":
   `{"verb": "call-each", "args": {"cls": "Pawn", "function": "Pawn:IsControlled"}}`;
-  add `seconds` while the user acts to see which rows flip.
+  add `duration` while the user acts to see which rows flip.
 
 ## Gameplay tags
 

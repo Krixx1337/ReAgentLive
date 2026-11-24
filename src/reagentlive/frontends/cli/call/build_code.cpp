@@ -64,19 +64,19 @@ Parsed Touches(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// disp-scan: every instruction in the main module's code with a [reg + disp] form of these disps, a page at a time.
+// disp-scan: every instruction in the main module's code with a [reg + disp] form of these offsets, a page at a time.
 Parsed DispScan(const Args& args, const ParseContext&) {
     Command command;
-    for (const auto& value : args.At("disps")) {
+    for (const auto& value : args.At("offsets")) {
         const uint64_t disp = Args::Number(value);
         if (!disp || disp > UINT32_MAX || command.offsets.size() == touch::MaxOffsets)
-            return Fail("disps: up to " + std::to_string(touch::MaxOffsets) + ", each 1..0xffffffff");
+            return Fail("offsets: up to " + std::to_string(touch::MaxOffsets) + ", each 1..0xffffffff");
         if (std::ranges::find(command.offsets, static_cast<uint32_t>(disp)) == command.offsets.end())
             command.offsets.push_back(static_cast<uint32_t>(disp));
     }
-    if (command.offsets.empty()) return Fail("disps: give at least one");
+    if (command.offsets.empty()) return Fail("offsets: give at least one");
     command.sameBase = args.Has("same_base");
-    if (command.sameBase && command.offsets.size() < 2) return Fail("same_base: give two disps or more");
+    if (command.sameBase && command.offsets.size() < 2) return Fail("same_base: give two offsets or more");
     command.access = args.Has("access") ? args.Str("access") : "write";
     if (args.Has("width")) {
         const uint64_t width = args.Int("width");

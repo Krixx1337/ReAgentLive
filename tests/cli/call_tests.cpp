@@ -138,7 +138,7 @@ TEST_CASE("each's where filters on a field's value; a filter is exactly field an
     CHECK(Call(R"({"verb": "each", "args": {"cls": "ItemDefinition", "paths": [["ItemId"]]}})")->limit == DefaultEachRows);
     CHECK(Why(R"({"verb": "each", "args": {"cls": "I", "paths": [["ItemId"]], "where": {"field": ["DisplayName"], "contains": ""}}})")
               .starts_with("where: contains"));
-    CHECK(Why(R"({"verb": "each", "args": {"cls": "I", "paths": [["ItemId"]], "where": {"field": ["A"], "contains": "b"}, "seconds": 2}})")
+    CHECK(Why(R"({"verb": "each", "args": {"cls": "I", "paths": [["ItemId"]], "where": {"field": ["A"], "contains": "b"}, "duration": 2}})")
               .starts_with("where and seconds"));
     CHECK(Why(R"({"verb": "each", "args": {"cls": "I", "paths": [["ItemId"]], "where": {"field": ["A.B"], "contains": "b"}}})")
               .starts_with("where: "));
@@ -414,7 +414,7 @@ TEST_CASE("write undo needs an owner ref and expected bytes") {
         {R"({"addr": "0x1000", "data": "01", "undo": {"after": 61, "owner": "0x1000#5:9"}, "expect": "00"})", "after: a timed write lasts at most 60 s"},
         {R"({"addr": "0x1000", "data": "01", "undo": 5, "expect": "00"})", "undo: an object {after, owner, object?}"},
         {R"({"addr": "0x1000", "data": "01", "owner": "0x1000#5:9", "expect": "00"})", "'owner' goes inside undo"},
-        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 5, "owner": "0x1000#5:9"}, "hold": 5, "expect": "00"})", "hold: undo and hold"},
+        {R"({"addr": "0x1000", "data": "01", "undo": {"after": 5, "owner": "0x1000#5:9"}, "hold": 5, "expect": "00"})", "hold: does not combine with undo"},
     };
     for (const auto& each : bad) {
         const Json call{{"verb", "write"}, {"args", Json::parse(each.args)}};

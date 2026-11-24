@@ -140,7 +140,7 @@ CALLS = [
                                                        'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
-    [C('describe', {'index': 5, 'serial': 9}), dict(ok(dict(OBJECT, class_size=1264)), context_warning=WARNING)],
+    [C('describe', {'slot': 5, 'serial': 9}), dict(ok(dict(OBJECT, class_size=1264)), context_warning=WARNING)],
     [C('get', {'object': REF, 'paths': [['A', 'B']]}), ok({'ref': REF, 'same_tick': True, 'rows': [
         {'path': 'A.B', 'value': 1.5, 'address': '0x18', 'holder': REF}]})],
     [C('get', {'object': REF, 'paths': [['A', 'B'], ['C']]}), ok({'ref': REF, 'same_tick': True, 'rows': [
@@ -238,7 +238,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(problems, [])
 
     def test_a_session_past_its_context_limit_carries_the_warning(self):
-        self.assertEqual(self.c.ue.describe(index=5, serial=9)['class_size'], 1264)   # The result is whole: no stop.
+        self.assertEqual(self.c.ue.describe(slot=5, serial=9)['class_size'], 1264)   # The result is whole: no stop.
         self.assertEqual(self.session.context_warning, WARNING)
         self.c.modules()
         self.assertIsNone(self.session.context_warning)               # Each call sets it again.

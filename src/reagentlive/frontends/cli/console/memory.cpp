@@ -84,8 +84,8 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     result.ticking = ticking;
     result.hostThread = HostThreadText(thread);
     if (thread != HostThread::Engine)
-        result.tickNote = "this host does not tick on the engine's thread: a tick is a host tick (a frame), "
-            "not a moment of the game, so values read in one tick need not line up";
+        result.tickNote = "not on the engine thread: a tick is a host tick, not a game moment; "
+            "values from one tick may not line up";
     // What watch-start's follow can follow.
     if (client.Supports(op::Watch))
         if (auto roots = client.WatchRoots(); roots) result.roots = std::move(*roots);
@@ -219,8 +219,8 @@ void RunTrial(Session& session, const Command& command, std::string_view jsonCom
     spec.object = command.object;
     if (!TrialSpecValid(spec))
         return JsonError(session, jsonCommand, ErrorKind::Validation, spec.object ?
-            "write with undo refused: the target must lie within 0x1000 bytes after object" :
-            "write with undo refused: the target is outside the owner; give object for a native object it points to");
+            "undo refused: target must lie within 0x1000 bytes after object" :
+            "undo refused: target is outside the owner; give object for a native object it points to");
     auto trial = client.TrialAdd(spec);
     if (!trial) return CommandError(session, jsonCommand, trial.error());
     Emit(session, jsonCommand, TimedResult(session, MakeTrial(*trial), request.length));

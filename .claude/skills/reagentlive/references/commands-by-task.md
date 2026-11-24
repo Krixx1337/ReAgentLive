@@ -21,7 +21,7 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 | One table over every instance of a class (one tick, one call) | `each` (fields), `call-each` (a getter) |
 | Elements of an array, set or map | `entries` |
 | A data table's rows; a curve table's keys, or its value at a time | `rows`, `rows` with `at` |
-| Many assets read again and again (data assets, tables): to files once | `assets-export` (`dir`, `cls`), then grep the files |
+| Many assets read again and again (data assets, tables): to files once | `assets-export` (`dir`, `classes`), then grep the files |
 | What a byte or enum field's number means | `enum` |
 | Functions on a class; one function's entry and parameter block | `funcs`; `func` |
 | Name an unreflected member for good | `member-name` |

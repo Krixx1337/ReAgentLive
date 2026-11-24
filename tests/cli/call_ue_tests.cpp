@@ -36,7 +36,7 @@ TEST_CASE("each reads fields only; call-each calls a function on every instance"
     // Owner:Function is a function: each never calls.
     CHECK(Why(R"({"verb": "each", "args": {"cls": "Character", "paths": [["Character:CanJump"]]}})")
               .starts_with("paths: Character:CanJump is a function: call-each"));
-    auto parsed = Call(R"({"verb": "call-each", "args": {"cls": "Character", "function": "Character:CanJump", "seconds": 10, "view": {"limit": 5}}})");
+    auto parsed = Call(R"({"verb": "call-each", "args": {"cls": "Character", "function": "Character:CanJump", "duration": 10, "view": {"limit": 5}}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Each);
     CHECK(parsed->eachCall);
@@ -50,8 +50,8 @@ TEST_CASE("each reads fields only; call-each calls a function on every instance"
                   .starts_with(std::string("unknown key '") + key + "'"));
     CHECK(Why(R"({"verb": "call-each", "args": {"cls": "0x1000#5:9", "function": "CanJump"}})")
               .starts_with("cls is a class name"));                             // A class, not an object.
-    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "seconds": 2}})")
-              .starts_with("unknown key 'seconds'"));
+    CHECK(Why(R"({"verb": "call-pure", "args": {"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "duration": 2}})")
+              .starts_with("unknown key 'duration'"));
     // game-thread acts; status reads its state.
     CHECK(Call(R"({"verb": "game-thread", "args": {"action": "on"}})")->request.flags ==
           static_cast<uint32_t>(ue::GameThreadAction::On));
@@ -217,12 +217,12 @@ TEST_CASE("describe takes an object, or an object-table slot and serial") {
     CHECK(raw->request.op == ue::op::Describe);
     CHECK(ue::GetRef(raw->request) == Ref{0x1234, -1, 0});
     CHECK(ue::GetRef(Call(R"({"verb": "describe", "args": {"object": "0x1000#5:9"}})")->request) == One);
-    const auto slot = Call(R"({"verb": "describe", "args": {"index": 331227, "serial": 138023}})");
+    const auto slot = Call(R"({"verb": "describe", "args": {"slot": 331227, "serial": 138023}})");
     REQUIRE(slot.has_value());
     CHECK(ue::GetRef(slot->request) == Ref{0, 331227, 138023});
     CHECK(ue::Check(slot->request) == Status::Ok);
-    CHECK(Why(R"({"verb": "describe", "args": {"index": 5, "serial": 0}})").starts_with("serial is"));
-    CHECK(Why(R"({"verb": "describe", "args": {"object": "0x1000#5:9", "index": 5, "serial": 9}})").starts_with("object: give"));
+    CHECK(Why(R"({"verb": "describe", "args": {"slot": 5, "serial": 0}})").starts_with("serial is"));
+    CHECK(Why(R"({"verb": "describe", "args": {"object": "0x1000#5:9", "slot": 5, "serial": 9}})").starts_with("object: give"));
     CHECK(Why(R"({"verb": "describe"})").starts_with("object: give"));
     Request weak{};
     weak.op = ue::op::Describe;
@@ -287,7 +287,7 @@ TEST_CASE("script reads bytecode; decode with entry reads one event") {
 }
 
 TEST_CASE("refs takes a pooled name or its index") {
-    auto parsed = Call(R"({"verb": "name-refs", "args": {"index": 145935}})");
+    auto parsed = Call(R"({"verb": "name-refs", "args": {"name_index": 145935}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::NameRefs);
     CHECK(parsed->request.args[0] == 145935);
@@ -296,8 +296,8 @@ TEST_CASE("refs takes a pooled name or its index") {
     CHECK(parsed->request.args[0] == 0);
     CHECK(std::string_view(parsed->request.text) == "Attribute.Gameplay.Character.ReloadSpeedMultiplier");
     CHECK(Why(R"({"verb": "name-refs"})").starts_with("name: give"));
-    CHECK(Why(R"({"verb": "name-refs", "args": {"name": "A", "index": 3}})").starts_with("name: give"));
-    CHECK(Why(R"({"verb": "name-refs", "args": {"index": 0}})").starts_with("index is"));
+    CHECK(Why(R"({"verb": "name-refs", "args": {"name": "A", "name_index": 3}})").starts_with("name: give"));
+    CHECK(Why(R"({"verb": "name-refs", "args": {"name_index": 0}})").starts_with("name_index is"));
 }
 
 TEST_CASE("name takes FName indices and the agent bounds them") {
@@ -437,7 +437,7 @@ TEST_CASE("name-find takes text and a cursor") {
 }
 
 TEST_CASE("each takes a class, its columns and an optional repeat") {
-    auto parsed = Call(R"({"verb": "each", "args": {"cls": "Character", "paths": [["Health"]], "seconds": 10}})");
+    auto parsed = Call(R"({"verb": "each", "args": {"cls": "Character", "paths": [["Health"]], "duration": 10}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Each);
     CHECK(parsed->request.op == ue::op::Each);
@@ -455,8 +455,8 @@ TEST_CASE("each takes a class, its columns and an optional repeat") {
     CHECK(Why(many).starts_with("paths: at most 16 columns"));
     CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn"}})").starts_with("missing paths"));
     CHECK(Why(R"({"verb": "each", "args": {"cls": "0x1000#5:9", "paths": [["Health"]]}})").starts_with("cls is a class name"));
-    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "seconds": 0}})").starts_with("seconds is"));
-    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "seconds": 61}})").starts_with("seconds is"));
+    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "duration": 0}})").starts_with("duration is"));
+    CHECK(Why(R"({"verb": "each", "args": {"cls": "Pawn", "paths": [["Health"]], "duration": 61}})").starts_with("duration is"));
 }
 
 TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
@@ -497,8 +497,8 @@ TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
     }
 }
 
-TEST_CASE("calls-start takes an owner, a function and a duration; read and stop take a slot") {
-    auto parsed = Call(R"({"verb": "calls-start", "args": {"owner": "0x1000#5:9", "function": "Owner:Damage", "duration": 10, "object": "0x2000#7:0", "dry": true}})");
+TEST_CASE("calls-start takes an object or class, a function and a duration; read and stop take a slot") {
+    auto parsed = Call(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Owner:Damage", "duration": 10, "dry": true}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Calls);
     CHECK(parsed->target == "start");
@@ -506,19 +506,16 @@ TEST_CASE("calls-start takes an owner, a function and a duration; read and stop 
     CHECK(ue::GetRef(parsed->request) == One); // The duration must not overwrite the ref.
     CHECK(std::string(parsed->request.text) == "Owner:Damage");
     CHECK(parsed->request.args[1] == 10000);
-    uint64_t filter = 0;
-    REQUIRE(parsed->request.length == sizeof(filter));
-    memcpy(&filter, parsed->request.data, sizeof(filter));
-    CHECK(filter == Two.address);
+    CHECK(parsed->request.length == 0); // The console narrows to an instance, not the builder.
     CHECK(parsed->request.flags == ue::CallsDry);
-    const auto byClass = Call(R"({"verb": "calls-start", "args": {"owner": "SomeClass", "function": "Fire", "duration": 0.5}})");
+    const auto byClass = Call(R"({"verb": "calls-start", "args": {"object": "SomeClass", "function": "Fire", "duration": 0.5}})");
     REQUIRE(byClass.has_value());
     CHECK(byClass->className == "SomeClass");
     CHECK(byClass->request.args[1] == 500);
-    CHECK(Why(R"({"verb": "calls-start", "args": {"owner": "0x1000#5:9", "function": "Fire", "duration": 61}})").starts_with("duration is"));
-    CHECK(Why(R"({"verb": "calls-start", "args": {"owner": "0x1000#5:9", "function": "Fire"}})").starts_with("missing duration"));
-    CHECK(Why(R"({"verb": "calls-start", "args": {"owner": "0x1000#5:9", "function": "Fire", "duration": 5, "object": "7"}})")
-              .starts_with("object is a literal ref"));
+    CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire", "duration": 61}})").starts_with("duration is"));
+    CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire"}})").starts_with("missing duration"));
+    CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire", "duration": 5, "owner": "7"}})")
+              .starts_with("unknown key 'owner'"));
     const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "view": {"start": 40}}})");
     REQUIRE(read.has_value());
     CHECK(read->target == "read");

@@ -204,19 +204,19 @@ inline constexpr size_t MaxOwnArgs = 6;
 // take is refused); its notes say what match matches and what limit 0 means.
 inline const std::vector<Arg>& ViewKeys() {
     static const std::vector<Arg> keys = {
-        {"start", "int", "a page's next_cursor: the page after it"},
-        {"limit", "int", "rows at most (the verb's notes say whether 0 means all)"},
-        {"match", "str", "keep rows whose name contains the text, any case (the verb's notes say which name)"},
+        {"start", "int", "next_cursor of the page before"},
+        {"limit", "int", "rows at most (0: see notes)"},
+        {"match", "str", "keep rows whose name contains this (any case)"},
         {"fields", "path", "the row members to keep (paths into structs and arrays)", {}, false, true},
-        {"nonzero", "bool", "leave out zero members inside values (0, false, empty, None)"},
-        {"elements", "int", "elements shown per array, set or map (1..256)", "8"},
+        {"nonzero", "bool", "leave out zero values (0, false, empty, None)"},
+        {"elements", "int", "elements per array, set or map (1..256)", "8"},
     };
     return keys;
 }
 // A verb's `view`: the shared keys it takes, by name ("start limit"), and
 // its own default for limit.
 inline Arg View(std::string_view keys, std::string_view limit = {}) {
-    Arg view{"view", "obj", "how the result is shown: page, row limit, filters (the shared view keys)"};
+    Arg view{"view", "obj", "paging and filters"};
     for (const auto& key : ViewKeys()) {
         bool listed = false;
         for (std::string_view rest = keys; !rest.empty();) {

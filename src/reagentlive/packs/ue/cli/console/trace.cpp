@@ -256,7 +256,7 @@ void RunTrace(Session& session, const Command& command, std::string_view jsonCom
     for (const auto& end : command.traceEnds)
         if (!world.address && !end.literal) world = end.object;
     if (!world.address)
-        return JsonError(session, jsonCommand, ErrorKind::Validation, "two points need ignore (an actor): the trace runs in its world");
+        return JsonError(session, jsonCommand, ErrorKind::Validation, "two points need ignore (an actor)");
     out.start = ends[0];
     out.end = ends[1];
     out.channel = ChannelText(command.traceChannel);

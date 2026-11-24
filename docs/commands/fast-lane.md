@@ -41,9 +41,9 @@ boundary (the decoder, Zydis, is in the console only).
 - `function` lists the whole function holding `addr`; a cap that cuts it
   gives `next`, and the same call with `next` as `addr` and `"resume": true`
   lists on. With no entry it walks from `addr` and stops at the first
-  return or unconditional jump no earlier forward branch passes (`function`
-  is then absent; an early return before a branch target not yet seen can
-  end it short).
+  return or unconditional jump no earlier forward branch passes (`stop`
+  `walk end`, `function` absent; an early return before a branch target not
+  yet seen can end it short).
 - `follow` continues through unconditional direct jumps only. Calls,
   conditional and indirect jumps are never followed.
 - Rows carry targets, RIP-relative strings, import names and constants read
@@ -78,7 +78,9 @@ file holds. The [IDA loader](ida-loader.md) opens it as a small database.
 - **`save.callees`** also saves direct callees and tail-jump targets,
   breadth-first, each once, so calls between saved functions read as names.
   Three levels is the most: past that a call graph is the static tool's job.
-  Targets left out are listed in `skipped` with the reason.
+  Targets left out are listed in `skipped` with the reason: `depth`, count
+  past 16 callees, bytes past 256 KB of code in the whole save, or
+  unreadable. Each saved function carries its depth in `functions`.
 - **Names** come from the console's labels file and the host's names file
   ([labels](labels.md#labels-files)); the highest-ranked row per address.
 - **Types travel with the save.** With an engine pack, a saved function
@@ -107,7 +109,9 @@ slots, tables).
 - `rip` rows carry no `instruction`: a linear decoder cannot walk backwards;
   `disasm` with `function` shows it in place.
 - A row with no entry holds `function` as an `unlisted` piece, cut as
-  `touches` cuts it.
+  `touches` cuts it: up to 16 KB each side of the hit, so a function with
+  several returns spans several pieces. Entries under 4 bytes (a packed
+  image's decoys) count as unlisted.
 
 ## touches
 
@@ -139,7 +143,7 @@ plus unlisted code in pieces.
 module, where `touches` looks near one function:
 
 ```json
-{"verb": "disp-scan", "args": {"disps": ["0xD0", "0xB8"], "access": "write"}}
+{"verb": "disp-scan", "args": {"offsets": ["0xD0", "0xB8"], "access": "write"}}
 ```
 
 - It sweeps every executable section straight through and answers in pages:
@@ -150,10 +154,17 @@ module, where `touches` looks near one function:
   suspect. A loop over pages belongs in a Python script or a `run` plan.
 - `access` is `write` by default; `read` and `any` (also `lea`: the field's
   address taken, often passed to a function that writes it) widen it.
-  `width` and `imm` narrow it. `same_base` keeps only functions that use
+  `width` and `imm` narrow it (`imm` compares in the operand's width:
+  0xffffffff is -1 as 32 bits). `same_base` keeps only functions that use
   every asked displacement on one base register.
 - `bases` takes rbp by default (a field hunt over the whole image would miss
   writers that hold the struct in rbp); only stack slots are left out.
+- Each call scans up to 8 s and stops at `view.limit` hits (default 128, at
+  most 4096); `scanned` is the share of the code behind the cursor and
+  `read_ms` the share of `scan_ms` spent reading. `same_base` answers whole
+  functions, up to that many rows, and cuts a page at a function's start.
+  The image window is copied by the agent's worker thread while the host
+  tick only polls; without it a sweep reads about a megabyte a second.
 - A straight sweep decodes whatever lies in the code sections, jump tables
   included: a hit in data is rare but possible. Confirm a hit with `disasm`
   at its `function`.

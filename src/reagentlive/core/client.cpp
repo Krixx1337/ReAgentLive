@@ -294,7 +294,7 @@ Result<Response> Client::Send(const Request& request, std::chrono::milliseconds 
             stats_.waitMicroseconds += static_cast<uint64_t>(NowMicroseconds() - sent);
             const bool ticking = Heartbeat() != beatAtStart;
             return std::unexpected(Fail(Error::Kind::Timeout, "timed out after " + std::to_string(timeout.count()) +
-                (ticking ? " ms; the agent is ticking, so the request is still running or was replaced"
+                (ticking ? " ms; the request may still be running or was replaced"
                          : " ms; the agent is not ticking")));
         }
         if (notice_ && now >= nextNotice) {

@@ -237,8 +237,8 @@ TEST_CASE("every row's example call passes the checks and builds") {
         {"entries", R"({"object": "0x1000#5:9", "field": "Name"})"},
         {"rows", R"({"object": "0x1000#5:9"})"},
         {"get", R"({"object": "0x1000#5:9"})"},                             // A class by name needs types.
-        {"describe", R"({"object": "0x1000#5:9"})"},                        // object, or index and serial.
-        {"name-refs", R"({"name": "Name"})"},                                    // name or index.
+        {"describe", R"({"object": "0x1000#5:9"})"},                        // object, or slot and serial.
+        {"name-refs", R"({"name": "Name"})"},                                    // name or name_index.
     };
     for (const auto& verb : AllVerbs()) {
         const Json example = ExampleCall(verb);
@@ -375,25 +375,25 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
         {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})",
             R"({"addr": "0x1000", "offsets": [16], "bases": ["rcx", "rbp"]})"}},
-        {"disp-scan", {R"({"disps": ["0x538"]})", R"({"disps": [16], "access": "any", "bases": ["rcx"], "view": {"start": "0x1000"}})",
-            R"({"disps": [16, 24], "access": "read", "width": 4, "imm": 1, "same_base": true})"}},
+        {"disp-scan", {R"({"offsets": ["0x538"]})", R"({"offsets": [16], "access": "any", "bases": ["rcx"], "view": {"start": "0x1000"}})",
+            R"({"offsets": [16, 24], "access": "read", "width": 4, "imm": 1, "same_base": true})"}},
         {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "view": {"limit": 4}, "resolve": true, "rtti": true})",
                     R"({"addr": "0x1000#5:9", "parts": 256, "slots": [6, 8]})"}},
         {"find", {R"({"text": "Pawn"})", R"({"cls": "Pawn", "live": true, "view": {"limit": 5}})"}},
         {"census", {R"({})", R"({"cls": "Pawn", "diff": true})"}},
         {"name-find", {R"({"text": "Health"})"}},
         {"name", {R"({"indices": [1, 2]})"}},
-        {"each", {R"({"cls": "Pawn", "paths": [["Health"]]})", R"({"cls": "Pawn", "paths": [["Health"]], "seconds": 5})",
+        {"each", {R"({"cls": "Pawn", "paths": [["Health"]]})", R"({"cls": "Pawn", "paths": [["Health"]], "duration": 5})",
             R"({"cls": "Pawn", "paths": [["Health"]], "where": {"field": ["Name"], "contains": "a"}, "view": {"limit": 0}})"}},
         {"call-pure", {R"({"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation"})",
             R"({"object": "0x1000#5:9", "function": "GetSocket", "params": {"SocketName": "#42"}})",
             R"({"object": "0x1000#5:9", "function": "Actor:K2_GetActorLocation", "dry": true})"}},
-        {"call-each", {R"({"cls": "Pawn", "function": "GetHealth"})", R"({"cls": "Pawn", "function": "GetHealth", "seconds": 5})",
+        {"call-each", {R"({"cls": "Pawn", "function": "GetHealth"})", R"({"cls": "Pawn", "function": "GetHealth", "duration": 5})",
             R"({"cls": "Pawn", "function": "GetHealth", "outer": "Level", "view": {"limit": 0, "nonzero": true}})"}},
         {"member-name", {R"({"object": "0x1000#5:9", "offset": "0x10", "type": "f32", "name": "Speed"})"}},
         {"labels-export", {R"({})", R"({"file": "out.jsonl"})"}},
-        {"assets-export", {R"({"dir": "out", "cls": ["DataTable"]})",
-            R"({"dir": "out", "cls": ["DataTable", "CurveTable"], "view": {"match": "Weapon"}})"}},
+        {"assets-export", {R"({"dir": "out", "classes": ["DataTable"]})",
+            R"({"dir": "out", "classes": ["DataTable", "CurveTable"], "view": {"match": "Weapon"}})"}},
         {"layout-export", {R"({"file": "out.json", "classes": ["Pawn"]})", R"({"file": "out.json", "classes": ["Pawn"], "closure": 1})",
             R"({"file": "out.json", "classes": ["Pawn"], "closure": 2})"}},
         {"layout-check", {R"({"file": "out.json"})"}},
@@ -403,16 +403,16 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
             R"({"object": "Pawn", "mode": "types"})", R"({"object": "0x1000#5:9", "mode": "snap"})",
             R"({"object": "0x1000#5:9", "mode": "changed"})"}},
         {"line-trace", {R"({"start": [0, 0, 0], "end": [1, 1, 1], "ignore": "0x1000#5:9"})"}},
-        {"describe", {R"({"object": "0x1000#5:9"})", R"({"index": 5, "serial": 9})"}},
+        {"describe", {R"({"object": "0x1000#5:9"})", R"({"slot": 5, "serial": 9})"}},
         {"func", {R"({"object": "0x1000#5:9", "function": "GetHealth"})"}},
         {"script", {R"({"object": "0x1000#5:9", "function": "Tick"})", R"({"object": "0x1000#5:9", "function": "Tick", "decode": true})",
             R"({"object": "Pawn", "function": "ExecuteUbergraph_Pawn", "decode": true, "entry": "0x1c"})",
             R"({"object": "0x1000#5:9", "decode": true})"}},
         {"enum", {R"({"enum": "EMode"})"}},
-        {"name-refs", {R"({"name": "Health"})", R"({"index": 42})"}},
+        {"name-refs", {R"({"name": "Health"})", R"({"name_index": 42})"}},
         {"owner", {R"({"addrs": ["0x1000"]})", R"({"addrs": ["0x1000", "0x2008"], "within": ["0x1000#5:9"]})"}},
         {"route", {R"({"object": "0x1000#5:9"})",
-            R"({"object": "0x1000#5:9", "sources": ["pawn", "0x2000"], "depth": 4, "budget": 500, "outer": true})"}},
+            R"({"object": "0x1000#5:9", "sources": ["pawn", "0x2000"], "depth": 4, "budget": 500, "up": true})"}},
         {"funcs", {R"({"object": "0x1000#5:9"})", R"({"object": "Pawn", "view": {"start": 4, "match": "Get"}})"}},
     };
     for (const auto& verb : AllVerbs()) {

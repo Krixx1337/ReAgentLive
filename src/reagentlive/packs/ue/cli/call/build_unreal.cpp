@@ -188,9 +188,9 @@ Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::st
     if (auto why = Outer(args, command); !why.empty()) return Fail(std::move(why));
     const auto className = args.Str(classKey);
     if (!ClassName(className)) return Fail(std::string(classKey) + " is a class name");
-    if (args.Has("seconds")) {
-        const uint64_t seconds = args.Int("seconds");
-        if (!seconds || seconds > MaxEachSeconds) return Fail("seconds is 1.." + std::to_string(MaxEachSeconds));
+    if (args.Has("duration")) {
+        const uint64_t seconds = args.Int("duration");
+        if (!seconds || seconds > MaxEachSeconds) return Fail("duration is 1.." + std::to_string(MaxEachSeconds));
         command.seconds = static_cast<uint32_t>(seconds);
     }
     command.fields = std::move(columns);
@@ -200,7 +200,7 @@ Parsed EachArgs(const Args& args, std::string_view classKey, std::vector<std::st
         if (auto why = value::Path(where["field"], command.whereField, MaxGetDepth); !why.empty()) return Fail("where: " + why);
         command.match = where["contains"].get<std::string>();
         if (command.match.empty()) return Fail("where: contains is the text to find");
-        if (command.seconds) return Fail("where and seconds do not mix");
+        if (command.seconds) return Fail("where and duration do not mix");
     }
     const uint64_t limit = args.Int("limit", DefaultEachRows);
     if (limit > UINT32_MAX) return Fail("limit is a number (0: all)");
@@ -342,11 +342,11 @@ Parsed Describe(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
     request.op = ue::op::Describe;
-    const bool slot = args.Has("index") || args.Has("serial");
-    if (slot == args.Has("object")) return Fail("object: give object, or index and serial");
+    const bool slot = args.Has("slot") || args.Has("serial");
+    if (slot == args.Has("object")) return Fail("object: give object, or slot and serial");
     if (slot) {
-        const uint64_t index = args.Int("index", UINT64_MAX), serial = args.Int("serial");
-        if (index > INT32_MAX) return Fail("index is an object-table slot");
+        const uint64_t index = args.Int("slot", UINT64_MAX), serial = args.Int("serial");
+        if (index > INT32_MAX) return Fail("slot is an object-table slot");
         if (!serial || serial > INT32_MAX) return Fail("serial is the slot's serial number, above 0");
         ue::SetRef(request, Ref{0, static_cast<int32_t>(index), static_cast<int32_t>(serial)});
         return command;
@@ -392,11 +392,11 @@ Parsed AssetsExport(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::AssetsExport;
     command.file = args.Str("dir");
-    for (const auto& name : args.Strs("cls")) {
-        if (!ClassName(name)) return Fail("cls: '" + name + "' is not a class name");
+    for (const auto& name : args.Strs("classes")) {
+        if (!ClassName(name)) return Fail("classes: '" + name + "' is not a class name");
         command.fields.push_back(name);
     }
-    if (command.fields.size() > MaxExportClasses) return Fail("cls: at most " + std::to_string(MaxExportClasses) + " classes per call");
+    if (command.fields.size() > MaxExportClasses) return Fail("classes: at most " + std::to_string(MaxExportClasses) + " classes per call");
     command.match = args.Str("match");
     return command;
 }
@@ -552,23 +552,17 @@ bool CallsSlot(const Args& args, Command& command) {
 }
 }
 
-// calls-start: record a function's calls for a while.
+// calls-start: record a function's calls for a while. An instance (a literal
+// ref) narrows the recording to it; the console decides, as it can tell a class.
 Parsed CallsStart(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
-    if (!ObjectOrClass(args.Str("owner"), command)) return Fail("owner is a literal ref, \"0x...\" or a class name");
+    if (!ObjectOrClass(args.Str("object"), command)) return Fail(ObjectOrClassWhy);
     if (auto why = FunctionName(args, request); !why.empty()) return Fail(why);
     const uint64_t milliseconds = args.Milliseconds("duration");
     if (milliseconds > ue::MaxCallsMilliseconds)
         return Fail("duration is at most " + std::to_string(ue::MaxCallsMilliseconds / 1000) + " s");
     request.args[1] = milliseconds;
-    if (args.Has("object")) {
-        Ref filter{};
-        if (!LiteralRef(args.Str("object"), filter)) return Fail("object is a literal ref");
-        const uint64_t address = filter.address;
-        memcpy(request.data, &address, sizeof(address));
-        request.length = sizeof(address);
-    }
     request.flags = args.Has("dry") ? ue::CallsDry : 0;
     request.op = ue::op::CallsStart;
     command.kind = Kind::Calls;
@@ -632,7 +626,7 @@ Parsed Route(const Args& args, const ParseContext&) {
     if (!budget || budget > ue::MaxRouteBudget) return Fail("budget is 1.." + std::to_string(ue::MaxRouteBudget));
     spec.depth = static_cast<uint32_t>(depth);
     spec.budget = static_cast<uint32_t>(budget);
-    spec.flags = args.Has("outer") ? ue::RouteOuter : 0;
+    spec.flags = args.Has("up") ? ue::RouteOuter : 0;
     for (const auto& source : args.Strs("sources")) {
         if (spec.sources == ue::MaxRouteSources) return Fail("sources: at most " + std::to_string(ue::MaxRouteSources) + " sources");
         Request object{};
@@ -655,10 +649,10 @@ Parsed NameRefs(const Args& args, const ParseContext&) {
     Request& request = command.request;
     command.kind = Kind::NameRefs;
     request.op = ue::op::Refs;
-    if (args.Has("name") == args.Has("index")) return Fail("name: give name or index");
-    if (args.Has("index")) {
-        const uint64_t index = args.Int("index");
-        if (!index || index > INT32_MAX) return Fail("index is an FName comparison index");
+    if (args.Has("name") == args.Has("name_index")) return Fail("name: give name or name_index");
+    if (args.Has("name_index")) {
+        const uint64_t index = args.Int("name_index");
+        if (!index || index > INT32_MAX) return Fail("name_index is an FName comparison index");
         request.args[0] = index;
         return command;
     }

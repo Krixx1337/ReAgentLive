@@ -45,7 +45,7 @@ std::expected<WatchFieldRange, std::string> PackWatchField(Session&, const Ref&,
 Result<Guard> ObjectGuard(Session&, uint64_t object) {
     if (!object) return Guard{};
     return std::unexpected(Error{Error::Kind::Agent, Status::Unsupported, 0, {},
-        "an object-relative address needs an engine pack's identity guard: this console was built without one"});
+        "object-relative addresses need an engine pack; this console has none"});
 }
 std::expected<uint32_t, std::string> TrialOwnerSize(Session&, const Ref&) { return std::unexpected(NoPack); }
 Result<SaveLayouts> PackSaveLayouts(Session&, std::span<const std::string>) { return SaveLayouts{}; }

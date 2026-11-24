@@ -24,6 +24,9 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 - Never `each`, `find` or `census` a whole class unfiltered: narrow by
   class, value, owner (one asset's subobjects) or `view.limit` (`help`
   with `verb`).
+- `find` with `text` alone walks the whole object table: add `cls` when the
+  class is known. `route` with a big `budget` takes seconds: lower it to fail
+  fast, and check a route with `get` before relying on it.
 - Read only the keys you need; `help` with `verb` lists them.
 
 ## Digests

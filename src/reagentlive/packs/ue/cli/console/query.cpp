@@ -468,7 +468,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     bool truncated = false;
     refs.clear();
 
-    // `seconds`: the one column polled again until the deadline, its changes reported.
+    // `duration`: the one column polled again until the deadline, its changes reported.
     const auto watch = [&](ue::EachQuery query, const std::optional<ue::Field>& field, const ue::Signature& signature,
                            std::vector<std::pair<Ref, std::vector<uint8_t>>> last) {
         std::vector<shape::EachChange> changes;
@@ -589,7 +589,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         columns.push_back(std::move(column));
     }
     if (command.seconds && (columns.size() != 1 || columns.front().pointer || !columns.front().pseudo.empty()))
-        return fail("seconds watches one field or function, not a path through a pointer");
+        return fail("duration watches one field or function, not a path through a pointer");
 
     // The spans inside the instance, in passes of at most MaxEachValue bytes.
     struct Pass {
@@ -646,7 +646,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
             Cell& cell = row.emplace_back();
             if (!column.pseudo.empty()) continue; // Filled from the describe below.
             const auto data = inObject(object, column);
-            if (data.size() != column.size) { cell.error = "the instance was gone by a later pass"; continue; }
+            if (data.size() != column.size) { cell.error = "the instance was gone"; continue; }
             if (!column.pointer) {
                 cell.field = column.field;
                 cell.bytes.assign(data.begin(), data.end());

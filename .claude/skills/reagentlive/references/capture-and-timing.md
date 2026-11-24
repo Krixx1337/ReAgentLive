@@ -33,7 +33,7 @@
 
 ## What the game passed to a function
 
-- `{"verb": "calls-start", "args": {"owner": "0x1f2e3d4c50#123:4", "function": "Owner:Function", "duration": 10}}`
+- `{"verb": "calls-start", "args": {"object": "0x1f2e3d4c50#123:4", "function": "Owner:Function", "duration": 10}}`
   records each call with its
   parameters (approval: it swaps one `UFunction` pointer). Use it when the
   question is an event ("did the hit register, for how much, on which

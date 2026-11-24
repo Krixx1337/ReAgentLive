@@ -28,8 +28,8 @@ and archetype objects, as `census` does.
 `find` and `describe` rows name each object's `outer` (`{name, ref}`): a
 function's or property's class, a subobject's owner; a package has none.
 `describe` checks the thread and object table before returning the object's
-name, class and full ref; weak pointers must match the table slot and
-serial.
+name, class and full ref; give `slot` and `serial` for a weak pointer, which
+must match the table.
 
 ## name and name-find
 
@@ -92,7 +92,7 @@ follow up with `find` with `cls`.
 
 - A census scans across several ticks, so it is not one moment in time, and
   an object that lives a tick or two can fall between two censuses. For
-  those, `watch-start` a container or use `each` with `seconds`.
+  those, `watch-start` a container or use `each` with `duration`.
 - A broad filter shows unrelated churn (effects, audio, UI). Narrow `cls` to
   a base class instead.
 
@@ -112,11 +112,11 @@ reads: a function column is refused and named to `call-each`
   one pass with no pointer path read every value.
 - **Failed cells.** A cell that cannot be read is null, with an `errors`
   entry. The row stays, so no instance is hidden.
-- **`seconds`** (one column) repeats on the cached instance list and prints
+- **`duration`** (one column, 1..60 s) repeats on the cached instance list and prints
   each changed row to stderr as it happens. Not in a `batch`.
 - **`where`** (`{"field": ["Name"], "contains": "text"}`) keeps the instances
   whose field's value contains the text, any case; `matched` counts them. Not
-  with `seconds`.
+  with `duration`.
 - **`Outer`, `Name` and `Class`** name the instance itself, as columns and in
   `where`, when no field takes the name. They match text: `where` on
   `["Class"]` containing `Body` is a substring of the class's own name, while
@@ -148,7 +148,7 @@ only; neither scans raw memory for pointers.
 - **route** walks breadth-first from the sources (host roots by name, as
   `status` lists them, or objects) over reflected references: object and
   interface fields and containers of them. Class, weak, soft and lazy
-  pointers are not followed (they lead into the asset graph); `outer` adds a
+  pointers are not followed (they lead into the asset graph); `up` adds a
   step up to an object's `Outer`, as a last resort. It never steps down, so
   an object only its children's `Outer` points to stays out of reach.
 - **Bounds:** `depth` and `budget`. It answers up to a few routes of the

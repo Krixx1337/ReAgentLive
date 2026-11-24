@@ -24,7 +24,8 @@ SDK has no `EExprToken`). A native function has no bytecode (`not found`).
 `script` with `decode` reads the bytecode through plain memory reads and
 decodes it in the console, so it needs no game thread: one statement per
 top-level expression with its offset (`Speed = Vehicle.GetSpeedKPH()`,
-`return ReturnValue`). Properties print by their readable name from the
+`return ReturnValue`). Functions print as `Owner.Function`, math operators
+as infix; `raw` holds the reflected one. Properties print by their readable name from the
 [names file](unreal-fields.md#readable-names) where it has one, and the
 names, functions and properties lists come from the decoded operands. An
 opcode the decoder does not list stops it with `stopped`; nothing is
@@ -39,8 +40,8 @@ names both.
 
 Scans every function's bytecode for a name constant, one table scan spread
 over ticks (capped, with `capped` set). `name` must match a pooled name
-exactly. Each row's ref is the Function itself: `script` takes it as
-`object` with no `function`.
+exactly (or give `name_index`, its comparison index). Each row's ref is the
+Function itself: `script` takes it as `object` with no `function`.
 
 ## Exec entries
 

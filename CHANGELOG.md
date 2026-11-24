@@ -35,6 +35,8 @@ before 0.6.0 are one line each; git history has the detail.
   `~/.agents/skills` ([skill install](docs/agents/setup.md#6-install-the-skill)).
 - **A failed update can roll back** to the previous commit
   ([update](docs/agents/update.md#3-pull-and-rebuild)).
+- **Shorter verb help, tool descriptions and refusals:** MCP tool lists are
+  smaller; `max_chars` is described once in the server instructions.
 
 ### Breaking
 
@@ -47,6 +49,15 @@ before 0.6.0 are one line each; git history has the detail.
   `ReAgentLive docs:` line in your agent's instructions file. The command
   table moved to `docs/commands/README.md`, and `docs/design.md` became
   `docs/design/README.md` plus `docs/design/principles.md`.
+- **Verb arguments renamed:** `route` `outer` is `up`; `name-refs` `index`
+  is `name_index`; `describe` `index` is `slot`; `disp-scan` `disps` is
+  `offsets`; `assets-export` `cls` is `classes`; `each` and `call-each`
+  `seconds` is `duration`.
+- **`calls-start` takes `object`, not `owner`:** pass the instance or class
+  as `object`; an instance now records only its own calls (the old `object`
+  filter is gone).
+- **`release` `object` is a string** like `call`'s (a ref, `"0x..."` or a
+  `Default__` name).
 
 ## 0.6.0
 

@@ -21,9 +21,8 @@ bool RangeType(std::string_view type, uint64_t count, uint64_t& length, uint32_t
 // watch-start's ranges: {addr, len}, {addr, type, count?}, {object, field},
 // or following a root {offset, len} and {offset, type, count?}.
 Parsed WatchRanges(const Args& args, const ParseContext& context, Command command) {
-    const std::string form = "ranges: each is {\"addr\": <addr>, \"len\": N} (1.." + std::to_string(MaxWatchRange) +
-        "), {\"addr\": <addr>, \"type\": \"f32\", \"count\"?: N} with a read type element (i8..u64, f32, f64, ptr), "
-        "{\"object\": <ref>, \"field\": <path>}, or with follow {\"offset\": N, ...} in place of addr";
+    const std::string form = "ranges: each is {addr, len 1.." + std::to_string(MaxWatchRange) +
+        "}, {addr, type, count?} (i8..u64, f32, f64, ptr), {object, field}, or with follow {offset, ...}";
     for (const auto& item : args.At("ranges")) {
         if (command.reads.size() == MaxWatchRanges) return Fail("ranges: at most " + std::to_string(MaxWatchRanges));
         // A reflected field: its place and type from the pack.
@@ -179,15 +178,15 @@ Parsed ClearTimed(const Args& args) {
 
 Parsed Write(const Args& args, const ParseContext& context) {
     if (args.Has("clear")) return ClearTimed(args);
-    if (!args.Has("addr")) return Fail("addr: write needs addr and data (or clear alone, to end timed writes)");
-    if (!args.Has("data")) return Fail("data: write needs addr and data (or clear alone, to end timed writes)");
+    if (!args.Has("addr")) return Fail("addr: required (or clear alone, to end timed writes)");
+    if (!args.Has("data")) return Fail("data: required (or clear alone, to end timed writes)");
     Command command;
     Request& request = command.request;
     auto place = value::Address(args.At("addr"), context.modules);
     if (!place) return Fail("addr: " + place.error());
     request.address = place->address;
     const bool hold = args.Has("hold"), undo = args.Has("undo"), timed = hold || undo;
-    if (hold && undo) return Fail("hold: undo and hold do not combine; hold already ends on its own");
+    if (hold && undo) return Fail("hold: does not combine with undo (hold ends on its own)");
     const size_t most = !timed ? MaxWrite : hold ? MaxPinBytes : MaxTrialBytes;
     if (!Bytes(args.Str("data"), request.data, most, request.length) || !request.length)
         return Fail("data must be hex pairs, at most " + std::to_string(most));

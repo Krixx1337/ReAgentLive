@@ -64,6 +64,10 @@ unless `align` says otherwise.
 
 **Range.** The main module unless `scope` says otherwise: another module, an
 address range, `scope.heap` (process-private memory) or `scope.writable`.
+`scope.start` alone ends with the module it lies in. `search-job` answers
+only for the last job; `scanned` is the share of the range's searchable
+bytes (the committed, readable memory `scope` takes) behind the cursor, 0
+while the job first measures them.
 
 **A job.** Every search is a job the agent runs while other requests do (on
 its worker thread when the host allows it, else in small slices at the start

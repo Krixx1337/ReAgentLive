@@ -239,8 +239,8 @@ inline uint64_t ContextChars(std::span<const UsageLine> lines, std::string_view 
 }
 // The one line each envelope carries past the limit (`context_warning`).
 inline std::string ContextWarning(uint64_t chars, uint64_t limit) {
-    return "this session put " + std::to_string(chars) + " characters into the agent's context, past context_limit " +
-        std::to_string(limit) + ": narrow calls (view.fields, view.limit, filters), follow a digest's next, or start a "
+    return "context " + std::to_string(chars) + " chars, past context_limit " +
+        std::to_string(limit) + ": narrow calls (view.fields, view.limit, filters), follow digest next, or start a "
         "new session";
 }
 // A call printed at most this many characters is never `unfiltered`: a filter would not have saved much.
@@ -404,10 +404,10 @@ inline std::vector<shape::UsageAdvice> MakeAdvice(std::span<const UsageLine> lin
         std::string names;
         for (const auto& name : narrowing) names += (names.empty() ? "" : ", ") + name;
         if (narrowing.empty())
-            advice.hint = "no arg narrows its result: give its row a view or a filter, or keep its result small";
+            advice.hint = "no arg narrows it: add a view or filter, or keep results small";
         else if (advice.raised > advice.followed)
-            advice.hint = "callers raised max_chars more often than they narrowed: make the digest's next and the "
-                "help example use " + names;
+            advice.hint = "callers raised max_chars more than they narrowed: put " + names +
+                " in the digest next and help example";
         else if (unfiltered >= digested)
             advice.hint = "callers rarely filter: show " + names + " in its help example and notes";
         else

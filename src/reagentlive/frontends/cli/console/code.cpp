@@ -137,9 +137,9 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
         if (*held && !follows) piece = *held;
     }
     if (piece && !command.file.empty() && !command.resume)
-        return JsonError(session, jsonCommand, ErrorKind::Start, "the address lies " + save::Hex(address - piece->start) +
-            " bytes into unlisted code that starts at " + save::Hex(piece->start) + ": save from the function's start "
-            "(junk bytes may lead the piece), or set resume to save from the address");
+        return JsonError(session, jsonCommand, ErrorKind::Start, "address is " + save::Hex(address - piece->start) +
+            " bytes into unlisted code starting at " + save::Hex(piece->start) + ": save from there (junk bytes may lead), "
+            "or set resume");
     // Read-only: inside a loaded module, in a section that is not writable.
     const dis::ConstantFn constant = [&session, &modules](uint64_t at) {
         const Module* module = ModuleAt(at, modules);
@@ -204,7 +204,7 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
             bound = " (entry " + save::Hex(entry.start) + ".." + save::Hex(entry.end) + ")";
         }
         return JsonError(session, jsonCommand, ErrorKind::Start, "nothing to save at " + save::Hex(address) + ": " +
-            listing->stop + bound + "; save from an address the listing reaches (disasm without save shows it)");
+            listing->stop + bound + "; save from an address disasm lists");
     }
 
     const Module* module = ModuleAt(address, modules);

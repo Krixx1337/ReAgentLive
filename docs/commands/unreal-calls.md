@@ -16,6 +16,9 @@ The function is searched up the object's class chain, optionally restricted
 to the declaring class (`Owner:Function`). A raw parameter block must equal
 the function's size exactly; with none given the console sends a zeroed
 block and names any input the call needs. Refused off the game thread.
+The result's `hex` is the block after the call; with `params` the outputs
+are decoded too, and a returned array comes back as `{count, rows,
+next_cursor}`.
 
 - **Owned results:** when the return value or a non-const out parameter is
   not plain data (weak handles, strings, arrays), the agent keeps the block
@@ -39,7 +42,8 @@ held.
 
 As `call`, with the agent's pure check first: the function must be const or
 blueprint-pure and no output may own memory (nothing is kept), otherwise it
-is refused before calling. Its row is not `writes`, so its tool is
+is refused before calling. Without `params` its outputs are still
+decoded, as `call-each`'s. Its row is not `writes`, so its tool is
 read-only. Inputs are never zeroed for you (a zero can be a valid,
 state-changing argument), so a function with inputs is refused until
 `params` names them. Pure is the engine's flag, not a proof: a pure function
@@ -80,7 +84,7 @@ and out values are [compact values](unreal-fields.md#compact-values).
 shows as `truncated`; the agent keeps the block that owns the array
 ([owned results](#call)), so the memory stays valid until the next call of
 that function. A `view` pages and filters them (`view.fields` takes paths
-into nested structs, and through `key` or `value` into a map;
+into nested structs (nested arrays decode up to 256 elements, 3 deep), and through `key` or `value` into a map;
 `view.nonzero` leaves out zero members), and makes the call typed. Only
 `call` takes one: an array owns memory, so `call-pure` refuses it.
 
@@ -121,6 +125,8 @@ three ops; the start is a write the host approves.
   (`state: replaced`) while the thunk keeps forwarding, which is safe because
   the host's image stays loaded. `dry` shows the pointer and thunk without
   writing.
+- **Which calls:** `object` is an instance (a ref or address: only its calls
+  are recorded) or a class (by name or ref: every instance's).
 - **What is seen:** every call that goes through the engine's reflection
   (`ProcessEvent`: C++ callers, RPCs, Blueprint events, delegates, `call`),
   with parameters and return value decoded by name. A Blueprint graph

@@ -466,7 +466,7 @@ TEST_CASE("assets-export writes each object's fields and a table's rows, one fil
     TheCurveTables();
     const auto dir = std::filesystem::path(SaveFile("export"));
     std::filesystem::remove_all(dir);
-    const auto result = Result(CallText("assets-export", {{"dir", dir.string()}, {"cls", Json::array({"Thing", "CurveTable"})}}));
+    const auto result = Result(CallText("assets-export", {{"dir", dir.string()}, {"classes", Json::array({"Thing", "CurveTable"})}}));
     CHECK(result["failed"] == 0);
     CHECK(result["capped"] == false);
     CHECK(result["exported"] == result["rows"].size());
@@ -492,7 +492,7 @@ TEST_CASE("assets-export writes each object's fields and a table's rows, one fil
     CHECK(thing);
     CHECK(tables == result["tables"]);
     CHECK(tables == 3); // CT_Derived too: a subclass of the class asked for.
-    const auto sway = Result(CallText("assets-export", {{"dir", dir.string()}, {"cls", Json::array({"CurveTable"})}, {"view", {{"match", "sway"}}}}));
+    const auto sway = Result(CallText("assets-export", {{"dir", dir.string()}, {"classes", Json::array({"CurveTable"})}, {"view", {{"match", "sway"}}}}));
     CHECK(sway["exported"] == 1);
     CHECK(sway["rows"][0]["table_rows"] == 2);
     // A missing cls is refused before running.

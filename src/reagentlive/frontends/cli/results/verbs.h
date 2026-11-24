@@ -25,329 +25,217 @@ inline const std::vector<Verb>& CoreVerbs() {
     using schema::Of;
     constexpr std::string_view at = "the address";
     constexpr std::string_view atChain = "the address, or a pointer chain to follow first";
-    constexpr std::string_view hex = "bytes as hex pairs, spaced or packed: \"00 00 80 3f\"";
     constexpr std::string_view module = "the module (default: the exe)";
-    constexpr std::string_view labels = "the labels file (default: the host's names file, else the console's)";
+    constexpr std::string_view labels = "the labels file (default: names file)";
     constexpr std::string_view registers = "rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r8|r9|r10|r11|r12|r13|r14|r15";
-    constexpr std::string_view bases = "only operands on these base registers (default: any but rsp and rbp, the stack "
-        "frame's; a hunt for who writes a field: name rbp too, or use disp-scan)";
-    constexpr std::string_view scanBases = "only operands on these base registers (default: any but rsp; rbp counts, as "
-        "optimised code uses it as a plain register)";
+    constexpr std::string_view bases = "only operands on these base registers (default: any but rsp and rbp)";
+    constexpr std::string_view scanBases = "only operands on these base registers (default: any but rsp)";
     static const std::vector<Verb> verbs = {
-        {"help", "core", ToolPack::Explore, "the verbs, one line each; with verb: its args, result, notes and an example",
-            {{"verb", "str", "a verb to show in full"},
+        {"help", "core", ToolPack::Explore, "the verbs; with verb: its args, result, notes and example",
+            {{"verb", "str", "the verb"},
              {"json", "bool", "the whole table for programs"},
-             {"hash", "bool", "only the table's hash: has it changed since a program read it?"}},
+             {"hash", "bool", "only the table's hash"}},
             Of<shape::Help>, build::Help},
-        {"status", "core", ToolPack::Explore, "agent pid and exe name, tick rate, the packs the host offers and the verb table's hash",
+        {"status", "core", ToolPack::Explore, "agent pid, exe, tick rate, host packs, table_hash",
             {}, Of<shape::Status>, build::Status,
-            "table_hash changes when any verb's args or result change: a cached script or skill is then stale."},
+            "table_hash changes when a verb's args or result change: a cached script or skill is stale."},
         {"quit", "core", ToolPack::Explore, "end the console", {}, Of<shape::Quit>, build::Quit},
-        {"usage", "core", ToolPack::Explore, "what this session cost: calls, output and refusals per verb, largest output first",
-            {{"report", "sessions|all", "in place of one session: sessions lists the log's sessions, newest first, one "
-              "row each; all is every session in the log together, and the verbs none called"},
-             {"session", "str", "one session from the log, by its id"},
-             {"advice", "bool", "verbs often digested or unfiltered, with a proposed default view.limit or a hint"},
-             {"baseline", "file", "a report save wrote: what got worse (and better) against it"},
-             {"save", "file", "write this report to a file, a baseline for a later session"},
+        {"usage", "core", ToolPack::Explore, "this session's cost: calls, output and refusals per verb, largest first",
+            {{"report", "sessions|all", "sessions: list the log's sessions; all: every session together"},
+             {"session", "str", "a session id"},
+             {"advice", "bool", "verbs often digested or unfiltered, with a proposed view.limit or hint"},
+             {"baseline", "file", "a saved report: what got worse or better"},
+             {"save", "file", "write this report to a file as a baseline"},
              {"only", "totals|rows|largest|never_called|session_rows|context|refusals|advice|compare",
-              "keep only these parts of the report (advice also turns advice on)", {}, false, true}},
+              "keep only these parts (advice turns it on)", {}, false, true}},
             Of<shape::UsageReport>, build::Usage,
-            "From the usage log beside the console; works with no target (then: the log's latest session). calls "
-            "counts top-level calls (a batch is one, its calls are batched), and so do calls_by_pack and ms; a "
-            "verb's row counts its calls wherever they ran. out is characters; out_by_caller.tool is what reached an agent's context. digested counts results past the "
-            "result cap (max_chars), and saved the characters their digests kept out (full size less the digest); of "
-            "the verb's next call after a digest, followed counts one that changed its narrowing args (the digest's "
-            "narrow) and raised one that only raised max_chars or set big. Marks per "
-            "verb: unfiltered (it takes a view, own or cls, the call gave none of view's match, nonzero or limit, own, cls or "
-            "an optional paths (get's), and printed whole, past 2000 characters; never a refused call), repeated (the same input and the same result again in its session; the same input with another result is "
-            "same_args: the state changed, the call was needed), refused (by "
-            "error kind; one refused for its pack is not in calls_by_pack). A batch's "
-            "calls count under their own verbs (batched); the batch row holds its wrapper. report sessions lists up to 30 "
-            "sessions as session_rows, with totals over the whole log. One session's report adds context: chars "
-            "(what its tool-caller results put into an agent's context), limit (the console's --context-limit, "
-            "default 400000; 0: none) and over; past it every envelope a tool caller gets carries context_warning, "
-            "one line. Nothing stops: max_chars stays the per-result cap. advice lists verbs with at least two digested "
-            "or unfiltered calls (or half their calls), most first: limit proposes a smaller default view.limit "
-            "(the default scaled to what the cap held of the largest digested result), hint one line on what else "
-            "to change in the row or its help. A report: nothing changes by itself. save writes the report (JSON) and "
-            "answers saved; baseline compares this session with such a file: compare.worse and compare.better list the "
-            "figures that moved (totals calls, refused, digested, context and ms; refused_by.<kind>; per verb calls, "
-            "refused, digested and ms_per_call), totals first, largest move first. A count is worse when it grew, "
-            "time when it grew by a quarter and past noise (100 ms in all, 50 ms a call). baseline and save take one "
-            "session (session, or none for this one), never a report. only keeps the parts named (session, sessions, "
-            "since and saved always stay); save still writes the whole report. refusals lists refused calls by verb, error "
-            "kind and the arg at fault (key, when the error named one), most first: the help examples and arg texts "
-            "to fix first."},
+            "Reads the usage log beside the console; works with no target. out is characters; out_by_caller.tool is "
+            "what reached an agent's context. Marks and compare rules: docs/commands/console.md#usage-log-and-usage. "
+            "Past --context-limit (default 400000) every envelope carries context_warning; nothing stops."},
         {"batch", "core", ToolPack::Explore, "up to 64 calls in as few host ticks as possible; one envelope each",
-            {{"calls", "calls", "the calls, each {\"verb\": ..., \"args\": {...}} (up to 64)", {}, true}},
+            {{"calls", "calls", "calls, each {\"verb\", \"args\"} (up to 64)", {}, true}},
             Of<shape::Batch>, build::Batch,
-            "rows holds each call's envelope, with tick (and last_tick when its responses spanned ticks). help, "
-            "status, usage, quit, batch and run are not allowed inside."},
-        {"run", "core", ToolPack::Explore, "a plan file's steps, each its own call: one NDJSON line per result, then a report",
-            {{"plan", "file", "the plan: a JSON list of {\"verb\", \"args\"?, \"expect\"?, \"repeat\"?: {\"every\", \"for\"}}", {}, true},
-             {"out", "file", "write the lines here (rewritten), not in the result"},
-             {"background", "bool", "a frontend's: run the plan in its own console and answer at once with a run id "
-              "(the MCP adapter, a Python Session); a console refuses it"}},
+            "rows: each call's envelope (tick, last_tick). Not allowed inside: help, status, usage, quit, batch, run."},
+        {"run", "core", ToolPack::Explore, "a plan file's steps, each its own call: NDJSON lines, then a report",
+            {{"plan", "file", "JSON list of {\"verb\", \"args\"?, \"expect\"?, \"repeat\"?: {\"every\", \"for\"}}", {}, true},
+             {"out", "file", "write the lines here, not in the result"},
+             {"background", "bool", "frontends only: run in its own console, answer with a run id (a console refuses)"}},
             Of<shape::Run>, build::Run,
-            "Each step runs as its own call under this console's --packs: a step of a pack outside them is a "
-            "refused line, not a stop, so a plan with modify steps needs modify in --packs (and its approval). "
-            "Steps run one after another, so values from two steps are never from the same moment: for one "
-            "moment, make one batch step (its line holds every item's envelope). repeat runs the step at 0, "
-            "every, 2*every, ... seconds while before `for` (ceil(for / every) runs: every 1 for 5 is 5; up to "
-            "600 s, 1000 runs). A line is "
-            "{step, run?, at_ms, ms, command, ok, result|error|digest}, plus expect (met or failed) and "
-            "expect_failed (where the envelope departs) when the step has expect: a subset of the envelope, "
-            "{\"ok\": true, \"result\": {...}}. The report (the result's, and out's last line as {report}) counts "
-            "calls, ok, failed, refused by kind and expects, with each step's time and the console's and agent's "
-            "builds. Up to 256 steps; run and quit are not allowed in a plan. A plan file is the replay key: run it "
-            "again to repeat an investigation. With background, the frontend starts the run as its own console, "
-            "which takes the agent's slot in turns like any client, under the packs enabled at the start; "
-            "run_status (its state and progress), run_read (its result, once done) and run_stop (ends it, "
-            "deletes its files) follow it by id. A frontend that exits ends its runs.", false, true},
-        {"read", "core", ToolPack::Explore, "hex dump of 1..4096 bytes (default 64); type decodes values",
+            "A step of a pack outside --packs is a refused line, not a stop. Up to 256 steps; run and quit not "
+            "allowed. Steps are not from one moment: use a batch step for that. repeat: up to 600 s, 1000 runs. "
+            "Line and report shape: docs/commands/console.md#plans. Background runs: run_status, run_read, run_stop.",
+            false, true},
+        {"read", "core", ToolPack::Explore, "hex dump of bytes; type decodes values",
             {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes (1..4096)", "64"},
-             {"type", "layout", "i8..u64|f32|f64|ptr: values; cstr|wstr: text; \"u8 phase, pad 3, f64[3] start\": a layout"}},
+             {"type", "layout", "i8..u64|f32|f64|ptr|cstr|wstr, or a layout \"u8 phase, pad 3, f64[3] start\""}},
             Of<shape::Read>, build::Read,
-            "type adds values (one per element); cstr|wstr adds text, length and terminated (default 256 bytes); "
-            "a layout \"<type>[n] [name], pad <n>, ...\" adds layout, {name: value}. A 4- or 8-byte read adds views. "
-            "A chain adds chain. region is the memory the address lies in (kind: code, rodata, data, mapped, "
-            "private, reserved or free)."},
-        {"peek", "core", ToolPack::Explore, "what 1..64 qwords hold (default 8): object, module, heap or value",
+            "cstr|wstr: text (default 256 bytes). region is the memory kind at the address."},
+        {"peek", "core", ToolPack::Explore, "what 1..64 qwords hold: object, module, heap or value",
             {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many qwords (1..64)", "8"},
-             {"label", "bool", "append this one qword as a confirmed global to a labels file"},
-             {"file", "file", "with label: the labels file (default: the host's names file, else the console's)"},
-             {"name", "str", "with label: the label's name (default FName_<hint>)"}},
+             {"label", "bool", "append this qword as a confirmed global to a labels file"},
+             {"file", "file", "with label: the labels file (default: names file)"},
+             {"name", "str", "with label: the name (default FName_<hint>)"}},
             Of<shape::Peek>, build::Peek,
-            "object needs a pack; value rows carry floats, a double and name_hint. region is the memory the address "
-            "lies in, as read gives it."},
-        {"write", "core", ToolPack::Modify, "write up to 256 bytes; undo restores it after a while, hold rewrites it every tick for a while; clear ends timed writes",
+            "object needs a pack. region as read."},
+        {"write", "core", ToolPack::Modify, "write up to 256 bytes, optionally timed (undo, hold); clear ends timed writes",
             {{"addr", "addr", "the address (required unless clear)", {}, false, false, "\"0x140001000\""},
-             {"data", "bytes", "bytes as hex pairs, spaced or packed: \"00 00 80 3f\" (up to 256; 64 with undo or hold; required unless clear)",
+             {"data", "bytes", "hex pairs (up to 256; 64 with undo or hold; required unless clear)",
               {}, false, false, "\"00 00 80 3f\""},
-             {"expect", "bytes", "write only while memory still holds these bytes (with undo: required, restored afterwards)"},
-             {"undo", "obj", "restore the bytes after a while, guarded on their owner (needs expect)", {}, false, false, {},
+             {"expect", "bytes", "write only while memory holds these bytes (required with undo, restored after)"},
+             {"undo", "obj", "restore after a while, guarded on the owner (needs expect)", {}, false, false, {},
               {{"after", "dur", "restore after this long (up to 60 s)", {}, true},
                {"owner", "ref", "the live actor or component holding the address (a pack names it)", {}, true},
                {"object", "addr", "a native object inside the owner whose vtable is guarded too"}}},
              {"hold", "dur", "rewrite the bytes every tick for this long (up to 60 s)"},
-             {"clear", "str", "in place of a write: end timed writes, \"all\" or one id as timed-writes lists it (undo:N or hold:N); "
-              "undo ones are restored"}},
+             {"clear", "str", "end timed writes: \"all\" or an id from timed-writes"}},
             Of<shape::Write>, build::Write,
-            "A refused expect answers an error whose `found` holds the bytes there. undo and hold answer `timed`, "
-            "the timed write as timed-writes lists it; up to 64 bytes. undo stops as conflict if the game changes the "
-            "value, abandoned if the owner or object's vtable changes; the owner's check is the pack's, so without "
-            "one it is refused. hold on an addr based on a literal ref ({\"base\": <ref>, \"offset\": N}) stops "
-            "when that object is freed or replaced. Options: expect guards every write; undo and hold are the two "
-            "timed forms (undo's owner and object only guard an undo, so they live inside it). clear takes no other "
-            "key, writes nothing and answers cleared: the rows it ended.", true},
-        {"timed-writes", "core", ToolPack::Observe, "the timed writes (write undo, hold) with their state; write with clear ends them",
+            "A refused expect answers found = the bytes there. undo and hold answer timed. undo ends conflict (value "
+            "changed) or abandoned (owner or vtable changed); without a pack's owner check it is refused. clear takes "
+            "no other key.", true},
+        {"timed-writes", "core", ToolPack::Observe, "timed writes (undo, hold) and their state",
             {}, Of<shape::Writes>, build::TimedWrites,
-            "Rows are undo writes (restored, conflict or abandoned ones stay listed until cleared) then hold ones. "
-            "Read-only: ending them is write's clear (modify)."},
+            "Rows: undo writes (restored, conflict or abandoned stay until cleared), then hold ones."},
         {"modules", "core", ToolPack::Explore, "loaded modules, exe first (also refreshes the cached list)",
             {}, Of<shape::Modules>, build::Modules},
-        {"search", "core", ToolPack::Native, "addresses holding a value in resident, cacheable memory, as a job the agent runs",
+        {"search", "core", ToolPack::Native, "addresses holding a value in resident memory, as a job the agent runs",
             {{"type", "hex|u32|i32|u64|ptr|f32|f64|text|wtext", "the value's type (wtext: text as UTF-16)", {}, true},
-             {"value", "scalar", "the value: text or hex pairs as a string, a number otherwise (u64 and ptr also \"0x...\")", {}, true, false,
+             {"value", "scalar", "a string for text or hex pairs, else a number (u64, ptr also \"0x...\")", {}, true, false,
               "\"00 00 80 3f\""},
-             {"scope", "obj", "where to look (default: the main module's resident pages)", {}, false, false, {},
+             {"scope", "obj", "where to look (default: main module)", {}, false, false, {},
               {{"module", "str", "one module, in place of start and to"},
                {"start", "addr", "start, or a job's next_cursor"},
                {"to", "addr", "end"},
                {"writable", "bool", "writable memory only, every module and heap"},
                {"heap", "bool", "private memory only (heaps, stacks)"},
                {"paged", "bool", "also non-resident pages (slow)"}}},
-             {"align", "int", "1, 2, 4, 8 or 16 (typed values default to their size)"},
-             {"wait", "int", "seconds to wait for the job before answering with it running (0..60)", "10"},
+             {"align", "int", "1, 2, 4, 8 or 16 (default: the type's size)"},
+             {"wait", "int", "seconds to wait for the job (0..60)", "10"},
              {"max", "int", "hits at most (1..507); the job stops when full", "64"}},
             Of<shape::Search>, build::Search,
-            "The range is the main module unless scope says otherwise; scope.start alone ends with the module it "
-            "lies in. A job still running after wait comes back with state running and its hits so far: search-job "
-            "with its id for more, with stop to end it. A new search stops the last job. next_cursor (a stopped or "
-            "full job) resumes as scope.start. Options: scope picks the memory, align the step, wait how long the "
-            "call blocks, max when the job stops (what the agent does, so not a view)."},
+            "Still running after wait: state running and hits so far; search-job with its id for more or stop. A new "
+            "search stops the last job. next_cursor resumes as scope.start."},
         {"search-job", "core", ToolPack::Native, "a search job's state and hits so far; stop ends it first",
             {{"job", "int", "the job a search returned", {}, true},
              {"stop", "bool", "end the job first; its next_cursor resumes it"}},
             Of<shape::Search>, build::SearchJob,
-            "Only the last job answers. scanned is the share of the range's searchable bytes (the committed, "
-            "readable memory scope takes) behind the cursor, 0 while the job first measures them."},
-        {"mem-snap", "core", ToolPack::Observe, "keep up to 1 MiB of memory for mem-diff (a file beside the cache, across runs)",
-            {{"addr", "chain", atChain, {}, true}, {"len", "int", "how many bytes, up to 1048576", {}, true}},
+            "Only the last job answers. scanned: share of searchable bytes behind the cursor."},
+        {"mem-snap", "core", ToolPack::Observe, "keep up to 1 MiB for mem-diff",
+            {{"addr", "chain", atChain, {}, true}, {"len", "int", "bytes (up to 1048576)", {}, true}},
             Of<shape::MemSnap>, build::MemSnap,
-            "A new snap replaces the last one and its candidates. Refused when part of the range is unreadable."},
-        {"mem-diff", "core", ToolPack::Observe, "elements of the last mem-snap that changed, stayed, rose or fell since; keep narrows",
+            "A new snap replaces the last one. Refused if part of the range is unreadable."},
+        {"mem-diff", "core", ToolPack::Observe, "elements of the last mem-snap that changed, stayed, rose or fell; keep narrows",
             {{"compare", "changed|unchanged|increased|decreased", "what an element must have done", {}, true},
-             {"type", "str", "the element type: i8..u64, f32, f64 or ptr; elements every size bytes from the start", {}, true, false,
+             {"type", "str", "element type i8..u64, f32, f64 or ptr; one per size bytes", {}, true, false,
               "\"f32\""},
              {"keep", "bool", "keep only the matches as candidates and today's bytes as the new baseline"},
              View("limit", "64")},
             Of<shape::MemDiff>, build::MemDiff,
-            "Reads the range again. changed and unchanged compare bytes; increased and decreased compare numbers "
-            "(NaN never passes). Narrowing: mem-snap, act, mem-diff changed f32 with keep, act, mem-diff ... with "
-            "keep until few remain; matched counts all, rows show the first (view.limit: 1..256). A snap from another agent "
-            "instance is refused."},
-        {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min with every); returns at once",
+            "changed and unchanged compare bytes, increased and decreased numbers (NaN never passes). matched counts "
+            "all; rows show view.limit (1..256). A snap from another agent instance is refused."},
+        {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min); returns at once",
             {{"duration", "dur", "how long, in seconds", {}, true},
-             {"ranges", "range", "up to 8 ranges to sample, each {\"addr\": <addr>, \"len\": N}, {\"addr\": <addr>, \"type\": \"f64\", "
-              "\"count\"?: N} to decode values, {\"object\": <ref>, \"field\": <path>} for a reflected field (a pack "
-              "resolves it); following a root, {\"offset\": N, ...} in place of addr", {}, true, true},
-             {"every", "dur", "sample interval (default: every tick, then at most 30 s)"},
-             {"follow", "str", "continue on a host root's replacement; ranges are offsets from it"},
-             {"file", "file", "keep every sample in this file (JSON lines), rewritten by each watch-read and watch-stop"}},
+             {"ranges", "range", "up to 8: {addr, len}, {addr, type, count?} to decode, {object, field} for a reflected "
+              "field; {offset, ...} instead of addr with follow", {}, true, true},
+             {"every", "dur", "interval (default: each tick, then at most 30 s)"},
+             {"follow", "str", "a host root: ranges are offsets from it"},
+             {"file", "file", "keep every sample here (JSON lines)"}},
             Of<shape::WatchStart>, build::WatchStart,
-            "status lists the roots. The capture outlives the console, its types too. A typed range's samples are "
-            "numbers (a list for count), and watch-read and watch-stop add its summary: first, last, least, greatest "
-            "and the change per second, per value. A field range takes the field's place and type at the start and "
-            "is guarded on its object; an addr based on a literal ref is guarded on that object. file writes the "
-            "ranges as the first line now; the file persists for the agent instance in the cache, and a later "
-            "watch-start without file drops it. For a blocking capture, start, wait and stop (the Python session's "
-            "watch helper)."},
-        {"watch-read", "core", ToolPack::Observe, "the capture so far: its first sample, each change and its last",
+            "status lists the roots. The capture outlives the console. Typed ranges add a summary (first, last, least, "
+            "greatest, change/s). file persists in the cache; a later watch-start without it drops it. For a blocking "
+            "capture: start, wait, stop."},
+        {"watch-read", "core", ToolPack::Observe, "the capture so far: first sample, changes, last",
             {{"all", "bool", "every sample, not only the changes"}}, Of<shape::WatchCapture>, build::WatchRead,
-            "Rows are the first sample, every sample that differs from the one before (each with its time) and the last; "
-            "samples counts them all. Past 200 rows the middle is dropped (dropped). The summary covers every sample, "
-            "with changes per value. all returns every sample. With watch-start's file, every sample also goes to "
-            "the file (file names it)."},
-        {"watch-stop", "core", ToolPack::Observe, "end the capture and return it: its first sample, each change and its last",
+            "Past 200 rows the middle is dropped (dropped). samples counts all; the summary covers every sample."},
+        {"watch-stop", "core", ToolPack::Observe, "end the capture and return it: first sample, changes, last",
             {{"all", "bool", "every sample, not only the changes"}}, Of<shape::WatchCapture>, build::WatchStop,
             "As watch-read."},
-        {"sig-check", "core", ToolPack::Native, "is a byte signature unique in a module, and does it land where expected; file checks a file of them",
+        {"sig-check", "core", ToolPack::Native, "is a byte signature unique in a module and where it lands; file checks a file of them",
             {{"pattern", "pattern", "the signature: \"48 8b ?? 89\" or \"0x48, 0x8B, -1, 0x89\", up to 96 bytes", {}, false, false,
               "\"48 8b 05 ?? ?? ?? ?? 48 85 c0\""},
              {"file", "file", "a JSON-lines file, one signature per line, in place of pattern"},
              {"module", "str", module},
              {"expect", "addr", "where it should land"},
              {"offset", "int", "the match starts this far past expect"},
-             {"resolve", "str", "a reference signature, \"next,field[,size]\" as labels files keep it; expect is then its target"}},
+             {"resolve", "str", "a reference signature \"next,field[,size]\"; expect is then its target"}},
             Of<shape::SigCheckResult>, build::SigCheck,
-            "Reports mismatches, diverges_at and warnings for unmasked addresses. file takes no other key and "
-            "answers file, winner (the first line that holds) and a row per line. Options: pattern or file is the "
-            "signature; module, expect, offset and resolve say where it must land, each a field labels files keep."},
-        {"sig-bytes", "core", ToolPack::Native, "live bytes (default 64, up to 96; longer is cut: capped) in both pattern forms, address fields wildcarded",
-            {{"addr", "addr", at, {}, true}, {"len", "int", "how many bytes", "64"}},
+            "Reports mismatches, diverges_at, warnings. file takes no other key: answers file, winner, a row per line."},
+        {"sig-bytes", "core", ToolPack::Native, "live bytes in both pattern forms, address fields wildcarded (up to 96; longer is capped)",
+            {{"addr", "addr", at, {}, true}, {"len", "int", "bytes", "64"}},
             Of<shape::SigBytes>, build::SigBytes},
-        {"labels-sign", "core", ToolPack::Native, "a byte signature on each of this build's user and global names, so they survive a patch",
+        {"labels-sign", "core", ToolPack::Native, "sign each user and global name of this build so it survives a patch",
             {{"file", "file", labels}, {"module", "str", module},
-             {"retry", "bool", "sign rows that have a signature or failed before too"}},
+             {"retry", "bool", "also rows with a signature or that failed before"}},
             Of<shape::LabelsSign>, build::LabelsSign,
-            "A function's signature starts at it, a global's at the first code that loads it (a reference signature); "
-            "each is cut on whole instructions and grows from 16 bytes until exactly one match lands on the row (up to 96). It is stored as the row's "
-            "sig (pattern, offset or resolve, as sig-check takes them); a row it cannot sign is listed with why and "
-            "marked sig_failed (timestamp, reason): later calls on that build skip it (failed_before) unless retry. "
-            "The file is rewritten in place; other builds' lines stay as they are."},
+            "Signs each name by a byte signature (a global by a reference signature) stored as the row's sig; "
+            "unsignable rows get sig_failed and are skipped later (failed_before) unless retry. The file is rewritten "
+            "in place; other builds' lines stay."},
         {"labels-port", "core", ToolPack::Native, "find other builds' signed names in the running build and add them to the file",
             {{"file", "file", labels}, {"module", "str", module}},
             Of<shape::LabelsPort>, build::LabelsPort,
-            "Per name this build lacks, the newest signed row of another build is matched in the image (one shared "
-            "search per anchor). One match appends a row for this build with the same sig and ported_from (the old "
-            "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
-            "rows stay."},
-        {"labels-check", "core", ToolPack::Native, "re-verify this build's signed names: does each row's sig still land on it",
+            "Per name this build lacks, matches the newest signed row of another build; one match appends a row (sig, "
+            "ported_from); none (missing) or several (ambiguous) are listed, never written. Old rows stay."},
+        {"labels-check", "core", ToolPack::Native, "re-verify this build's signed names: does each sig still land",
             {{"file", "file", labels}, {"module", "str", module},
-             {"status", "ok|moved|missing|ambiguous|invalid", "only rows with these statuses (the counts still cover every row)",
+             {"status", "ok|moved|missing|ambiguous|invalid", "only rows with these statuses (counts still cover every row)",
               {}, false, true},
              View("limit")},
             Of<shape::LabelsCheck>, build::LabelsCheck,
-            "Each signed row of the running build is matched in the image and compared with its rva: ok (one match, "
-            "on the row), moved (one match elsewhere: found), missing (none), ambiguous (several: matches) or invalid "
-            "(a sig sig-check would refuse). unsigned counts this build's user and global rows with no sig. With the "
-            "agent's image window every anchor is found in one pass over the image (searches 1, seconds); without "
-            "it, one search per anchor. status keeps only those rows (status [\"moved\", \"missing\", "
-            "\"ambiguous\", \"invalid\"]: what needs work), view.limit the first rows (0: all); matched counts the "
-            "rows the status kept. Read-only: the file is never written."},
-        {"disasm", "core", ToolPack::Native, "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
-            {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (1..1024; with function: up to 2048)", "24"},
-             {"function", "bool", "list the whole containing function (exception table; else walk from addr)"},
-             {"resume", "bool", "with function: start at addr (a cut listing's next), not the function's start"},
-             {"save", "obj", "with function: write the function and its read-only data for a static tool, not the rows",
+            "Per signed row: ok, moved (found), missing, ambiguous (matches) or invalid. unsigned counts rows with no "
+            "sig. status keeps only those statuses; view.limit the first rows (0: all). Read-only."},
+        {"disasm", "core", ToolPack::Native, "instructions from live bytes (default 24), or a whole function",
+            {{"addr", "chain", atChain, {}, true}, {"count", "int", "instructions (1..1024; with function: up to 2048)", "24"},
+             {"function", "bool", "the whole containing function (exception table, else a walk from addr)"},
+             {"resume", "bool", "with function: start at addr (a cut listing's next)"},
+             {"save", "obj", "with function: write it and its read-only data to files for a static tool",
               {}, false, false, {},
               {{"file", "file", "the file to write", {}, true},
-               {"callees", "int", "also save the functions it calls or tail-jumps to, this many levels deep (1..3)"},
-               {"labels", "file", "name from this labels file (default: the console's and the host's names file)"}}},
+               {"callees", "int", "also the functions it calls, this many levels (1..3)"},
+               {"labels", "file", "name from this labels file"}}},
              {"follow", "bool", "step through up to 3 unconditional direct jumps"}},
-            Of<shape::Disasm>, build::Disasm, "An answer about one address: the default count stays small, and a whole "
-            "function or more belongs in a save file for a static tool (save), not in a reply. Rows carry rva, bytes, text, targets, string hints, import names and the "
-            "value a read-only [rip + disp] load reads; the listing names the module once. meta adds each row's module "
-            "and address fields. function lists to the function's end, up to 2048 "
-            "instructions or 16 KB (a cut gives next: continue with resume), with compact rows (no bytes, rva on the "
-            "first row; meta for full rows) and strings: each string referenced, with the rows using it. Where no "
-            "exception-table entry holds addr it walks from addr to the first return or jump no earlier forward branch "
-            "passes: stop \"walk end\", no function key. Strings built at run time, reached through a pointer, or held as "
-            "names are not seen. save leaves rows and strings out of the result (the file holds them) and adds saved "
-            "and saved_rows, and saves each chunk the function jumps into: chained entries and switch targets "
-            "(chunks, up to 256, then capped), each switch's table as data (tables), and the function's targets "
-            "still unsaved in jumpouts_left; callees follows direct calls and tail jumps breadth-first and adds functions (each saved one, "
-            "with its depth) and skipped (each target left out, why: depth, count past 16 callees, bytes past 256 KB of code in the whole "
-            "save, unreadable). With an engine pack, a saved function whose label names a reflected class (Class::Method, or "
-            "Class_Method by the longest class prefix) brings that class's layout (layout-export with closure 1) into the file "
-            "as layout rows, counted in layouts (classes, types). A walk from more than 32 bytes past the last return, jump or padding in its unlisted piece adds "
-            "piece (the piece holding addr, as xrefs gives it), and save then refuses unless resume. Options: count and function decide what is read (not a view: "
-            "they bound the decoding), resume continues a cut listing, save writes files, follow steps through jumps."},
+            Of<shape::Disasm>, build::Disasm,
+            "Keep count small: a whole function belongs in save, not a reply. function stops at 2048 instructions or "
+            "16 KB (next: continue with resume). save leaves rows out of the result. Without an exception-table "
+            "entry, save refuses a walk from past padding unless resume."},
         {"xrefs", "core", ToolPack::Native, "what points at an address: rel32 fields and stored pointers, each with its function",
             {{"addr", "addr", at, {}, true},
              {"module", "str", "scan another loaded module"},
              {"all", "bool", "also list unknown hits (likely chance bytes)"}},
-            Of<shape::Xrefs>, build::Xrefs, "A code row outside every exception-table entry carries unlisted, its "
-            "function the piece holding it, cut as touches cuts unlisted code (between returns and int3 padding, within "
-            "16 KB each side): a function with several returns spans several pieces, and junk bytes may lead one. "
-            "Entries under 4 bytes (a packed image's decoys) bound nothing."},
+            Of<shape::Xrefs>, build::Xrefs,
+            "A code row outside every exception-table entry carries unlisted, its function the piece holding it."},
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
              {"range", "int", "bytes each side of addr (1..0x400000)", "524288", false, false, "\"0x80000\""},
              {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"},
              {"bases", registers, bases, {}, false, true}},
-            Of<shape::Touches>, build::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
-            "Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: "
-            "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
-            "unlisted code. reads leaves out struct copies and constructors. Stack slots ([rsp + d], [rbp + d]) "
-            "are left out unless bases names their register; bases [\"rcx\"] keeps only operands on rcx (this, as "
-            "a method's first argument). Optimised code also uses rbp as a plain register: to find every writer of a "
-            "field, pass bases with rbp among the others, or sweep the image with disp-scan (rbp included there). "
-            "The whole image for a few offsets: disp-scan."},
-        {"disp-scan", "core", ToolPack::Native, "every instruction in the main module's code with a [reg + disp] operand of these disps, a page at a time",
-            {{"disps", "int", "the displacements (the fields' offsets; up to 8, each above 0)", {}, true, true},
-             {"access", "write|read|any", "write: stores and read-modify-writes; read: loads and read-modify-writes; any: also lea "
-              "(the field's address taken)", "\"write\""},
+            Of<shape::Touches>, build::Touches,
+            "Most offsets first, writes marked. Unlisted code is scanned in pieces (rows carry unlisted). Stack slots "
+            "([rsp + d], [rbp + d]) are left out unless bases names their register. reads drops struct copies and "
+            "constructors. The whole image for a few offsets: disp-scan."},
+        {"disp-scan", "core", ToolPack::Native, "instructions in the main module with a [reg + disp] operand at these offsets, paged",
+            {{"offsets", "int", "the displacements (the fields' offsets; up to 8, each above 0)", {}, true, true},
+             {"access", "write|read|any", "write: stores and read-modify-writes; read: loads and read-modify-writes; any: also lea",
+              "\"write\""},
              {"width", "int", "only operands of this many bytes (1, 2, 4, 8, 16, 32 or 64)"},
-             {"imm", "int", "only instructions with this immediate (compared in its width: 0xffffffff is -1 as 32 bits)"},
+             {"imm", "int", "only instructions with this immediate (compared in its width)"},
              {"bases", registers, scanBases, {}, false, true},
-             {"same_base", "bool", "only functions using every disp on one base register (two disps or more): functions "
-              "lists them, rows hold their hits"},
+             {"same_base", "bool", "only functions using every disp on one base register (2+ disps): functions lists them"},
              View("start limit", "128")},
             Of<shape::DispScan>, build::DispScan,
-            "A linear sweep of the executable sections, read from the live image: each call scans for up to 8 s and "
-            "stops early at view.limit hits (default 128, at most 4096; same_base: whole functions up to that many rows); "
-            "view.start resumes at a page's next_cursor (absent once the end is reached), and scanned is the share of "
-            "the code behind the cursor. Each row is one instruction: "
-            "disp (which one matched), base, access (write, read, both or address), width, its text and the function "
-            "holding it (function, from the exception table; absent outside every entry). same_base keeps functions "
-            "with an entry only, and cuts a page at a function's start. The code comes through the agent's image "
-            "window when it has one (its worker thread copies it while the host tick only polls, when the host allows "
-            "it): a full sweep takes seconds; without it, about a megabyte a second (minutes for a large game). "
-            "read_ms is the share of scan_ms spent reading. A sweep over many pages, or many sweeps, belongs in a "
-            "script or a run plan, not in one tool call after another. A straight sweep can decode data inside code "
-            "(jump tables) as instructions: check a surprising hit with disasm. Near one function instead: touches."},
+            "Each call scans up to 8 s and stops at view.limit hits (default 128, at most 4096). view.start resumes at "
+            "next_cursor (absent at the end). A full sweep takes seconds through the agent's image window, else about "
+            "1 MB/s. Sweeps over many pages belong in a run plan. Jump tables can decode as code: check a surprising "
+            "hit with disasm. Near one function: touches."},
         {"vtable", "core", ToolPack::Native, "an object's virtual table: slots until the first entry that is not code",
             {{"addr", "chain", atChain, {}, true},
              {"offset", "int", "the table pointer at addr+offset (an interface part; 0..0x100000)"},
              {"slots", "int", "only these slots (each 0..511)", {}, false, true},
-             {"parts", "int", "list the table pointers in the object's first bytes (8..0x10000): its interface parts"},
+             {"parts", "int", "list the table pointers in the object's first bytes (8..0x10000)"},
              {"resolve", "bool", "where jump stubs lead"},
              {"rtti", "bool", "also the class and bases its run-time type information names (MSVC images)"},
              View("limit")},
-            Of<shape::Vtable>, build::Vtable, "addr is the object, or the table itself when its first qword "
-            "already points into code (an object's points into read-only data). view.limit reads the first that "
-            "many slots (1..512; omitted: until the first entry that is not code); slots reads up to the highest "
-            "asked and keeps those rows. parts reads the object's first bytes and lists, in parts, each distinct "
-            "table found there (a qword that points into a module, not into code, whose first entry is code) with "
-            "every offset holding it (embedded structs repeat one table), and that table's slots rows when slots is "
-            "given: the part an indirect call through an interface lands on, and "
-            "its slot, in one call. rtti adds rtti, read from the locator in the slot before the table; complete is the "
-            "whole object when addr is one of its parts. Where that slot holds no locator (no type information, or "
-            "not an MSVC image; engines often build without it) it adds rtti_error instead. resolve and rtti add "
-            "reads."},
+            Of<shape::Vtable>, build::Vtable,
+            "addr is the object, or the table itself when its first qword points into code. view.limit: 1..512 "
+            "slots. rtti_error when the image has no locator."},
     };
     return verbs;
 }
@@ -373,28 +261,21 @@ inline std::vector<Origin> TableOrigins(std::span<const Origin> packOrigins) {
 // What applies to every verb; `help` prints these under the rows.
 inline const std::vector<std::string>& GeneralNotes() {
     static const std::vector<std::string> notes = {
-        "A call is one JSON object per line: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}, "
-        "args named as help shows them; \"meta\", \"timing\" and \"big\" as true, \"max_chars\" as a number. A line may "
-        "also hold a JSON list of calls.",
-        "help with verb shows its args (type, default, help), its result's keys, notes and an example call; help "
-        "with json the whole table.",
-        "Unknown keys, missing required ones and values of the wrong type are refused (kind schema) with the key's "
-        "part of the schema and a corrected example.",
+        "Load the reagentlive skill before investigating: method, approvals, pitfalls.",
+        "A call is one JSON object per line: {\"verb\": \"read\", \"args\": {\"addr\": \"0x1000\", \"len\": 16}}; "
+        "\"meta\", \"timing\", \"big\" as true, \"max_chars\" a number. A line may be a list of calls.",
+        "help with verb: args, result, notes, example; with json: the whole table. Unknown keys, missing required "
+        "ones and wrong types are refused (kind schema) with a corrected example.",
         "An int is a number or \"0x...\" text. An addr is \"0x...\", a literal ref, {\"module\": \"x.dll\", \"rva\": N} "
-        "or {\"base\": <addr>, \"offset\": N}; addresses inside a module carry module and rva.",
-        "A chain is {\"base\": <addr>, \"chain\": [N, N]} in read, peek, mem-snap, vtable and disasm: each offset "
-        "but the last reads a pointer, so one alone is refused ([0, N] reads the pointer at base and adds N).",
-        "A path is a list of field names: [\"Info\", \"Owner\"]. A key that does not apply is omitted from a result.",
-        "meta prints struct values with their layout; timing adds trips, wait_ms and total_ms.",
-        "A --caller tool console prints at most 25000 characters a result; past that a digest stands in for it, with "
-        "its largest parts and next, the call narrowed (or file, for a call that must not run again). max_chars sets "
-        "the limit, big lifts it. Past the session's --context-limit (default 400000 characters to a tool caller) "
-        "each envelope also carries context_warning; usage shows the total.",
+        "or {\"base\": <addr>, \"offset\": N}.",
+        "A chain is {\"base\": <addr>, \"chain\": [N, N]} (read, peek, mem-snap, vtable, disasm): each offset but "
+        "the last reads a pointer; one alone is refused.",
+        "A path is a list of field names: [\"Info\", \"Owner\"]. Keys that do not apply are omitted from a result.",
+        "A --caller tool console caps a result at 25000 characters (a digest instead, with next); max_chars sets the "
+        "cap, big lifts it. Past --context-limit (default 400000) envelopes carry context_warning.",
         "One console per agent: a second one is refused as busy.",
-        "The module list and a pack's lookups persist for the agent instance in %TEMP%\\reagentlive-<pid>.cache.",
-        "One-shot: <console> [pid] -c '<call or list of calls>' (or -c @<file>, one call per line) emits JSON Lines.",
-        "Each call is logged beside the console as facts (verb, keys, sizes, refusal), never values; usage reads it, "
-        "also with no target. --caller tool|script|shell says who reads the output; --no-usage turns it off.",
+        "One-shot: <console> [pid] -c '<call or list of calls>' (or -c @<file>, one call per line). Calls are logged "
+        "as facts, never values (usage; --no-usage).",
     };
     return notes;
 }

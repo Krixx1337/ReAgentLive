@@ -73,7 +73,9 @@ address when it is renamed.
 
 `labels-sign` signs this build's `user` and `global` rows that have none
 (`retry`: all of them): the live bytes with address fields masked, cut on
-whole instructions and grown until exactly one match lands on the row.
+whole instructions and grown from 16 bytes (up to 96) until exactly one
+match lands on the row. A function's signature starts at it, a global's at
+the first code that loads it.
 Derived rows are not signed: `labels-export` remakes them. A row it cannot
 sign gets `sig_failed`, and later calls on that build skip it (counted in
 `failed_before`), so a repeated call searches only for new rows. The signer

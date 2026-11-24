@@ -19,18 +19,17 @@ struct ErrorKindInfo {
     std::string_view name, meaning, message;    // message: the template, <placeholders> in angle brackets.
 };
 inline constexpr ErrorKindInfo ErrorKinds[] = {
-    {ErrorKind::Schema, "schema", "the call does not fit its verb's row, or a builder refuses a value; it carries key, "
-        "arg (or args) and a corrected example",
-        "unknown key '<key>' (did you mean <key>?); <verb> takes <keys> | missing <key>: <type> (<help>) | "
-        "<key>: <type>, not <value> | '<key>' goes inside <object>: {\"<object>\": {\"<key>\": ...}} | <key>: <why>"},
+    {ErrorKind::Schema, "schema", "the call does not fit its verb's row, or a builder refuses a value",
+        "unknown key '<key>' (did you mean <key>?); <verb> takes <keys> | missing <key>: <type> | "
+        "<key>: <type>, not <value> | '<key>' goes inside <object> | <key>: <why>"},
     {ErrorKind::Pack, "pack", "the verb's tool pack is outside this console's --packs",
         "<verb> is in the <pack> pack, outside this console's --packs <packs>: start it with <pack> in --packs"},
     {ErrorKind::Validation, "validation", "the target refused what the call asks (a guard, a state, a mismatch)",
         "<what> refused: <why>"},
     {ErrorKind::Unsupported, "unsupported", "the agent or host lacks the operation", "agent does not support <operation>"},
     {ErrorKind::File, "file", "a file the call names cannot be read or written", "cannot read|write <path>: <why>"},
-    {ErrorKind::Agent, "agent", "the agent refused the request; carries status, detail and reason", "<op>: <reason>"},
-    {ErrorKind::Timeout, "timeout", "the agent did not answer in time; carries status", "<op> timed out"},
+    {ErrorKind::Agent, "agent", "the agent refused the request", "<op>: <reason>"},
+    {ErrorKind::Timeout, "timeout", "the agent did not answer in time", "<op> timed out"},
     {ErrorKind::Attach, "attach", "the console cannot reach an agent", "no agent in <pid>: <why>"},
     {ErrorKind::Busy, "busy", "another console holds the agent", "another client is attached"},
     {ErrorKind::Startup, "startup", "the console could not start (arguments, packs, agent)", "<why>"},
@@ -42,9 +41,9 @@ inline constexpr ErrorKindInfo ErrorKinds[] = {
     {ErrorKind::Snapshot, "snapshot", "get's baseline is missing or unreadable", "changed needs get with snap first (or a snapshot file)"},
     {ErrorKind::Field, "field", "the object has no such field, or it is of another kind", "<field> is <type>, not <wanted>"},
     {ErrorKind::Layout, "layout", "a layout the console relies on failed its check", "<why>"},
-    {ErrorKind::Chain, "chain", "a pointer chain broke; carries chain with broken and reason", "hop <n>: <reason>"},
+    {ErrorKind::Chain, "chain", "a pointer chain broke", "hop <n>: <reason>"},
     {ErrorKind::Host, "host", "a host verb returned nothing usable", "host command returned no result"},
-    {ErrorKind::Internal, "internal", "a console fault: a result that does not match its row, or no result", "<why>"},
+    {ErrorKind::Internal, "internal", "a console fault: a result that does not match its row", "<why>"},
 };
 inline constexpr std::string_view KindName(ErrorKind kind) { return ErrorKinds[static_cast<size_t>(kind)].name; }
 
