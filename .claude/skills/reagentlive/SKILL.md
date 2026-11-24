@@ -11,9 +11,9 @@ project's host notes (console name, host verbs, approval rules) win over
 this skill.
 
 **Setup:** read `%LOCALAPPDATA%\reagentlive\setup.json` if present (`dir`,
-`improvement`, `scratch`, `skill_install`), then `references/local-lessons.md`
-if present: this user's lessons, which extend, never override, the rules
-here. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
+`improvement`, `scratch`, `skill_install`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
+if present and what it routes to (`general.md`; the game's file once `status`
+names the exe): the user's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
 skill folder lives in, else `dir`, else
 `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
 `status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`). A

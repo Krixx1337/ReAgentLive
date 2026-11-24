@@ -2,8 +2,7 @@
 every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
 AGENTS.md (for an agent changing the repo; CLAUDE.md imports it) stays within its line budget and needs no
 header; links and names are checked there as everywhere. The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
-every such path must exist, and no skill file links GitHub's main branch. The user's own git-ignored
-references/local-lessons.md is skipped by every check.
+every such path must exist, and no skill file links GitHub's main branch.
 
 Usage: test_docs.py [--forbid WORD ...]. A host passes its own and its
 game's names, so the library never has to spell them.
@@ -31,14 +30,9 @@ SKILL = os.path.join('.claude', 'skills', 'reagentlive')
 GENERATED = {'docs/commands/results.md', 'docs/commands/reference.md'}
 ORCHESTRATORS = {'README.md', 'docs/INDEX.md'}
 AGENT_PROCEDURES = 'docs/agents/'  # pages an agent runs: no TL;DR or Home of line
-LOCAL_LESSONS = os.path.join(SKILL, 'references', 'local-lessons.md')  # the user's, git-ignored
 CODE = re.compile(r'`([^`]+)`')
 CODE_PATH = re.compile(r'(docs|src|examples|tests|cmake)/[\w./#-]+')
 MAIN_URL = re.compile(r'github\.com/\S*?/blob/main\b')
-
-
-def is_local_lessons(path):
-    return os.path.normpath(path).endswith(os.path.normpath(LOCAL_LESSONS))
 
 
 def files(root, suffixes):
@@ -46,7 +40,7 @@ def files(root, suffixes):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in sorted(names):
             path = os.path.join(base, name)
-            if name.endswith(suffixes) and not is_local_lessons(path):
+            if name.endswith(suffixes):
                 yield path
 
 
@@ -94,8 +88,6 @@ def check_links(root):
                     continue
                 name, _, frag = target.partition('#')
                 dest = os.path.normpath(os.path.join(os.path.dirname(path), name)) if name else path
-                if is_local_lessons(dest):
-                    continue  # absent in a clean clone
                 if not os.path.exists(dest):
                     problems.append(f'{where}:{number}: {target}: no such file')
                     continue
@@ -302,18 +294,6 @@ class Docs(unittest.TestCase):
                 '.claude/skills/reagentlive/SKILL.md:1: links blob/main; use a repo path',
                 '.claude/skills/reagentlive/references/r.md:1: links blob/main; use a repo path'])
             self.assertEqual(check_links(root), [])  # an absolute URL is not a local link
-
-    def test_local_lessons_are_skipped_by_every_check(self):
-        skill = '.claude/skills/reagentlive/'
-        lessons = ('[gone](missing.md) `docs/missing.md` SomeGame\n'
-                   'https://github.com/Owner/Repo/blob/main/x\n')
-        body = '[w](references/w.md) `references/local-lessons.md` [l](references/local-lessons.md)\n'
-        base = {skill + 'SKILL.md': body, skill + 'references/w.md': 'w\n'}
-        with Tree(base) as root:  # absent, as in a clean clone
-            self.assertEqual(check_links(root) + check_skill(root), [])
-        with Tree({**base, skill + 'references/local-lessons.md': lessons}) as root:
-            self.assertEqual(check_links(root) + check_skill(root) + check_code_paths(root)
-                             + check_main_urls(root) + check_names(root, ['somegame']), [])
 
     def test_slugs_match_github(self):
         self.assertEqual(slug('17 · `call-native` (caution)'), '17--call-native-caution')

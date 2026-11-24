@@ -278,7 +278,7 @@ Check this table before adding a fact; if it has a home, link there.
 | Agent procedures (install, update) | [agents/](agents/README.md): [setup.md](agents/setup.md), [update.md](agents/update.md) | README: the prompts only |
 | The setup record's fields | [agents/setup.md](agents/setup.md#10-write-the-setup-record) | the skill and agents/README.md read it, never restate it |
 | When and how an agent reviews a session and proposes skill lessons (modes, scratch file, rubric) | the skill's `references/improving.md` | docs |
-| The user's own skill lessons | the skill's `references/local-lessons.md` (git-ignored, the user's) | anything tracked |
+| The user's own skill lessons (general and per game) | `%LOCALAPPDATA%\reagentlive\lessons\` (the user's, outside the repo) | anything tracked |
 | How an agent works on this repo: commands, hard rules, large changes | [`AGENTS.md`](../AGENTS.md) | this page keeps the details; `AGENTS.md` links them |
 | Where code goes, tests, these rules | this page | |
 

@@ -64,7 +64,7 @@ WARNING = 'this session put 400100 characters into the agent context, past conte
 # Replies by call: [call as the client sends it, reply].
 CALLS = [
     [C('rows', {'object': '0x10#1:1'}), {'ok': True, 'digest': DIGEST}],
-    [C('status'), ok({'pid': 4, 'build': 'b', 'version': '0.1.0', 'commit': '0123456789ab', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
+    [C('status'), ok({'pid': 4, 'exe': 'Game.exe', 'build': 'b', 'version': '0.1.0', 'commit': '0123456789ab', 'replaced_agents': 0, 'ticks': 9, 'ticks_per_second': 60,
                       'interval_ms': 100, 'ticking': True, 'host_thread': 'engine', 'packs': ['ue'], 'tool_packs': ['explore'], 'table_hash': 'abc'})],
     [C('read', {'addr': '0x1000', 'len': 4}), ok({'address': '0x1000', 'size': 4, 'hex': '00 00 80 3f',
                                              'region': {'kind': 'private', 'base': '0x1000', 'size': '0x1000',

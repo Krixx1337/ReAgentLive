@@ -90,11 +90,11 @@ Result: `{rows: [{verb: str, origin: str, pack: explore\|native\|observe\|modify
 
 ### status
 
-agent pid, tick rate, the packs the host offers and the verb table's hash.
+agent pid and exe name, tick rate, the packs the host offers and the verb table's hash.
 
 Pack `explore`.
 
-Result: `{pid: u32, build: str, version: str, commit: str, replaced_agents: u32, ticks: u64, ticks_per_second: u64, interval_ms: u64, ticking: bool, host_thread: engine\|borrowed\|own\|unset, tick_note?: str, roots?: [str], packs: [str], game_thread?: value, tool_packs: [str], table_hash: str}`
+Result: `{pid: u32, exe: str, build: str, version: str, commit: str, replaced_agents: u32, ticks: u64, ticks_per_second: u64, interval_ms: u64, ticking: bool, host_thread: engine\|borrowed\|own\|unset, tick_note?: str, roots?: [str], packs: [str], game_thread?: value, tool_packs: [str], table_hash: str}`
 
 table_hash changes when any verb's args or result change: a cached script or skill is then stale.
 

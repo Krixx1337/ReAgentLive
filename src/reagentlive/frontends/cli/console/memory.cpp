@@ -41,6 +41,25 @@ namespace reagentlive::cli::detail {
 
 std::string ConsoleCommit() { return REAGENTLIVE_COMMIT; }
 
+namespace {
+// The process's executable file name (UTF-8), empty when it cannot be read.
+std::string ExeName(uint32_t pid) {
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process) return {};
+    wchar_t path[MAX_PATH * 2];
+    DWORD length = static_cast<DWORD>(std::size(path));
+    const bool read = QueryFullProcessImageNameW(process, 0, path, &length);
+    CloseHandle(process);
+    if (!read) return {};
+    const std::wstring name = std::filesystem::path(std::wstring(path, length)).filename().wstring();
+    const int bytes = WideCharToMultiByte(CP_UTF8, 0, name.data(), static_cast<int>(name.size()), nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(bytes > 0 ? bytes : 0), '\0');
+    if (bytes > 0)
+        WideCharToMultiByte(CP_UTF8, 0, name.data(), static_cast<int>(name.size()), out.data(), bytes, nullptr, nullptr);
+    return out;
+}
+}
+
 void PrintStatus(Session& session, std::string_view jsonCommand) {
     Client& client = session.client;
     constexpr auto MinInterval = std::chrono::milliseconds(100);
@@ -54,6 +73,7 @@ void PrintStatus(Session& session, std::string_view jsonCommand) {
     const HostThread thread = client.AgentHostThread();
     shape::Status result;
     result.pid = client.AgentPid();
+    result.exe = ExeName(result.pid);
     result.build = client.AgentBuild();
     result.version = Version;
     result.commit = REAGENTLIVE_COMMIT;

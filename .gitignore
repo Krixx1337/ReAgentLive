@@ -4,4 +4,3 @@ out/
 __pycache__/
 *.pyc
 # The user's own skill lessons (references/improving.md).
-.claude/skills/reagentlive/references/local-lessons.md

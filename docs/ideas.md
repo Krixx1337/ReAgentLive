@@ -220,8 +220,8 @@ Ship `.claude-plugin/marketplace.json` so `/plugin marketplace add <clone>`
 installs the skill in place (`reagentlive:reagentlive`, updated with
 `/reload-plugins`), as a fourth setup option (`skill_install` `plugin`). A
 plugin from a remote marketplace is a cached copy under
-`~/.claude/plugins/cache`, never edited, so its local lessons would need a
-home outside it (`%LOCALAPPDATA%\reagentlive\local-lessons.md`). Pull
+`~/.claude/plugins/cache`, never edited; the user's lessons already live
+outside any install (`%LOCALAPPDATA%\reagentlive\lessons\`). Pull
 forward when a user asks for plugin installs.
 
 ### 38 · Two requests in flight (channels)

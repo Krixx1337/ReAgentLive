@@ -597,6 +597,7 @@ struct Run {
 
 struct Status {
     uint32_t pid = 0;
+    std::string exe;             // The target's executable file name; empty when it cannot be read.
     std::string build, version;
     std::string commit;          // The console's source commit (12 hex digits, -dirty), or unknown.
     uint32_t replacedAgents = 0;
@@ -611,6 +612,7 @@ struct Status {
     std::string tableHash;
     template<class V> static void Describe(V& v) {
         v("pid", &Status::pid);
+        v("exe", &Status::exe);
         v("build", &Status::build);
         v("version", &Status::version);
         v("commit", &Status::commit);

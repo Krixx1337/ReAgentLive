@@ -39,7 +39,7 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"json", "bool", "the whole table for programs"},
              {"hash", "bool", "only the table's hash: has it changed since a program read it?"}},
             Of<shape::Help>, build::Help},
-        {"status", "core", ToolPack::Explore, "agent pid, tick rate, the packs the host offers and the verb table's hash",
+        {"status", "core", ToolPack::Explore, "agent pid and exe name, tick rate, the packs the host offers and the verb table's hash",
             {}, Of<shape::Status>, build::Status,
             "table_hash changes when any verb's args or result change: a cached script or skill is then stale."},
         {"quit", "core", ToolPack::Explore, "end the console", {}, Of<shape::Quit>, build::Quit},

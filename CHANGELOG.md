@@ -42,6 +42,10 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   Each call's wait is in the usage log and `usage` (`slot_ms`)
   ([protocol](docs/protocol.md#handshake)).
 - **Long verbs print progress** on stderr (`progress: 12/40 blocks`).
+- **The skill learns on its own in `user` mode:** after a task it writes
+  its lessons without asking and ends with one line on what it learned;
+  `dev` mode stays interactive
+  ([improving](.claude/skills/reagentlive/references/improving.md)).
 - **A `batch` keeps its tick with the usage log on:** its items' usage
   lines are written after the batch, not between its held requests.
 - **Concurrent consoles keep their files whole:** usage-log lines are one
@@ -57,6 +61,13 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ### Breaking
 
+- **Local lessons moved out of the skill folder** into
+  `%LOCALAPPDATA%\reagentlive\lessons\`: `general.md` for any game, one
+  file per game, and an `INDEX.md` that maps each game file to its exe
+  names; `status` now reports the target's `exe`
+  ([improving](.claude/skills/reagentlive/references/improving.md#local-lessons)).
+  Move the lines of an old `references/local-lessons.md` into
+  `lessons\general.md`.
 - **`Session(hold=...)` is gone:** a session's console now frees the slot
   between calls by itself. Drop the argument.
 - **A busy agent refuses the call, not the console:** a console no longer

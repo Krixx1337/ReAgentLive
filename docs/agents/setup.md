@@ -164,10 +164,8 @@ the first option that works and remember which (`skill_install` in step
 
 **Claude Code.** The link is `$HOME\.claude\skills\reagentlive`. First
 remove an old one: a link only loses the link (`cmd /c rmdir` never
-touches the folder it points to); an old copy is deleted after its
-`references/local-lessons.md` (the user's own lessons, if any) moves into
-the clone's skill folder, where it is git-ignored and every option below
-finds it:
+touches the folder it points to); an old copy is deleted (the user's
+lessons live outside it, in `%LOCALAPPDATA%\reagentlive\lessons\`):
 
 ```powershell
 $link = "$HOME\.claude\skills\reagentlive"
@@ -175,12 +173,7 @@ $skill = "<dir>\.claude\skills\reagentlive"
 New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
 if (Test-Path $link) {
   if ((Get-Item $link -Force).LinkType) { cmd /c rmdir "$link" }
-  else {
-    if (Test-Path "$link\references\local-lessons.md") {
-      Move-Item "$link\references\local-lessons.md" "$skill\references\" -Force
-    }
-    Remove-Item $link -Recurse -Force
-  }
+  else { Remove-Item $link -Recurse -Force }
 }
 ```
 
@@ -203,8 +196,7 @@ if (Test-Path $link) {
    when the record was already written.
 
 3. **Copy** (`copy`), the last resort:
-   `Copy-Item $skill $link -Recurse` (it takes a moved
-   `local-lessons.md` along). A copy does not follow the clone; record its commit (`skill_commit`,
+   `Copy-Item $skill $link -Recurse`. A copy does not follow the clone; record its commit (`skill_commit`,
    `git -C <dir> rev-parse --short=12 HEAD`) so the skill can tell when it
    is older than the build.
 
@@ -304,14 +296,15 @@ ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it 
 
 ## 9. Choose the improvement mode
 
-The skill reviews what slowed it down and proposes fixes after a
-task ([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
+After a task the skill reviews what slowed it down: for a user it keeps
+its own lessons without asking, for a developer it proposes fixes
+([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
 Ask the user: "Do you use ReAgentLive as a user or as a developer?"
 
 | Answer | `improvement` | The skill may |
 |---|---|---|
-| user (the default, also when unsure) | `user` | write one file only: its git-ignored `references/local-lessons.md`; anything else (docs or code problems, host notes, findings) becomes a suggestion or issue text the user may act on |
-| developer | `dev` | propose changes to the skill, docs and ReAgentLive code; code changes on a branch with the build and tests run, never committed unasked |
+| user (the default, also when unsure) | `user` | keep its own lessons, without asking, in `%LOCALAPPDATA%\reagentlive\lessons\` and write nothing else; anything else (docs or code problems, host notes, findings) becomes a one-line suggestion at the end of a task |
+| developer | `dev` | propose changes to the skill, docs and ReAgentLive code, each on the user's yes; code changes on a branch with the build and tests run, never committed unasked |
 | neither ("off", "no") | `off` | nothing |
 
 ## 10. Write the setup record

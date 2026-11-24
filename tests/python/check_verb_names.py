@@ -293,8 +293,7 @@ def files(paths, generated):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for name in sorted(names):
                 full = os.path.join(base, name)
-                if ((name.endswith('.md') or name.endswith(CODE_EXTENSIONS)) and os.path.abspath(full) not in generated
-                        and not name.startswith('local-lessons')):
+                if (name.endswith('.md') or name.endswith(CODE_EXTENSIONS)) and os.path.abspath(full) not in generated:
                     yield full
 
 
