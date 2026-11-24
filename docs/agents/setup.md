@@ -58,31 +58,23 @@ What each tier can do: [tiers](../tiers.md).
 
 ## 3. Clone and build
 
-Clone, then load the x64 Visual Studio environment and build the chosen
-example. The build fetches its dependencies, so it needs network access.
+Clone, then build the chosen example (`own_thread` or `unreal`; both:
+`own_thread,unreal`). The build fetches its dependencies, so it needs
+network access.
 
 ```powershell
 git clone https://github.com/Krixx1337/ReAgentLive.git <dir>
-cd <dir>
-$vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
-# Any x64 process:
-cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_PACKS=
-cmake --build build/own-thread
-# Or, a UE5 game:
-cmake -S examples/unreal -B build/unreal -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/unreal
+powershell -NoProfile -ExecutionPolicy Bypass -File "<dir>\tools\build_examples.ps1" -Examples <example>
 ```
 
-Run the dev shell and both `cmake` commands in one PowerShell call: the
-environment does not carry over to a new shell. The build writes
-`<build>\<console>` and `<build>\<dll>`.
+The script loads the x64 Visual Studio environment itself and prints one
+`PASS` or `FAIL` line per step, then the `<build>\<console>` and
+`<build>\<dll>` paths. Exit 2: the environment did not load (step 1's
+Visual Studio check); exit 1: a step failed, and its `FAIL` line names
+the log under `<dir>\build\logs`. Report a failure; do not work around it.
 
-For the own-thread example, `REAGENTLIVE_PACKS` empty leaves out the
-Unreal pack's tools: its host cannot run them, and leaving them out keeps
-the tool list small. The Unreal example needs the pack, which is the
-default.
+The own-thread example builds without the Unreal pack's tools: its host
+cannot run them, and leaving them out keeps the tool list small.
 
 ## 4. Register the MCP server
 
@@ -159,19 +151,26 @@ a rebuild that changes a verb. How scripts use it:
 The `reagentlive` skill is one folder: `SKILL.md` (first command, tiers,
 rules, which interface) and `references/`, which `SKILL.md` names and says
 when to read. It reads the docs from the clone, so install it as a link
-into `<dir>`: then `git pull` updates skill, docs and build together. Use
-the first option that works and remember which (`skill_install` in step
-10).
+into `<dir>`: then `git pull` updates skill, docs and build together, and
+an update never touches it. Remember how you installed it
+(`skill_install` in step 11).
 
-**Claude Code.** The link is `$HOME\.claude\skills\reagentlive`. First
-remove an old one: a link only loses the link (`cmd /c rmdir` never
-touches the folder it points to); an old copy is deleted (the user's
-lessons live outside it, in `%LOCALAPPDATA%\reagentlive\lessons\`):
+Pick the link by client:
+
+| Client | `<link>` |
+|---|---|
+| Claude Code | `$HOME\.claude\skills\reagentlive` |
+| Codex, Cursor, or another client that reads Agent Skills from `~/.agents/skills` | `$HOME\.agents\skills\reagentlive` |
+
+Cursor also reads `~/.claude/skills`: with Claude Code installed too, the
+Claude Code link serves both; skip the second. First clear `<link>`: a
+link only loses the link (`cmd /c rmdir` never touches the folder it
+points to); a folder there is deleted (the user's lessons live outside
+it, in `%LOCALAPPDATA%\reagentlive\lessons\`):
 
 ```powershell
-$link = "$HOME\.claude\skills\reagentlive"
-$skill = "<dir>\.claude\skills\reagentlive"
-New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+$link = "<link>"
+New-Item -ItemType Directory -Force (Split-Path $link) | Out-Null
 if (Test-Path $link) {
   if ((Get-Item $link -Force).LinkType) { cmd /c rmdir "$link" }
   else { Remove-Item $link -Recurse -Force }
@@ -184,10 +183,10 @@ if (Test-Path $link) {
    New-Item -ItemType Junction -Path $link -Target "<dir>\.claude\skills\reagentlive"
    ```
 
-   or from `cmd`: `mklink /J "%USERPROFILE%\.claude\skills\reagentlive" "<dir>\.claude\skills\reagentlive"`.
-2. **Symlink** (`symlink`), if the junction fails, or the skill is missing
-   from Claude Code after the restart (step 12): it needs Developer Mode
-   or an elevated shell. Remove the junction as above, then:
+2. **Symlink** (`symlink`), if the junction fails (the clone is on a
+   network or non-NTFS drive), or the skill is missing from the client
+   after the restart (step 12): it needs Developer Mode or an elevated
+   shell. Clear the link as above, then:
 
    ```powershell
    New-Item -ItemType SymbolicLink -Path $link -Target "<dir>\.claude\skills\reagentlive"
@@ -196,55 +195,44 @@ if (Test-Path $link) {
    Then set `skill_install` to `symlink` in the record (step 11), also
    when the record was already written.
 
-3. **Copy** (`copy`), the last resort:
-   `Copy-Item $skill $link -Recurse`. A copy does not follow the clone; record its commit (`skill_commit`,
-   `git -C <dir> rev-parse --short=12 HEAD`) so the skill can tell when it
-   is older than the build.
+Neither works: stop and report the error.
 
-**Other agents** (`instructions`): add this line to the user-level
-instructions file, for example `$HOME\.codex\AGENTS.md` for Codex. It
-points into the clone, so it never goes stale:
+**A client without Agent Skills** (`instructions`): add this line to its
+user-level instructions file instead. It points into the clone, so it
+never goes stale:
 
 ```
 Before investigating a running process with the reagentlive tools, read <dir>/.claude/skills/reagentlive/SKILL.md and the references it names, and follow them.
 ```
 
-For every agent, add this line to the same user-level instructions file
-(`$HOME\.claude\CLAUDE.md` for Claude Code):
+For every client, add this line to its user-level instructions file
+(`$HOME\.claude\CLAUDE.md` for Claude Code, `$HOME\.codex\AGENTS.md` for
+Codex):
 
 ```
-ReAgentLive docs: <dir>/docs/INDEX.md (tiers, every command, its page and a glossary).
+ReAgentLive docs: <dir>/docs/README.md (tiers, every command, its page and a glossary).
 ```
 
 ## 7. Verify
 
-Load the host DLL into a throwaway Python process and ask it for its
-status. Any x64 process:
+Run the build script again with `-Check` (the build itself is a no-op
+now). It loads each example's DLL into a throwaway Python process, asks
+it for `status` (and, for the Unreal example, `help` for `game-thread`;
+both only read) and ends the process:
 
 ```powershell
-Start-Process python -ArgumentList '-c', '"import ctypes,time; ctypes.WinDLL(r''<dir>\<build>\<dll>''); time.sleep(20)"' -WindowStyle Hidden
-Start-Sleep 2
-& "<dir>\<build>\<console>" -c '{"verb": "status"}'
+powershell -NoProfile -ExecutionPolicy Bypass -File "<dir>\tools\build_examples.ps1" -Examples <example> -Check
 ```
 
-For the Unreal example, run
-`<console> -c '[{"verb": "status"}, {"verb": "help", "args": {"verb": "game-thread"}}]'`
-instead (both only read). Windows PowerShell before 7.3 strips the inner
-quotes: there, write the calls to a file, one per line, and pass
-`-c @<file>`.
-
-No pid: the console finds the one process with its agent (the pid
-`Start-Process` returns can be a launcher's, such as the Microsoft Store
-Python's, which has already exited). The Python process ends by itself.
-
-| Example | Pass when |
+| Example | `PASS check` means |
 |---|---|
-| own-thread | `status` has `"ok":true`, `"ticking":true`, `"host_thread":"own"`, `"packs":[]` and a `commit` equal to `git -C <dir> rev-parse --short=12 HEAD` |
-| Unreal | the same with `"packs":["ue"]` and `"game_thread"` holding `"mode":"off"` (the DLL has the Draw tick; no `game_thread` means the wrong DLL); `help` for `game-thread` answers `ok` (the console has the verb) |
+| own_thread | `status` ok, ticking, `host_thread` `own`, no packs, and the clone's commit |
+| unreal | the same with packs `ue` and `game_thread` mode `off` (the DLL has the Draw tick); the console knows `game-thread` |
 
-Do not run Unreal commands such as `find` in the Python process: there is
-no engine, so they are refused. Never send `game-thread` as a check: it arms the tick. If
-a check fails, report the output; do not work around it.
+A `FAIL check` line names each check that failed: report it; do not work
+around it. Do not run Unreal commands such as `find` in a Python process:
+there is no engine, so they are refused. Never send `game-thread` as a
+check: it arms the tick.
 
 In the real target, `status` tells you the tier
 ([how to read it](../tiers.md#read-your-tier-from-status)). In a UE5 game,
@@ -340,8 +328,7 @@ One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 | `examples` | the example folders built: `["own_thread"]`, `["unreal"]` or both |
 | `client` | `claude-code`, `codex`, `cursor`, `copilot` or the client's name |
 | `python_functions` | `true` when step 5 ran |
-| `skill_install` | `junction`, `symlink`, `copy` (step 6), or `instructions` for an instructions line |
-| `skill_commit` | copy installs only: the commit copied |
+| `skill_install` | `junction` or `symlink` (step 6), or `instructions` for an instructions line |
 | `improvement` | `user`, `dev` or `off` (step 10) |
 | `ida` | `true` when step 9 set up the IDA side |
 | `scratch` | optional: `true` keeps notes on friction in a file during each task (the default in `dev`), `false` none (the default otherwise) |
@@ -354,7 +341,6 @@ $record = [ordered]@{
   python_functions = $false; skill_install = "junction"
   improvement = "user"; ida = $false; setup_commit = $commit
 }
-# Copy installs only: $record.skill_commit = $commit
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\reagentlive" | Out-Null
 [IO.File]::WriteAllText("$env:LOCALAPPDATA\reagentlive\setup.json", ($record | ConvertTo-Json))
 ```

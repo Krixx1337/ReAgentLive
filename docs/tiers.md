@@ -37,7 +37,7 @@ An AI agent can build either example for you: [agent setup](agents/setup.md).
 Words used here: an *SDK* or *dump* is a set of C++ headers a dumper tool
 generates from a game; the *game thread* is the engine's own thread, the
 only one where its functions may be called; a *layout group* is one set of
-engine offsets checked together. More in the [glossary](INDEX.md#glossary).
+engine offsets checked together. More in the [glossary](README.md#glossary).
 
 ## Read your tier from `status`
 

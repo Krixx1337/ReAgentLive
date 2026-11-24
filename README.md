@@ -151,7 +151,7 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
 
 ## Learn more
 
-- **Docs:** [docs/INDEX.md](docs/INDEX.md): tiers first, then pages by
+- **Docs:** [docs/README.md](docs/README.md): tiers first, then pages by
   task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
   [design](docs/design.md).

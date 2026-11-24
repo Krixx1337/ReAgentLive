@@ -5,8 +5,8 @@ procedures live in `docs/agents/`; this file picks one and reads its
 newest text.
 
 1. Find the clone: the repo holding this skill folder
-   (`git -C <skill folder> rev-parse --show-toplevel`; a copy install has
-   none), else the setup record's `dir`. Neither: a first install; follow
+   (`git -C <skill folder> rev-parse --show-toplevel`, through its link),
+   else the setup record's `dir`. Neither: a first install; follow
    `docs/agents/setup.md` from `main` through SKILL.md's resolver.
 2. Fetch before reading, so steps added upstream apply:
    `git -C <clone> fetch origin`, then

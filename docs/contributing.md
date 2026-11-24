@@ -73,7 +73,7 @@ never the section directly. ReAgentLive never includes host code.
    (`reagentlive.results-doc` and `reagentlive.reference-doc` fail while
    either is stale). The command's page under `docs/commands/` keeps its
    rationale, workflows and gotchas and links the reference; its line goes
-   in the [INDEX](INDEX.md#commands) lookup table. A new error kind joins
+   in the [docs README](README.md#commands) lookup table. A new error kind joins
    `ErrorKinds` (`call/refusals.h`), never a string at the call site.
 
 ## Source layout
@@ -191,7 +191,7 @@ A host that adds reagentlive with `add_subdirectory` sets
 | `reagentlive.engine-layout` (`tests/python/`) | engine offsets defined only in their homes (`engine_layout.h`, `engine_layout_sdk.h`, `globals.h`, `name_pool.h`) |
 | `reagentlive.core-console` (`tests/python/`) | the console built without the pack (`reagentlive-core-console`, so the core console compiles alone): its `help` with `json` has every core row and no other, each the same as in the full table, and the module generated from it no pack verb |
 | `reagentlive.cli-layout` (`tests/python/`) | the `frontends/cli` layering rules and the pack boundary, from `#include` lines, `ue::` names and the pack's id as a string; also `core/` never including the pack and the generator and the MCP adapter never naming it |
-| `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, INDEX lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, `AGENTS.md` stays within its own, and no host or game name appears in the library |
+| `reagentlive.docs` (`tests/python/`) | the docs: every relative link and anchor resolves, the docs README lists every page, every listed page has its header (**TL;DR**, and *Home of* on SSOT pages), the skill's `SKILL.md` stays within its line budget and links every reference, `AGENTS.md` stays within its own, and no host or game name appears in the library |
 
 The Unreal agent handlers need a live object table, so hosts check them in
 their own live sessions; the Unreal example's DLL is tested in-process,
@@ -241,8 +241,8 @@ line, at most 120 lines (the docs test checks).
 
 **Two kinds of page, never mixed.** *Orchestrators* route: one line of
 what and why per topic, a link to its home, and when to read it; no fact
-stated in full (`README.md`, `docs/INDEX.md`, `docs/agents/README.md`, the
-example READMEs, the skill's `SKILL.md`). *SSOT pages* own facts: each
+stated in full (`README.md`, `docs/README.md`, `docs/agents/README.md`, the
+example READMEs, `tools/README.md`, the skill's `SKILL.md`). *SSOT pages* own facts: each
 fact stated once, in full, in exactly one page.
 
 ### Where each fact goes
@@ -282,8 +282,8 @@ Check this table before adding a fact; if it has a home, link there.
 | How an agent works on this repo: commands, hard rules, large changes | [`AGENTS.md`](../AGENTS.md) | this page keeps the details; `AGENTS.md` links them |
 | Where code goes, tests, these rules | this page | |
 
-The skill may be installed apart from the docs (a link into the clone, or
-a copy), so it carries the minimum an agent needs before its first command
+The skill may be loaded apart from the docs (through a link, or from a
+URL before setup), so it carries the minimum an agent needs before its first command
 (the operational status rule, approval rules) and names every other fact
 as a repository path (`docs/tiers.md#...`), resolved by one rule in
 `SKILL.md`: the clone the skill folder lives in (through its link, a
@@ -291,7 +291,7 @@ submodule or an instructions line), else the setup record's clone, else
 the console's commit on GitHub, else `main`. The docs own the full statements; the docs test checks every
 path exists and that no `blob/main` URL is left in the skill.
 
-**Page header.** Every page INDEX lists opens with its title, then (SSOT
+**Page header.** Every page the docs README lists opens with its title, then (SSOT
 pages only) a `*Home of:*` line naming the facts it owns, then a
 `**TL;DR:**` of two to four plain sentences: what it is, when it matters,
 the one thing not to get wrong. Orchestrators carry only the TL;DR;
@@ -304,7 +304,7 @@ linked. The docs test checks both lines within a page's first 15 lines.
   "update" sections and no history beyond a rejected alternative.
 - No counts that rot (test cases, file sizes). Measured evidence is fine
   when it says what was measured.
-- A new page gets a line in [INDEX](INDEX.md) (the docs test checks).
+- A new page gets a line in the [docs README](README.md) (the docs test checks).
   Split a page by subject once it covers two or passes about 500 lines.
 - Plans are their own file, deleted when they ship: the decision moves to
   design, the behaviour to its page.

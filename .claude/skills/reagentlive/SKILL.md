@@ -6,18 +6,17 @@ description: Investigate a running game with ReAgentLive, an in-process agent dr
 # ReAgentLive investigations
 
 An agent inside the target process, ticked by a host (a mod or a DLL), runs
-the verbs every interface sends. Reference docs: `docs/INDEX.md`. The
+the verbs every interface sends. Reference docs: `docs/README.md`. The
 project's host notes (console name, host verbs, approval rules) win over
 this skill.
 
 **Setup:** read `%LOCALAPPDATA%\reagentlive\setup.json` if present (`dir`,
-`improvement`, `scratch`, `skill_install`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
+`improvement`, `scratch`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
 if present and what it routes to (`general.md`; the game's file once `status`
 names the exe): the user's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
 skill folder lives in, else `dir`, else
 `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
-`status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`). A `copy`
-install whose `skill_commit` differs: offer the update once (updating, below).
+`status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`).
 
 ## First command: `status`
 
@@ -51,7 +50,7 @@ answers. `host_thread: engine`: T3. Real serials (not `:0`): T4.
   address, the bytes now and new, and the effect; for a call, its `dry`
   output. One approval covers one write.
 - Never guess an arg or a result key: `{"verb": "help", "args": {"verb": "get"}}`
-  (no target needed). Behaviour: the verb's page (`docs/INDEX.md#commands`).
+  (no target needed). Behaviour: the verb's page (`docs/README.md#commands`).
 - Pass literal refs (`0x<address>#<index>:<serial>`), never `$N`. Values
   that must line up: one `get` with `paths`, or a `batch` of `read`s (check
   `same_tick`); values that change every frame: `watch-start`.

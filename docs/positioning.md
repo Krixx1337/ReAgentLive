@@ -12,7 +12,7 @@ around protection.
 The README is the short, benefits-first pitch built from it; the detail
 lives here. It states the
 direction; [design](design.md) holds the decisions and
-the [command pages](INDEX.md#commands) the behaviour. Update it when the role changes, not
+the [command pages](README.md#commands) the behaviour. Update it when the role changes, not
 when a feature ships.
 
 ## One line

@@ -11,7 +11,7 @@ file you touch.
 
 | Files | Reader | Style |
 |---|---|---|
-| [README.md](README.md), [docs/](docs/INDEX.md) | humans: what it is, how it works | page header, plain explanations |
+| [README.md](README.md), [docs/](docs/README.md) | humans: what it is, how it works | page header, plain explanations |
 | [.claude/skills/reagentlive/](.claude/skills/reagentlive/SKILL.md) | an agent **using** ReAgentLive to investigate | agent-only, imperative |
 | [docs/agents/](docs/agents/README.md) | an agent **installing or updating** it | numbered steps, report block |
 | `AGENTS.md` (this file) | an agent **changing** ReAgentLive | orchestrator: commands, rules, links |

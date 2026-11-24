@@ -1,4 +1,4 @@
-"""The docs rules (docs/contributing.md#docs): links resolve, INDEX lists every page, no host names,
+"""The docs rules (docs/contributing.md#docs): links resolve, the docs README lists every page, no host names,
 every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
 AGENTS.md (for an agent changing the repo; CLAUDE.md imports it) stays within its line budget and needs no
 header; links and names are checked there as everywhere. The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
@@ -28,7 +28,7 @@ AGENTS_MAX_LINES = 120
 AGENT_FILES = {'AGENTS.md', 'CLAUDE.md'}  # for an agent changing the repo: no TL;DR or Home of line
 SKILL = os.path.join('.claude', 'skills', 'reagentlive')
 GENERATED = {'docs/commands/results.md', 'docs/commands/reference.md'}
-ORCHESTRATORS = {'README.md', 'docs/INDEX.md'}
+ORCHESTRATORS = {'README.md', 'docs/README.md', 'tools/README.md'}
 AGENT_PROCEDURES = 'docs/agents/'  # pages an agent runs: no TL;DR or Home of line
 CODE = re.compile(r'`([^`]+)`')
 CODE_PATH = re.compile(r'(docs|src|examples|tests|cmake)/[\w./#-]+')
@@ -101,24 +101,24 @@ def check_links(root):
 
 def check_index(root):
     docs = os.path.join(root, 'docs')
-    index = os.path.join(docs, 'INDEX.md')
+    index = os.path.join(docs, 'README.md')
     if not os.path.exists(index):
-        return ['docs/INDEX.md is missing']
+        return ['docs/README.md is missing']
     with open(index, encoding='utf-8') as file:
         listed = {os.path.normpath(os.path.join(docs, t.partition('#')[0])) for t in LINK.findall(file.read())}
-    return [f'{os.path.relpath(p, root)}: not listed in docs/INDEX.md'.replace('\\', '/')
+    return [f'{os.path.relpath(p, root)}: not listed in docs/README.md'.replace('\\', '/')
             for p in files(docs, ('.md',)) if p != index and os.path.normpath(p) not in listed]
 
 
 def listed_pages(root):
-    """docs/INDEX.md and every Markdown page it links, as root-relative paths."""
+    """docs/README.md and every Markdown page it links, as root-relative paths."""
     docs = os.path.join(root, 'docs')
-    index = os.path.join(docs, 'INDEX.md')
+    index = os.path.join(docs, 'README.md')
     if not os.path.exists(index):
         return []
     with open(index, encoding='utf-8') as file:
         targets = {t.partition('#')[0] for t in LINK.findall(file.read())}
-    pages = {'docs/INDEX.md'}
+    pages = {'docs/README.md'}
     for target in targets:
         if target.endswith('.md') and not re.match(r'[a-z]+:', target):
             path = os.path.normpath(os.path.join(docs, target))
@@ -304,7 +304,7 @@ class Docs(unittest.TestCase):
             self.assertEqual(check_links(root), [])
 
     def test_an_unlisted_page_fails(self):
-        with Tree({'docs/INDEX.md': '[a](a.md)\n', 'docs/a.md': '# A\n', 'docs/b.md': '# B\n'}) as root:
+        with Tree({'docs/README.md': '[a](a.md)\n', 'docs/a.md': '# A\n', 'docs/b.md': '# B\n'}) as root:
             self.assertEqual(len(check_index(root)), 1)
 
     def test_a_forbidden_name_fails_in_any_case(self):
@@ -313,7 +313,7 @@ class Docs(unittest.TestCase):
 
     def test_a_page_without_a_tldr_or_home_fails(self):
         index = '**TL;DR:** routes.\n\n[a](a.md) [b](b.md) [r](commands/results.md)\n'
-        with Tree({'docs/INDEX.md': index,
+        with Tree({'docs/README.md': index,
                    'docs/a.md': '# A\n\n*Home of:* a.\n\n**TL;DR:** fine.\n',
                    'docs/b.md': '# B\n\nNo header.\n',
                    'docs/commands/results.md': '# Generated\n'}) as root:
@@ -322,27 +322,27 @@ class Docs(unittest.TestCase):
 
     def test_agent_procedures_need_no_header_but_keep_the_other_checks(self):
         index = '**TL;DR:** x.\n[r](agents/README.md) [s](agents/setup.md)\n'
-        with Tree({'docs/INDEX.md': index,
+        with Tree({'docs/README.md': index,
                    'docs/agents/README.md': '# Agents\n\nFor agents. [s](setup.md)\n',
                    'docs/agents/setup.md': '# Setup\n\nFor agents. [gone](missing.md) SomeGame\n',
                    'docs/agents/update.md': '# Update\n\nUnlisted.\n'}) as root:
             self.assertEqual(check_headers(root), [])
             self.assertEqual(check_links(root), ['docs/agents/setup.md:3: missing.md: no such file'])
-            self.assertEqual(check_index(root), ['docs/agents/update.md: not listed in docs/INDEX.md'])
+            self.assertEqual(check_index(root), ['docs/agents/update.md: not listed in docs/README.md'])
             self.assertEqual(len(check_names(root, ['somegame'])), 1)
 
     def test_a_tldr_below_the_header_lines_fails(self):
         late = '# A\n\n*Home of:* a.\n' + '\n' * 20 + '**TL;DR:** late.\n'
-        with Tree({'docs/INDEX.md': '**TL;DR:** x.\n[a](a.md)\n', 'docs/a.md': late}) as root:
+        with Tree({'docs/README.md': '**TL;DR:** x.\n[a](a.md)\n', 'docs/a.md': late}) as root:
             self.assertEqual(check_headers(root), ['docs/a.md: no **TL;DR:** in its first 15 lines'])
 
     def test_the_index_itself_needs_a_tldr(self):
-        with Tree({'docs/INDEX.md': '# Index\n'}) as root:
-            self.assertEqual(check_headers(root), ['docs/INDEX.md: no **TL;DR:** in its first 15 lines'])
+        with Tree({'docs/README.md': '# Index\n'}) as root:
+            self.assertEqual(check_headers(root), ['docs/README.md: no **TL;DR:** in its first 15 lines'])
 
     def test_orchestrators_need_no_home_line(self):
         index = '**TL;DR:** x.\n[r](../README.md) [e](../examples/one/README.md) [s](../.claude/s/SKILL.md)\n'
-        with Tree({'docs/INDEX.md': index, 'README.md': '# R\n\n**TL;DR:** pitch.\n', '.claude/s/SKILL.md': 'x\n',
+        with Tree({'docs/README.md': index, 'README.md': '# R\n\n**TL;DR:** pitch.\n', '.claude/s/SKILL.md': 'x\n',
                    'examples/one/README.md': '# E\n\n**TL;DR:** build.\n'}) as root:
             self.assertEqual(check_headers(root), [])
 
@@ -366,8 +366,8 @@ class Docs(unittest.TestCase):
 
     def test_agent_files_need_no_header_but_keep_links_and_names(self):
         index = '**TL;DR:** x.\n[a](../AGENTS.md) [c](../CLAUDE.md)\n'
-        with Tree({'docs/INDEX.md': index,
-                   'AGENTS.md': '# Working on it\n\n[ok](docs/INDEX.md) [gone](docs/missing.md) SomeGame\n',
+        with Tree({'docs/README.md': index,
+                   'AGENTS.md': '# Working on it\n\n[ok](docs/README.md) [gone](docs/missing.md) SomeGame\n',
                    'CLAUDE.md': '@AGENTS.md\n[bad](nope.md) somegame\n'}) as root:
             self.assertEqual(check_headers(root), [])
             self.assertEqual(check_links(root), ['AGENTS.md:3: docs/missing.md: no such file',

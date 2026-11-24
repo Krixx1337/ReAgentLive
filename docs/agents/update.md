@@ -91,28 +91,28 @@ git -C <dir> pull --ff-only
 ```
 
 `--ff-only` refuses when `main` has its own commits; report that and
-ask the user. Then rebuild every example in `examples` with the commands
-setup used. Run the dev shell and the `cmake` commands in one PowerShell
-call:
+ask the user. Then rebuild every example in `examples`, comma-separated
+(`own_thread,unreal`):
 
 ```powershell
-cd <dir>
-$vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
-# own_thread:
-cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release -DREAGENTLIVE_PACKS=
-cmake --build build/own-thread
-# unreal:
-cmake -S examples/unreal -B build/unreal -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/unreal
+powershell -NoProfile -ExecutionPolicy Bypass -File "<dir>\tools\build_examples.ps1" -Examples <examples>
 ```
 
-Each build stamps the clone's commit into the console, so `status` shows
-it after (step 10). If the link step cannot write `<dll>`, a running
-process still has it loaded: ask the user to close that process, then
-build again. Check the exit code of each build; report a failure, do not
-work around it.
+It reads as in [agent setup](setup.md#3-clone-and-build). Each build
+stamps the clone's commit into the console, so `status` shows it after
+(step 10). If the link step cannot write `<dll>`, a running process still
+has it loaded: ask the user to close that process, then build again.
+
+**Roll back** when the build still fails, or step 10's check fails: the
+pulled MCP server and docs no longer match the old build. Report the
+failure and ask the user; on their yes:
+
+```powershell
+git -C <dir> reset --keep <old>
+```
+
+then run the build script again with `-Check`, skip to step 12 and leave
+the record as it was. Report `<old>` as the commit, and the failure.
 
 ## 4. Regenerate the typed functions
 
@@ -124,11 +124,11 @@ python <dir>\src\reagentlive\frontends\python\reagentlive_gen.py --console <dir>
 
 ## 5. Skill
 
-| `skill_install` | Do |
-|---|---|
-| `junction` or `symlink` | nothing: the link points into the clone, and the client reads the skill each session |
-| `copy` | copy it again as [agent setup](setup.md#6-install-the-skill) does; the user's lessons live outside it and stay. Set `skill_commit` in step 11. Offer the junction instead (setup step 6, option 1): later updates then need nothing here |
-| `instructions` (other agents) | nothing: the line points into the clone |
+Nothing to do: a `junction` or `symlink` points into the clone, and an
+`instructions` line names a file in it; the client reads the skill each
+session. Any other `skill_install`: install the skill again as
+[agent setup](setup.md#6-install-the-skill) does, and record what it
+used in step 11.
 
 ## 6. MCP server
 
@@ -191,8 +191,15 @@ again with `--install`.
 
 ## 10. Verify
 
-With a target running the new DLL (or the throwaway Python process from
-[agent setup](setup.md#7-verify), same commands and pass checks):
+Run the build script with `-Check`, as [agent setup](setup.md#7-verify)
+does; every example must print `PASS check`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "<dir>\tools\build_examples.ps1" -Examples <examples> -Check
+```
+
+Once the user runs a target with the new DLL (step 7), read its `status`
+too:
 
 ```powershell
 & "<dir>\<build>\<console>" -c '{"verb": "status"}'
@@ -203,7 +210,7 @@ With a target running the new DLL (or the throwaway Python process from
 | Commit | `commit` is the new `git -C <dir> rev-parse --short=12 HEAD` (no `-dirty`); it is the console's commit |
 | Agent | when the update changed the agent core, `build` (the agent core's build time, unless the host sets its own label) is from step 3: the target runs the new DLL. It stays the same when only the console or a pack changed |
 | Verb table | `table_hash` differs from before when step 2 listed verb changes; the same hash after verb changes means the console was not rebuilt |
-| Example | the example's row in [agent setup](setup.md#7-verify) passes |
+
 
 `replaced_agents` above 0 means the new DLL was loaded into a process
 that already had an agent (step 7).
@@ -211,9 +218,8 @@ that already had an agent (step 7).
 ## 11. Update the setup record
 
 Write the record back with `setup_commit` set to the new commit (the
-baseline for the next update), `skill_commit` to the same value for a
-copy install, and `skill_install` to what step 5 left (`junction` after
-replacing a copy). Write it the way
+baseline for the next update) and `skill_install` to what step 5 left.
+Write it the way
 [agent setup](setup.md#11-write-the-setup-record) does.
 
 ## 12. Report
@@ -265,7 +271,8 @@ host's own notes (its build, its commit rules) win over these steps.
    `git -C <host> submodule update --remote <path>`.
 4. Rebuild the host with its own build, then follow steps 6 (MCP server),
    7 (running targets), 8 (local lessons), 9 (IDA side: run its check;
-   `missing` without the record's `ida` means skip) and 10 (verify).
+   `missing` without the record's `ida` means skip) and 10 (verify: the
+   target's `status` only; the build script is for a clone).
 5. Report with step 12's block; its `Record` line reads `none (submodule)`.
    The host's submodule pointer now shows as changed: commit it only when
    the user asks.

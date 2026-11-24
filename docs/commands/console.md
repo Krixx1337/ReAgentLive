@@ -6,7 +6,7 @@
 `{"verb": "help"}`, then `<console> -c '{"verb": "find", "args": {"cls":
 "Pawn"}}'`, and read one JSON object per call. A call names its args as
 JSON keys and carries the literal `ref` a result printed. What each
-command does lives in its area page ([index](../INDEX.md#commands)); what
+command does lives in its area page ([index](../README.md#commands)); what
 each takes and returns, in the [reference](reference.md), in
 [result shapes](results.md) and in `help`.
 

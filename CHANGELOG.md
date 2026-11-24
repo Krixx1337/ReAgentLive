@@ -25,6 +25,26 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+### Improved
+
+- **Setup and update build and check with one script:**
+  `tools/build_examples.ps1` loads Visual Studio's environment, builds the
+  examples and, with `-Check`, checks each DLL's `status`
+  ([setup](docs/agents/setup.md#3-clone-and-build)).
+- **Codex and Cursor get the skill itself:** setup links it into
+  `~/.agents/skills` instead of adding an instructions line
+  ([skill install](docs/agents/setup.md#6-install-the-skill)).
+- **A failed update can roll back** to the previous commit
+  ([update](docs/agents/update.md#3-pull-and-rebuild)).
+
+### Breaking
+
+- **The skill is no longer installed as a copy**, and the setup record has
+  no `skill_commit`. A copy install: ask your agent to "update
+  ReAgentLive"; it replaces the copy with a link.
+- **The docs index is `docs/README.md`** (was `docs/INDEX.md`): change the
+  `ReAgentLive docs:` line in your agent's instructions file.
+
 ## 0.6.0
 
 Ask a live game where its objects live, and keep exploring while long

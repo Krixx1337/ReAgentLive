@@ -8,7 +8,7 @@ decision states what was chosen, what was rejected and the evidence. It
 describes reasons, not behaviour: what a command does lives on its command
 page.
 
-Current behaviour lives in the [command pages](INDEX.md#commands),
+Current behaviour lives in the [command pages](README.md#commands),
 [protocol](protocol.md) and [hosting](hosting.md); the ranked backlog in
 [ideas](ideas.md).
 
