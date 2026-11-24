@@ -12,6 +12,9 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
   image, again after every patch): one workspace database of saves.
 - A full database of the same build exists: open it at `module` + `rva`,
   `import_labels` the labels files.
+- A UFunction's native code: `ue_func`'s `exec` is the thunk that unpacks
+  the parameters, not the body. Save from `exec` with `callees` 1: the
+  body is the depth-1 function the thunk calls.
 
 ## One-time setup (the user's; ask, never edit their install)
 
@@ -29,12 +32,15 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 ## The loop
 
 1. **Save the first function by hand:**
-   `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "fn.jsonl", "callees": 1}}}`.
-   Save from the function's start.
+   `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true, "save": {"file": "<abs dir>/fn.jsonl", "callees": 1}}}`.
+   Save from the function's start, to an absolute path (a relative one
+   lands in the console's working folder).
 2. **Open that file in IDA** (the loader claims it): this database is
    the workspace for the whole investigation. Never one database per
    function. Then `rl.workspace()`: the labels files in. Most rows land
-   `outside` a save database; that is not a failure.
+   `outside` a save database; that is not a failure. Then
+   `rl.decompile_to(<the saved starts>, <dir>, grep=<regex>)`: the first
+   save's own pseudocode (`fetch` decompiles only what it adds).
 3. **Per hop, one call:** `rl.fetch(addr, depth=1, decompile_dir=<dir>, grep=<regex>)`
    (`import reagentlive_ida as rl`, in any database once set up).
    Read its summary, open only the files it points to; the next address

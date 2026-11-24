@@ -117,6 +117,8 @@ the whole image:
 {"verb": "disasm", "args": {"addr": "0x140001000", "function": true, "save": {"file": "fn.jsonl", "callees": 1}}}
 ```
 
+The console writes `file` as given, so a relative path lands in its
+working folder (under MCP, the server's): pass an absolute one.
 The result names the file in `saved` and counts its
 instructions in `saved_rows`; it leaves out `rows` and `strings`, which
 the file holds. A function's **chunks** (continuations the exception
