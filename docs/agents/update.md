@@ -175,7 +175,7 @@ decides. How the file works:
 Only when the record's `ida` is true; otherwise skip this step:
 
 ```powershell
-python -I "<dir>	ools\ida_setup.py"
+python -I "<dir>\tools\ida_setup.py"
 ```
 
 It only reads. `current`: IDA runs the clone's code, so the update needs

@@ -306,7 +306,7 @@ record).
 If they agree:
 
 ```powershell
-python -I "<dir>	ools\ida_setup.py" --install
+python -I "<dir>\tools\ida_setup.py" --install
 ```
 
 It writes a path file into the site-packages of IDA's Python (found from
