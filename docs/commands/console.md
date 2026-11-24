@@ -102,10 +102,23 @@ a layout is one string.
 ## Agent and console
 
 - One console per agent ([one client at a time](../protocol.md#handshake)).
-  A console that finds the agent taken asks again for up to 2 s, so it
-  runs as soon as a short call ends, then gives up with an error of kind
-  `busy`. Waits longer than a second print a line to stderr each second
+  A console that finds the agent taken waits for the slot, asking again
+  every 20 ms, for up to `--busy-wait <seconds>` (default 10, 0 to 600),
+  so it runs as soon as the other client's call or session ends; then it
+  gives up with an error of kind `busy` that names the holder (its caller
+  kind, pid and since when, as it said when it attached) and how long this
+  console waited. A wait past a second prints one line to stderr. Waits
+  for a running request longer than a second print a line each second
   saying whether the agent is ticking (the request is running) or not.
+- **Sharing one agent between MCP and a script.** The slot stays one client
+  at a time: a long-lived Python session holds it for its whole life, and
+  an MCP call meanwhile waits up to its console's `--busy-wait`, then is
+  refused. A script that should let MCP calls in between runs
+  `Session(console, hold=False)`: each call starts a one-shot console, so
+  the slot is free between calls, at the price of a console start and an
+  attach per call (tens of milliseconds) and a session whose state lives in
+  the cache file instead of one process
+  ([Python client](../client.md#python-session)).
 - The console checks the agent's op list first and refuses ops the agent does
   not have.
 
@@ -149,7 +162,8 @@ request costs up to a host tick. The console cuts both:
   `digest` stands in for `result` (`ok` stays true) with its size
   (`chars`, `max_chars`), the main list (`rows`: its path and count), its
   `largest` parts (paths with array elements folded, `rows[].Price`), the
-  verb's narrowing keys by path (`narrow`, such as `view.limit`) and
+  verb's narrowing keys by path (`narrow`, such as `view.limit`, and any
+  arg taking a list of words, such as `labels-check`'s `status`) and
   `status`: every key the result had that says whether it is complete
   (`capped`, `truncated`, `unnamed`, `matched`, `omitted`, `errors` as a
   count, `tick_accurate`, `same_tick`, `total`, `next_cursor`, `next`,
@@ -157,14 +171,22 @@ request costs up to a host tick. The console cuts both:
   still running (`job`, `state`, `scanned`), so a capped result never
   reads as whole, a saved file is never lost and a search job can still be
   polled (`status.next` is a cut listing's resume address, not the
-  digest's own `next` call).
+  digest's own `next` call); and beside them every other top-level scalar
+  of the result (counts such as `labels-check`'s `ok` and `moved`, a
+  module, a path up to 160 characters) and every top-level object of
+  numbers (counts by kind). The rule is the digest's, for every verb: a
+  digest never hides a total the reader acts on.
   Then one of two:
-  - `next`: the call again, narrowed by what the result showed. A row
-    list's members that fit go in `view.fields` (whole members where they
-    fit, else their own members), `view.limit` shrinks to the rows that
-    fit, or `view.nonzero` (then `own`) is added. A call whose verb has no
-    key that would help comes back with a `max_chars` it fits (the result's
-    size plus a tenth, in thousands), so a digest is never a dead end. It
+  - `next`: the call again, narrowed by what the result showed, narrowest
+    first. A filter on the rows' own values comes first: an arg taking a
+    list of words named as a row member (`labels-check`'s `status`) keeps
+    the values the rows hold but the commonest (the rows that need work).
+    Then a row list's members that fit go in `view.fields` (whole members
+    where they fit, else their own members), `view.limit` shrinks to the
+    rows that fit, or `view.nonzero` (then `own`, then `view.elements` 2)
+    is added. A call whose verb has no key that would help comes back with
+    a `max_chars` it fits (the result's size plus a tenth, in thousands),
+    so a digest is never a dead end. It
     is for a call that only reads: reads, `each`, `call-pure`, and a
     `call` with `params` on a const or pure function.
   - `file`: a call that may have changed state (a write, timed or not,
@@ -271,7 +293,15 @@ table reads it to know whether the console changed.
 attached, the console answers `help` and `usage` from its table and its
 log; any other verb is refused with an error of kind `startup` (why there
 is no target), or `busy` while another client holds the agent, and the console ends, so a client starts it again once the
-target runs. `-c` calls that are all `help` or `usage` never attach.
+target runs. `-c` calls that are all `help`, `usage` or a frontend's
+refusal (`refused`, below) never attach.
+
+**A frontend's own refusal.** A call may carry `"refused": {"kind": "pack"
+or "schema", "message": "...", "key": "..."}`: a refusal the frontend made
+before the call reached the console (the MCP adapter's pack and input
+schema checks). The console runs nothing; it answers that error and logs
+the call as refused under the session (`--session`), so `usage`'s
+refusals count every refusal, wherever it was made.
 
 ## Usage log and `usage`
 

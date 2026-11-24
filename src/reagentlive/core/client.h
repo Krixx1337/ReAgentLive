@@ -69,6 +69,22 @@ struct PointerChain {
     std::string reason;
 };
 constexpr size_t MaxChainHops = 16;
+// A block of a loaded image (protocol.h, ImageCopy): its bytes from
+// `address` (zero where not copied), and per page from address's page
+// whether it was copied.
+struct ImageBlock {
+    uint64_t address = 0;
+    std::vector<uint8_t> bytes;
+    std::vector<bool> copied;
+};
+// The client holding an agent's one slot, as it described itself when it
+// attached: its process, its caller kind (tool, script, shell; empty when
+// it gave none) and when it attached (Unix seconds).
+struct SlotHolder {
+    uint32_t pid = 0;
+    std::string caller;
+    int64_t since = 0;
+};
 // Round trips since attach and time spent waiting for responses.
 struct ClientStats { uint64_t trips, waitMicroseconds; };
 
@@ -76,7 +92,10 @@ class Client {
 public:
     // Opens the named section; refuses one without magic or with another layout,
     // and refuses while another client is attached (one request slot per agent).
-    static Result<Client> Attach(std::wstring_view sectionName, uint32_t layout);
+    // `caller` describes this client to one that finds the agent busy (Holder).
+    static Result<Client> Attach(std::wstring_view sectionName, uint32_t layout, std::string_view caller = {});
+    // Who holds the slot now; nullopt when no client does, or it has not said yet.
+    static std::optional<SlotHolder> Holder(std::wstring_view sectionName);
     Client(Client&&) noexcept;
     Client& operator=(Client&&) noexcept;
     Client(const Client&) = delete;
@@ -161,6 +180,10 @@ public:
     Result<WatchInfo> WatchStatus();
     // The roots the host offers to follow (empty: none).
     Result<std::vector<std::string>> WatchRoots();
+    // A loaded image's bytes, up to ImageWindowBytes in one request, read
+    // from the image window the agent fills (on its worker when the host
+    // allows). For code and constants: an image's data pages may be torn.
+    Result<ImageBlock> CopyImage(uint64_t address, uint32_t length, std::chrono::milliseconds timeout);
     // What the memory at an address is (one VirtualQuery in the target).
     Result<RegionInfo> Region(uint64_t address);
     // Follows a pointer chain with held reads (one per hop). A null or
@@ -173,10 +196,14 @@ public:
     bool Supports(uint32_t op) const;
 
 private:
-    Client(Section* section, void* guard) : section_(section), guard_(guard) {}
+    Client(Section* section, void* guard, void* holder, std::wstring name)
+        : section_(section), guard_(guard), holder_(holder), name_(std::move(name)) {}
     void Release();
     Section* section_ = nullptr;
-    void* guard_ = nullptr; // Named object held while attached; marks the agent as in use.
+    void* guard_ = nullptr;  // Named object held while attached; marks the agent as in use.
+    void* holder_ = nullptr; // Named mapping saying who holds the slot (SlotHolder).
+    std::wstring name_;      // The section's name; the image window's is derived from it.
+    const uint8_t* image_ = nullptr; // The image window, mapped on the first CopyImage.
     std::chrono::milliseconds timeout_{5000};
     WaitNotice notice_ = nullptr;
     ClientStats stats_{};

@@ -31,7 +31,8 @@ namespace op {
 constexpr uint32_t CoreFirst = 1, PackFirst = 256, GameFirst = 4096;
 constexpr uint32_t PackSlotSize = 256, PackSlots = (GameFirst - PackFirst) / PackSlotSize;
 constexpr uint32_t PackSlot(uint32_t slot) { return PackFirst + slot * PackSlotSize; }
-constexpr uint32_t Read = 1, Write = 2, Modules = 3, ReadBatch = 4, Search = 5, Pin = 6, Watch = 7, Trial = 8, Xrefs = 9, Region = 10;
+constexpr uint32_t Read = 1, Write = 2, Modules = 3, ReadBatch = 4, Search = 5, Pin = 6, Watch = 7, Trial = 8, Xrefs = 9, Region = 10,
+    ImageCopy = 11;
 }
 
 // Small and generic on purpose. Pack-specific detail goes in Response::reason
@@ -114,6 +115,24 @@ struct RegionInfo {
     uint64_t base, size, allocationBase;
     uint32_t state, protect, allocationProtect, type;
 };
+
+// ImageCopy: a loaded image's bytes (code and constants, MEM_IMAGE pages) in
+// blocks far past MaxRead, for console scans that need a whole image
+// (signatures, displacements). The agent copies [address, address +
+// length) into the image window, a second mapping of ImageWindowBytes named
+// after the section (its name plus ImageWindowSuffix), and the client reads it there. On the
+// worker thread when the host allows background search and the worker is
+// idle, else in SearchSliceMicroseconds per host tick. address = first byte,
+// length = bytes (1..ImageWindowBytes), no flags, no data. Response: one bit
+// per page from address's page (bit i of byte i / 8), set where the page
+// was copied; a page outside an image, uncommitted, unreadable or freed
+// meanwhile reads zero in the window. detail = bytes copied into the
+// window (length). Data pages of an image can change while copied: it is
+// for code and constants, never for values.
+constexpr uint64_t ImageWindowBytes = uint64_t{4} << 20;
+constexpr size_t ImageWindowPages = ImageWindowBytes / 4096;
+static_assert(ImageWindowPages / 8 + 1 <= MaxRead);
+constexpr const wchar_t* ImageWindowSuffix = L"-image";
 
 // Write with flags = WriteExpect: data holds the new bytes, then as many
 // expected bytes; the agent writes only while memory still holds the expected
@@ -477,6 +496,9 @@ inline Status Check(const Request& request) {
     }
     case op::Region:
         return request.length || request.flags ? Status::BadRequest : Status::Ok;
+    case op::ImageCopy:
+        return request.address && request.length && request.length <= ImageWindowBytes && !request.flags &&
+            request.address <= UINT64_MAX - request.length ? Status::Ok : Status::BadRequest;
     case op::Xrefs:
         return request.length == 8 && !(request.flags & ~SearchBackground) && request.args[1] &&
             request.args[1] <= MaxSearchHits && request.args[0] > request.address ? Status::Ok : Status::BadRequest;

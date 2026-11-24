@@ -89,8 +89,24 @@ pack's `LayoutPart`. Build agent and client from the same source.
 **One client at a time.** A client that attaches creates the named mutex
 `<section>-client`; while another client holds it, the attach is refused
 as `Busy` (two clients would overwrite each other's request). Windows
-closes it when the client exits. The console waits up to 2 s before it
-reports `busy`.
+closes it when the client exits. The holder also writes who it is (pid,
+caller kind, when it attached) to the mapping `<section>-client-info`,
+client to client: the agent never reads it, and `Client::Holder` names the
+holder to a client that finds the slot taken. The console waits for the
+slot up to `--busy-wait` (default 10 s) before it reports `busy`, naming
+the holder ([console](commands/console.md#agent-and-console)).
+
+**The image window.** `ImageCopy` answers with the bytes of a loaded image
+in a second mapping, `<section>-image` (4 MB), so a console scan that needs
+a whole image (signatures, displacements) moves 4 MB a request instead of
+4 KB. The agent creates it on the first copy and keeps it; the client maps
+it read-only. Only image pages (`MEM_IMAGE`, committed and readable) are
+copied; the response's bitmap marks them, and the rest reads zero. Copies
+run on the search worker when the host allows it
+(`Host::backgroundSearch`) and the worker is idle, else in 2 ms slices per
+tick. An image's data pages can change while copied: the window is for
+code and constants, never for values. No struct crosses it, so the layout
+sum is unchanged; a console asks `ops` and falls back to reads without it.
 
 The `ops` list tells a client which commands this agent has, so frontends
 can refuse the rest locally.
@@ -123,6 +139,7 @@ stays inside its slot.
 | `trial` (`write`'s `undo`) | 8 | core |
 | `xrefs` | 9 | core |
 | `region` | 10 | core |
+| Image copy (the image window) | 11 | core |
 | `find` | 256 | Unreal pack |
 | `fields` | 257 | Unreal pack |
 | `call` | 258 | Unreal pack |
@@ -232,6 +249,7 @@ The constants are in `protocol.h` and `protocol_ue.h`.
 | Undo (`trial`) | 8 at once, 64 bytes each, up to 60 s; with a guarded object, the address within 4 KB after it |
 | Watch | 8 ranges of up to 512 bytes, a 2 KB row, a 4 MB buffer; every tick up to 30 s, with an interval up to 1 h |
 | Search | a 64-byte pattern; 512 hits per page |
+| Image copy | 4 MB a request, image pages only |
 | Modules | 64 per page |
 | Reason | 64 bytes |
 | Text | 128 bytes |

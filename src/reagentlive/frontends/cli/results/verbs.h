@@ -30,7 +30,9 @@ inline const std::vector<Verb>& CoreVerbs() {
     constexpr std::string_view labels = "the labels file (default: the host's names file, else the console's)";
     constexpr std::string_view registers = "rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r8|r9|r10|r11|r12|r13|r14|r15";
     constexpr std::string_view bases = "only operands on these base registers (default: any but rsp and rbp, the stack "
-        "frame's)";
+        "frame's; a hunt for who writes a field: name rbp too, or use disp-scan)";
+    constexpr std::string_view scanBases = "only operands on these base registers (default: any but rsp; rbp counts, as "
+        "optimised code uses it as a plain register)";
     static const std::vector<Verb> verbs = {
         {"help", "core", ToolPack::Explore, "the verbs, one line each; with verb: its args, result, notes and an example",
             {{"verb", "str", "a verb to show in full"},
@@ -238,12 +240,18 @@ inline const std::vector<Verb>& CoreVerbs() {
             "timestamp); none (missing: the code changed) or several (ambiguous) are listed, never written. Old "
             "rows stay."},
         {"labels-check", "core", ToolPack::Native, "re-verify this build's signed names: does each row's sig still land on it",
-            {{"file", "file", labels}, {"module", "str", module}},
+            {{"file", "file", labels}, {"module", "str", module},
+             {"status", "ok|moved|missing|ambiguous|invalid", "only rows with these statuses (the counts still cover every row)",
+              {}, false, true},
+             View("limit")},
             Of<shape::LabelsCheck>, build::LabelsCheck,
-            "Each signed row of the running build is searched in the image (one shared search per anchor) and "
-            "compared with its rva: ok (one match, on the row), moved (one match elsewhere: found), missing (none), "
-            "ambiguous (several: matches) or invalid (a sig sig-check would refuse). unsigned counts this build's "
-            "user and global rows with no sig. Read-only: the file is never written."},
+            "Each signed row of the running build is matched in the image and compared with its rva: ok (one match, "
+            "on the row), moved (one match elsewhere: found), missing (none), ambiguous (several: matches) or invalid "
+            "(a sig sig-check would refuse). unsigned counts this build's user and global rows with no sig. With the "
+            "agent's image window every anchor is found in one pass over the image (searches 1, seconds); without "
+            "it, one search per anchor. status keeps only those rows (status [\"moved\", \"missing\", "
+            "\"ambiguous\", \"invalid\"]: what needs work), view.limit the first rows (0: all); matched counts the "
+            "rows the status kept. Read-only: the file is never written."},
         {"disasm", "core", ToolPack::Native, "instructions decoded from live bytes: 1..1024 (default 24; 8 bytes each, at least 512), or a whole function",
             {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many instructions (1..1024; with function: up to 2048)", "24"},
              {"function", "bool", "list the whole containing function (exception table; else walk from addr)"},
@@ -282,7 +290,7 @@ inline const std::vector<Verb>& CoreVerbs() {
             "Entries under 4 bytes (a packed image's decoys) bound nothing."},
         {"touches", "core", ToolPack::Native, "functions near an address whose [reg + disp] operands use the offsets (up to 8)",
             {{"addr", "addr", at, {}, true}, {"offsets", "int", "the struct offsets to look for (up to 8, each above 0)", {}, true, true},
-             {"range", "int", "bytes each side of addr (1..0x400000)", "\"0x80000\""},
+             {"range", "int", "bytes each side of addr (1..0x400000)", "524288", false, false, "\"0x80000\""},
              {"reads", "bool", "rank by offsets read; drop rows writing every offset they read"},
              {"bases", registers, bases, {}, false, true}},
             Of<shape::Touches>, build::Touches, "Most offsets first, writes marked: the code behind an unreflected member. "
@@ -290,22 +298,32 @@ inline const std::vector<Verb>& CoreVerbs() {
             "those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as "
             "unlisted code. reads leaves out struct copies and constructors. Stack slots ([rsp + d], [rbp + d]) "
             "are left out unless bases names their register; bases [\"rcx\"] keeps only operands on rcx (this, as "
-            "a method's first argument). The whole image for one offset: disp-scan."},
-        {"disp-scan", "core", ToolPack::Native, "every instruction in the main module's code with a [reg + disp] operand of this disp, a page at a time",
-            {{"disp", "int", "the displacement (the field's offset), above 0", {}, true},
+            "a method's first argument). Optimised code also uses rbp as a plain register: to find every writer of a "
+            "field, pass bases with rbp among the others, or sweep the image with disp-scan (rbp included there). "
+            "The whole image for a few offsets: disp-scan."},
+        {"disp-scan", "core", ToolPack::Native, "every instruction in the main module's code with a [reg + disp] operand of these disps, a page at a time",
+            {{"disps", "int", "the displacements (the fields' offsets; up to 8, each above 0)", {}, true, true},
              {"access", "write|read|any", "write: stores and read-modify-writes; read: loads and read-modify-writes; any: also lea "
               "(the field's address taken)", "\"write\""},
              {"width", "int", "only operands of this many bytes (1, 2, 4, 8, 16, 32 or 64)"},
              {"imm", "int", "only instructions with this immediate (compared in its width: 0xffffffff is -1 as 32 bits)"},
-             {"bases", registers, bases, {}, false, true},
-             {"start", "addr", "resume here: a page's next_cursor"}},
+             {"bases", registers, scanBases, {}, false, true},
+             {"same_base", "bool", "only functions using every disp on one base register (two disps or more): functions "
+              "lists them, rows hold their hits"},
+             View("start limit", "128")},
             Of<shape::DispScan>, build::DispScan,
             "A linear sweep of the executable sections, read from the live image: each call scans for up to 8 s and "
-            "stops early at 128 hits; next_cursor (absent once the end is reached) resumes it as start, and scanned is "
-            "the share of the code behind the cursor. Each row is one instruction: access (write, read, both or "
-            "address), width, its text and the function holding it (function, from the exception table; absent "
-            "outside every entry). A straight sweep can decode data inside code (jump tables) as instructions: check "
-            "a surprising hit with disasm. Near one function instead: touches."},
+            "stops early at view.limit hits (default 128, at most 4096; same_base: whole functions up to that many rows); "
+            "view.start resumes at a page's next_cursor (absent once the end is reached), and scanned is the share of "
+            "the code behind the cursor. Each row is one instruction: "
+            "disp (which one matched), base, access (write, read, both or address), width, its text and the function "
+            "holding it (function, from the exception table; absent outside every entry). same_base keeps functions "
+            "with an entry only, and cuts a page at a function's start. The code comes through the agent's image "
+            "window when it has one (its worker thread copies it while the host tick only polls, when the host allows "
+            "it): a full sweep takes seconds; without it, about a megabyte a second (minutes for a large game). "
+            "read_ms is the share of scan_ms spent reading. A sweep over many pages, or many sweeps, belongs in a "
+            "script or a run plan, not in one tool call after another. A straight sweep can decode data inside code "
+            "(jump tables) as instructions: check a surprising hit with disasm. Near one function instead: touches."},
         {"vtable", "core", ToolPack::Native, "an object's virtual table: slots until the first entry that is not code",
             {{"addr", "chain", atChain, {}, true}, {"count", "int", "how many slots at most (1..512)"},
              {"offset", "int", "the table pointer at addr+offset (an interface part; 0..0x100000)"},

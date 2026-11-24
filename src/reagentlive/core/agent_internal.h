@@ -14,4 +14,6 @@ void TickSearchJob();
 // The threads the agent has started: only the search worker, and only when
 // the host sets Host::backgroundSearch. For tests.
 uint32_t ThreadsStarted();
+// Image copies the worker ran (ImageCopy). For tests.
+uint32_t ImageCopiesOnWorker();
 }

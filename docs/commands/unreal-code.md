@@ -61,7 +61,9 @@ index, one table scan spread over ticks; later pages come from the cached
 result; up to 512 functions (`capped`). `name` must match a pooled name
 exactly (the console resolves it through `name-find`). Each row's ref is
 the Function itself: `script` takes it as `object` with no `function`
-(it reads the Function's outer and name).
+(it reads the Function's outer and name). Given `function` as well, the
+same name (`Name` or `Owner:Name`) is taken, and another is refused as
+"object is already the Function Owner:Name: drop function".
 
 ## Exec entries
 

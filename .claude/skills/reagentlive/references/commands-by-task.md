@@ -76,7 +76,7 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | What code is here | `disasm` |
 | What points here | `xrefs` |
 | Which functions use these member offsets | `touches` (`bases` `["rcx"]`: on `this` only) |
-| Does anything in the image write (or read) this field | `disp-scan` with `disp`; follow `next_cursor` to the end |
+| Does anything in the image write (or read) these fields | `disp-scan` with `disps` (`same_base` for functions writing all of them); follow `next_cursor` to the end in a script |
 | Where a string is | `search` with `type` `text` |
 | Is a signature unique and does it land there | `sig-check` (`file` for many), `sig-bytes` |
 | Names for a static tool | `labels-export`, `peek` with `label` |

@@ -361,7 +361,7 @@ TEST_CASE("ArgJson lists an arg's key, type, default, enum and help") {
             }
         }
     CHECK(ArgJson(*FindArg(Row("read"), "len"))["default"] == 64);
-    CHECK(ArgJson(*FindArg(Row("touches"), "range"))["default"] == "0x80000");
+    CHECK(ArgJson(*FindArg(Row("touches"), "range"))["default"] == 524288);
     const Json type = ArgJson(*FindArg(Row("search"), "type"));
     CHECK(type["enum"] == Json::parse(R"(["hex", "u32", "i32", "u64", "ptr", "f32", "f64", "text", "wtext"])"));
     CHECK(type["required"] == true);
@@ -410,14 +410,15 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"sig-bytes", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 32})"}},
         {"labels-sign", {R"({})", R"({"retry": true})"}},
         {"labels-port", {R"({})"}},
-        {"labels-check", {R"({})", R"({"file": "names.jsonl", "module": "game.exe"})"}},
+        {"labels-check", {R"({})", R"({"file": "names.jsonl", "module": "game.exe"})",
+            R"({"status": ["moved", "missing"], "view": {"limit": 20}})"}},
         {"disasm", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "count": 8, "function": true})",
             R"({"addr": "0x1000", "function": true, "save": {"file": "f.json", "callees": 2}})"}},
         {"xrefs", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "all": true})"}},
         {"touches", {R"({"addr": "0x1000", "offsets": [16]})", R"({"addr": "0x1000", "offsets": ["0x10"], "reads": true})",
             R"({"addr": "0x1000", "offsets": [16], "bases": ["rcx", "rbp"]})"}},
-        {"disp-scan", {R"({"disp": "0x538"})", R"({"disp": 16, "access": "any", "bases": ["rcx"], "start": "0x1000"})",
-            R"({"disp": 16, "access": "read", "width": 4, "imm": 1})"}},
+        {"disp-scan", {R"({"disps": ["0x538"]})", R"({"disps": [16], "access": "any", "bases": ["rcx"], "view": {"start": "0x1000"}})",
+            R"({"disps": [16, 24], "access": "read", "width": 4, "imm": 1, "same_base": true})"}},
         {"vtable", {R"({"addr": "0x1000#5:9"})", R"({"addr": "0x1000#5:9", "count": 4, "resolve": true, "rtti": true})"}},
         {"find", {R"({"text": "Pawn"})", R"({"cls": "Pawn", "live": true, "view": {"limit": 5}})"}},
         {"census", {R"({})", R"({"cls": "Pawn", "diff": true})"}},

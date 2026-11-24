@@ -24,10 +24,20 @@ Answer one-address questions live, with no database:
   with `function`.
 - Does this signature hold: `sig-check` (making one:
   the signatures reference); every signed name of a labels file:
-  `labels-check`.
+  `labels-check`, then only what needs work:
+  `{"verb": "labels-check", "args": {"status": ["moved", "missing", "ambiguous", "invalid"]}}`.
 - Does anything write this field, anywhere: `disp-scan` (whole image,
-  page by page); near one function: `touches`. Both skip stack-frame
-  bases; `bases` `["rcx"]` narrows to `this`. Confirm a hit with `disasm`.
+  page by page; several fields at once with `disps`, and `same_base` for
+  the functions that write all of them on one register); near one
+  function: `touches`. `bases` `["rcx"]` narrows to `this`. Confirm a hit
+  with `disasm`.
+- "Who writes field X" with `touches`: name rbp in `bases` too (or sweep
+  with `disp-scan`, which keeps rbp): optimised code holds structs in rbp,
+  and the default hides those writers.
+- More than one or two `disp-scan` pages, or several sweeps: write a
+  Python loop or a `run` plan over `next_cursor`, never tool call after
+  tool call. A page's `read_ms` near its `scan_ms` means the agent has no
+  image window (built before it): reinject for seconds instead of minutes.
 
 ## Crossing to and from a static tool
 

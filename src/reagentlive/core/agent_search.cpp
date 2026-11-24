@@ -64,6 +64,23 @@ JobState g_jobState;
 enum : uint32_t { WorkerIdle, WorkerRunning, WorkerDone };
 std::atomic<uint32_t> g_workerState{WorkerIdle};
 std::atomic<bool> g_workerCancel{false};
+// What the worker runs: a search (g_workerJob), or the image copy (g_copy),
+// which goes back to Idle by itself and says it finished in g_copyDone.
+enum : uint32_t { TaskSearch, TaskCopy };
+std::atomic<uint32_t> g_workerTask{TaskSearch};
+std::atomic<bool> g_copyDone{false};
+
+// The image copy: [start, end) into the image window from its first byte,
+// with one bit per page from start's page, set where it was copied.
+struct CopyJob {
+    uintptr_t start, end, cursor;
+    uint8_t copied[ImageWindowPages / 8 + 1];
+};
+CopyJob g_copy;
+HANDLE g_imageMapping;
+uint8_t* g_imageView;
+bool g_imageFailed;
+uint32_t g_copiesOnWorker;
 SearchJob* g_workerJob;
 HANDLE g_workerWake;
 bool g_workerFailed;
@@ -97,7 +114,7 @@ bool OwnBuffer(uintptr_t address) {
         const auto start = reinterpret_cast<uintptr_t>(base);
         return base && address >= start && address < start + size;
     };
-    return detail::InAgentState(address) || inside(g_job, sizeof(SearchJob)) ||
+    return detail::InAgentState(address) || inside(g_imageView, ImageWindowBytes) || inside(g_job, sizeof(SearchJob)) ||
         inside(g_background, sizeof(SearchJob)) || inside(g_searchJob, sizeof(SearchJob)) || SectionView(address);
 }
 // Records a match; true once the page of hits is full.
@@ -267,10 +284,57 @@ void Answer(const SearchJob& job, Response& response) {
     response.detail = job.cursor < job.end ? job.cursor : 0;
 }
 
+// Copies image pages until the range is done, `deadline` passes (0: none)
+// or `cancel` is set; true once finished. Pages outside an image, or not
+// readable, stay zero in the window and unmarked.
+bool RunCopy(CopyJob& job, int64_t deadline, const std::atomic<bool>* cancel) {
+    const uintptr_t first = job.start & ~(PageSize - 1);
+    const auto mark = [&](uintptr_t from, uintptr_t to) {
+        for (uintptr_t page = from & ~(PageSize - 1); page < to; page += PageSize) {
+            const size_t index = (page - first) / PageSize;
+            job.copied[index / 8] = static_cast<uint8_t>(job.copied[index / 8] | (1u << (index % 8)));
+        }
+    };
+    while (job.cursor < job.end) {
+        if (deadline && Microseconds() >= deadline) return false;
+        if (cancel && cancel->load(std::memory_order_relaxed)) return true;
+        const uintptr_t at = job.cursor;
+        MEMORY_BASIC_INFORMATION info{};
+        const bool known = VirtualQuery(reinterpret_cast<const void*>(at), &info, sizeof(info)) != 0;
+        const uintptr_t regionEnd = known ?
+            std::min(reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize, job.end) : job.end;
+        const uintptr_t stop = std::max(at + 1, std::min(regionEnd, (at & ~(PageSize - 1)) + SearchChunkPages * PageSize));
+        uint8_t* out = g_imageView + (at - job.start);
+        if (known && info.Type == MEM_IMAGE && Searchable(info, 0)) {
+            if (GuardedCopy(out, reinterpret_cast<const void*>(at), stop - at)) {
+                mark(at, stop);
+            } else { // Freed meanwhile: page by page.
+                for (uintptr_t page = at; page < stop;) {
+                    const uintptr_t next = std::min(stop, (page & ~(PageSize - 1)) + PageSize);
+                    uint8_t* to = g_imageView + (page - job.start);
+                    if (GuardedCopy(to, reinterpret_cast<const void*>(page), next - page)) mark(page, next);
+                    else memset(to, 0, next - page);
+                    page = next;
+                }
+            }
+        } else {
+            memset(out, 0, stop - at);
+        }
+        job.cursor = stop;
+    }
+    return true;
+}
+
 DWORD WINAPI SearchWorker(void*) {
     for (;;) {
         WaitForSingleObject(g_workerWake, INFINITE);
         if (g_workerState.load(std::memory_order_acquire) != WorkerRunning) continue;
+        if (g_workerTask.load(std::memory_order_acquire) == TaskCopy) {
+            RunCopy(g_copy, 0, &g_workerCancel);
+            g_copyDone.store(true, std::memory_order_release);
+            g_workerState.store(WorkerIdle, std::memory_order_release);
+            continue;
+        }
         RunJob(*g_workerJob, 0, &g_workerCancel);
         g_workerState.store(WorkerDone, std::memory_order_release);
     }
@@ -298,8 +362,13 @@ bool EnsureWorker(const Host& host) {
 void RunOnWorker(SearchJob& job) {
     g_workerCancel.store(false);
     g_workerJob = &job;
+    g_workerTask.store(TaskSearch, std::memory_order_relaxed);
     g_workerState.store(WorkerRunning, std::memory_order_release);
     SetEvent(g_workerWake);
+}
+bool CopyOnWorker() {
+    return g_workerTask.load(std::memory_order_relaxed) == TaskCopy &&
+        g_workerState.load(std::memory_order_acquire) == WorkerRunning;
 }
 bool JobOnWorker() {
     return g_jobState.onWorker && g_jobState.state == SearchJobState::Running;
@@ -390,6 +459,76 @@ Progress StartSearchJob(const Request& request, Response& response, bool first, 
     return Progress::Done;
 }
 
+// The image window: created on the first copy, kept for the process.
+bool OpenImageWindow(const Host& host) {
+    if (g_imageView) return true;
+    if (g_imageFailed) return false;
+    g_imageFailed = true;
+    wchar_t name[128];
+    size_t length = 0;
+    for (const wchar_t* part : {host.sectionName, ImageWindowSuffix})
+        for (; *part; ++part) {
+            if (length + 1 >= std::size(name)) return false;
+            name[length++] = *part;
+        }
+    name[length] = 0;
+    HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0,
+        static_cast<DWORD>(ImageWindowBytes), name);
+    void* view = mapping ? MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, ImageWindowBytes) : nullptr;
+    if (!view) {
+        if (mapping) CloseHandle(mapping);
+        return false;
+    }
+    g_imageMapping = mapping;
+    g_imageView = static_cast<uint8_t*>(view);
+    g_imageFailed = false;
+    return true;
+}
+void CopyAnswer(Response& response) {
+    const size_t pages = (g_copy.end - 1) / PageSize - g_copy.start / PageSize + 1;
+    response.length = static_cast<uint32_t>((pages + 7) / 8);
+    memcpy(response.data, g_copy.copied, response.length);
+    response.detail = g_copy.end - g_copy.start;
+}
+// An abandoned copy still on the worker is cancelled and drained first (it
+// writes the window); then the copy runs on an idle worker, else in slices.
+enum class CopyPhase { Draining, Worker, Ticks };
+CopyPhase g_copyPhase;
+Progress CopyImage(const Request& request, Response& response, bool first, const Host& host) {
+    if (first) {
+        if (!OpenImageWindow(host)) {
+            Refuse(response, Status::Refused, "image window unavailable");
+            return Progress::Done;
+        }
+        g_copyPhase = CopyPhase::Draining;
+        if (CopyOnWorker()) g_workerCancel.store(true);
+    }
+    if (g_copyPhase == CopyPhase::Draining) {
+        if (CopyOnWorker()) return Progress::Continue;
+        g_copy.start = g_copy.cursor = static_cast<uintptr_t>(request.address);
+        g_copy.end = g_copy.start + request.length;
+        memset(g_copy.copied, 0, sizeof(g_copy.copied));
+        if (EnsureWorker(host) && g_workerState.load(std::memory_order_acquire) == WorkerIdle) {
+            ++g_copiesOnWorker;
+            g_copyDone.store(false, std::memory_order_relaxed);
+            g_workerCancel.store(false);
+            g_workerTask.store(TaskCopy, std::memory_order_relaxed);
+            g_workerState.store(WorkerRunning, std::memory_order_release);
+            SetEvent(g_workerWake);
+            g_copyPhase = CopyPhase::Worker;
+            return Progress::Continue;
+        }
+        g_copyPhase = CopyPhase::Ticks;
+    }
+    if (g_copyPhase == CopyPhase::Worker) {
+        if (!g_copyDone.load(std::memory_order_acquire)) return Progress::Continue;
+    } else if (!RunCopy(g_copy, Microseconds() + SearchSliceMicroseconds, nullptr)) {
+        return Progress::Continue;
+    }
+    CopyAnswer(response);
+    return Progress::Done;
+}
+
 Progress SearchJobRequest(const Request& request, Response& response, bool first) {
     if (first && (!g_searchJob || !g_jobState.id || request.args[0] != g_jobState.id)) {
         Refuse(response, Status::NotFound, "no such search job (only the last one is kept)");
@@ -412,6 +551,7 @@ Progress SearchJobRequest(const Request& request, Response& response, bool first
 
 namespace detail {
 uint32_t ThreadsStarted() { return g_threadsStarted; }
+uint32_t ImageCopiesOnWorker() { return g_copiesOnWorker; }
 
 void TickSearchJob() {
     if (!g_searchJob || g_jobState.state != SearchJobState::Running) return;
@@ -433,6 +573,11 @@ Progress Search(const Request& request, Response& response, bool first, const Ho
     if (!RunJob(*g_job, Microseconds() + SearchSliceMicroseconds, nullptr)) return Progress::Continue;
     Answer(*g_job, response);
     return Progress::Done;
+}
+
+Progress ImageCopy(const Request& request, Response& response, bool first, const Host& host) {
+    if (first && (response.status = Check(request)) != Status::Ok) return Progress::Done;
+    return CopyImage(request, response, first, host);
 }
 
 Progress Xrefs(const Request& request, Response& response, bool first, const Host& host) {

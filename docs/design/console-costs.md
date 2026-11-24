@@ -24,12 +24,30 @@ requests inside a command.
 - **No fast lane for memory reads on a worker thread.** Reads off the tick
   would be torn against the game; a second request slot helps no one while
   every frontend is synchronous; `watch-start` already samples every tick.
+  The one exception is the image window: code and constants of a loaded
+  image, which a whole-image scan needs by the hundred megabytes and which
+  do not change under it ([native code](native.md#fast-lane)).
 - **No `ReadProcessMemory` from the client.** Fastest for raw reads, but the
   client would open the target process, which the design avoids.
 - **One client at a time, kept short** ([protocol](../protocol.md#handshake)).
-  A console that finds the agent busy asks again for up to 2 s, then
-  refuses as `busy`, so a script beside the MCP tools waits for the other
-  call instead of failing at once.
+  A console that finds the agent busy waits for the slot up to
+  `--busy-wait` (default 10 s), then refuses as `busy`, naming the holder
+  (caller kind, pid, since when), so an MCP call beside a script waits
+  for the script's call instead of failing at once. A long-lived Python
+  session held the slot for its whole life and every MCP call failed;
+  `hold=False` releases it between calls (a one-shot console per call).
+  Trade-off: tens of milliseconds a call and state carried by the cache
+  file, against a slot others can take. Rejected: two clients at once (the
+  core's state would need a context per channel: the second channel in
+  [outside programs](../outside-programs.md#not-built-yet)), and an
+  unbounded wait (a stuck holder would hang every tool call).
+- **Every refusal reaches the usage log.** The MCP adapter refuses some
+  calls itself (a pack that is off, a batch item past the packs, an
+  argument its input schema refuses); those never ran a console, so
+  `usage` missed them. The adapter now hands each to a one-shot console as
+  a call with `refused`, which logs it without attaching. Rejected: the
+  adapter appending to the log itself (one writer and one format, the
+  console's).
 - **No session daemon or several clients.** The console's cache file gives
   one-shot runs their state (class refs, field tables, exe module),
   tied to one agent instance by `Section::owner`. Field tables are trusted

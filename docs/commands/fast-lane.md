@@ -229,7 +229,9 @@ reflected ones. Give an address next to that code (a reflected function's
 offsets that should appear together.
 - Every exception-directory entry starting within `range` bytes of the
   address (default 0x80000, at most 0x400000, each side) is decoded whole;
-  the code is read once, 4 KB per held request.
+  the code is read once, through the agent's
+  [image window](../protocol.md#handshake) (4 MB a request) when it has
+  one, else 4 KB per held request.
 - Executable code no entry lists (leaf functions, code a packed image
   leaves out of its directory) is decoded too, in pieces cut after each
   return and around int3 padding. Its rows carry `unlisted: true`, with the
@@ -242,6 +244,12 @@ offsets that should appear together.
   unless `bases` names them. `bases` (a list of 64-bit registers) keeps
   only operands on those: `["rcx"]` for `this` as a method's first
   argument. `write` is set when the operand is written.
+- **rbp is not only a frame pointer.** Optimised code uses it as a plain
+  register, struct pointers included: in one sweep of a large game image,
+  36% of the byte writes to one field went through rbp. Near one function
+  the default (rbp left out) keeps frame locals out of the rows; for "who
+  writes field X", pass `bases` with rbp among the registers you take, or
+  sweep the image with `disp-scan`, whose default keeps rbp.
 - Uses group by function (a continuation joins its function). Rows rank by
   how many distinct asked offsets the function uses, then writers first,
   then by uses: the setup that writes most of a block comes first, its
@@ -256,24 +264,51 @@ offsets that should appear together.
 
 ## disp-scan
 
-`disp-scan` answers "does anything write this field" for the whole main
+`disp-scan` answers "does anything write these fields" for the whole main
 module, where `touches` looks near one function:
 
 ```json
-{"verb": "disp-scan", "args": {"disp": "0x538", "access": "write", "bases": ["rcx", "rbx"]}}
+{"verb": "disp-scan", "args": {"disps": ["0xD0", "0xB8"], "access": "write"}}
 ```
 
-- Every executable section is swept straight through, 64 KB per read
-  (4 KB per held request), from the first code byte or `start`. One call
-  works for up to 8 s or 128 hits, then answers its page: `rows` (each
-  instruction with `rva`, `access`, `width`, its `text` and `function`, the
-  exception-table entry holding it), `scanned` (the share of the code
-  behind the cursor) and `next_cursor`, which the next call passes as
-  `start`; it is absent once the end is reached. The console does the
-  work: no agent job, nothing left running between calls. Reads go
-  through host ticks, under a megabyte of code a second on a 60-tick
-  host, so a large image takes minutes of pages: `start` near the code
-  you suspect (a class's methods sit together) when one region will do.
+- Every executable section is swept straight through from the first code
+  byte or `view.start`. One call works for up to 8 s or `view.limit` hits
+  (default 128, at most 4096), then answers its page: `rows` (each
+  instruction with `rva`, `disp` (which asked displacement), `base`,
+  `access`, `width`, its `text` and `function`, the exception-table entry
+  holding it), `scanned` (the share of the code behind the cursor),
+  `scan_ms` and `read_ms` (the part spent reading), and `next_cursor`,
+  which the next call passes as `view.start`; it is absent once the end is
+  reached. The console decodes: no agent job, nothing left running between
+  calls.
+- **Reading the code.** With the agent's
+  [image window](../protocol.md#handshake) the console reads 4 MB a
+  request, copied by the agent's worker thread when the host allows
+  background search (else in 2 ms tick slices), so the read costs about
+  two host ticks per 4 MB and the decoding (about 40 MB of code a second)
+  dominates: a full sweep of a game's 160 MB of code is a few seconds of
+  reading and about four of decoding, one or two pages. Without the window
+  (an agent built before it) reads go 4 KB per held request through host
+  ticks: under a megabyte a second on a 60-tick host, about 2 minutes and
+  15 to 85 pages for the same image; start near the code you suspect then
+  (a class's methods sit together). A loop over pages, or several sweeps,
+  belongs in a Python script or a `run` plan, not in one tool call after
+  another.
+- `disps` takes up to 8 displacements at once; each row says which one
+  matched. `same_base` keeps only functions that use every asked
+  displacement on one base register (two disps or more): `functions` lists
+  them (`function`, `base`, `hits`) and `rows` holds their hits. Hits
+  outside every exception-table entry are left out there, and a page that
+  would cut a function ends before it (`next_cursor` is its start).
+- `access`: `write` (default; stores and read-modify-writes), `read`
+  (loads and read-modify-writes) or `any` (also `lea`: the field's
+  address taken, often passed to a function that writes it). `width`
+  keeps operands of that many bytes, `imm` instructions whose immediate
+  equals it in the operand's width (`mov dword [rcx+0x538], 1`). `bases`
+  as for `touches`, but the default takes rbp: a field hunt over the whole
+  image would miss the writers that hold the struct in rbp. Only `[rsp +
+  disp]` (stack slots) is left out unless `bases` names rsp; a row's
+  `base` shows when an rbp hit is a frame local instead.
 - `access`: `write` (default; stores and read-modify-writes), `read`
   (loads and read-modify-writes) or `any` (also `lea`: the field's
   address taken, often passed to a function that writes it). `width`

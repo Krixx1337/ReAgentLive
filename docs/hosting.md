@@ -194,6 +194,7 @@ constexpr reagentlive::Command Commands[] = {
     {reagentlive::op::Search, "search", &reagentlive::Search},
     {reagentlive::op::Xrefs, "xrefs", &reagentlive::Xrefs},
     {reagentlive::op::Region, "region", &reagentlive::Region},
+    {reagentlive::op::ImageCopy, "image copy", &reagentlive::ImageCopy},
     {reagentlive::op::Pin, "pin", &reagentlive::Pin},
     {reagentlive::op::Trial, "trial", &reagentlive::Trial},
     {reagentlive::op::Watch, "watch", &reagentlive::Watch, false},
@@ -226,10 +227,11 @@ The full op list with numbers is in [protocol](protocol.md#ops).
 
 - **The agent never hooks, and starts no threads unless the host opts in.**
   Where `Tick` runs is the host's decision and its responsibility. A host that
-  sets `Host::backgroundSearch` lets search jobs and the console's
-  internal scans run on one agent-owned worker thread (started on first
-  use, kept for the process); without it a job scans in slices of each
-  host tick. The two opt-in swaps are the call recorder (a
+  sets `Host::backgroundSearch` lets search jobs, the console's internal
+  scans and image copies (`op::ImageCopy`, the
+  [image window](protocol.md#handshake)) run on one agent-owned worker
+  thread (started on first use, kept for the process); without it a job
+  scans, and an image copy copies, in slices of each host tick. The two opt-in swaps are the call recorder (a
   host that lists its ops) and `reagentlive::ue-draw` (a host that links it,
   when `game-thread` arms it); neither writes code or the game's tables.
 - **Held requests** make the agent spin briefly on the host's thread for the

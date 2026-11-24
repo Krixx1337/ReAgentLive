@@ -179,6 +179,12 @@ std::optional<std::string> RegionKind(Session& session, uint64_t address);
 std::optional<shape::Region> RegionOf(Session& session, uint64_t address);
 // Reads through the agent: read-batch items, nullopt where unreadable.
 sig::ReadFn AgentRead(Session& session);
+// The bytes of [from, to) in blocks of up to `block` bytes, `fill` where
+// unreadable: through the agent's image window (ImageCopy, its worker when
+// the host allows) when it has one, else MaxRead reads through host ticks.
+// `each(address, bytes)` returning false stops early.
+std::expected<void, std::string> ImageBlocks(Session& session, uint64_t from, uint64_t to, uint8_t fill, uint64_t block,
+                                             const std::function<bool(uint64_t, std::span<const uint8_t>)>& each);
 // Anchor searches for sig's matcher over the whole image (worker thread when the host allows it).
 sig::SearchFn AgentSearch(Session& session);
 // labels-sign and labels-port: signatures on a labels file's names.

@@ -37,7 +37,8 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `{"report": "all"}` or `{"report": "sessions"}`. A sessions list has no
   `rows` or `largest` any more ([console](docs/commands/console.md)).
 - **`touches` leaves `[rbp + disp]` out by default** (stack frames, like
-  `[rsp + disp]`): pass `bases` with `rbp` to keep it.
+  `[rsp + disp]`): pass `bases` with `rbp` to keep it; for "who writes
+  field X", do, or use `disp-scan`, which keeps rbp.
 - **Verbs renamed so no two differ by a letter and families read alike:**
   `stats` is `usage`, `refs` is `name-refs`, `label` is `member-name`,
   `export-labels` is `labels-export`, `export-assets` is `assets-export`,
@@ -116,14 +117,41 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 ### New
 
 - **`labels-check` re-verifies signed names in one call:** each signed
-  row of the running build is searched again and reported `ok`, `moved`
-  (with `found`), `missing`, `ambiguous` or `invalid`; read-only
+  row of the running build is matched again and reported `ok`, `moved`
+  (with `found`), `missing`, `ambiguous` or `invalid`; read-only. With the
+  image window every anchor is found in one pass over the image (seconds,
+  where 172 rows took 46 s); `status` keeps only the rows that need work
+  and `view.limit` the first ones, the counts still cover every row
   ([labels](docs/commands/labels.md#names-that-survive-a-patch)).
-- **`disp-scan` finds every instruction using one field offset** across
-  the main module's code: `access` (write, read, any with `lea`),
-  `width`, `imm` and `bases` narrow it; each call scans up to 8 s and
-  resumes from `next_cursor`
+- **`disp-scan` finds every instruction using up to 8 field offsets**
+  (`disps`, each row tagged with its `disp` and `base`) across the main
+  module's code: `access` (write, read, any with `lea`), `width`, `imm` and
+  `bases` narrow it (default: every base but rsp, rbp included);
+  `same_base` keeps the functions that use every offset on one register.
+  Each call scans up to 8 s or `view.limit` hits and resumes at
+  `next_cursor` (`view.start`). With the image window a full sweep takes
+  seconds; without it, about 2 minutes
   ([fast lane](docs/commands/fast-lane.md#disp-scan)).
+- **The image window:** whole-image console scans (`disp-scan`,
+  `labels-check`, `touches`) read a loaded image 4 MB a request through a
+  second mapping, copied on the search worker when the host allows
+  background search, else in tick slices. Hosts add
+  `{op::ImageCopy, "image copy", &ImageCopy}` to their command table; a
+  console falls back to reads with an agent that lacks it
+  ([protocol](docs/protocol.md#handshake)).
+  Protocol change: rebuild and re-inject.
+- **A busy agent is waited for, and its holder named:** a console waits
+  for the client slot up to `--busy-wait` seconds (default 10), then
+  refuses as `busy` naming the holder's caller kind, pid and start
+  ([console](docs/commands/console.md#agent-and-console)).
+- **Python sessions can share the agent:** `Session(console, hold=False)`
+  runs a one-shot console per call, so MCP tools get the slot between its
+  calls; `busy_wait=` sets the console's wait
+  ([clients](docs/client.md#python-session)).
+- **Every refusal reaches `usage`:** the MCP adapter's own refusals (a
+  pack that is off, a batch past the packs, its input schema) are logged
+  through a console call with `refused`
+  ([console](docs/commands/console.md#one-shot-use)).
 - **`touches` takes `bases`:** only operands on the named registers
   (`["rcx"]` for `this`).
 - **`usage` with `only`** returns just the parts named (`totals`,
@@ -231,6 +259,20 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
   `tests/python/check_json_examples.py --table <console>`.
 
 ### Improved
+
+- **Digests keep every total:** a digest's `status` now holds every
+  top-level scalar of the result (counts, module, short paths) and every
+  object of counts, for every verb; its `next` narrows by the rows' own
+  values first (`labels-check`'s `status`), then fields, `view.limit`,
+  `nonzero`, `own` or `view.elements`, and raises `max_chars` only when
+  nothing narrows ([console](docs/commands/console.md#fewer-round-trips)).
+- **`script` given a Function and its own name** takes it; another name
+  is refused as "object is already the Function Owner:Name: drop
+  function", not "not found".
+- **`call-each` on a function with inputs** points to `call-pure`
+  (read-only, one object, `params`) before `call`.
+- **`touches`' `range` default shows as a number** (524288, 0x80000), so
+  copying it from a schema no longer fails its pattern.
 
 - **`usage`'s `repeated` is judged by result:** a call counts as repeated
   only when its input and its output both match an earlier one; the same

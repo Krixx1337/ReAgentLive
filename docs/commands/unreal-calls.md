@@ -66,7 +66,9 @@ call`). The function's parameters must all be plain outputs or the return
 value (no inputs, no const refs), block size 1..64 bytes. Plain: nothing
 to destroy and zero is a valid start (`NoDestructor` and `ZeroConstructor`
 on the property or, where it lacks one, on every member of its struct: a
-gameplay tag is plain, a tag container is not); anything else is refused
+gameplay tag is plain, a tag container is not); a function with inputs is
+refused with `call-pure` (read-only, one object, `params`) named first and
+`call` after it; anything else is refused
 and stays with `call`, the message naming the parameter and why ("
 `ReturnValue` is a `GameplayTagContainer`, which owns `GameplayTags` (an
 array)"); a parameter the names file knows is named by its readable name,

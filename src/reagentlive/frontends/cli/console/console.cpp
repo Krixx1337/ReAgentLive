@@ -179,6 +179,7 @@ struct InputLine {
     std::string name;           // The verb as given; empty for a blank line.
     bool meta = false, timing = false, big = false;
     std::optional<size_t> maxChars;
+    std::optional<Json> refused;  // A frontend's own refusal: logged and answered, never run.
     std::string problem;        // Not a call: refused under the verb "call".
 
     const Json& Args() const {
@@ -199,6 +200,7 @@ InputLine ReadLine(std::string_view line) {
     input.timing = CallFlag(call, "timing");
     input.big = CallFlag(call, "big");
     if (call.contains("max_chars")) input.maxChars = call["max_chars"].get<size_t>();
+    if (call.contains("refused")) input.refused = call["refused"];
     input.name = call["verb"].get<std::string>();
     input.call = std::move(call);
     return input;
@@ -235,16 +237,56 @@ std::expected<Command, Json> BuildLine(std::span<const Verb> verbs, const InputL
     return BuildChecked(verbs, input.name, input.Args(), modules);
 }
 
-// One-shot lines that are all `help` or `usage`: answered from the table and
-// the log, no agent needed.
-// How long a console waits for another client to leave the agent.
-constexpr std::chrono::milliseconds BusyWait{2000};
+// How long a console waits for another client to leave the agent (--busy-wait).
+constexpr std::chrono::seconds DefaultBusyWait{10}, MaxBusyWait{600};
 
+// One-shot lines that are all `help`, `usage` or a frontend's refusal:
+// answered from the table and the log, no agent needed.
 bool OfflineOnly(const std::vector<std::string>& lines) {
     return !lines.empty() && std::ranges::all_of(lines, [&](const std::string& line) {
         const InputLine input = ReadLine(line);
-        return input.name == "help" || input.name == "usage";
+        return input.name == "help" || input.name == "usage" || input.refused;
     });
+}
+
+// The usage line of a frontend's refusal, appended as a call's would be.
+// Why the agent is busy: who holds its slot and since when, how long this
+// console waited, and the way out.
+std::string BusyMessage(const std::optional<SlotHolder>& holder, std::chrono::seconds waited) {
+    std::string text = "another client holds the agent";
+    if (holder) {
+        const auto since = std::chrono::sys_seconds(std::chrono::seconds(holder->since));
+        const auto held = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()) - since;
+        text += std::format(": a {} console, pid {}, since {:%T}Z ({} s)", holder->caller.empty() ? "client" : holder->caller,
+            holder->pid, since, held.count());
+    }
+    return text + std::format("; waited {} s (--busy-wait). One client at a time: let it finish, or have a long "
+        "Python session release the slot between calls (Session hold=False)", waited.count());
+}
+
+void LogRefused(const std::filesystem::path& path, std::span<const Verb> verbs, const InputLine& input,
+                const std::string& session, const std::string& caller) {
+    if (path.empty() || session.empty()) return;
+    UsageLine record;
+    const Verb* verb = FindVerb(verbs, input.name);
+    record.time = std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
+    record.session = session;
+    record.verb = verb ? std::string(verb->name) : input.name.substr(0, MaxUsageVerb);
+    record.origin = verb ? std::string(verb->origin) : std::string();
+    record.caller = caller;
+    if (const Json& args = input.Args(); args.is_object())
+        for (const auto& [key, value] : args.items()) record.keys.push_back(key);
+    record.hash = UsageHash(input.original);
+    record.in = input.original.size();
+    record.ok = false;
+    record.refused = (*input.refused)["kind"].get<std::string>();
+    if (input.refused->contains("key")) record.refusedKey = (*input.refused)["key"].get<std::string>().substr(0, MaxUsageVerb);
+    std::ofstream file(path, std::ios::binary | std::ios::app);
+    file << UsageText(record) << '\n';
+}
+Json RefusedEnvelope(const InputLine& input) {
+    Json error = *input.refused;
+    return Json{{"command", input.name}, {"ok", false}, {"error", std::move(error)}};
 }
 
 void Run(Session& session, const Command& command, std::string_view jsonCommand) {
@@ -592,6 +634,10 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     if (jsonCommand.empty()) return false;
     const Json& callArgs = input.Args();
     usage.Describe(input.name, callArgs);
+    if (input.refused) {
+        JsonRefusal(session, jsonCommand, RefusedEnvelope(input)["error"]);
+        return false;
+    }
     // The ceiling (--packs): a verb of another pack is refused before it is parsed, inside a batch too.
     // No arg is at fault, so no example: `pack` names the pack to add.
     if (const Verb* row = FindVerb(session.verbs, jsonCommand); row && !(session.toolPacks & ToolPackBit(row->pack))) {
@@ -744,10 +790,13 @@ void SaveSessionCache(const Session& session, const std::filesystem::path& path)
 // With no target: help and usage from the table and the log (usage: the
 // log's latest session). Any other verb is refused with why there is no
 // target (kind startup, or busy while another client holds the agent) and
-// ends the console, so a client starts it again. Nothing is recorded.
+// ends the console, so a client starts it again. Nothing is recorded but a
+// frontend's own refusal (a call with `refused`), logged under `session`
+// (empty: not logged).
 int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, const std::string& hash,
                const std::filesystem::path& usagePath, uint64_t contextLimit, const std::vector<std::string>* lines,
-               const std::function<bool(std::string&)>& readStdin, ErrorKind kind, std::string_view why) {
+               const std::function<bool(std::string&)>& readStdin, ErrorKind kind, std::string_view why,
+               const std::string& session, const std::string& caller) {
     const auto print = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
         std::fflush(stdout);
@@ -772,6 +821,12 @@ int RunOffline(std::span<const Verb> verbs, std::span<const Origin> origins, con
         }
         const std::string& name = input.name;
         if (name.empty()) continue;
+        if (input.refused) {
+            LogRefused(usagePath, verbs, input, session, caller);
+            print(RefusedEnvelope(input));
+            failed = 1;
+            continue;
+        }
         const auto parsed = BuildLine(verbs, input, {});
         if (!parsed) {
             print(Json{{"command", name}, {"ok", false}, {"error", parsed.error()}});
@@ -849,7 +904,7 @@ using namespace detail;
 int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     constexpr const char* usage = "Usage: <console> [pid] [-c '<call or list of calls>' | -c @<file>] [--names <file>] "
         "[--caller tool|script|shell] [--session <id>] [--context-limit <chars>] [--no-usage] "
-        "[--packs explore,native,observe,modify] [--check]";
+        "[--packs explore,native,observe,modify] [--busy-wait <seconds>] [--check]";
     // Before a session exists: print the envelope directly.
     const auto printStartup = [](const Json& envelope) {
         std::puts(envelope.dump(-1, ' ', true, Json::error_handler_t::replace).c_str());
@@ -866,6 +921,7 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     ToolPackSet toolPacks = AllToolPacks;
     std::string caller = "shell", sessionId;
     uint64_t contextLimit = DefaultContextLimit;
+    std::chrono::seconds busyWait = DefaultBusyWait;
     wchar_t module[MAX_PATH];
     if (const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH); length && length < MAX_PATH) {
         if (!config.namesFile.empty()) namesFile = std::filesystem::path(module).parent_path() / config.namesFile;
@@ -914,6 +970,13 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
             if (value.empty() || value.size() > 12 || !std::ranges::all_of(value, [](wchar_t c) { return c >= L'0' && c <= L'9'; }))
                 return startupError("--context-limit is a number of characters (0: none)");
             contextLimit = std::stoull(std::wstring(value));
+        } else if (arg == L"--busy-wait" && i + 1 < argc) {
+            // How long to wait for another client to leave the agent before refusing as busy.
+            const std::wstring_view value(argv[++i]);
+            if (value.empty() || value.size() > 3 || !std::ranges::all_of(value, [](wchar_t c) { return c >= L'0' && c <= L'9'; }) ||
+                std::stoul(std::wstring(value)) > static_cast<unsigned long>(MaxBusyWait.count()))
+                return startupError("--busy-wait is 0 to 600 seconds");
+            busyWait = std::chrono::seconds(std::stoul(std::wstring(value)));
         } else if (arg == L"--no-usage") {
             record = false;
         } else if (arg == L"--check") {
@@ -951,7 +1014,11 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
     if (check) return RunCheck(verbs, lines, readStdin);
     const auto offline = [&](std::string_view why, ErrorKind kind = ErrorKind::Startup) {
         if (!oneShot) std::fprintf(stderr, "  no target: help and usage only (%.*s)\n", static_cast<int>(why.size()), why.data());
-        return RunOffline(verbs, origins, tableHash, usagePath, contextLimit, lines, readStdin, kind, why);
+        // A frontend's refusal joins the named session, else one of its own.
+        const std::string session = !record ? std::string() : !sessionId.empty() ? sessionId :
+            std::format("{:%Y%m%dT%H%M%S}-{}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()),
+                GetCurrentProcessId());
+        return RunOffline(verbs, origins, tableHash, usagePath, contextLimit, lines, readStdin, kind, why, session, caller);
     };
     if (oneShot && OfflineOnly(*oneShot)) return offline("");
     if (!pid) pid = FindProcess(config.exeName);
@@ -967,15 +1034,25 @@ int RunConsole(const ConsoleConfig& config, int argc, wchar_t** argv) {
         }
     }
     // One client per agent. Another console (a script's, a second tool server's) usually ends within a
-    // call, so a busy agent is asked again for a short while before the call is refused as busy.
+    // call, so a busy agent is asked again for up to --busy-wait before the call is refused as busy,
+    // naming the client that holds it.
     const auto section = std::wstring(config.sectionPrefix) + std::to_wstring(pid);
-    auto client = Client::Attach(section, config.layout);
-    for (const auto until = Clock::now() + BusyWait;
-         !client && client.error().kind == Error::Kind::Busy && Clock::now() < until;) {
+    auto client = Client::Attach(section, config.layout, caller);
+    const auto waitStart = Clock::now();
+    bool told = false;
+    while (!client && client.error().kind == Error::Kind::Busy && Clock::now() - waitStart < busyWait) {
+        if (!told && Clock::now() - waitStart >= std::chrono::seconds(1)) {
+            std::fprintf(stderr, "  agent busy: waiting up to %lld s for the slot\n", static_cast<long long>(busyWait.count()));
+            std::fflush(stderr);
+            told = true;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        client = Client::Attach(section, config.layout);
+        client = Client::Attach(section, config.layout, caller);
     }
-    if (!client) return offline(client.error().message, client.error().kind == Error::Kind::Busy ? ErrorKind::Busy : ErrorKind::Startup);
+    if (!client && client.error().kind == Error::Kind::Busy)
+        return offline(BusyMessage(Client::Holder(section), std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - waitStart)),
+            ErrorKind::Busy);
+    if (!client) return offline(client.error().message, ErrorKind::Startup);
     client->SetWaitNotice([](std::chrono::milliseconds waited, bool ticking) {
         std::fprintf(stderr, "  waiting %lld s (%s)\n", static_cast<long long>(waited.count() / 1000),
             ticking ? "agent ticking, request running" : "agent not ticking");

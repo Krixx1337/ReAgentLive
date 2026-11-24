@@ -98,18 +98,29 @@ is signed by hand: make the signature as for any other
 (removing `sig_failed`) and re-verify every signed name with
 `labels-check`.
 
-`labels-check` (`file`, `module`) searches each signed row of the
-running build in the image (one shared search per anchor, no expected
-address: where it lands is the answer) and compares the match with the
-row: `ok` (one match, on the row), `moved` (one match elsewhere, `found`:
-the row's `rva` or its `sig` is stale), `missing` (none), `ambiguous`
-(several, `matches`) or `invalid` (a `sig` `sig-check` would refuse).
-`unsigned` counts this build's `user` and `global` rows with no `sig`. It
-never writes the file: fix a row by hand, or `labels-sign` it with
-`retry`.
+`labels-check` (`file`, `module`, `status`) matches each signed row of
+the running build in the image (no expected address: where it lands is the
+answer) and compares the match with the row: `ok` (one match, on the
+row), `moved` (one match elsewhere, `found`: the row's `rva` or its `sig`
+is stale), `missing` (none), `ambiguous` (several, `matches`) or
+`invalid` (a `sig` `sig-check` would refuse). `unsigned` counts this
+build's `user` and `global` rows with no `sig`. It never writes the file:
+fix a row by hand, or `labels-sign` it with `retry`.
+
+- **One pass.** With the agent's [image window](../protocol.md#handshake)
+  the console reads the whole image once, 4 MB a request, and finds every
+  row's anchor in that one pass (anchors bucketed by their first four
+  bytes; `searches` is 1): seconds for a few hundred rows of a large
+  game, where an agent without the window searches once per anchor (172
+  rows took 46 s). `scan_ms` says how long it took. Checking only:
+  signing stays the [fixed loop](../design/native.md#labels-sign-is-one-fixed-loop).
+- **What needs work.** The counts always cover every row; `status` keeps
+  only rows with those statuses (`matched` counts them) and `view.limit`
+  the first rows (`capped` when it cut). A digest of a long check keeps
+  the counts and offers the statuses that need work as its `next`.
 
 ```json
-{"verb": "labels-check", "args": {}}
+{"verb": "labels-check", "args": {"status": ["moved", "missing", "ambiguous", "invalid"]}}
 ```
 
 `labels-port` (`file`, `module`), after a patch: per name the running

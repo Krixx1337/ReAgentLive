@@ -35,8 +35,18 @@ std::string CallProblem(const Json& call) {
             if (!value.is_number_unsigned()) return "max_chars is a number of characters (0: none)";
             continue;
         }
+        if (key == "refused") {
+            // A refusal a frontend made before the call reached the console (the MCP adapter's pack
+            // and schema checks): the console logs it and answers it, and runs nothing.
+            const bool kind = value.is_object() && value.contains("kind") && value["kind"].is_string() &&
+                (value["kind"] == "pack" || value["kind"] == "schema");
+            if (!kind || !value.contains("message") || !value["message"].is_string() ||
+                (value.contains("key") && !value["key"].is_string()))
+                return "refused is {\"kind\": \"pack\" or \"schema\", \"message\": \"...\", \"key\"?: \"...\"}";
+            continue;
+        }
         if (key != "meta" && key != "timing" && key != "big")
-            return "unknown key '" + key + "' (a call has verb, args, meta, timing, max_chars, big)";
+            return "unknown key '" + key + "' (a call has verb, args, meta, timing, max_chars, big, refused)";
         if (!value.is_boolean()) return key + " is true or false";
     }
     return {};

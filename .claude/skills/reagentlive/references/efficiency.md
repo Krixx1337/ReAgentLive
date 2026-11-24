@@ -32,7 +32,8 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 
 - **A `digest` means run its `next`.** If it names a `file` instead, read
   the file: that call may have changed state, so never repeat it.
-- Read the digest's `status` before running anything: a `saved` file is
+- Read the digest's `status` before running anything: it keeps the
+  result's counts and totals (often the answer itself), a `saved` file is
   already written (open it, do not repeat the call), and `next` there is
   where a cut listing resumes.
 - Raise `max_chars` only for what `next` cannot narrow.

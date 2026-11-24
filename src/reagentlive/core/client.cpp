@@ -11,12 +11,21 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <utility>
 #include "reagentlive/core/client.h"
 
 namespace reagentlive {
 namespace {
 Error Fail(Error::Kind kind, std::string message) { return {kind, Status::Ok, 0, {}, std::move(message)}; }
+// What the slot's holder says about itself, in a mapping named after the
+// section (client to client; the agent never reads it).
+constexpr uint32_t HolderMagic = 0x444c4f48; // "HOLD"
+struct HolderInfo {
+    uint32_t magic, pid;
+    int64_t since;
+    char caller[16];
+};
 }
 
 Error AgentError(const Response& response) {
@@ -34,7 +43,7 @@ Error AgentError(const Response& response) {
     return {Error::Kind::Agent, response.status, response.detail, reason, std::move(message)};
 }
 
-Result<Client> Client::Attach(std::wstring_view sectionName, uint32_t layout) {
+Result<Client> Client::Attach(std::wstring_view sectionName, uint32_t layout, std::string_view caller) {
     const std::wstring name(sectionName);
     HANDLE mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, name.c_str());
     if (!mapping) return std::unexpected(Fail(Error::Kind::Attach, "no agent section (error " + std::to_string(GetLastError()) + ")"));
@@ -53,19 +62,51 @@ Result<Client> Client::Attach(std::wstring_view sectionName, uint32_t layout) {
         UnmapViewOfFile(section);
         return std::unexpected(Fail(Error::Kind::Busy, "another client is attached to this agent (one console at a time)"));
     }
-    return Client(section, guard);
+    // Who holds the slot, for a client that finds it busy. Best effort: a
+    // client that cannot say is still attached.
+    HANDLE holder = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(HolderInfo),
+        (name + L"-client-info").c_str());
+    if (holder) {
+        if (auto* info = static_cast<HolderInfo*>(MapViewOfFile(holder, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(HolderInfo)))) {
+            info->pid = GetCurrentProcessId();
+            info->since = static_cast<int64_t>(time(nullptr));
+            CopyText(info->caller, caller);
+            std::atomic_ref(info->magic).store(HolderMagic, std::memory_order_release);
+            UnmapViewOfFile(info);
+        }
+    }
+    return Client(section, guard, holder, name);
+}
+
+std::optional<SlotHolder> Client::Holder(std::wstring_view sectionName) {
+    HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, (std::wstring(sectionName) + L"-client-info").c_str());
+    if (!mapping) return std::nullopt;
+    std::optional<SlotHolder> out;
+    if (auto* info = static_cast<const HolderInfo*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(HolderInfo)))) {
+        if (std::atomic_ref(const_cast<uint32_t&>(info->magic)).load(std::memory_order_acquire) == HolderMagic)
+            out = SlotHolder{info->pid, std::string(info->caller, strnlen(info->caller, sizeof(info->caller))), info->since};
+        UnmapViewOfFile(info);
+    }
+    CloseHandle(mapping);
+    return out;
 }
 
 void Client::Release() {
     if (section_) UnmapViewOfFile(section_);
+    if (image_) UnmapViewOfFile(image_);
+    if (holder_) CloseHandle(holder_);
     if (guard_) CloseHandle(guard_);
     if (timerRaised_) timeEndPeriod(1);
     section_ = nullptr;
+    image_ = nullptr;
+    holder_ = nullptr;
     guard_ = nullptr;
     timerRaised_ = false;
 }
 Client::Client(Client&& other) noexcept
     : section_(std::exchange(other.section_, nullptr)), guard_(std::exchange(other.guard_, nullptr)),
+      holder_(std::exchange(other.holder_, nullptr)), name_(std::move(other.name_)),
+      image_(std::exchange(other.image_, nullptr)),
       timeout_(other.timeout_), notice_(other.notice_), stats_(other.stats_),
       timerRaised_(std::exchange(other.timerRaised_, false)) {}
 Client& Client::operator=(Client&& other) noexcept {
@@ -73,6 +114,9 @@ Client& Client::operator=(Client&& other) noexcept {
         Release();
         section_ = std::exchange(other.section_, nullptr);
         guard_ = std::exchange(other.guard_, nullptr);
+        holder_ = std::exchange(other.holder_, nullptr);
+        name_ = std::move(other.name_);
+        image_ = std::exchange(other.image_, nullptr);
         timeout_ = other.timeout_;
         notice_ = other.notice_;
         stats_ = other.stats_;
@@ -349,6 +393,33 @@ Result<SearchResult> Client::Xrefs(const XrefQuery& query, std::chrono::millisec
     SearchResult result{std::vector<uint64_t>(count), response->detail};
     memcpy(result.hits.data(), response->data, response->length);
     return result;
+}
+
+Result<ImageBlock> Client::CopyImage(uint64_t address, uint32_t length, std::chrono::milliseconds timeout) {
+    Request request{};
+    request.op = op::ImageCopy;
+    request.address = address;
+    request.length = length;
+    if (Check(request) != Status::Ok)
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid image copy"});
+    auto response = Send(request, timeout);
+    if (!response) return std::unexpected(response.error());
+    if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+    const size_t pages = (address + length - 1) / 4096 - address / 4096 + 1;
+    if (response->detail != length || response->length != (pages + 7) / 8)
+        return std::unexpected(Error{Error::Kind::Agent, Status::BadRequest, 0, {}, "invalid image copy response"});
+    if (!image_) {
+        HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, (name_ + ImageWindowSuffix).c_str());
+        if (mapping) {
+            image_ = static_cast<const uint8_t*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, ImageWindowBytes));
+            CloseHandle(mapping); // The view keeps it alive.
+        }
+        if (!image_) return std::unexpected(Fail(Error::Kind::Attach, "cannot map the image window (error " +
+            std::to_string(GetLastError()) + ")"));
+    }
+    ImageBlock block{address, std::vector<uint8_t>(image_, image_ + length), std::vector<bool>(pages)};
+    for (size_t i = 0; i < pages; ++i) block.copied[i] = (response->data[i / 8] >> (i % 8)) & 1;
+    return block;
 }
 
 Result<RegionInfo> Client::Region(uint64_t address) {

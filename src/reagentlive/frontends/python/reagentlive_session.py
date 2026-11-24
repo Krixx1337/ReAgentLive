@@ -41,6 +41,17 @@ ceiling (`--packs`): a verb of another tool pack, through a generated
 function, `call` or a batch item, raises ReAgentLiveError with kind 'pack'.
 The generated module keeps every verb; the console decides.
 
+The agent serves one client at a time. A session holds that slot while it
+lives (`hold=True`, the default: one console process, calls back to back
+with nothing in between). `Session(console, hold=False)` releases it
+between calls instead: every call starts a one-shot console (`-c`), so an
+MCP server or another script on the same agent gets its turn between this
+session's calls; each call then costs a console start and an attach (tens
+of milliseconds), and the console's cache file carries its state from one
+call to the next. A console that finds the slot taken waits for it up to
+`busy_wait` seconds (its --busy-wait, default 10), then raises kind 'busy',
+naming the client that holds it.
+
 `s.call(verb, args)` sends any verb by name; a generated function does the
 same with checked argument names. Three helpers do what a generated function
 cannot: `s.batch_results` (a strict result per batch item), `s.watch` (a
@@ -219,10 +230,14 @@ class Session:
     session then asks only for its hash (`help` with `hash`) and reads the whole
     table again only when it changed. `console` is a path (relative to the
     current directory) or a name on PATH. `packs`: the tool packs the console
-    runs (its --packs; explore always); None runs every pack.
+    runs (its --packs; explore always); None runs every pack. `hold`: keep the
+    agent's one client slot for the session's life (True), or release it
+    between calls with a one-shot console per call (False). `busy_wait`:
+    seconds a console waits for a slot another client holds (None: the
+    console's default).
     """
 
-    def __init__(self, console, args=(), caller='script', table=None, packs=None):
+    def __init__(self, console, args=(), caller='script', table=None, packs=None, hold=True, busy_wait=None):
         console = os.fspath(console)
         found = shutil.which(console) if not os.path.dirname(console) else None
         path = os.path.abspath(found or console)
@@ -235,8 +250,13 @@ class Session:
             packs = [packs]
         self.packs = list(packs) if packs is not None else None
         ceiling = ['--packs', ','.join(self.packs)] if self.packs is not None else []
-        self._process = subprocess.Popen([console, *args, *ceiling, '--caller', caller], stdin=subprocess.PIPE,
-                                         stdout=subprocess.PIPE, stderr=self._stderr, text=True, bufsize=1)
+        wait = ['--busy-wait', str(int(busy_wait))] if busy_wait is not None else []
+        self.hold = hold
+        self._command = [console, *args, *ceiling, *wait, '--caller', caller]
+        if not hold:  # One usage-log session for the one-shot consoles, as one console would have.
+            self._command += ['--session', f'py-{time.strftime("%Y%m%dT%H%M%S")}-{os.getpid()}']
+        self._process = subprocess.Popen(self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=self._stderr, text=True, bufsize=1) if hold else None
         self._types = {}
         self.digest = None  # The last call's Digest (its result was past max_chars), or None.
         # The last call's context_warning (the session is past the console's --context-limit), or None.
@@ -267,6 +287,8 @@ class Session:
 
     def _started_badly(self, error):
         """Why the console did not start: the error, its exit code and the end of its stderr."""
+        if self._process is None:
+            return f'{os.path.basename(self._command[0])} did not start: {error}'
         text = f'{console_name(self._process)} did not start: {error}'
         if self._process.returncode is not None:
             text += f'; exit code {self._process.returncode}'
@@ -285,7 +307,7 @@ class Session:
         self.close()
 
     def close(self):
-        if self._process.poll() is not None:
+        if self._process is None or self._process.poll() is not None:
             return
         try:
             self._process.stdin.write(_line('quit') + '\n')
@@ -304,6 +326,8 @@ class Session:
     # Raw exchange.
     def send(self, line):
         """The full JSON envelope for one line (a JSON call, or a JSON list of calls), as plain dicts."""
+        if self._process is None:
+            return self._send_once(line)
         try:
             self._process.stdin.write(line + '\n')
             self._process.stdin.flush()
@@ -315,6 +339,26 @@ class Session:
                 raise ReAgentLiveError(line, {'message': 'console exited'})
             if text.lstrip().startswith('{'):
                 return json.loads(text)
+
+    def _send_once(self, line):
+        """One line through a one-shot console (hold=False): it attaches, answers and exits, freeing the slot."""
+        handle, path = tempfile.mkstemp(suffix='.json', prefix='reagentlive-call-')
+        try:
+            with os.fdopen(handle, 'w', encoding='utf-8') as file:
+                file.write(line)
+            done = subprocess.run([*self._command, '-c', f'@{path}'], stdin=subprocess.DEVNULL, capture_output=True,
+                                  text=True, encoding='utf-8', errors='replace')
+        except OSError as error:
+            raise ReAgentLiveError(line, {'message': f'console did not run: {error}'}) from None
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        for text in done.stdout.splitlines():
+            if text.lstrip().startswith('{'):
+                return json.loads(text)
+        raise ReAgentLiveError(line, {'message': f'console exited ({done.returncode}): {done.stderr[-400:].strip()}'})
 
     def wrap(self, verb, result):
         """A verb's result object as a strict Record (a plain dict for a verb the table lacks)."""

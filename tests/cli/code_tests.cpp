@@ -1110,27 +1110,73 @@ TEST_CASE("disp-scan sweeps code for one instruction form: access, width, immedi
         const size_t stopped = touch::Sweep(code, Base, form, last, hits, most);
         return std::pair(hits, stopped);
     };
-    auto [writes, end] = run({0x538});
+    auto [writes, end] = run({{0x538}});
     CHECK(end == code.size());
     REQUIRE(writes.size() == 2);
     CHECK(writes[0].address == Base + 6);
     CHECK(writes[0].access == "write");
     CHECK(writes[0].width == 4);
     CHECK(writes[1].width == 1);
-    CHECK(run({0x538, "read"}).first.size() == 1);
-    const auto any = run({0x538, "any"}).first;
+    CHECK(run({{0x538}, "read"}).first.size() == 1);
+    const auto any = run({{0x538}, "any"}).first;
     REQUIRE(any.size() == 4);
     CHECK(any[3].access == "address");
-    CHECK(run({0x538, "write", 4}).first.size() == 1);
-    const auto one = run({0x538, "write", 0, 1}).first;
+    CHECK(run({{0x538}, "write", 4}).first.size() == 1);
+    const auto one = run({{0x538}, "write", 0, 1}).first;
     REQUIRE(one.size() == 1);
     CHECK(one[0].text.find("0x01") != std::string::npos);
-    CHECK(run({0x538, "write", 0, 2}).first.empty());
-    CHECK(run({0x538, "write", 0, std::nullopt, touch::Bases{{"rsp"}}}).first.size() == 1);
+    CHECK(run({{0x538}, "write", 0, 2}).first.empty());
+    CHECK(run({{0x538}, "write", 0, std::nullopt, touch::Bases{{"rsp"}}}).first.size() == 1);
     // A full page stops right after the hit that filled it; a chunk that is not the last stops
     // before an instruction that might run past it.
-    CHECK(run({0x538}, true, 1).second == 16);
-    CHECK(run({0x538, "any"}, false).second == 24);              // The lea at 24 could run past: the next chunk starts there.
+    CHECK(run({{0x538}}, true, 1).second == 16);
+    CHECK(run({{0x538}, "any"}, false).second == 24);              // The lea at 24 could run past: the next chunk starts there.
+}
+
+TEST_CASE("disp-scan takes several disps, tags each hit, keeps rbp and groups functions by base") {
+    const auto code = Join({
+        {0x88, 0x87, 0xd0, 0x00, 0x00, 0x00},             // mov [rdi+0xD0], al
+        {0x48, 0x89, 0x87, 0xb8, 0x00, 0x00, 0x00},       // mov [rdi+0xB8], rax
+        {0x88, 0x85, 0xd0, 0x00, 0x00, 0x00},             // mov [rbp+0xD0], al: rbp as a plain register
+        {0x48, 0x89, 0x83, 0xb8, 0x00, 0x00, 0x00},       // mov [rbx+0xB8], rax
+    });
+    std::vector<touch::Hit> hits;
+    touch::Sweep(code, Base, {{0xd0, 0xb8}}, true, hits, 16);
+    REQUIRE(hits.size() == 4);
+    CHECK(hits[0].disp == 0xd0);
+    CHECK(hits[0].base == "rdi");
+    CHECK(hits[1].disp == 0xb8);
+    CHECK(hits[2].base == "rbp");
+    // touches' default leaves rbp out; disp-scan's (Form) keeps it.
+    hits.clear();
+    touch::Sweep(code, Base, {{0xd0, 0xb8}, "write", 0, std::nullopt, touch::Bases{}}, true, hits, 16);
+    CHECK(hits.size() == 3);
+    // Every hit in one function: only rdi carries both disps.
+    hits.clear();
+    touch::Sweep(code, Base, {{0xd0, 0xb8}}, true, hits, 16);
+    const std::vector<uint32_t> disps{0xd0, 0xb8};
+    const auto groups = touch::SameBase(hits, disps, [](uint64_t) { return std::optional<uint64_t>(Base); });
+    REQUIRE(groups.size() == 1);
+    CHECK(groups[0].base == "rdi");
+    CHECK(groups[0].hits.size() == 2);
+    CHECK(touch::SameBase(hits, disps, [](uint64_t) { return std::optional<uint64_t>(); }).empty());
+}
+
+TEST_CASE("one anchor scan finds every anchor across blocks, as separate searches would") {
+    std::vector<uint8_t> image(0x3000, 0x90);
+    const std::vector<uint8_t> a{0x48, 0x89, 0x5c, 0x24, 0x08}, b{0x48, 0x89, 0x5c, 0x24, 0x10}, c{0xde, 0xad, 0xbe, 0xef};
+    const auto put = [&](size_t at, const std::vector<uint8_t>& bytes) { std::ranges::copy(bytes, image.begin() + at); };
+    put(0x10, a);
+    put(0xffe, b);   // Across the first block's end.
+    put(0x2000, a);
+    put(0x2ffc, c);  // At the very end.
+    sig::AnchorScan scan({a, b, c, {0x11, 0x22, 0x33, 0x44}});
+    for (size_t at = 0; at < image.size(); at += 0x1000)
+        scan.Feed(Base + at, std::span(image).subspan(at, 0x1000), at + 0x1000 >= image.size());
+    CHECK(scan.Hits()[0] == std::vector<uint64_t>{Base + 0x10, Base + 0x2000});
+    CHECK(scan.Hits()[1] == std::vector<uint64_t>{Base + 0xffe});
+    CHECK(scan.Hits()[2] == std::vector<uint64_t>{Base + 0x2ffc});
+    CHECK(scan.Hits()[3].empty());
 }
 
 TEST_CASE("touches keeps [reg + disp] uses of the asked offsets, marks writes and ranks functions") {

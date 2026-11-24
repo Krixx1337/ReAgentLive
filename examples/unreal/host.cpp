@@ -34,6 +34,7 @@ constexpr Command Commands[] = {
     {op::Search, "search", &Search},
     {op::Xrefs, "xrefs", &Xrefs, false},
     {op::Region, "region", &Region, false},
+    {op::ImageCopy, "image copy", &ImageCopy, false},
     {op::Pin, "pin", &Pin},
     {op::Trial, "trial", &Trial},
     {op::Watch, "watch", &Watch, false},

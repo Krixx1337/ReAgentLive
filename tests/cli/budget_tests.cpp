@@ -287,11 +287,47 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     CHECK(jobStatus["state"] == "running");
     CHECK(jobStatus["scanned"] == 0.25);
     CHECK(jobStatus["next_cursor"] == "0x7ff000");
-    // A result with none carries no status.
-    Json plain = Envelope(VendorCall(200));
-    const auto none = budget::Replace(plain, Text(plain).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
+    // Every other top-level scalar and count object survives too; lists and structs do not.
+    Json plain = VendorCall(200);
+    plain["by_kind"] = {{"code", 3}, {"data", 4}};
+    plain["path"] = std::string(400, 'p');
+    Json printed = Envelope(plain);
+    const auto scalars = budget::Replace(printed, Text(printed).size(), LineOf(true, {{"object", "0x10#1:2"}, {"function", "Vendor:GetItems"}}),
         [](const std::string&) { return std::string(); });
-    CHECK_FALSE((*none)["digest"].contains("status"));
+    const Json& others = (*scalars)["digest"]["status"];
+    CHECK(others["function"] == "Vendor:GetItems");
+    CHECK(others["block_size"] == 16);
+    CHECK(others["kept"] == false);
+    CHECK(others["by_kind"] == Json{{"code", 3}, {"data", 4}});
+    CHECK_FALSE(others.contains("outputs"));
+    CHECK_FALSE(others.contains("path")); // Past MaxStatusText.
+}
+
+TEST_CASE("digest: labels-check keeps its counts and narrows by status before raising max_chars") {
+    Json rows = Json::array();
+    for (int i = 0; i < 400; ++i)
+        rows.push_back({{"name", "Name_" + std::to_string(i) + std::string(60, 'n')}, {"kind", "user"}, {"rva", "0x1000"},
+            {"status", i % 50 ? "ok" : i % 100 ? "moved" : "missing"}});
+    const Json result = {{"path", "names.jsonl"}, {"module", "x.exe"}, {"timestamp", 1}, {"ok", 392}, {"moved", 4},
+        {"missing", 4}, {"ambiguous", 0}, {"invalid", 0}, {"unsigned", 0}, {"searches", 1}, {"rows", rows},
+        {"capped", false}, {"scan_ms", 900}};
+    Json record = {{"command", "labels-check"}, {"ok", true}, {"result", result}};
+    budget::Line line;
+    line.verb = &Row("labels-check");
+    line.args = ArgsOf(Row("labels-check"), Json::object());
+    line.call = Json{{"verb", "labels-check"}, {"args", Json::object()}};
+    line.limit = budget::ToolMaxChars;
+    const auto digest = budget::Replace(record, Text(record).size(), line, [](const std::string&) { return std::string(); });
+    REQUIRE(digest);
+    const Json& status = (*digest)["digest"]["status"];
+    CHECK(status["ok"] == 392);
+    CHECK(status["moved"] == 4);
+    CHECK(status["missing"] == 4);
+    CHECK(status["searches"] == 1);
+    const Json next = Json::parse((*digest)["digest"]["next"].get<std::string>());
+    CHECK(next["args"]["status"] == Json::array({"moved", "missing"}));
+    CHECK_FALSE(next.contains("max_chars"));
+    CHECK((*digest)["digest"]["narrow"] == Json::array({"status", "view.limit"}));
 }
 
 TEST_CASE("digest: no change that fits offers the same call with a budget, and names what narrows it") {

@@ -24,10 +24,16 @@ constexpr size_t ToolMaxChars = 25000;
 // reads as whole, a file a call wrote is never lost (`saved`; `next` is a
 // cut listing's resume address) and a search job can still be polled (`job`,
 // `state`, `scanned`). Results name them alike: results.md, Conventions.
+// Beside them a digest keeps every other top-level scalar (a count, a
+// module, a path; text up to MaxStatusText characters) and every top-level
+// object of numbers (counts by kind): the totals a reader acts on.
 inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
     "tick_accurate", "same_tick", "total", "next_cursor", "next", "filtered", "saved", "job", "state", "scanned"};
-// The verb args that narrow a result, as the digest names them.
-inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls", "to"};
+// The verb args that narrow a result, as the digest names them; a list of
+// enum words (labels-check's status) narrows too.
+inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls", "to",
+    "elements"};
+constexpr size_t MaxStatusText = 160;
 
 // Characters per path of a result, as the console prints it. Array elements
 // fold into one path (`rows[].Price`), so a path's size is all its elements'.
@@ -212,6 +218,51 @@ struct Change {
 
 namespace detail {
 inline bool HasArg(const Verb& verb, std::string_view key) { return !KeyPath(verb, key).empty(); }
+// The value at a profile path ("rows", "value.rows"); null past an array.
+inline const Json* At(const Json& root, std::string_view path) {
+    const Json* at = &root;
+    while (!path.empty()) {
+        const size_t dot = path.find('.');
+        const auto key = path.substr(0, dot);
+        if (key == "[]" || !at->is_object()) return nullptr;
+        const auto found = at->find(std::string(key));
+        if (found == at->end()) return nullptr;
+        at = &*found;
+        path = dot == std::string_view::npos ? std::string_view{} : path.substr(dot + 1);
+    }
+    return at;
+}
+// A filter: an own arg taking a list of enum words, named as a member of the
+// main list's rows (labels-check's status). Its change keeps the values the
+// rows hold but the commonest; `kept` and `count` get the rows it keeps.
+inline std::optional<Change> Filter(const Json& rows, const Verb& verb, const Args& given, size_t& kept, size_t& count) {
+    for (const auto& arg : verb.args) {
+        if (!arg.list || !arg::Enum(arg.type) || given.Has(arg.key)) continue;
+        const std::string key(arg.key);
+        std::map<std::string, size_t> seen;
+        for (const auto& row : rows)
+            if (row.is_object() && row.contains(key) && row[key].is_string() && arg::OneOf(arg.type, row[key].get<std::string>()))
+                ++seen[row[key].get<std::string>()];
+        if (seen.size() < 2) continue;
+        const auto commonest = std::ranges::max_element(seen, {}, &std::pair<const std::string, size_t>::second)->first;
+        Json values = Json::array();
+        for (std::string_view rest = arg.type; !rest.empty();) { // In the arg's own order.
+            const size_t bar = rest.find('|');
+            const std::string word(rest.substr(0, bar));
+            if (seen.contains(word) && word != commonest) values.push_back(word);
+            rest = bar == std::string_view::npos ? std::string_view{} : rest.substr(bar + 1);
+        }
+        kept = count = 0;
+        for (const auto& row : rows)
+            if (row.is_object() && row.contains(key) && row[key].is_string() && row[key].get<std::string>() != commonest &&
+                seen.contains(row[key].get<std::string>())) {
+                kept += row.dump(-1, ' ', true, Json::error_handler_t::replace).size() + 1;
+                ++count;
+            }
+        return Change{key, std::move(values)};
+    }
+    return std::nullopt;
+}
 // Members that fit in `room` characters, top down: a member kept whole when
 // it fits (smallest first), else its own members tried the same way. Field
 // paths, sorted; `sum` gets their characters.
@@ -259,9 +310,13 @@ inline std::vector<std::string> Pick(const std::map<std::string, size_t>& fields
 }
 
 // The args that narrow a call whose result took `chars` of a `limit`
-// budget, from its profile and the verb's own args; empty when the verb
-// has none that would help. `given` is the call's args as given.
-inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, const Args& given, size_t limit) {
+// budget, from its profile, the result itself and the verb's own args,
+// narrowest first: a filter on the rows' own values (all but the commonest),
+// then the row members that fit, then fewer rows, then nonzero, own or
+// fewer elements; empty when the verb has none that would help. `given` is
+// the call's args as given.
+inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, const Args& given, size_t limit,
+                                  const Json& result = {}) {
     std::vector<Change> changes;
     const size_t target = limit / 4 * 3; // Room for the envelope and a rounding error.
     const size_t rows = profile.Rows();
@@ -269,9 +324,18 @@ inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, cons
     const size_t frame = rows == SIZE_MAX ? profile.Chars() : profile.Chars() - nodes[rows].chars;
     const size_t room = target > frame ? target - frame : 0;
     if (rows != SIZE_MAX && nodes[rows].count) {
-        const size_t shown = nodes[rows].count;
+        size_t shown = nodes[rows].count;
         size_t kept = nodes[rows].chars;
-        if (detail::HasArg(verb, "fields")) {
+        if (const Json* list = detail::At(result, nodes[rows].path); list && list->is_array()) {
+            size_t filteredChars = 0, filteredRows = 0;
+            if (auto filter = detail::Filter(*list, verb, given, filteredChars, filteredRows); filter && filteredRows < shown) {
+                changes.push_back(std::move(*filter));
+                if (!filteredRows) return changes;
+                kept = filteredChars;
+                shown = filteredRows;
+            }
+        }
+        if (kept > room && detail::HasArg(verb, "fields")) {
             const auto fields = profile.Fields();
             size_t sum = 0;
             const auto chosen = detail::Pick(fields, room, sum);
@@ -298,6 +362,8 @@ inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, cons
     }
     if (changes.empty() && detail::HasArg(verb, "nonzero") && !given.Has("nonzero")) changes.push_back({KeyPath(verb, "nonzero")});
     else if (changes.empty() && detail::HasArg(verb, "own") && !given.Has("own")) changes.push_back({KeyPath(verb, "own")});
+    else if (changes.empty() && detail::HasArg(verb, "elements") && !given.Has("elements"))
+        changes.push_back({KeyPath(verb, "elements"), 2});
     return changes;
 }
 
@@ -305,7 +371,8 @@ inline std::vector<Change> Narrow(const Profile& profile, const Verb& verb, cons
 inline std::vector<std::string> NarrowingArgs(const Verb& verb) {
     std::vector<std::string> out;
     for (const auto& arg : verb.args) {
-        if (std::ranges::find(Narrowing, arg.key) != std::end(Narrowing)) out.emplace_back(arg.key);
+        if (std::ranges::find(Narrowing, arg.key) != std::end(Narrowing) || (arg.list && arg::Enum(arg.type)))
+            out.emplace_back(arg.key);
         for (const auto& field : arg.fields)
             if (std::ranges::find(Narrowing, field.key) != std::end(Narrowing))
                 out.push_back(std::string(arg.key) + "." + std::string(field.key));
@@ -340,6 +407,13 @@ inline Json Digest(const Profile& profile, size_t chars, size_t limit, const Ver
         for (const auto key : StatusKeys)
             if (const auto found = result.find(std::string(key)); found != result.end())
                 status[std::string(key)] = found->is_array() ? Json(found->size()) : *found;
+        for (const auto& [key, value] : result.items()) {
+            if (status.contains(key)) continue;
+            const bool counts = value.is_object() && !value.empty() &&
+                std::ranges::all_of(value, [](const Json& member) { return member.is_number(); });
+            const bool text = value.is_string() && value.get_ref<const std::string&>().size() <= MaxStatusText;
+            if (value.is_number() || value.is_boolean() || text || counts) status[key] = value;
+        }
         if (!status.empty()) digest["status"] = std::move(status);
     }
     if (const size_t rows = profile.Rows(); rows != SIZE_MAX)
@@ -376,7 +450,7 @@ std::optional<Json> Replace(Json& record, size_t chars, const Line& line, Keep&&
         file = keep(record.dump(-1, ' ', true, Json::error_handler_t::replace));
         if (file->empty()) return std::nullopt;
     } else if (line.verb && line.args && line.call) {
-        const auto changes = Narrow(profile, *line.verb, *line.args, line.limit);
+        const auto changes = Narrow(profile, *line.verb, *line.args, line.limit, record["result"]);
         if (!changes.empty()) {
             next = CallLine(*line.call, changes).dump(-1, ' ', true, Json::error_handler_t::replace);
         } else {

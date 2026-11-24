@@ -999,7 +999,8 @@ TEST_CASE("each refusals and kept reasons speak of the parameter they name") {
     const ue::Signature text{16, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return, "StrProperty")}};
     CHECK(calls::KeptReason(text, Structs).starts_with("ReturnValue is a String, which owns memory; the agent keeps"));
     const ue::Signature input{8, {Parameter("Index", ue::Param | ue::Plain, "IntProperty")}};
-    CHECK(calls::EachRefusal(input, Structs) == "Index is an input; each calls only functions with no inputs: use call");
+    CHECK(calls::EachRefusal(input, Structs) == "Index is an input; each calls only functions with no inputs: call-pure with params calls a const or "
+        "pure one on one object (read-only), else call");
     const ue::Signature plain{24, {Parameter("ReturnValue", ue::Param | ue::Output | ue::Return | ue::Plain, "StructProperty", "Vector")}};
     CHECK(calls::EachRefusal(plain, Structs).empty());
     CHECK(calls::KeptReason(plain, Structs).empty());

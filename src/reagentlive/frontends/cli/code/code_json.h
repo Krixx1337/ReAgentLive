@@ -389,6 +389,8 @@ namespace shape {
 struct DispHit {
     Addr address;
     HexNum rva;                         // In the scan's module (the result's module).
+    HexNum disp;                        // Which of the asked displacements.
+    std::string base;                   // The base register ("rdi").
     std::string access;
     uint64_t width = 0;
     std::string text;
@@ -396,27 +398,41 @@ struct DispHit {
     template<class V> static void Describe(V& v) {
         v("address", &DispHit::address);
         v("rva", &DispHit::rva);
+        v("disp", &DispHit::disp);
+        v("base", &DispHit::base);
         v("access", &DispHit::access, "write|read|both|address");
         v("width", &DispHit::width);
         v("text", &DispHit::text);
         v("function", &DispHit::function);
     }
 };
+// same_base: a function using every asked displacement on one base register.
+struct DispFunction {
+    HexNum function;                    // Its start rva.
+    std::string base;
+    uint64_t hits = 0;                  // Its rows.
+    template<class V> static void Describe(V& v) {
+        v("function", &DispFunction::function);
+        v("base", &DispFunction::base);
+        v("hits", &DispFunction::hits);
+    }
+};
 // disp-scan: one page of the sweep. from and to bound what this call read;
 // scanned is the share of the module's code behind next_cursor (1 when done).
 struct DispScan {
-    HexNum disp;
+    std::vector<HexNum> disps;
     std::string access;
     std::string module;
     Addr from, to;
     double scanned = 0;
     uint64_t total = 0;
     std::vector<DispHit> rows;
+    std::optional<std::vector<DispFunction>> functions;
     bool capped = false;
     std::optional<Addr> nextCursor;
-    int64_t scanMs = 0;
+    int64_t scanMs = 0, readMs = 0;
     template<class V> static void Describe(V& v) {
-        v("disp", &DispScan::disp);
+        v("disps", &DispScan::disps);
         v("access", &DispScan::access);
         v("module", &DispScan::module);
         v("from", &DispScan::from);
@@ -424,9 +440,11 @@ struct DispScan {
         v("scanned", &DispScan::scanned);
         v("total", &DispScan::total);
         v("rows", &DispScan::rows);
+        v("functions", &DispScan::functions);
         v("capped", &DispScan::capped);
         v("next_cursor", &DispScan::nextCursor);
         v("scan_ms", &DispScan::scanMs);
+        v("read_ms", &DispScan::readMs);
     }
 };
 }

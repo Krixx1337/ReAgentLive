@@ -59,7 +59,8 @@ std::string EachRefusal(const ue::Signature& signature, Lookup&& lookup, size_t*
         if (which) *which = static_cast<size_t>(&parameter - signature.parameters.data());
         if (!FilledByCall(flags))
             return parameter.name + " is an input" + (flags & ue::Reference ? " (passed by reference)" : "") +
-                "; each calls only functions with no inputs: use call";
+                "; each calls only functions with no inputs: call-pure with params calls a const or pure one on "
+                "one object (read-only), else call";
         if (!(flags & ue::Plain)) return NotPlain(parameter, lookup) + "; each reads only plain values: use call";
     }
     return {};

@@ -428,6 +428,21 @@ class SessionTests(unittest.TestCase):
             self.session.call('bogus')
         self.assertEqual(self.c.status()['packs'], ['ue'])
 
+    def test_a_session_without_hold_runs_a_console_per_call_in_one_usage_session(self):
+        open(self.log, 'w').close()
+        with dl.Session(sys.executable, ['-I', FAKE], hold=False, busy_wait=30) as session:
+            self.assertIsNone(session._process)                       # Nothing holds the agent between calls.
+            c = self.gen.Console(session)
+            self.assertEqual(c.ue.describe(object=REF)["ref"], REF)
+            self.assertEqual(c.modules()['rows'][0]['name'], 'Game.exe')
+            self.assertIn('--busy-wait', session._command)
+        with open(self.log) as f:
+            lines = f.read().splitlines()
+        sessions = [line for line in lines if line.startswith('session ')]
+        self.assertEqual(len(sessions), 2)                            # One console per call...
+        self.assertEqual(sessions[0], sessions[1])                    # ...in one usage-log session.
+        self.assertTrue(sessions[0].startswith('session py-'))
+
     def test_packs_reach_the_console_and_a_refusal_is_kind_pack(self):
         open(self.log, 'w').close()
         with dl.Session(sys.executable, ['-I', FAKE], packs=['explore', 'observe']) as session:

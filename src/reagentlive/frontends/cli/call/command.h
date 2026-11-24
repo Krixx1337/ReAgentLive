@@ -110,14 +110,18 @@ struct Command {
     std::vector<uint32_t> offsets;
     uint64_t range = 0;
     bool readsOnly = false;
-    // touches and disp-scan: the base registers taken (empty: all but rsp and
-    // rbp). disp-scan: the access, operand bytes (0: any) and immediate asked
-    // for; `offsets` holds its one disp, request.address its start (0: the
-    // first code byte).
+    // touches and disp-scan: the base registers taken (empty: all but rsp,
+    // and for touches rbp). disp-scan: the access, operand bytes (0: any) and
+    // immediate asked for; `offsets` holds its disps, request.address its
+    // start (0: the first code byte); `sameBase`: only functions using every
+    // disp on one base register.
     std::vector<std::string> bases;
     std::string access;
     uint32_t width = 0;
     std::optional<uint64_t> imm;
+    bool sameBase = false;
+    // labels-check: the row statuses kept (empty: all).
+    std::vector<std::string> statuses;
     // call dry: resolve the function and build the block, call nothing.
     bool dry = false;
     // call and rows: the member paths kept in each row (fields a,b.c);

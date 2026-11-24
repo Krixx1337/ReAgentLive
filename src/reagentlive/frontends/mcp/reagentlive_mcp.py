@@ -22,8 +22,13 @@ ticks as possible.
 
 A console per call, never one kept open: nothing holds the executable
 between calls, so a rebuilt console links and the next call runs it.
-Calls run one at a time (a second console would wait, then be refused as
-busy). Each start reads the table's hash (`help` with `hash`, no target
+Calls run one at a time. A console that finds another client on the agent
+(a Python session) waits for its slot up to its --busy-wait (default 10 s;
+pass it after `--`), then refuses as busy, naming the holder.
+Refusals made here (a tool of a disabled pack, a batch item past the packs,
+an argument the input schema refuses) never reach the target, but each is
+handed to a console as a call with `refused`, so the usage log and `usage`
+count them like the console's own. Each start reads the table's hash (`help` with `hash`, no target
 needed); when it changed, the table is read again before the call runs,
 and the client is told the tool list changed. With no target the console
 answers `help` and `usage` and refuses the rest as `startup`. Every
@@ -57,7 +62,9 @@ and output; the protocol revision is whichever the installed SDK negotiates.
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -358,8 +365,28 @@ class Live:
     def row(self, name):
         return next((row for row in self.table['rows'] if tool_name(row) == name), None)
 
+    def record_refusal(self, verb, arguments, kind, message, key=None):
+        """Logs a refusal made here in the session's usage log: a one-shot console answers the call with
+        `refused` from the table and the log alone (no target, no wait for the agent)."""
+        refused = {'kind': kind, 'message': message, **({'key': key} if key else {})}
+        call = {'verb': verb, 'args': arguments or {}, 'refused': refused}
+        handle, path = tempfile.mkstemp(suffix='.json', prefix='reagentlive-refused-')
+        try:
+            with os.fdopen(handle, 'w', encoding='utf-8') as file:
+                json.dump(call, file)
+            subprocess.run([self.console, *self.args, '--caller', 'tool', '--session', self.session_id, '-c', f'@{path}'],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass  # The refusal still reaches the client; only its usage line is lost.
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     def run(self, name, arguments):
         """One tool call on a fresh console: (its result or Digest, True when the table changed since the last call)."""
+        refusals = []
         with self.lock:
             session = Session(self.console, [*self.args, '--session', self.session_id], caller='tool', table=self.table)
             try:
@@ -377,8 +404,10 @@ class Live:
                                         input_schema(row))
                 except jsonschema.ValidationError as error:
                     stale = ' (the console was rebuilt: reconnect for its tool list)' if changed else ''
-                    raise RuntimeError(f'{name}: {error.message}{stale}; example: '
-                                       f'{example_text(row["example"], name)}') from None
+                    text = f'{name}: {error.message}{stale}; example: {example_text(row["example"], name)}'
+                    path = [str(step) for step in error.absolute_path if isinstance(step, str)]
+                    refusals.append((row['verb'], arguments, 'schema', text, '.'.join(path[:2]) or None))
+                    raise RuntimeError(text) from None
                 try:
                     result = session.call(row['verb'], arguments, max_chars=max_chars)
                 except ReAgentLiveError as error:
@@ -386,6 +415,8 @@ class Live:
                 warning = session.context_warning
             finally:
                 session.close()
+                for refusal_args in refusals:  # After close: the slot is free, though a refusal needs none.
+                    self.record_refusal(*refusal_args)
         return (result.raw if isinstance(result, Record) else result), changed, warning
 
 
@@ -484,8 +515,12 @@ def build(console, args=(), name='reagentlive', output_schemas='compact', packs=
         row = live.row(name)
         if row is None or not served(row, state.enabled):
             known = row is not None and row['pack'] in state.ceiling
-            return failed(f'no tool {name}' + (f' while {row["pack"]} is off: enable it with packs' if known else ''))
+            text = f'no tool {name}' + (f' while {row["pack"]} is off: enable it with packs' if known else '')
+            if row is not None:
+                await anyio.to_thread.run_sync(live.record_refusal, row['verb'], arguments, 'pack', text)
+            return failed(text)
         if row['verb'] == 'batch' and (refusal := batch_refusal(live.table, state, arguments)):
+            await anyio.to_thread.run_sync(live.record_refusal, 'batch', arguments, 'pack', refusal, 'calls')
             return failed(refusal)
         try:
             raw, changed, warning = await anyio.to_thread.run_sync(live.run, name, arguments)

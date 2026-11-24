@@ -30,8 +30,8 @@ Current behaviour lives in the [command pages](INDEX.md#commands),
 - **The core never hooks, and starts no threads unless the host opts in.**
   The host calls `Tick()` from a thread it trusts. The one exception is
   the search worker, allowed only by `Host::backgroundSearch`: a single
-  thread that runs search jobs and the console's internal scans (reads
-  only, no engine calls) while the host tick only polls.
+  thread that runs search jobs, the console's internal scans and image
+  copies (reads only, no engine calls) while the host tick only polls.
 - **Two opt-in pointer swaps, never code.** The Unreal pack's
   `calls-start` swaps one `UFunction`'s native pointer (heap data) for a
   fixed thunk that records and forwards each call, and puts it back with a

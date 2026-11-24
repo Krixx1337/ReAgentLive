@@ -163,6 +163,65 @@ struct CheckResult {
     std::optional<bool> resolves;        // With an expect.
 };
 
+// Every hit of many anchors (each at least MinAnchor bytes) in one pass over
+// bytes fed block by block, in address order with no gaps. Anchors are
+// bucketed by their first four bytes, with a table of first byte pairs to
+// pass over most positions at once. Each anchor's hits stop at
+// MaxAnchorHits + 1 (too common).
+class AnchorScan {
+public:
+    explicit AnchorScan(std::vector<std::vector<uint8_t>> anchors) : anchors_(std::move(anchors)), hits_(anchors_.size()) {
+        pairs_.assign(65536 / 8, 0);
+        for (size_t i = 0; i < anchors_.size(); ++i) {
+            const auto& anchor = anchors_[i];
+            if (anchor.size() < MinAnchor) continue;
+            longest_ = std::max(longest_, anchor.size());
+            const uint16_t pair = static_cast<uint16_t>(anchor[0] | anchor[1] << 8);
+            pairs_[pair / 8] = static_cast<uint8_t>(pairs_[pair / 8] | (1u << (pair % 8)));
+            buckets_[Word(anchor.data())].push_back(i);
+        }
+    }
+    // The next block, right after the last one; `last` ends the input.
+    void Feed(uint64_t address, std::span<const uint8_t> block, bool last) {
+        if (tail_.empty()) start_ = address;
+        tail_.insert(tail_.end(), block.begin(), block.end());
+        const size_t size = tail_.size();
+        // Positions whose longest anchor may run past the input wait for the next block.
+        const size_t limit = last ? size : size > longest_ ? size - longest_ + 1 : 0;
+        const uint8_t* data = tail_.data();
+        for (size_t at = 0; at < limit && at + MinAnchor <= size; ++at) {
+            const uint16_t pair = static_cast<uint16_t>(data[at] | data[at + 1] << 8);
+            if (!(pairs_[pair / 8] & (1u << (pair % 8)))) continue;
+            const auto bucket = buckets_.find(Word(data + at));
+            if (bucket == buckets_.end()) continue;
+            for (const size_t i : bucket->second) {
+                const auto& anchor = anchors_[i];
+                if (at + anchor.size() > size || hits_[i].size() > MaxAnchorHits) continue;
+                if (!memcmp(data + at, anchor.data(), anchor.size())) hits_[i].push_back(start_ + at);
+            }
+        }
+        tail_.erase(tail_.begin(), tail_.begin() + static_cast<ptrdiff_t>(std::min(limit, size)));
+        start_ += std::min(limit, size);
+        if (last) tail_.clear();
+    }
+    const std::vector<std::vector<uint8_t>>& Anchors() const { return anchors_; }
+    const std::vector<std::vector<uint64_t>>& Hits() const { return hits_; }
+
+private:
+    static uint32_t Word(const uint8_t* at) {
+        uint32_t word;
+        memcpy(&word, at, sizeof(word));
+        return word;
+    }
+    std::vector<std::vector<uint8_t>> anchors_;
+    std::vector<std::vector<uint64_t>> hits_;
+    std::vector<uint8_t> pairs_;
+    std::map<uint32_t, std::vector<size_t>> buckets_;
+    std::vector<uint8_t> tail_;
+    uint64_t start_ = 0;
+    size_t longest_ = MinAnchor;
+};
+
 // Runs checks against one agent, sharing anchor searches between checks
 // (sig-check with `file`): one search per module and anchor.
 class Checker {
@@ -170,6 +229,16 @@ public:
     Checker(SearchFn search, ReadFn read, std::span<const Module> modules)
         : search_(std::move(search)), read_(std::move(read)), modules_(modules.begin(), modules.end()) {}
     size_t Searches() const { return searches_; }
+    // Anchor hits found another way (AnchorScan: one pass over the image for
+    // many anchors): a later Run uses them instead of a search. More than
+    // MaxAnchorHits reads as too common, as a search's would.
+    void Preload(const Module& module, std::span<const uint8_t> anchor, std::vector<uint64_t> hits) {
+        auto key = std::pair(module.base, std::vector<uint8_t>(anchor.begin(), anchor.end()));
+        std::expected<std::vector<uint64_t>, std::string> outcome = std::move(hits);
+        if (outcome->size() > MaxAnchorHits) outcome = std::unexpected(std::string());
+        anchors_.insert_or_assign(std::move(key), std::move(outcome));
+    }
+    void CountSearch() { ++searches_; }
 
     // Finds the anchor inside the module, then reads the bytes around each
     // hit (MaxBatchReads per request) and compares them under the mask. A

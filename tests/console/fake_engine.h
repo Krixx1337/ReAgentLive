@@ -564,6 +564,7 @@ constexpr reagentlive::Command Commands[] = {
     {reagentlive::op::ReadBatch, "read-batch", &reagentlive::ReadBatch},
     {reagentlive::op::Modules, "modules", &Modules},
     {reagentlive::op::Search, "search", &reagentlive::Search},
+    {reagentlive::op::ImageCopy, "image copy", &reagentlive::ImageCopy},
     {reagentlive::op::Watch, "watch", &reagentlive::Watch},
     {ue::op::Find, "find", &Find},
     {ue::op::Fields, "fields", &Fields},

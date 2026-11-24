@@ -254,6 +254,23 @@ class McpTests(unittest.TestCase):
         self.assertTrue(native.is_error)                               # native may be enabled: say how.
         self.assertIn('packs {"action": "enable", "pack": "native"} first', native.content[0].text)
 
+    def test_refusals_made_here_reach_the_usage_log(self):
+        open(self.log, 'w').close()
+
+        async def body(client):
+            await client.call_tool('batch', {'calls': [call('disasm', {'addr': '0x1000'})]})
+            await client.call_tool('read', {'addr': '0x10', 'length': 4})
+            await client.call_tool('disasm', {'addr': '0x1000'})
+            self.assertFalse((await client.call_tool('ue_describe', {'object': REF})).is_error)
+        self.run_client(body, allow=['native'])
+        with open(self.log) as file:
+            lines = file.read().splitlines()
+        refused = [line.split(' ') for line in lines if line.startswith('refused ')]
+        self.assertEqual([line[2:5] for line in refused], [['batch', 'pack', 'calls'], ['read', 'schema', ''],
+                                                           ['disasm', 'pack', '']])
+        session = next(line for line in lines if line.startswith('session ')).split(' ')[1]
+        self.assertTrue(all(line[1] == session for line in refused))   # The server's one usage-log session.
+
     def test_a_session_past_its_context_limit_adds_the_warning_beside_the_result(self):
         async def body(client):
             return await client.call_tool('ue_describe', {'index': 5, 'serial': 9})

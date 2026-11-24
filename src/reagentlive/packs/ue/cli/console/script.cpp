@@ -241,11 +241,10 @@ Result<std::vector<shape::ScriptEvent>> UbergraphEntries(Session& session, const
 }
 }
 
-void RunScriptDecode(Session& session, const Command& command, std::string_view jsonCommand) {
+void RunScriptDecode(Session& session, const Command& command, std::string_view jsonCommand, const ue::FunctionInfo& found) {
     Client& client = session.client;
     const Ref object = ue::GetRef(command.request);
-    auto function = ue::Function(client, object, command.request.text);
-    if (!function) return CommandError(session, jsonCommand, function.error());
+    const ue::FunctionInfo* function = &found;
     auto bytes = ScriptBytes(client, function->address);
     if (!bytes) return CommandError(session, jsonCommand, bytes.error());
     // entry alone reads one event; with to, the range up to it, past returns.

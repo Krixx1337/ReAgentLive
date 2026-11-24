@@ -64,12 +64,19 @@ Parsed Touches(const Args& args, const ParseContext& context) {
     return command;
 }
 
-// disp-scan: every instruction in the main module's code with one [reg + disp] form, a page at a time.
-Parsed DispScan(const Args& args, const ParseContext& context) {
+// disp-scan: every instruction in the main module's code with a [reg + disp] form of these disps, a page at a time.
+Parsed DispScan(const Args& args, const ParseContext&) {
     Command command;
-    const uint64_t disp = args.Int("disp");
-    if (!disp || disp > UINT32_MAX) return Fail("disp is 1..0xffffffff");
-    command.offsets = {static_cast<uint32_t>(disp)};
+    for (const auto& value : args.At("disps")) {
+        const uint64_t disp = Args::Number(value);
+        if (!disp || disp > UINT32_MAX || command.offsets.size() == touch::MaxOffsets)
+            return Fail("disps: up to " + std::to_string(touch::MaxOffsets) + ", each 1..0xffffffff");
+        if (std::ranges::find(command.offsets, static_cast<uint32_t>(disp)) == command.offsets.end())
+            command.offsets.push_back(static_cast<uint32_t>(disp));
+    }
+    if (command.offsets.empty()) return Fail("disps: give at least one");
+    command.sameBase = args.Has("same_base");
+    if (command.sameBase && command.offsets.size() < 2) return Fail("same_base: give two disps or more");
     command.access = args.Has("access") ? args.Str("access") : "write";
     if (args.Has("width")) {
         const uint64_t width = args.Int("width");
@@ -80,8 +87,9 @@ Parsed DispScan(const Args& args, const ParseContext& context) {
     }
     if (args.Has("imm")) command.imm = args.Int("imm");
     command.bases = args.Strs("bases");
-    if (args.Has("start"))
-        if (auto why = Place(args, "start", context, command, false); !why.empty()) return Fail(why);
+    command.request.address = args.Int("start");
+    command.limit = static_cast<uint32_t>(std::min<uint64_t>(args.Int("limit", 128), 4096));
+    if (!command.limit) return Fail("view.limit: hits a page holds, 1..4096");
     command.kind = Kind::DispScan;
     command.request.op = op::ReadBatch;
     return command;
@@ -173,6 +181,8 @@ Parsed LabelsCheck(const Args& args, const ParseContext&) {
     command.request.op = op::Search;
     command.file = args.Str("file");
     command.target = args.Str("module");
+    command.statuses = args.Strs("status");
+    command.limit = static_cast<uint32_t>(std::min<uint64_t>(args.Int("limit"), UINT32_MAX));
     return command;
 }
 

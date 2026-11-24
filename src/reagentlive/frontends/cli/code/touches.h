@@ -4,12 +4,13 @@
 // thunk, a getter), and the executable code it leaves out, split into pieces
 // at returns and int3 padding; keep memory operands [reg + disp] whose
 // displacement is one of the offsets. disp-scan sweeps a whole image's code
-// for one displacement the same way. Console only, pure: code bytes come in,
+// for up to 8 displacements the same way. Console only, pure: code bytes come in,
 // so tests feed fixed bytes.
 #pragma once
 #include <Zydis/Zydis.h>
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -41,15 +42,19 @@ inline bool MayUse(const ZydisDecodedInstruction& instruction, std::span<const u
 }
 
 // Which base registers count: `only` names them (64-bit names: "rcx"); empty
-// takes every base but the stack frame's (rsp, rbp), whose slots are locals,
-// not struct members. RIP-relative operands are globals: never taken.
+// takes every base but rsp (stack slots are locals, not struct members) and,
+// unless `rbp`, rbp: touches leaves the frame pointer out near one function,
+// disp-scan keeps it, since optimised code uses rbp as a plain register and
+// an image-wide field hunt would miss those writers. RIP-relative operands
+// are globals: never taken.
 struct Bases {
     std::vector<std::string> only;
+    bool rbp = false;
 };
 inline bool BaseTaken(ZydisRegister base, const Bases& bases) {
     if (base == ZYDIS_REGISTER_NONE || base == ZYDIS_REGISTER_RIP || base == ZYDIS_REGISTER_EIP) return false;
     const ZydisRegister wide = ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, base);
-    if (bases.only.empty()) return wide != ZYDIS_REGISTER_RSP && wide != ZYDIS_REGISTER_RBP;
+    if (bases.only.empty()) return wide != ZYDIS_REGISTER_RSP && (bases.rbp || wide != ZYDIS_REGISTER_RBP);
     const char* name = ZydisRegisterGetString(wide);
     return name && std::ranges::find(bases.only, std::string_view(name)) != bases.only.end();
 }
@@ -214,19 +219,22 @@ inline void Rank(std::vector<Row>& rows, bool reads = false) {
     });
 }
 
-// disp-scan: what one instruction form must be. `access` is write (stores
-// and read-modify-writes), read (loads and read-modify-writes) or any (also
-// lea, the field's address taken); `width` the memory operand's bytes (0:
-// any); `imm` an immediate operand's value (compared in the operand's width).
+// disp-scan: what one instruction form must be. `disps` the displacements
+// (any of them); `access` is write (stores and read-modify-writes), read
+// (loads and read-modify-writes) or any (also lea, the field's address
+// taken); `width` the memory operand's bytes (0: any); `imm` an immediate
+// operand's value (compared in the operand's width).
 struct Form {
-    uint32_t disp = 0;
+    std::vector<uint32_t> disps;
     std::string access = "write";
     uint32_t width = 0;
     std::optional<uint64_t> imm;
-    Bases bases;
+    Bases bases{{}, true};
 };
 struct Hit {
     uint64_t address = 0;
+    uint32_t disp = 0;      // Which of the form's displacements.
+    std::string base;       // The base register, 64-bit name ("rdi").
     std::string access;     // write, read, both (read-modify-write) or address (lea).
     uint32_t width = 0;     // The memory operand's bytes; 0 for lea.
     std::string text;
@@ -245,7 +253,7 @@ inline size_t Sweep(std::span<const uint8_t> code, uint64_t address, const Form&
     ZydisDecoderContext context;
     ZydisDecodedInstruction instruction;
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
-    const uint32_t offsets[] = {form.disp};
+    const std::span<const uint32_t> offsets = form.disps;
     size_t at = 0;
     while (at < code.size()) {
         if (!last && code.size() - at < MaxInstruction) break;
@@ -271,7 +279,8 @@ inline size_t Sweep(std::span<const uint8_t> code, uint64_t address, const Form&
                 continue;
             }
             if (operand.type != ZYDIS_OPERAND_TYPE_MEMORY || !BaseTaken(operand.mem.base, form.bases) ||
-                !operand.mem.disp.has_displacement || operand.mem.disp.value != static_cast<int64_t>(form.disp)) continue;
+                !operand.mem.disp.has_displacement || operand.mem.disp.value <= 0 || operand.mem.disp.value > UINT32_MAX ||
+                std::ranges::find(offsets, static_cast<uint32_t>(operand.mem.disp.value)) == offsets.end()) continue;
             const bool agen = operand.mem.type == ZYDIS_MEMOP_TYPE_AGEN;
             const bool writes = (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0;
             const bool reads = (operand.actions & ZYDIS_OPERAND_ACTION_MASK_READ) != 0;
@@ -280,7 +289,9 @@ inline size_t Sweep(std::span<const uint8_t> code, uint64_t address, const Form&
             if (form.access == "read" && (!reads || agen)) continue;
             const uint32_t width = agen ? 0 : operand.size / 8;
             if (form.width && width != form.width) continue;
-            hit = Hit{address + at, access, width, {}};
+            const char* base = ZydisRegisterGetString(
+                ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, operand.mem.base));
+            hit = Hit{address + at, static_cast<uint32_t>(operand.mem.disp.value), base ? base : "", access, width, {}};
         }
         if (hit && immediate) {
             char text[256]; // The size Zydis examples use: long AVX text fits.
@@ -292,5 +303,33 @@ inline size_t Sweep(std::span<const uint8_t> code, uint64_t address, const Form&
         at += length;
     }
     return std::min(at, code.size());
+}
+
+// same_base: the hits of functions that use every displacement of `disps` on
+// one base register; `function` gives a hit's function start (nullopt:
+// outside every entry, left out). Each group is a function and a base, its
+// hits in address order; groups in function order.
+struct Group {
+    uint64_t function = 0;
+    std::string base;
+    std::vector<Hit> hits;
+};
+template<class FunctionOf>
+std::vector<Group> SameBase(std::span<const Hit> hits, std::span<const uint32_t> disps, FunctionOf&& function) {
+    std::map<std::pair<uint64_t, std::string>, Group> groups;
+    for (const auto& hit : hits) {
+        const std::optional<uint64_t> start = function(hit.address);
+        if (!start) continue;
+        auto& group = groups[{*start, hit.base}];
+        group.function = *start;
+        group.base = hit.base;
+        group.hits.push_back(hit);
+    }
+    std::vector<Group> out;
+    for (auto& [key, group] : groups)
+        if (std::ranges::all_of(disps, [&](uint32_t disp) {
+                return std::ranges::any_of(group.hits, [&](const Hit& hit) { return hit.disp == disp; });
+            })) out.push_back(std::move(group));
+    return out;
 }
 }

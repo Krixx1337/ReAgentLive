@@ -513,6 +513,51 @@ TEST_CASE("without the host's opt-in the agent starts no thread") {
     CHECK(reagentlive::detail::ThreadsStarted() == 1);
 }
 
+TEST_CASE("image copy reads an image through the window, on the worker only with the opt-in") {
+    Client client = Attach();
+    TheAgent().background = false;
+    const auto base = reinterpret_cast<const uint8_t*>(GetModuleHandleW(nullptr));
+    const auto threads = reagentlive::detail::ThreadsStarted();
+    const auto onWorker = reagentlive::detail::ImageCopiesOnWorker();
+    // The exe's headers and first section: image pages, copied whole in tick slices.
+    auto block = client.CopyImage(reinterpret_cast<uint64_t>(base), 0x3000, 10s);
+    REQUIRE(block);
+    REQUIRE(block->bytes.size() == 0x3000);
+    REQUIRE(block->copied.size() == 3);
+    CHECK(block->copied[0]);
+    CHECK(memcmp(block->bytes.data(), base, 0x1000) == 0);
+    // Heap memory is no image: left zero and unmarked.
+    std::vector<uint8_t> heap(0x2000, 0xab);
+    auto other = client.CopyImage(reinterpret_cast<uint64_t>(heap.data()), 0x100, 10s);
+    REQUIRE(other);
+    CHECK_FALSE(other->copied[0]);
+    CHECK(other->bytes == std::vector<uint8_t>(0x100, 0));
+    CHECK(reagentlive::detail::ThreadsStarted() == threads);
+    CHECK(reagentlive::detail::ImageCopiesOnWorker() == onWorker);
+    // Bounds: nothing past the window, nothing empty.
+    CHECK_FALSE(client.CopyImage(reinterpret_cast<uint64_t>(base), 0, 10s));
+    CHECK_FALSE(client.CopyImage(reinterpret_cast<uint64_t>(base), static_cast<uint32_t>(ImageWindowBytes) + 1, 10s));
+
+    TheAgent().background = true;
+    auto worker = client.CopyImage(reinterpret_cast<uint64_t>(base), 0x3000, 10s);
+    TheAgent().background = false;
+    REQUIRE(worker);
+    CHECK(worker->bytes == block->bytes);
+    CHECK(reagentlive::detail::ImageCopiesOnWorker() == onWorker + 1);
+    CHECK(reagentlive::detail::ThreadsStarted() == 1);
+}
+
+TEST_CASE("a busy agent names the client that holds it") {
+    Client client = Attach();
+    auto second = Client::Attach(SectionName(), Layout, "script");
+    REQUIRE_FALSE(second);
+    CHECK(second.error().kind == Error::Kind::Busy);
+    const auto holder = Client::Holder(SectionName());
+    REQUIRE(holder);
+    CHECK(holder->pid == GetCurrentProcessId());
+    CHECK(holder->since > 0);
+}
+
 TEST_CASE("search skips other views of the agent's own section") {
     Client client = Attach();
     // A second view, as an agent injected earlier into the same process holds.

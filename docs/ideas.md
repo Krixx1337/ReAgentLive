@@ -13,7 +13,10 @@ Decisions behind the "no" answers: [design](design.md).
 
 ### 6 · Bulk read paging
 
-`batch` and `get` cover same-tick sampling of related ranges. Revisit paging
+`batch` and `get` cover same-tick sampling of related ranges. Image bytes
+(code and constants) shipped as the image window, 4 MB a request, for
+`disp-scan`, `labels-check` and `touches`
+([design](design/native.md#fast-lane)). Revisit paging values (heap, data)
 when an investigation needs a larger read budget across ticks.
 
 ### 2 · Class-wide snapshot and compare

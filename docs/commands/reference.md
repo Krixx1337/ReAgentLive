@@ -504,10 +504,13 @@ Pack `native`.
 |---|---|---|---|---|
 | `file` | `file` |  |  | the labels file (default: the host's names file, else the console's) |
 | `module` | `str` |  |  | the module (default: the exe) |
+| `status` | `[ok\|moved\|missing\|ambiguous\|invalid]` |  |  | only rows with these statuses (the counts still cover every row) |
+| `view` | `obj` |  |  | how the result is shown: page, row limit, filters (the shared view keys) |
+| `view.limit` | `int` |  |  | rows at most (the verb's notes say whether 0 means all) |
 
-Result: `{path: str, module: str, timestamp: u32, ok: u64, moved: u64, missing: u64, ambiguous: u64, invalid: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, rva: hex, status: ok\|moved\|missing\|ambiguous\|invalid, found?: hex, matches?: u64, reason?: str}]}`
+Result: `{path: str, module: str, timestamp: u32, ok: u64, moved: u64, missing: u64, ambiguous: u64, invalid: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, rva: hex, status: ok\|moved\|missing\|ambiguous\|invalid, found?: hex, matches?: u64, reason?: str}], matched?: u64, capped: bool, scan_ms: i64}`
 
-Each signed row of the running build is searched in the image (one shared search per anchor) and compared with its rva: ok (one match, on the row), moved (one match elsewhere: found), missing (none), ambiguous (several: matches) or invalid (a sig sig-check would refuse). unsigned counts this build's user and global rows with no sig. Read-only: the file is never written.
+Each signed row of the running build is matched in the image and compared with its rva: ok (one match, on the row), moved (one match elsewhere: found), missing (none), ambiguous (several: matches) or invalid (a sig sig-check would refuse). unsigned counts this build's user and global rows with no sig. With the agent's image window every anchor is found in one pass over the image (searches 1, seconds); without it, one search per anchor. status keeps only those rows (status ["moved", "missing", "ambiguous", "invalid"]: what needs work), view.limit the first rows (0: all); matched counts the rows the status kept. Read-only: the file is never written.
 
 ```json
 {"args":{},"verb":"labels-check"}
@@ -569,39 +572,42 @@ Pack `native`.
 |---|---|---|---|---|
 | `addr` | `addr` | yes |  | the address |
 | `offsets` | `[int]` | yes |  | the struct offsets to look for (up to 8, each above 0) |
-| `range` | `int` |  | `"0x80000"` | bytes each side of addr (1..0x400000) |
+| `range` | `int` |  | `524288` | bytes each side of addr (1..0x400000) |
 | `reads` | `bool` |  |  | rank by offsets read; drop rows writing every offset they read |
-| `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp, the stack frame's) |
+| `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp, the stack frame's; a hunt for who writes a field: name rbp too, or use disp-scan) |
 
 Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64}`
 
-Most offsets first, writes marked: the code behind an unreflected member. Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as unlisted code. reads leaves out struct copies and constructors. Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register; bases ["rcx"] keeps only operands on rcx (this, as a method's first argument). The whole image for one offset: disp-scan.
+Most offsets first, writes marked: the code behind an unreflected member. Code outside every exception-table entry is scanned too, in pieces cut at returns and int3 padding: those rows carry unlisted, their bounds the piece's. Entries under 4 bytes (a packed image's decoys) count as unlisted code. reads leaves out struct copies and constructors. Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register; bases ["rcx"] keeps only operands on rcx (this, as a method's first argument). Optimised code also uses rbp as a plain register: to find every writer of a field, pass bases with rbp among the others, or sweep the image with disp-scan (rbp included there). The whole image for a few offsets: disp-scan.
 
 ```json
-{"args":{"addr":"0x140001000","offsets":[16]},"verb":"touches"}
+{"args":{"addr":"0x140001000","offsets":[16],"range":"0x80000"},"verb":"touches"}
 ```
 
 ### disp-scan
 
-every instruction in the main module's code with a [reg + disp] operand of this disp, a page at a time.
+every instruction in the main module's code with a [reg + disp] operand of these disps, a page at a time.
 
 Pack `native`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `disp` | `int` | yes |  | the displacement (the field's offset), above 0 |
+| `disps` | `[int]` | yes |  | the displacements (the fields' offsets; up to 8, each above 0) |
 | `access` | `write\|read\|any` |  | `"write"` | write: stores and read-modify-writes; read: loads and read-modify-writes; any: also lea (the field's address taken) |
 | `width` | `int` |  |  | only operands of this many bytes (1, 2, 4, 8, 16, 32 or 64) |
 | `imm` | `int` |  |  | only instructions with this immediate (compared in its width: 0xffffffff is -1 as 32 bits) |
-| `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp, the stack frame's) |
-| `start` | `addr` |  |  | resume here: a page's next_cursor |
+| `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp; rbp counts, as optimised code uses it as a plain register) |
+| `same_base` | `bool` |  |  | only functions using every disp on one base register (two disps or more): functions lists them, rows hold their hits |
+| `view` | `obj` |  |  | how the result is shown: page, row limit, filters (the shared view keys) |
+| `view.start` | `int` |  |  | a page's next_cursor: the page after it |
+| `view.limit` | `int` |  | `128` | rows at most (the verb's notes say whether 0 means all) |
 
-Result: `{disp: hex, access: str, module: str, from: addr, to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], capped: bool, next_cursor?: addr, scan_ms: i64}`
+Result: `{disps: [hex], access: str, module: str, from: addr, to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, disp: hex, base: str, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], functions?: [{function: hex, base: str, hits: u64}], capped: bool, next_cursor?: addr, scan_ms: i64, read_ms: i64}`
 
-A linear sweep of the executable sections, read from the live image: each call scans for up to 8 s and stops early at 128 hits; next_cursor (absent once the end is reached) resumes it as start, and scanned is the share of the code behind the cursor. Each row is one instruction: access (write, read, both or address), width, its text and the function holding it (function, from the exception table; absent outside every entry). A straight sweep can decode data inside code (jump tables) as instructions: check a surprising hit with disasm. Near one function instead: touches.
+A linear sweep of the executable sections, read from the live image: each call scans for up to 8 s and stops early at view.limit hits (default 128, at most 4096; same_base: whole functions up to that many rows); view.start resumes at a page's next_cursor (absent once the end is reached), and scanned is the share of the code behind the cursor. Each row is one instruction: disp (which one matched), base, access (write, read, both or address), width, its text and the function holding it (function, from the exception table; absent outside every entry). same_base keeps functions with an entry only, and cuts a page at a function's start. The code comes through the agent's image window when it has one (its worker thread copies it while the host tick only polls, when the host allows it): a full sweep takes seconds; without it, about a megabyte a second (minutes for a large game). read_ms is the share of scan_ms spent reading. A sweep over many pages, or many sweeps, belongs in a script or a run plan, not in one tool call after another. A straight sweep can decode data inside code (jump tables) as instructions: check a surprising hit with disasm. Near one function instead: touches.
 
 ```json
-{"args":{"disp":16},"verb":"disp-scan"}
+{"args":{"disps":[16]},"verb":"disp-scan"}
 ```
 
 ### vtable

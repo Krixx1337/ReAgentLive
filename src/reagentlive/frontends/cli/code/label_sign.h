@@ -100,7 +100,10 @@ struct LabelsCheck {
     std::string path, module;
     uint32_t timestamp = 0;
     uint64_t ok = 0, moved = 0, missing = 0, ambiguous = 0, invalid = 0, unsignedRows = 0, searches = 0;
-    std::vector<LabelCheckRow> rows;    // Every signed row of this build, in file order.
+    std::vector<LabelCheckRow> rows;    // This build's signed rows the status kept, in file order.
+    std::optional<uint64_t> matched;    // With status: the rows it kept, before view.limit.
+    bool capped = false;                // view.limit cut the rows.
+    int64_t scanMs = 0;
     template<class V> static void Describe(V& v) {
         v("path", &LabelsCheck::path);
         v("module", &LabelsCheck::module);
@@ -113,6 +116,9 @@ struct LabelsCheck {
         v("unsigned", &LabelsCheck::unsignedRows);
         v("searches", &LabelsCheck::searches);
         v("rows", &LabelsCheck::rows);
+        v("matched", &LabelsCheck::matched);
+        v("capped", &LabelsCheck::capped);
+        v("scan_ms", &LabelsCheck::scanMs);
     }
 };
 struct LabelsPort {

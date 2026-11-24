@@ -74,6 +74,43 @@ sig::ReadFn AgentRead(Session& session) {
     };
 }
 
+std::expected<void, std::string> ImageBlocks(Session& session, uint64_t from, uint64_t to, uint8_t fill, uint64_t block,
+                                             const std::function<bool(uint64_t, std::span<const uint8_t>)>& each) {
+    Client& client = session.client;
+    const bool window = client.Supports(op::ImageCopy);
+    block = std::max<uint64_t>(1, window ? std::min(block, ImageWindowBytes) : block);
+    std::vector<uint8_t> bytes;
+    for (uint64_t at = from; at < to;) {
+        const uint64_t end = std::min(to, at + block);
+        bytes.assign(static_cast<size_t>(end - at), fill);
+        if (window) {
+            auto copied = client.CopyImage(at, static_cast<uint32_t>(end - at), std::chrono::seconds(30));
+            if (!copied) return std::unexpected("image copy: " + copied.error().message);
+            for (size_t page = 0; page < copied->copied.size(); ++page) {
+                if (!copied->copied[page]) continue;
+                const uint64_t pageStart = std::max(at, (at & ~uint64_t{0xfff}) + page * 0x1000);
+                const uint64_t pageEnd = std::min(end, (at & ~uint64_t{0xfff}) + (page + 1) * 0x1000);
+                std::copy(copied->bytes.begin() + static_cast<ptrdiff_t>(pageStart - at),
+                    copied->bytes.begin() + static_cast<ptrdiff_t>(pageEnd - at),
+                    bytes.begin() + static_cast<ptrdiff_t>(pageStart - at));
+            }
+        } else {
+            const auto read = AgentRead(session);
+            for (uint64_t part = at; part < end;) {
+                const ReadSpan span{part, std::min<uint64_t>(MaxRead - sizeof(Status), end - part)};
+                auto items = read(std::span(&span, 1));
+                if (!items) return std::unexpected(items.error());
+                if (!items->empty() && (*items)[0])
+                    std::copy((*items)[0]->begin(), (*items)[0]->end(), bytes.begin() + static_cast<ptrdiff_t>(part - at));
+                part += span.length;
+            }
+        }
+        if (!each(at, bytes)) break;
+        at = end;
+    }
+    return {};
+}
+
 namespace {
 // With `expect` (no `resolve`) the match starts at an instruction boundary
 // the reader gave: warnings come from decoding the live bytes there, the

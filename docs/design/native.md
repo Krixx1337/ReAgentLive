@@ -107,9 +107,23 @@ database:
   chunks); each trick is handled where it was met, with the evidence on the
   command page.
 - **Sweeps:** bounded, read-only ones are in (`touches` over a range, the
-  piece around one address). An image-wide sweep (every vtable, every
-  function) stays a script over the Python client: it is the one-address
-  chain run thousands of times, and its output is a file, not a reply.
+  piece around one address, `disp-scan` over the code in pages). An
+  image-wide sweep of one-address questions (every vtable, every function)
+  stays a script over the Python client: it is the one-address chain run
+  thousands of times, and its output is a file, not a reply.
+- **Whole images through the image window.** `disp-scan` read its code 4 KB
+  per held request through host ticks: under 1 MB/s, about 2 minutes and
+  15 to 85 pages for a game's 160 MB of code, and `labels-check` searched
+  once per anchor (46 s for 172 rows). Both now read the image through a
+  second mapping, 4 MB a request, copied by the search worker when the
+  host allows it (tick slices otherwise), and do their matching in the
+  console: one linear decode, one multi-anchor pass. The copy is limited
+  to image pages, which do not change under a read except data sections,
+  so the rule against off-tick reads (torn values) still holds for values.
+  Rejected: decoding in the agent (no decoder there), a byte prefilter in
+  the agent (an instruction's start is unknown from a displacement's
+  bytes), a larger `Response` (every request would carry it), and
+  `ReadProcessMemory` ([console costs](console-costs.md#round-trips)).
 - **Where it lands.** Only the relative-reference scan behind `xrefs` is a
   core agent op (with a client call), since it reads memory only and works
   with any host. The decoder (Zydis, pinned, formatter on) links into the
@@ -179,3 +193,5 @@ answers what a native object is from live bytes, without a type system.
   agent's slot still busy); separate status and stop verbs (one
   `search-job` with `stop`). The console's own scans (`xrefs`, `sig-check`,
   `labels-sign`) stay blocking: they cover one module and need every page.
+  Image copies share the worker: a copy takes it only when idle, so a
+  running job is never stopped for one.

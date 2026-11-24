@@ -3,6 +3,7 @@
 // sig-check's matcher in a loop over the file's rows.
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -247,8 +248,10 @@ void RunLabelsPort(Session& session, const Command& command, std::string_view js
     Emit(session, jsonCommand, std::move(result));
 }
 
-// labels-check: this build's signed rows, each searched in the image (no
-// expect: where it lands is the answer) and compared with its row. Read-only.
+// labels-check: this build's signed rows, each matched in the image (no
+// expect: where it lands is the answer) and compared with its row. With the
+// agent's image window every anchor is found in one pass over the image,
+// else one search per anchor. Read-only.
 void RunLabelsCheck(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::Search) || !client.Supports(op::ReadBatch))
@@ -256,41 +259,85 @@ void RunLabelsCheck(Session& session, const Command& command, std::string_view j
     auto file = OpenLabels(session, command);
     if (!file) return JsonError(session, jsonCommand, file.error().first, file.error().second);
     const Module& module = file->module;
+    const auto started = std::chrono::steady_clock::now();
     const Client::Hold hold(client);
     sig::Checker checker(AgentSearch(session), AgentRead(session), LoadedModules(session));
     shape::LabelsCheck result;
     result.path = file->path;
     result.module = module.name;
     result.timestamp = file->timestamp;
+    struct Signed {
+        LabelRow row;
+        std::optional<LabelSig> signature;
+    };
+    std::vector<Signed> rows;
     for (const auto& line : file->lines) {
-        const auto row = ParseLabel(line, module, file->timestamp);
+        auto row = ParseLabel(line, module, file->timestamp);
         if (!row) continue;
         const auto found = row->extra.find("sig");
         if (found == row->extra.end()) {
             if (row->kind == "user" || row->kind == "global") ++result.unsignedRows;
             continue;
         }
-        shape::LabelCheckRow out{row->name, row->kind, row->rva, "invalid", {}, {}, {}};
-        const auto signature = ParseLabelSig(*found);
+        auto signature = ParseLabelSig(*found);
+        rows.push_back({std::move(*row), std::move(signature)});
+    }
+    if (client.Supports(op::ImageCopy)) {
+        std::vector<std::vector<uint8_t>> anchors;
+        for (const auto& row : rows) {
+            if (!row.signature) continue;
+            const auto& pattern = row.signature->pattern;
+            const auto anchor = sig::ChooseAnchor(pattern);
+            if (!anchor) continue;
+            std::vector<uint8_t> bytes(pattern.bytes.begin() + static_cast<ptrdiff_t>(anchor->offset),
+                pattern.bytes.begin() + static_cast<ptrdiff_t>(anchor->offset + anchor->length));
+            if (std::ranges::find(anchors, bytes) == anchors.end()) anchors.push_back(std::move(bytes));
+        }
+        if (!anchors.empty()) {
+            sig::AnchorScan scan(std::move(anchors));
+            const uint64_t end = module.base + module.size;
+            auto read = ImageBlocks(session, module.base, end, 0, ImageWindowBytes,
+                [&](uint64_t at, std::span<const uint8_t> block) {
+                    scan.Feed(at, block, at + block.size() >= end);
+                    return true;
+                });
+            if (!read) return JsonError(session, jsonCommand, ErrorKind::Read, read.error());
+            for (size_t i = 0; i < scan.Anchors().size(); ++i) checker.Preload(module, scan.Anchors()[i], scan.Hits()[i]);
+            checker.CountSearch();
+        }
+    }
+    const auto kept = [&](std::string_view status) {
+        return command.statuses.empty() || std::ranges::find(command.statuses, status) != command.statuses.end();
+    };
+    uint64_t matched = 0;
+    for (const auto& [row, signature] : rows) {
+        shape::LabelCheckRow out{row.name, row.kind, row.rva, "invalid", {}, {}, {}};
         if (!signature) {
             out.reason = "its sig is not one sig-check takes";
             ++result.invalid;
-            result.rows.push_back(std::move(out));
+        } else {
+            const auto outcome = CheckLabel(*signature,
+                checker.Run(sig::Check{signature->pattern, std::nullopt, 0, signature->resolve}, module), module, row.rva);
+            out.status = outcome.status;
+            if (outcome.found) out.found = *outcome.found;
+            if (outcome.status == "ambiguous") out.matches = outcome.matches;
+            if (!outcome.reason.empty()) out.reason = outcome.reason;
+            if (outcome.status == "ok") ++result.ok;
+            else if (outcome.status == "moved") ++result.moved;
+            else if (outcome.status == "ambiguous") ++result.ambiguous;
+            else ++result.missing;
+        }
+        if (!kept(out.status)) continue;
+        ++matched;
+        if (command.limit && result.rows.size() >= command.limit) {
+            result.capped = true;
             continue;
         }
-        const auto outcome = CheckLabel(*signature,
-            checker.Run(sig::Check{signature->pattern, std::nullopt, 0, signature->resolve}, module), module, row->rva);
-        out.status = outcome.status;
-        if (outcome.found) out.found = *outcome.found;
-        if (outcome.status == "ambiguous") out.matches = outcome.matches;
-        if (!outcome.reason.empty()) out.reason = outcome.reason;
-        if (outcome.status == "ok") ++result.ok;
-        else if (outcome.status == "moved") ++result.moved;
-        else if (outcome.status == "ambiguous") ++result.ambiguous;
-        else ++result.missing;
         result.rows.push_back(std::move(out));
     }
+    if (!command.statuses.empty()) result.matched = matched;
     result.searches = checker.Searches();
+    result.scanMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
     Emit(session, jsonCommand, std::move(result));
 }
 }

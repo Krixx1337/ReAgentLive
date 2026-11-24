@@ -623,8 +623,8 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
             if (at < span.end) gaps.push_back({at, span.end});
         }
     }
-    // One copy of the code from the lowest scanned byte to the highest, MaxRead
-    // bytes per request (a batch's total); unreadable parts stay int3 and decode to nothing.
+    // One copy of the code from the lowest scanned byte to the highest (the image
+    // window, else MaxRead reads); unreadable parts stay int3 and decode to nothing.
     std::vector<uint8_t> code;
     uint64_t low = 0;
     if (!ranges->empty() || !gaps.empty()) {
@@ -636,16 +636,11 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
                 high = std::max(high, range.end);
             }
         code.assign(static_cast<size_t>(high - low), 0xcc);
-        const auto read = AgentRead(session);
-        for (uint64_t at = low; at < high;) {
-            std::vector<ReadSpan> spans;
-            spans.push_back({at, std::min<uint64_t>(MaxRead - sizeof(Status), high - at)});
-            at += spans.back().length;
-            auto items = read(spans);
-            if (!items) return JsonError(session, jsonCommand, ErrorKind::Read, items.error());
-            for (size_t i = 0; i < spans.size() && i < items->size(); ++i)
-                if ((*items)[i]) std::copy((*items)[i]->begin(), (*items)[i]->end(), code.begin() + (spans[i].address - low));
-        }
+        auto read = ImageBlocks(session, low, high, 0xcc, high - low, [&](uint64_t at, std::span<const uint8_t> block) {
+            std::ranges::copy(block, code.begin() + static_cast<ptrdiff_t>(at - low));
+            return true;
+        });
+        if (!read) return JsonError(session, jsonCommand, ErrorKind::Read, read.error());
     }
     const touch::Bases bases{command.bases};
     std::map<uint64_t, touch::Row> functions;
@@ -686,11 +681,13 @@ void RunTouches(Session& session, const Command& command, std::string_view jsonC
 }
 
 // disp-scan: a linear sweep of the main module's executable sections from
-// `start` (default: the first), one chunk at a time, until the time budget
-// or the hit cap ends the page; next_cursor resumes it.
+// `start` (default: the first), one block at a time, until the time budget
+// or the hit cap ends the page; next_cursor resumes it. Blocks come through
+// the agent's image window when it has one (its worker copies them while the
+// host tick only polls), else in MaxRead reads.
 void RunDispScan(Session& session, const Command& command, std::string_view jsonCommand) {
     constexpr auto Budget = std::chrono::seconds(8);
-    constexpr size_t MaxHits = 128, Chunk = 0x10000;
+    constexpr size_t MaxHits = 128, MaxGroupHits = size_t{1} << 16;
     Client& client = session.client;
     if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "disp-scan needs read-batch");
     const auto modules = LoadedModules(session);
@@ -712,10 +709,13 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
         return JsonError(session, jsonCommand, ErrorKind::Validation, "start: not in the main module's code (pass a next_cursor)");
     auto& table = session.unwindTables[module.base];
     if (!table) table = std::make_unique<unwind::Table>(AgentRead(session), module, (*layout)->exception);
-    const touch::Form form{command.offsets.front(), command.access, command.width, command.imm, touch::Bases{command.bases}};
+    const touch::Form form{command.offsets, command.access, command.width, command.imm, touch::Bases{command.bases, true}};
+    const size_t limit = command.limit ? command.limit : MaxHits;
+    const size_t most = command.sameBase ? MaxGroupHits : limit;
+    const uint64_t chunk = client.Supports(op::ImageCopy) ? ImageWindowBytes : 0x10000;
     const Client::Hold hold(client);
     const auto started = Clock::now();
-    const auto read = AgentRead(session);
+    Clock::duration reading{};
     std::vector<touch::Hit> hits;
     const uint64_t from = at;
     bool done = false;
@@ -723,22 +723,46 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
         const auto section = std::ranges::find_if(code, [&](const unwind::Range& r) { return at < r.end; });
         if (section == code.end()) { done = true; break; }
         at = std::max(at, section->start);
-        const uint64_t end = std::min<uint64_t>(section->end, at + Chunk);
-        std::vector<uint8_t> bytes(static_cast<size_t>(end - at), 0xcc); // Unreadable stays int3: nothing decodes.
-        for (uint64_t part = at; part < end;) {
-            const ReadSpan span{part, std::min<uint64_t>(MaxRead - sizeof(Status), end - part)};
-            auto items = read(std::span(&span, 1));
-            if (!items) return JsonError(session, jsonCommand, ErrorKind::Read, items.error());
-            if (!items->empty() && items->front())
-                std::copy(items->front()->begin(), items->front()->end(), bytes.begin() + static_cast<ptrdiff_t>(part - at));
-            part += span.length;
-        }
-        const size_t stopped = touch::Sweep(bytes, at, form, end == section->end, hits, MaxHits);
+        const uint64_t end = std::min<uint64_t>(section->end, at + chunk);
+        std::vector<uint8_t> bytes; // Unreadable stays int3: nothing decodes.
+        const auto readStart = Clock::now();
+        auto read = ImageBlocks(session, at, end, 0xcc, chunk, [&](uint64_t, std::span<const uint8_t> block) {
+            bytes.assign(block.begin(), block.end());
+            return true;
+        });
+        reading += Clock::now() - readStart;
+        if (!read) return JsonError(session, jsonCommand, ErrorKind::Read, read.error());
+        const size_t stopped = touch::Sweep(bytes, at, form, end == section->end, hits, most);
         at += std::max<size_t>(stopped, 1);
-        if (hits.size() >= MaxHits || Clock::now() - started >= Budget) break;
+        if (hits.size() >= most || Clock::now() - started >= Budget) break;
+    }
+    const auto startOf = [&](uint64_t address) -> std::optional<uint64_t> {
+        auto function = FunctionAt(session, address);
+        if (!function || !*function) return std::nullopt;
+        return (*function)->range.start;
+    };
+    // same_base groups need whole functions: a page cut inside one resumes at its start.
+    if (command.sameBase && !done)
+        if (const auto start = startOf(at); start && *start > from && *start < at) {
+            std::erase_if(hits, [&](const touch::Hit& hit) { return hit.address >= *start; });
+            at = *start;
+        }
+    std::vector<touch::Group> groups;
+    bool cut = false;
+    if (command.sameBase) {
+        groups = touch::SameBase(hits, form.disps, startOf);
+        // Past view.limit rows: whole functions up to it (one at least), the page resuming at the next.
+        size_t rows = 0, keep = 0;
+        while (keep < groups.size() && (!keep || rows + groups[keep].hits.size() <= limit)) rows += groups[keep++].hits.size();
+        if (keep < groups.size() && groups[keep].function > from) {
+            at = groups[keep].function;
+            groups.resize(keep);
+            done = false;
+            cut = true;
+        }
     }
     shape::DispScan out;
-    out.disp = HexNum(form.disp);
+    for (const uint32_t disp : form.disps) out.disps.push_back(HexNum(disp));
     out.access = form.access;
     out.module = module.name;
     out.from = from;
@@ -746,16 +770,26 @@ void RunDispScan(Session& session, const Command& command, std::string_view json
     uint64_t behind = 0;
     for (const auto& r : code) behind += r.end <= at ? r.end - r.start : r.start < at ? at - r.start : 0;
     out.scanned = done ? 1.0 : static_cast<double>(static_cast<int64_t>(static_cast<double>(behind) * 1000 / static_cast<double>(codeBytes))) / 1000;
-    out.total = hits.size();
-    out.capped = hits.size() >= MaxHits;
+    out.capped = hits.size() >= most || cut;
     if (!done) out.nextCursor = Addr(at);
-    for (const auto& hit : hits) {
-        shape::DispHit row{hit.address, HexNum(hit.address - module.base), hit.access, hit.width, hit.text, {}};
-        if (auto function = FunctionAt(session, hit.address); function && *function)
-            row.function = HexNum((*function)->range.start - module.base);
-        out.rows.push_back(std::move(row));
+    const auto row = [&](const touch::Hit& hit, std::optional<uint64_t> function) {
+        shape::DispHit made{hit.address, HexNum(hit.address - module.base), HexNum(hit.disp), hit.base, hit.access, hit.width,
+            hit.text, {}};
+        if (function) made.function = HexNum(*function - module.base);
+        return made;
+    };
+    if (command.sameBase) {
+        out.functions.emplace();
+        for (const auto& group : groups) {
+            out.functions->push_back({HexNum(group.function - module.base), group.base, group.hits.size()});
+            for (const auto& hit : group.hits) out.rows.push_back(row(hit, group.function));
+        }
+    } else {
+        for (const auto& hit : hits) out.rows.push_back(row(hit, startOf(hit.address)));
     }
+    out.total = out.rows.size();
     out.scanMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
+    out.readMs = std::chrono::duration_cast<std::chrono::milliseconds>(reading).count();
     Emit(session, jsonCommand, std::move(out));
 }
 }

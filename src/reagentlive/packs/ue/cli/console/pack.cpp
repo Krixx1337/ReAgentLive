@@ -118,14 +118,31 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
             ue::SetRef(command.request, described->outer);
             CopyText(command.request.text, described->name);
         }
-        if (command.decode) return RunScriptDecode(session, command, jsonCommand);
-        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support script");
         const auto object = ue::GetRef(request);
         auto function = ue::Function(client, object, request.text);
+        if (!function && function.error().kind == Error::Kind::Agent && function.error().status == Status::NotFound) {
+            // object may be the Function itself, given its name again: the same
+            // name is taken, another is refused with what object already is.
+            auto described = ue::Describe(client, object);
+            if (described && std::string_view(described->className).ends_with("Function") && described->outer.address) {
+                const std::string_view given(request.text);
+                auto own = ue::Function(client, described->outer, described->name);
+                const std::string full = own ? own->owner + ":" + own->name : described->name;
+                if (given != described->name && given != full)
+                    return JsonError(session, jsonCommand, ErrorKind::Validation, "function: object is already the "
+                        "Function " + full + ": drop function");
+                if (!own) return CommandError(session, jsonCommand, own.error());
+                function = std::move(own);
+                ue::SetRef(command.request, described->outer);
+                CopyText(command.request.text, described->name);
+            }
+        }
         if (!function) return CommandError(session, jsonCommand, function.error());
+        if (command.decode) return RunScriptDecode(session, command, jsonCommand, *function);
+        if (!client.Supports(ue::op::Script)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "agent does not support script");
         auto script = ue::Script(client, Ref{static_cast<uintptr_t>(function->address), -1, 0});
         if (!script) return CommandError(session, jsonCommand, script.error());
-        return Emit(session, jsonCommand, MakeScript(object, function->owner + ":" + function->name, *script));
+        return Emit(session, jsonCommand, MakeScript(ue::GetRef(command.request), function->owner + ":" + function->name, *script));
     }
     if (command.kind == Kind::NameRefs) {
         auto index = static_cast<int32_t>(request.args[0]);

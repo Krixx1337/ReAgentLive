@@ -59,7 +59,14 @@ auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 - Synchronous, one request in flight per `Client`, not thread-safe.
 - Results are `std::expected<T, reagentlive::Error>`. `Error::kind` is
   `Agent` (a refusal, with its status and reason), `Timeout`, `Attach` or
-  `Busy` (another client holds the agent).
+  `Busy` (another client holds the agent). `Attach`'s third argument
+  describes this client (a caller kind such as `script`), and
+  `Client::Holder(section)` says who holds a busy agent: pid, caller kind
+  and since when ([one client at a time](protocol.md#handshake)).
+- **Whole images:** `CopyImage(address, length, timeout)` reads up to 4 MB
+  of a loaded image a request through the
+  [image window](protocol.md#handshake), with a bitmap of the pages it
+  copied: code and constants, never values.
 - **Timeouts:** 5 s a request by default (`SetTimeout` changes it).
   `Search` and `Xrefs` take their own; the Unreal pack's scans (`Refs`,
   `ExecEntries` and the like) default to minutes.
@@ -168,7 +175,17 @@ module calls through it; scripts use it for the rest.
   packs (a `batch` item too) raises `ReAgentLiveError` whose `kind` is
   `pack`. A script that must not change the target leaves `modify` out.
 - **No timeout:** a call waits until the console answers or exits. The
-  console's own waits still apply (2 s for a busy agent, then `busy`).
+  console's own waits still apply: `busy_wait` seconds for an agent
+  another client holds (default 10), then `busy`, naming the holder.
+- **Sharing the agent:** a session holds the agent's one client slot for
+  its life (`hold=True`). `Session(console, hold=False)` releases it
+  between calls: each call runs a one-shot console (one usage-log session
+  for all of them), so an MCP server or another script gets its turn in
+  between. The cost is a console start and an attach per call (tens of
+  milliseconds), and state from one call to the next lives in the console's
+  cache file, as for any one-shot run. Keep `hold=True` for tight loops
+  and same-moment reads; pick `hold=False` for a long-lived session beside
+  MCP tools ([console](commands/console.md#agent-and-console)).
 - `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
   value into bytes, `f32`/`u64`/... decode those bytes, and `pack` goes
   the other way: `f32(unhex(c.read(a, len=4)['hex']))`.
@@ -242,7 +259,15 @@ python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--outp
   the ids of timed writes and captures.
 - **A console per call:** each tool call starts the console and ends it,
   one call at a time. Another client on the same agent (a script, a second
-  server) makes the console wait up to 2 s, then refuse as `busy`.
+  server) makes the console wait for the slot up to its `--busy-wait`
+  (default 10 s; pass `-- --busy-wait N` to the server), then refuse as
+  `busy`, naming the holder; a script that runs beside the server should
+  use `hold=False`.
+- **Refusals made here are logged:** a tool of a pack that is off, a batch
+  item past the packs, or arguments the input schema refuses never reach
+  the target, but each goes to a one-shot console as a call with
+  `refused`, so `usage` counts them with the console's own
+  ([console](commands/console.md#one-shot-use)).
   Nothing holds the executable between calls, so the
   console can be rebuilt while the server runs and the next call runs the
   new build. With no target the console answers `help` and `usage` and
