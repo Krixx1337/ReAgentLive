@@ -27,8 +27,11 @@ Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/se
 
 The agent builds the example for your target, registers its MCP tools,
 installs the skill (instructions it reads before investigating) and checks
-the result. If you want, it also fetches a command-line DLL loader, so it
-can load ReAgentLive into the process you name.
+the result.
+
+**Optional:** it asks whether to fetch a command-line DLL loader, so it can
+load ReAgentLive into the process you name. Say no if you load DLLs your
+own way (your mod, your own loader).
 
 By hand, start from the example for your target:
 
