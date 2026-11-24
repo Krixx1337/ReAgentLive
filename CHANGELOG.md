@@ -25,6 +25,12 @@ mismatched pair. The version lives in `src/reagentlive/version.h`.
 
 ## Unreleased
 
+## 0.5.0
+
+A JSON-only console with typed schemas, tool packs with a safety ceiling,
+Blueprint bytecode decoded as statements, and a one-call path from a live
+address to typed pseudocode in IDA.
+
 ### Breaking
 
 - **Clearing timed writes moved to `write`:** `timed-writes` only lists
