@@ -9,23 +9,6 @@ to. Use PowerShell. Replace `<dir>` with the folder you clone into
 (default `$HOME\ReAgentLive`), and `<build>`, `<console>` and `<dll>` with
 the values step 2 picks. Later updates: [the update procedure](update.md).
 
-Steps:
-
-1. Check prerequisites
-2. Choose the example
-3. Clone and build
-4. Register the MCP server
-5. (Optional) Generate the typed functions
-6. Install the skill
-7. Verify
-8. (Optional) Get an injector
-9. (Optional) Set up the IDA side
-10. Choose the improvement mode
-11. Write the setup record
-12. Report
-
----
-
 ## 1. Check prerequisites
 
 All of these must be present. Check each one; do not install anything
@@ -73,9 +56,6 @@ The script loads the x64 Visual Studio environment itself and prints one
 Visual Studio check); exit 1: a step failed, and its `FAIL` line names
 the log under `<dir>\build\logs`. Report a failure; do not work around it.
 
-The own-thread example builds without the Unreal pack's tools: its host
-cannot run them, and leaving them out keeps the tool list small.
-
 ## 4. Register the MCP server
 
 MCP tools are your default way to drive the agent; when to use Python or
@@ -89,12 +69,8 @@ Use absolute paths. The server is the same for every client:
   `--console`, `<dir>\<build>\<console>`
 
 `--console` must be the console of the example you built: each console
-reaches only its own example's agent (they open different shared-memory
-names), so `reagentlive.exe` cannot reach the Unreal example's agent, and
-the reverse.
-Optional server flags: `--packs` (the tool packs served from the start,
-default `explore`) and `--allow` (those the agent may enable later; name
-`modify` only for a session that may write):
+reaches only its own example's agent. Optional server flags: `--packs`
+and `--allow` (name `modify` only for a session that may write):
 [MCP tools](../client.md#mcp-tools).
 
 Register it under the name `reagentlive` in the user's scope, using the
@@ -128,10 +104,8 @@ Add this under `"mcpServers"` in the client's MCP config file, for example
 }
 ```
 
-Tools that write memory or call into the process are marked destructive,
-so the client asks before running them; read-only tools may be allowed.
-`status` reads the game-thread mode without a prompt. Which writes need the user's
-approval is the skill's rule, not the client's.
+Tools that write or call into the process are marked destructive, so the
+client asks first. Which writes need approval is the skill's rule.
 
 ## 5. (Optional) Generate the typed functions
 
@@ -148,12 +122,10 @@ a rebuild that changes a verb. How scripts use it:
 
 ## 6. Install the skill
 
-The `reagentlive` skill is one folder: `SKILL.md` (first command, tiers,
-rules, which interface) and `references/`, which `SKILL.md` names and says
-when to read. It reads the docs from the clone, so install it as a link
-into `<dir>`: then `git pull` updates skill, docs and build together, and
-an update never touches it. Remember how you installed it
-(`skill_install` in step 11).
+The `reagentlive` skill is one folder (`SKILL.md` and `references/`). It
+reads the docs from the clone, so install it as a link into `<dir>`: then
+`git pull` updates skill, docs and build together. Remember how you
+installed it (`skill_install` in step 11).
 
 Pick the link by client:
 
@@ -162,11 +134,9 @@ Pick the link by client:
 | Claude Code | `$HOME\.claude\skills\reagentlive` |
 | Codex, Cursor, or another client that reads Agent Skills from `~/.agents/skills` | `$HOME\.agents\skills\reagentlive` |
 
-Cursor also reads `~/.claude/skills`: with Claude Code installed too, the
-Claude Code link serves both; skip the second. First clear `<link>`: a
-link only loses the link (`cmd /c rmdir` never touches the folder it
-points to); a folder there is deleted (the user's lessons live outside
-it, in `%LOCALAPPDATA%\reagentlive\lessons\`):
+Cursor also reads `~/.claude/skills`: with Claude Code installed too, one
+link serves both. Clear `<link>` first (`cmd /c rmdir` removes only a link;
+a folder there is deleted; the user's lessons live elsewhere):
 
 ```powershell
 $link = "<link>"
@@ -183,17 +153,11 @@ if (Test-Path $link) {
    New-Item -ItemType Junction -Path $link -Target "<dir>\.claude\skills\reagentlive"
    ```
 
-2. **Symlink** (`symlink`), if the junction fails (the clone is on a
-   network or non-NTFS drive), or the skill is missing from the client
-   after the restart (step 12): it needs Developer Mode or an elevated
-   shell. Clear the link as above, then:
-
-   ```powershell
-   New-Item -ItemType SymbolicLink -Path $link -Target "<dir>\.claude\skills\reagentlive"
-   ```
-
-   Then set `skill_install` to `symlink` in the record (step 11), also
-   when the record was already written.
+2. **Symlink** (`symlink`), if the junction fails (clone on a network or
+   non-NTFS drive) or the skill is missing after the restart; needs
+   Developer Mode or an elevated shell. Clear the link, run
+   `New-Item -ItemType SymbolicLink -Path $link -Target "<dir>\.claude\skills\reagentlive"`
+   and set `skill_install` to `symlink` in the record.
 
 Neither works: stop and report the error.
 
@@ -229,28 +193,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<dir>\tools\build_examples.
 | own_thread | `status` ok, ticking, `host_thread` `own`, no packs, and the clone's commit |
 | unreal | the same with packs `ue` and `game_thread` mode `off` (the DLL has the Draw tick); the console knows `game-thread` |
 
-A `FAIL check` line names each check that failed: report it; do not work
-around it. Do not run Unreal commands such as `find` in a Python process:
-there is no engine, so they are refused. Never send `game-thread` as a
-check: it arms the tick.
+A `FAIL check` line names each failed check: report it. Do not run Unreal
+commands such as `find` in a Python process (no engine), and never send
+`game-thread` as a check: it arms the tick.
 
 In the real target, `status` tells you the tier
-([how to read it](../tiers.md#read-your-tier-from-status)). In a UE5 game,
-`status` reports the tick's mode as `game_thread`;
-`{"verb": "game-thread", "args": {"action": "on"}}` moves the agent onto
-the game thread for engine calls, and needs the
-user's approval first.
+([how to read it](../tiers.md#read-your-tier-from-status)).
+`{"verb": "game-thread", "args": {"action": "on"}}` moves a UE5 agent onto
+the game thread for engine calls, and needs the user's approval first.
 
 ## 8. (Optional) Get an injector
 
-ReAgentLive does not load itself into a process. Any DLL loader works;
-a command-line one lets you load it without the user's help. Ask the user
-whether they want [Injector](https://github.com/nefarius/Injector) (MIT,
-by nefarius), a third-party command-line DLL injector. If they already
-have a loader, or say no, skip this step.
-
-If they agree, download the latest release into the build folder and find
-the x64 binary:
+ReAgentLive does not load itself. Ask whether the user wants
+[Injector](https://github.com/nefarius/Injector) (MIT, third-party
+command-line DLL injector); if they have a loader or say no, skip.
 
 ```powershell
 $zip = "<dir>\build\injector.zip"
@@ -261,9 +217,7 @@ Expand-Archive $zip "<dir>\build\injector" -Force
 Get-ChildItem "<dir>\build\injector" -Recurse -Filter Injector.exe | Select-Object FullName
 ```
 
-Use the path whose folder names x64 (`x64` or `amd64`), not x86 or ARM64.
-Antivirus software often flags DLL injectors; if the file is quarantined,
-tell the user and skip this step.
+Use the x64 binary. If antivirus quarantines it, tell the user and skip.
 
 Load the host into a process by name or by pid:
 
@@ -272,10 +226,10 @@ Load the host into a process by name or by pid:
 & "<injector.exe>" --process-id <pid> --inject "<dir>\<build>\<dll>"
 ```
 
-Inject only into a process the user names. Never pick a target yourself.
-The host is never unloaded, so do not use `--eject` on it. Restart the
-process instead. In a UE5 game, the first Unreal command stalls the game
-once ([before the first command](../commands/unreal.md#before-the-first-command)).
+Inject only into a process the user names. The host is never unloaded: no
+`--eject`, restart the process instead. In a UE5 game the first Unreal
+command stalls the game once
+([before the first command](../commands/unreal.md#before-the-first-command)).
 
 Add this line to the user-level instructions file from step 6:
 
@@ -285,24 +239,16 @@ ReAgentLive host: <dir>/<build>/<dll>, console <dir>/<build>/<console>; load it 
 
 ## 9. (Optional) Set up the IDA side
 
-For users of IDA Pro 9: the agent can then decompile live functions in
-IDA without analysing the whole image
-([IDA loader](../commands/ida-loader.md)). Ask the user whether they use
-IDA Pro and want this. No IDA, or no: skip this step (`ida` false in the
-record).
-
-If they agree:
+Ask whether the user uses IDA Pro 9 and wants live decompiling
+([IDA loader](../commands/ida-loader.md)). No: skip (`ida` false).
 
 ```powershell
 python -I "<dir>\tools\ida_setup.py" --install
 ```
 
-It writes a path file into the site-packages of IDA's Python (found from
-IDA's registry key) and a loader stub into
-`%APPDATA%\Hex-Rays\IDA Pro\loaders`, nothing else. It passes when
-`state` is `current`. On "no IDA Python found", ask the user for the
-`python.exe` IDA uses and add `--python <exe>`; any other `why` line: tell
-the user and skip this step.
+It passes when `state` is `current`. On "no IDA Python found", ask for the
+`python.exe` IDA uses and add `--python <exe>`; on any other `why`, tell the
+user and skip.
 
 ## 10. Choose the improvement mode
 
@@ -331,7 +277,6 @@ One file, `%LOCALAPPDATA%\reagentlive\setup.json`, so the skill and
 | `skill_install` | `junction` or `symlink` (step 6), or `instructions` for an instructions line |
 | `improvement` | `user`, `dev` or `off` (step 10) |
 | `ida` | `true` when step 9 set up the IDA side |
-| `scratch` | optional: `true` keeps notes on friction in a file during each task (the default in `dev`), `false` none (the default otherwise) |
 | `setup_commit` | the clone's commit, `git -C <dir> rev-parse --short=12 HEAD`; [the update procedure](update.md) sets it to the new commit |
 
 ```powershell
@@ -370,7 +315,5 @@ Tell the user:
 └───────────────────────────────────────────────────────┘
 ```
 
-Then say in one line that for a UE5 game they mod with its SDK, the mod
-itself can host ReAgentLive for T4 ([hosting](../hosting.md)), and in one
-line that to update later they ask their agent to "update ReAgentLive"
-(the skill runs [the update procedure](update.md)).
+Then say in one line that a UE5 mod with its SDK can host ReAgentLive for T4
+([hosting](../hosting.md)), and that "update ReAgentLive" updates it later.

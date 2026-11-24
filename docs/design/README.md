@@ -2,13 +2,8 @@
 
 **TL;DR:** Read this before proposing a change: most "why not just..."
 ideas were tried or weighed here, and the entry says why they lost. Each
-decision states what was chosen, what was rejected and the evidence. It
-describes reasons, not behaviour: what a command does lives on its command
-page.
-
-Current behaviour lives in the [command pages](../commands/README.md),
-[protocol](../protocol.md) and [hosting](../hosting.md); the ranked backlog in
-[ideas](../ideas.md).
+decision states what was chosen and what was rejected. Reasons, not
+behaviour; the backlog is [ideas](../ideas.md).
 
 | Page | Decisions |
 |---|---|

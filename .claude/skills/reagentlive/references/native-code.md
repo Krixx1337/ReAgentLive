@@ -4,58 +4,41 @@ Verb behaviour: fast lane (`docs/commands/fast-lane.md`). Decompiling in
 IDA: the static-tool reference. Interface getters and Blueprint
 bytecode (Unreal): the native-and-blueprint reference.
 
-## Fast lane first
+## Fast lane tips
 
-Answer one-address questions live, with no database:
+Verbs: `disasm`, `xrefs`, `touches`, `disp-scan`, `sig-check`,
+`labels-check`. Non-obvious parts:
 
-- What is here: `disasm` (`follow` through a jump stub). A whole
-  function is one call:
-  `{"verb": "disasm", "args": {"addr": "0x7ff600001000", "function": true}}` gives every
-  instruction, the constants its loads read and the strings it uses; read
-  formulas from it instead of `read`ing each constant. An `import` target
+- `disasm` with `function` gives every instruction, the constants its
+  loads read and its strings: read formulas from it instead of `read`ing
+  each constant. `follow` goes through a jump stub; an `import` target
   names an API call.
-- What points here: `xrefs` (`module` for a DLL calling into the exe).
-- What code uses these member offsets:
-  `{"verb": "touches", "args": {"addr": "0x7ff600001000", "offsets": ["0x538", "0x550"]}}`
-  from a native function of the same class (a `func` exec). Copies and
-  constructors rank first when the offsets are common: `touches` with
-  `reads` for the code that consumes the block. Rows marked unlisted are
-  pieces of code outside the exception table: confirm each with `disasm`
-  with `function`.
-- Does this signature hold: `sig-check` (making one:
-  the signatures reference); every signed name of a labels file:
-  `labels-check`, then only what needs work:
-  `{"verb": "labels-check", "args": {"status": ["moved", "missing", "ambiguous", "invalid"]}}`.
-- Does anything write this field, anywhere: `disp-scan` (whole image,
-  page by page; several fields at once with `disps`, and `same_base` for
-  the functions that write all of them on one register); near one
-  function: `touches`. `bases` `["rcx"]` narrows to `this`. Confirm a hit
-  with `disasm`.
-- "Who writes field X" with `touches`: name rbp in `bases` too (or sweep
-  with `disp-scan`, which keeps rbp): optimised code holds structs in rbp,
-  and the default hides those writers.
-- More than one or two `disp-scan` pages, or several sweeps: write a
-  Python loop or a `run` plan over `next_cursor`, never tool call after
-  tool call. A page's `read_ms` near its `scan_ms` means the agent has no
-  image window (built before it): reinject for seconds instead of minutes.
+- `touches` needs an address in a native function of the same class (a
+  `func` exec). Copies and constructors rank first when the offsets are
+  common: add `reads` for the code that consumes the block. Rows marked
+  unlisted are code outside the exception table: confirm each with
+  `disasm` with `function`.
+- "Who writes field X": name rbp in `bases` too, or sweep with `disp-scan`
+  (which keeps rbp): optimised code holds structs in rbp, and the default
+  hides those writers. `bases` `["rcx"]` narrows to `this`.
+- More than one or two `disp-scan` pages: a Python loop or a `run` plan
+  over `next_cursor`, never call after call. A page's `read_ms` near its
+  `scan_ms` means the agent has no image window: reinject.
+- After a patch: `{"verb": "labels-check", "args": {"status": ["moved", "missing", "ambiguous", "invalid"]}}`.
 
 ## Crossing to and from a static tool
 
 - **Static tool:** whole functions, decompiling, types, call graphs.
-  **ReAgentLive:** live values, which object, which function a live object
-  dispatches to (vtables, `func` on an interface), what a global holds at
-  run time (the image file has zeros where the engine fills names at
-  start-up), and one-address answers.
-- Printed `module` + `rva`: in the static tool, its image base plus the
-  RVA (IDA: `idaapi.get_imagebase() + rva`). Back the other way, pass
-  `{"module": "game.exe", "rva": "0x1234"}` as any address.
-- **Globals the static tool shows as `qword_…`:** `peek` at its module
-  and RVA; an FName index shows as `name_hint`. Accept the hint only when
-  the code uses it where a tag is expected, then `peek` with `label` and
-  `name` records it (`docs/commands/labels.md#peek-with-label`).
-- **Names for a full database:** after SDK-generator mappings,
-  `{"verb": "labels-export", "args": {"kinds": ["interface"]}}`, else a
-  full `labels-export`; then the loader's `import_labels`.
+  **ReAgentLive:** live values, which function a live object dispatches to
+  (vtables, `func` on an interface), what a global holds at run time (the
+  image file has zeros where the engine fills names at start-up).
+- Printed `module` + `rva`: in the static tool, image base plus RVA. Back,
+  pass `{"module": "game.exe", "rva": "0x1234"}` as any address.
+- A global shown as `qword_…`: `peek` it; an FName index shows as
+  `name_hint`. Accept the hint only when the code uses it where a tag is
+  expected, then `peek` with `label` records it
+  (`docs/commands/labels.md#peek-with-label`). Names for a full database:
+  `labels-export`, then the loader's `import_labels`.
 
 ## Following a native getter
 

@@ -1,17 +1,10 @@
 # Commands by task
 
 Which verb answers which question. Arguments and result keys: `help`
-with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour and guards: the linked page. Which verbs need the
-game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-thread`).
-
-## Session
-
-| Question | Verb |
-|---|---|
-| Which packs, which thread, which build, tick rate | `status` |
-| Exe and module ranges | `modules` (exe first) |
-| What this session cost | `usage` (usage log: `docs/commands/console.md#usage-log-and-usage`) |
-| Many reads in one tick | `batch` (fewer round trips: `docs/commands/console.md#fewer-round-trips`) |
+with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
+`docs/commands/README.md`. Game-thread needs:
+`docs/commands/unreal.md#off-the-engines-thread`. Session: `status`,
+`modules`, `usage`, `batch`.
 
 ## Objects and reflection (Unreal pack: `docs/commands/unreal.md`)
 
@@ -63,32 +56,19 @@ game thread: off the engine's thread (`docs/commands/unreal.md#off-the-engines-t
 | Change memory once / every tick / once with an undo | `write` / `write` with `hold` / with `undo` (approval) |
 | Which timed writes are active; end them | `timed-writes` (read-only, `observe`); `write` with `clear` (`modify`, approval) |
 
-## Over time (`docs/commands/memory.md#watch`, `docs/commands/capture.md`)
+## Over time
 
-| Question | Verb |
-|---|---|
-| Memory or a reflected field over seconds to minutes | `watch-start`, `watch-read`, `watch-stop` |
-| An object's fields before and after an action | `get` with `mode` `snap`, then `changed` |
-| Every tick for a few seconds, holding the caller | Python `s.watch(seconds, ranges)` (start, wait, stop) |
+Sampling and captures: the capture-and-timing reference.
 
-## Native code (fast lane: `docs/commands/fast-lane.md`)
+## Native code
 
-| Question | Verb |
-|---|---|
-| What code is here | `disasm` |
-| What points here | `xrefs` |
-| Which functions use these member offsets | `touches` (`bases` `["rcx"]`: on `this` only) |
-| Does anything in the image write (or read) these fields | `disp-scan` with `disps` (`same_base` for functions writing all of them); follow `next_cursor` to the end in a script |
-| Where a string is | `search` with `type` `text` |
-| Is a signature unique and does it land there | `sig-check` (`file` for many), `sig-bytes` |
-| Names for a static tool | `labels-export`, `peek` with `label` |
+Disassembly, xrefs, `touches`, `disp-scan`, signatures: the native-code
+and signatures references.
 
-## Refs and addresses
+## Refs
 
-- Pass the literal ref a result prints (`<ref>` in this skill).
-- Addresses inside a module print `module` and `rva`;
-  `{"module": "game.exe", "rva": "0x1234"}` works as an address (addresses
-  and refs: `docs/commands/console.md#addresses-and-refs`).
-- `name` takes many `indices` in one call. `name-find` can return binary
-  junk beside real names: skip rows with control characters, confirm with
-  `{"verb": "name", "args": {"indices": [12345]}}`.
+- Pass the literal ref a result prints (`<ref>` in this skill). A module
+  address works as `{"module": "game.exe", "rva": "0x1234"}`
+  (`docs/commands/console.md#addresses-and-refs`).
+- `name-find` can return binary junk beside real names: skip rows with
+  control characters, confirm with `{"verb": "name", "args": {"indices": [12345]}}`.

@@ -1,6 +1,6 @@
 # Outside programs
 
-*Home of:* the core as a lean in-process proxy for a program outside the game: what it gives, its limits, what fits, what is not built yet.
+*Home of:* the core as a lean in-process proxy for a program outside the game: the premise, its limits and what fits.
 
 **TL;DR:** You can keep a tool's logic and window outside the game and
 load only a small, stable DLL inside it that reads, writes and calls on
@@ -13,40 +13,29 @@ The console is one such program; this page is for the others.
 ## The idea
 
 Load one small, stable DLL into a game once and keep everything else
-outside it. The DLL holds no feature logic, no menu and no drawing. The
+outside it. The DLL holds no feature logic, no menu and no drawing; the
 outside program can be rebuilt and restarted freely while the game keeps
-running.
+running. The premise: **frame-perfect timing is not required.** An answer
+arrives a tick or two after the question.
 
-The premise: **frame-perfect timing is not required.** An answer arrives a
-tick or two after the question.
-
-## What the core already gives
-
-| The proxy needs | Where |
-|---|---|
-| Read, write, same-tick batches (held requests) | [protocol](protocol.md#exchange), [memory commands](commands/memory.md) |
-| Guarded writes and `write`'s timed forms: `hold` (rewritten every tick until it expires) and `undo` (restores itself) | [memory commands](commands/memory.md) |
-| References that refuse a replaced object; engine calls | the [Unreal pack](commands/unreal.md) |
-| No code hooks, no threads of its own, no drawing (the opt-in pointer swaps: [design](design/principles.md#principles)) | [design](design/principles.md#principles) |
-| A client library the program links | [clients](client.md) |
-| A host that ticks the core | [hosting](hosting.md); the DLL, its entry and its tick source are the host author's |
-
-A program that wants `get`, `batch` or the cache drives the console's
-JSON mode instead of linking the client, as the Python client does.
+What the proxy rests on: [protocol](protocol.md#exchange) (held same-tick
+requests), [memory commands](commands/memory.md) (guarded, `hold` and `undo`
+writes), the [Unreal pack](commands/unreal.md) (refs, engine calls),
+[clients](client.md) (the library to link) and [hosting](hosting.md) (the
+host that ticks the core). A program that wants `get`, `batch` or the cache
+drives the console's JSON mode instead, as the Python client does.
 
 ## Limits
 
 - **Throughput.** About one request per host tick, with short held bursts,
-  each response up to 4 KB ([limits](protocol.md#limits)). A program that
-  reads many values every frame is unmeasured; measure before planning one.
-- **One request at a time** ([protocol](protocol.md#handshake)): the
-  console and an outside program take the slot in turns, so a long held
-  command of one delays the other's requests.
-- **No drawing.** Visuals are drawn in the program's own window, never over
-  the game.
-- **Engine calls need the game thread.** A host ticking elsewhere offers
-  memory commands and, if it opts in, object reads; calls only after
-  `game-thread` (`on`) moves its tick there ([host thread](hosting.md#host-thread)).
+  each response small ([limits](protocol.md#limits)). A program that reads
+  many values every frame is unmeasured; measure before planning one.
+- **One request at a time** ([protocol](protocol.md#handshake)): the console
+  and an outside program take the slot in turns, so a long held command of
+  one delays the other. A second channel waits for a real need
+  ([ideas](ideas.md)).
+- **No drawing.** Visuals are drawn in the program's own window.
+- **Engine calls need the game thread** ([host thread](hosting.md#host-thread)).
 - **Same build.** Host and program are built from one revision; the layout
   check refuses a mismatched pair ([handshake](protocol.md#handshake)).
 
@@ -56,24 +45,10 @@ JSON mode instead of linking the client, as the Python client does.
 |---|---|
 | Values that change over seconds: settings, economy, inventory, timers | Anything that tracks fast movement frame by frame |
 | Tools and dashboards in their own window | Overlays drawn over the game |
-| Holding a value with `hold`, or one guarded write | Logic that must run inside a frame: the Draw tick (`game-thread`) puts requests on the game thread, but each still waits for a tick, so frame-exact logic stays in a mod |
+| Holding a value with `hold`, or one guarded write | Logic that must run inside a frame: the Draw tick puts requests on the game thread, but each still waits for a tick, so frame-exact logic stays in a mod |
 | Prototyping logic before it moves into a mod | |
 
 A mod that already works in-process gains little by moving out: "inject
-once, iterate outside" is what the console already gives for
-investigation. If a mod does move, move scalar features first and judge
-frame-critical ones last, by measurement.
-
-## Not built yet
-
-Each waits for a real program that needs it:
-
-- a minimal client example ([backlog](ideas.md#20--example-client)); both
-  example hosts exist ([own-thread](hosting.md#own-thread-example),
-  [Unreal](hosting.md#unreal-example));
-- throughput measurements with the example client, then, if needed,
-  registered per-tick reads: the client names ranges once, the agent
-  samples them every tick (`watch-start` is the start), and they expire when the
-  client's heartbeat stops;
-- a second channel, so two requests are in flight at once: the core's
-  state moves into a per-channel context ([backlog](ideas.md#38--two-requests-in-flight-channels)).
+once, iterate outside" is what the console already gives for investigation.
+If a mod does move, move scalar features first and judge frame-critical
+ones last, by measurement.

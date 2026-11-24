@@ -29,18 +29,15 @@
    class it reads (`layout-check` after a patch), pure logic with unit
    tests, then a live capture that proves the new code path ran (a case
    only the new logic explains), then the evidence record.
-8. **Name it once.** A member: `member-name`. A native function: name it in the
-   static tool, then `export_names` into the host's names file. A global:
-   `peek` with `label`. Then `labels-sign`, so `labels-port` finds them after a
-   patch. Later saves show those names: read a save's names before working
-   out a function again.
+8. **Name it once** (`member-name`; a function in the static tool, then
+   `export_names`; a global with `peek` and `label`), then `labels-sign`,
+   so `labels-port` finds them after a patch.
 
 ## Pitfalls
 
 - **Refs go stale.** Respawns and reloads replace objects: look refs up
   again. A raw `read` of an old address still returns bytes: it checks
   memory, not identity; a literal ref checks identity.
-- **Separate calls read separate ticks** (SKILL.md rules).
 - **`own` can hide everything.** `get` with `own` lists only the fields the
   object's own class declares; a small subclass (an effect, a trigger, a
   data sub-object) often declares none. Empty: drop `own`, keep

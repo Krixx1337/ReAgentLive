@@ -26,12 +26,8 @@ Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/se
 ```
 
 The agent builds the example for your target, registers its MCP tools,
-installs the skill (instructions it reads before investigating) and checks
-the result.
-
-**Optional:** it asks whether to fetch a command-line DLL loader, so it can
-load ReAgentLive into the process you name. Say no if you load DLLs your
-own way (your mod, your own loader).
+installs the skill and checks the result. It may offer a command-line DLL
+loader; say no if you load DLLs your own way.
 
 By hand, start from the example for your target:
 
@@ -58,10 +54,8 @@ Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/up
 | **T1** Unreal located | Find objects by name; count instances of a class | Any UE5 game, no dump |
 | **T0** Core | Memory, code, signatures, writes that undo themselves | Any x64 process |
 
-Each rung adds to the one below. An *SDK dump* is a set of C++ headers a
-dumper tool generates from a game; a *signature* is a byte pattern that
-finds code.
-What each rung needs and what stops it: [tiers](docs/tiers.md).
+Each rung adds to the one below. What each needs and what stops it:
+[tiers](docs/tiers.md); terms: [glossary](docs/README.md#glossary).
 
 ## What it looks like
 
@@ -82,44 +76,13 @@ in the running game:
 > function at `Game.exe+0x9A3F10`. Every soldier uses it. I set yours to
 > 1000, and after 30 s the original came back on its own.
 
-A few seconds, with no dump to guess from, no rebuild, and nothing left
-changed (a value the game rewrites in those 30 s ends `conflict` and is
-left as the game wrote it). This is an example: the tools are real, and the game and its
-names are made up. The tools are the agent's MCP tools (Model Context
-Protocol, how AI agents call tools); this run needs T3. Addresses come back
-as `module` + `rva` (module and offset), ready for IDA or Ghidra.
+A few seconds, no dump, no rebuild, nothing left changed. The tools are
+real MCP tools; the game and its names are made up. This run needs T3.
 
-## Why it's faster
-
-| You ask your agent | Without it | With it |
-|---|---|---|
-| "Where's the player's health?" | guesses from a dump (headers generated from the game), or you scan by hand in a memory scanner | finds the object and reads the field in the running game |
-| "What uses this string?" | waits hours for the disassembler's analysis to finish | every reference and the code around it, in milliseconds |
-| "Does this offset still work after the patch?" | rebuild, inject, hope | checks the offset and signature (a byte pattern that finds code) against live bytes |
-| "What if this flag were 1?" | a raw write, a crash, a restart | a `write` with `undo` that restores itself |
-
-## Use cases
-
-- **Find a value you can see on screen.** Ammo, health, a cooldown: ask
-  where it lives and what code changes it, instead of scanning by hand.
-- **Check your mod after a game update.** Test every offset and signature
-  against the running game in one go, before you rebuild.
-- **Learn how a feature works.** Start from a string or an address and see
-  its references and code from live bytes, with no full disassembly.
-- **Try a change safely.** Flip a flag for 30 seconds with `undo`; the
-  original comes back by itself.
-- **Explore an Unreal Engine game with no dump.** List every object of a
-  class, read their fields by name and, on the game thread, call the
-  game's own getters.
-
-## Ways to drive it
-
-The same commands through four interfaces ([clients](docs/client.md)):
-
-- **MCP tools** (Model Context Protocol): your AI agent's default, one tool per command.
-- **Console:** a command line for you, or quick checks ([console](docs/commands/console.md)).
-- **Python:** generated functions for loops and comparisons over results.
-- **C++ client:** for your own tools and outside programs.
+It checks offsets and signatures against live bytes, lists every reference to
+a string in milliseconds and reverts its own writes. Use cases, other
+interfaces and how it pairs with IDA, Ghidra or Cheat Engine:
+[positioning](docs/positioning.md), [clients](docs/client.md).
 
 ## Safe by default
 
@@ -132,12 +95,6 @@ The same commands through four interfaces ([clients](docs/client.md)):
   written into.
 
 More: [safety model](docs/positioning.md#safety-model).
-
-## Works with your tools
-
-It doesn't replace IDA, Ghidra, Cheat Engine or Frida. It adds the one
-thing they can't give you: what is true in the running process right now.
-How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools).
 
 ## What it is not
 
@@ -155,8 +112,8 @@ How it pairs with each: [positioning](docs/positioning.md#role-among-other-tools
   task, every command and a glossary.
 - **Why it is built this way:** [positioning](docs/positioning.md),
   [design](docs/design/README.md).
-- **Status:** version 0.6.0 ([changelog](CHANGELOG.md)). It is usable,
-  and the API can change before 1.0. Windows x64, C++23.
+- **Status:** pre-1.0, the API can change ([changelog](CHANGELOG.md)).
+  Windows x64, C++23.
 
 ## License
 

@@ -7,25 +7,8 @@ Run every step yourself. Ask the user only where a step says to. Use
 PowerShell. `<dir>`, `<build>`, `<console>` and `<dll>` mean the same as
 in [agent setup](setup.md#2-choose-the-example).
 
-Steps:
-
-1. Read the setup record
-2. Show what is coming
-3. Pull and rebuild
-4. Regenerate the typed functions
-5. Skill
-6. MCP server
-7. Running targets
-8. Local lessons
-9. IDA side
-10. Verify
-11. Update the setup record
-12. Report
-
 A host project that carries ReAgentLive as a submodule follows
 [its own section](#host-projects-with-a-submodule) instead.
-
----
 
 ## 1. Read the setup record
 
@@ -98,10 +81,10 @@ ask the user. Then rebuild every example in `examples`, comma-separated
 powershell -NoProfile -ExecutionPolicy Bypass -File "<dir>\tools\build_examples.ps1" -Examples <examples>
 ```
 
-It reads as in [agent setup](setup.md#3-clone-and-build). Each build
-stamps the clone's commit into the console, so `status` shows it after
-(step 10). If the link step cannot write `<dll>`, a running process still
-has it loaded: ask the user to close that process, then build again.
+It reads as in [agent setup](setup.md#3-clone-and-build) and stamps the
+clone's commit into the console (`status` shows it in step 10). If the link
+step cannot write `<dll>`, a running process still has it loaded: ask the
+user to close it, then build again.
 
 **Roll back** when the build still fails, or step 10's check fails: the
 pulled MCP server and docs no longer match the old build. Report the
@@ -154,18 +137,15 @@ to restart each such target (close it and start it again), then load the
 new `<dir>\<build>\<dll>` into the fresh process (the injector from
 setup, if any: [agent setup](setup.md#8-optional-get-an-injector)).
 
-After a protocol change (step 2) the restart is required: never load the
-new DLL into a process that already runs the old one. The old agent's
-shared section stays mapped with the old layout, so the new agent cannot
-take it over safely. Only when step 2 found no protocol change may the new
-DLL go into the same process (the newer agent takes over and the old one
-stops ticking, [protocol](../protocol.md#section)); host copies stack, so a
-restart is still cleaner.
+After a protocol change (step 2) the restart is required: the old agent's
+shared section stays mapped with the old layout, so never load the new DLL
+into a process that already runs the old one. Without one, the new DLL may
+go into the same process (the newer agent takes over,
+[protocol](../protocol.md#section)); a restart is still cleaner.
 
-After a protocol change the new console refuses an old agent: every
-command answers with an error saying
-`agent layout differs; build agent and client from the same source`. That
-error means a target still runs the old DLL, not that the update failed.
+After a protocol change the new console answers an old agent with
+`agent layout differs; build agent and client from the same source`: a
+target still runs the old DLL; the update did not fail.
 
 ## 8. Local lessons
 
@@ -211,7 +191,6 @@ too:
 | Agent | when the update changed the agent core, `build` (the agent core's build time, unless the host sets its own label) is from step 3: the target runs the new DLL. It stays the same when only the console or a pack changed |
 | Verb table | `table_hash` differs from before when step 2 listed verb changes; the same hash after verb changes means the console was not rebuilt |
 
-
 `replaced_agents` above 0 means the new DLL was loaded into a process
 that already had an agent (step 7).
 
@@ -242,10 +221,10 @@ Tell the user:
 
 ## Host projects with a submodule
 
-A project that carries ReAgentLive as a git submodule loads the skill in
-place from the submodule's `.claude/skills` folder; it needs no setup
-record. `<host>` is the project, `<path>` the submodule's folder. The
-host's own notes (its build, its commit rules) win over these steps.
+A project that carries ReAgentLive as a git submodule loads the skill from
+the submodule's `.claude/skills` folder and needs no setup record. `<host>`
+is the project, `<path>` the submodule's folder. The host's own notes win.
+Same as steps 2 to 12, with these differences:
 
 1. Check the submodule's state; never update blindly:
 
@@ -263,16 +242,13 @@ host's own notes (its build, its commit rules) win over these steps.
      leave those commits on no branch.
    - A detached HEAD is normal for a submodule. A branch other than
      `main`: tell the user and ask before switching.
-2. Keep `git -C <host>/<path> rev-parse --short=12 HEAD` as `<old>`, then
-   show what is coming as in step 2, run in `<host>/<path>` (the `log`,
-   the CHANGELOG diff and the protocol check). Empty `log`: nothing to
-   update; say so and stop.
+2. Keep `rev-parse --short=12 HEAD` as `<old>` and show what is coming as
+   in step 2, run in `<host>/<path>`. Empty `log`: nothing to update; stop.
 3. Update. On `main`: `git -C <host>/<path> pull --ff-only`. Detached:
    `git -C <host> submodule update --remote <path>`.
-4. Rebuild the host with its own build, then follow steps 6 (MCP server),
-   7 (running targets), 8 (local lessons), 9 (IDA side: run its check;
-   `missing` without the record's `ida` means skip) and 10 (verify: the
-   target's `status` only; the build script is for a clone).
+4. Rebuild with the host's own build, then do steps 6 to 10 (step 9: `missing`
+   without the record's `ida` means skip; step 10: the target's `status`
+   only).
 5. Report with step 12's block; its `Record` line reads `none (submodule)`.
    The host's submodule pointer now shows as changed: commit it only when
    the user asks.

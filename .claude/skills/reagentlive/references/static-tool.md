@@ -23,18 +23,13 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
   ending `stop` `walk end` is normal: small thunks have no exception
   entry (`docs/commands/fast-lane.md`).
 
-## One-time setup (the user's; ask, never edit their install)
+## Setup (the user's; ask, never edit their install)
 
-- Before the first `fetch` of a session check the setup:
-  `python -I tools/ida_setup.py` (read-only; `state` `current`; `stale`
-  or `missing`: give the user its `why` and ask them to run
-  `python -I tools/ida_setup.py --install`). IDA runs the repo's code, so
-  an update needs no copy; in an IDA session open since the update,
-  `rl.reload()` first.
-- In a save database `fetch` and `finish` find the console from the saves;
-  pass `console=` only in a full database. Never set
-  `REAGENTLIVE_CONSOLE` on the user's machine yourself.
-- Disable any IDA plugin that fails to load under idalib.
+- Before the first `fetch` of a session run `python -I tools/ida_setup.py`
+  (read-only): `stale` or `missing`: give the user its `why` and ask them
+  to run it with `--install` (`docs/commands/ida-loader.md`). In an IDA
+  session open since an update, `rl.reload()` first.
+- Never set `REAGENTLIVE_CONSOLE` on the user's machine yourself.
 
 ## The loop
 
@@ -71,9 +66,8 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 ## Hygiene
 
 - Each work cycle starts with `list_databases`: close every headless
-  (idalib) database that is not the workspace or a reference database.
-  Leaked workers pile up and die.
-- Close the workspace when the investigation ends; before opening a new
-  save under the same name, delete the database files beside it.
+  database that is not the workspace or a reference; leaked workers pile
+  up. Close the workspace when done, and delete stale database files
+  before reopening a save under the same name.
 - After a game patch: a new full database (the RVAs change), then
-  `labels-port` (the signatures reference) and import the labels again.
+  `labels-port` and import the labels again.

@@ -28,7 +28,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `enum`, `assets-export` | T2 | [Unreal objects](unreal-objects.md) |
 | `each` | T3 | [Unreal objects](unreal-objects.md#each) |
 | `owner`, `route` | T3 | [Unreal objects](unreal-objects.md#owner-and-route) |
-| `get` (every mode), `entries`, `rows`, `member-name`, `layout-export`, `layout-check` | T2 | [Unreal fields](unreal-fields.md) (snapshots over time: [capture](capture.md)) |
+| `get` (every mode), `entries`, `rows`, `member-name`, `layout-export`, `layout-check` | T2 | [Unreal fields](unreal-fields.md#every-field-and-its-filters) (`snap`, `changed`) |
 | `func`, `funcs` | T2 (`func`'s `params`: T3) | [Unreal calls](unreal-calls.md#func-and-funcs) |
 | `call`, `call-pure`, `call-each`, `release`, `line-trace` | T3 | [Unreal calls](unreal-calls.md) |
 | `calls-start`, `calls-read`, `calls-stop` | T3; the host lists the ops | [Unreal calls](unreal-calls.md#call-recorder) |

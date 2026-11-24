@@ -11,10 +11,8 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 - A loop, sweep or comparison over many results: `each` (or
   `call-each` for a getter) when it is one class (one tick, one
   call); else one Python script that prints a summary, not N tool calls.
-- The same calls over time, or a measurement to repeat later: one `run`
-  plan with `repeat` (the capture-and-timing reference), not a loop of
-  tool calls.
-- Enable a pack once, when the task first needs it; leave the rest off.
+- The same calls over time: one `run` plan with `repeat` (the
+  capture-and-timing reference), not a loop of tool calls.
 - A bare class name costs one table scan the first time per agent; a
   literal ref never scans. Keep refs from earlier results.
 
@@ -43,14 +41,7 @@ The result cap and digests: `docs/commands/console.md#fewer-round-trips`;
 
 ## Measure the session
 
-- `usage` (also with no target) ranks this session's verbs by output and
-  marks wasteful calls (unfiltered, repeated, refused; `help` on `usage`;
-  `same_args` is not waste: the state changed). Check
-  it before a long step and act on the marks.
-- End the final report with its totals (context cost and what digests
-  saved) and the two or three costliest habits.
-- `usage` also reads across sessions: patterns, verbs nobody calls, this
-  session against earlier ones (`usage` with `report` `sessions` or
-  `all`), or against a report kept with `save` (`baseline`: what got
-  worse). A mid-session check needs one part: `only` (`["totals"]`,
-  `["compare"]`) keeps the rest out of context.
+`usage` ranks this session's verbs by output and marks wasteful calls
+(`same_args` is not waste: the state changed); check it before a long step
+and end the final report with its totals and the costliest habits. Across
+sessions and baselines: `docs/commands/console.md#usage-log-and-usage`.

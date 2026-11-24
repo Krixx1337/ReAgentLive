@@ -24,17 +24,16 @@ Approval: SKILL.md rules. Call semantics and named inputs:
   `release` with the same `object` and `function` once when done.
   Verify on the handle's control block with `read` (+8 shared, +12 weak
   count): the count stays flat across repeats and drops after `release`.
-- Getters that return a large engine struct by value (a stats struct of a
-  few KB with arrays inside) copy owned arrays into the console's block:
-  read the asset fields instead.
+- A getter returning a large engine struct by value (KBs, arrays inside)
+  copies owned arrays into the console's block: read the asset fields.
 
 ## Writing memory
 
 - `write` with `expect` set to the bytes you just read: heap memory can be reused
   between a read and a write.
-- `search` twice a second apart and keep the intersection: heap addresses
-  that churn are per-frame temporaries. Re-read the vtable right before
-  every write; a block can be reused for another type in between.
+- Heap addresses that churn between two `search`es a second apart are
+  per-frame temporaries. Re-read the vtable right before every write; a
+  block can be reused for another type.
 - Never write through a pointer chain: resolve it, read, then write to that
   address with `expect`.
 - When a game setter refuses (authority, validation), look at the object it
@@ -47,30 +46,20 @@ Approval: SKILL.md rules. Call semantics and named inputs:
 - Class or tier tables in data assets are often re-read only on an event
   (inventory change, equip): after a write, ask the user to trigger it
   before judging.
-- **Writes can be blocked.** Even with the user's go-ahead, the session's
-  permission check may refuse a state-changing `call`. Plan read-only
-  evidence (getters, refcounts, designer data) that stands without the
-  write, and leave the effect check to the user's session.
+- **Writes can be blocked.** The session's permission check may refuse a
+  state-changing `call` despite the user's go-ahead: plan read-only
+  evidence that stands without it, and leave the effect check to the user.
 
 ## Timed writes (`write` with `undo`)
 
-- **Use `write` with `undo` to settle which way a lead goes** (does a multiplier
-  shorten an action?). It writes once and the agent restores the original;
-  a value the game rewrites meanwhile ends `conflict`. Its result is
-  evidence for a lead's direction, not validation of a shipped feature.
+- Use it to settle which way a lead goes (does a multiplier shorten an
+  action?): it writes once and the agent restores the original; a value
+  the game rewrites meanwhile ends `conflict`. Evidence of direction, not
+  validation of a shipped feature. Compare against an untouched run, or an
+  untouched character in the same capture (the capture-and-timing
+  reference).
 - An attribute behind a lookup handle: `references/unreal/gameplay-systems.md#attributes-and-effects`.
-- **To time an action**, capture its Blueprint action object's state fields
-  (frame counters, flags) in one untouched and one trial run and compare
-  the times between matching state changes
-  (the capture-and-timing reference).
-- **A/B on an AI character.**
-  1. Confirm the value sits still at rest: two reads a second apart.
-  2. Capture the value and the action's progress over several untouched
-     actions.
-  3. `write` the value with `undo` and capture the same ranges again.
-  4. Compare durations on that one character, with an untouched one in the
-     same capture as a control when one is in view.
-- Read the end state with `timed-writes` (read-only). Clear them
+- Read the end state with `timed-writes`. `clear` them
   (`{"verb": "write", "args": {"clear": "all"}}`, approval as for a write)
   before the host stops or you reinject: a stopped agent no longer ticks,
   so its `undo` writes never restore.

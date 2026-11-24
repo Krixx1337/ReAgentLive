@@ -1,6 +1,6 @@
 # Clients
 
-*Home of:* what each interface offers (MCP tools, console, Python, C++ client) and its API: setup, options, state, marks, limits and timeouts; the helpers beside them.
+*Home of:* what each interface offers (MCP tools, console, Python, C++ client) and how it behaves: marks, ceilings, state, turn-taking.
 
 **TL;DR:** Four ways to drive the same agent: MCP tools (an AI agent's
 default), the console (a person at a shell, quick checks), Python (loops
@@ -17,7 +17,6 @@ literal `ref` a result printed.
 | **Console** | a person at a shell, a quick check, no MCP registered | `<console> -c '{"verb": "find", "args": {"text": "X"}}'` ([console](commands/console.md)) |
 | **Python** (generated functions, `Session`) | loops, sweeps, comparisons, long captures: logic that should not be twenty tool calls | [generated functions](#generated-python-functions) |
 | **C++ client** | your own tool or outside program, linking the library | [C++ client](#c-client) |
-| IDA label import (a helper) | bringing the console's labels into an IDA database | [helpers](#helpers) |
 
 Which one an AI agent picks for a given task is the skill's
 [`interfaces.md`](../.claude/skills/reagentlive/references/interfaces.md).
@@ -31,17 +30,13 @@ revision; the layout check refuses a mismatched pair
 
 Each host ships a console executable (the examples': `reagentlive.exe`,
 `reagentlive-ue.exe`). It is the one frontend that owns behaviour; every
-other interface calls it or the same requests. How to drive it (JSON
-calls, addresses and refs, the result cap, `batch`, the cache file,
-one-shot runs, arguments, the usage log): [console](commands/console.md).
-What each verb takes and returns: `help` with `verb`, the
-[verb reference](commands/reference.md) and
+other interface calls it or the same requests. How to drive it:
+[console](commands/console.md). What each verb takes and returns: `help`
+with `verb`, the [verb reference](commands/reference.md) and
 [result shapes](commands/results.md).
 
-A console attaches to one section name, which its host chose: the
-own-thread example's console finds only the own-thread agent, the Unreal
-example's only the Unreal one. Use the console built with the host you
-loaded.
+A console attaches to one section name, which its host chose: use the
+console built with the host you loaded.
 
 ## C++ client
 
@@ -56,33 +51,19 @@ auto fields = reagentlive::ue::Fields(*client, found->objects[0].ref);   // all 
 auto bytes = client->ReadRange(found->objects[0].ref.address, 0x800);
 ```
 
-- Synchronous, one request in flight per `Client`, not thread-safe, and
-  used from one thread (the slot is a mutex, which belongs to a thread).
-- Results are `std::expected<T, reagentlive::Error>`. `Error::kind` is
-  `Agent` (a refusal, with its status and reason), `Timeout`, `Attach` or
-  `Busy` (another client held the slot past the busy wait).
-- **Clients take turns:** any number attach; a request takes the agent's
-  slot for its own length, a `Client::Hold` for its life, and
-  `Client::Turn` gives a lone hold's slot up for console-side work
-  ([one request at a time](protocol.md#handshake)). `SetBusyWait` sets how
-  long a request waits for it (default 10 s). `Attach`'s third argument
-  describes this client (a caller kind such as `script`), and
-  `Client::Holder(section)` says who holds the slot: pid, caller kind and
-  since when. `Stats().slotWaitMicroseconds` counts the waits.
-- **Whole images:** `CopyImage(address, length, timeout)` reads up to 4 MB
-  of a loaded image a request through the
-  [image window](protocol.md#handshake), with a bitmap of the pages it
-  copied: code and constants, never values.
-- **Timeouts:** 5 s a request by default (`SetTimeout` changes it).
-  `Search` and `Xrefs` take their own; the Unreal pack's scans (`Refs`,
-  `ExecEntries` and the like) default to minutes.
-- Pointer chains: `Client::ResolveChain` ([native objects](commands/native-objects.md#pointer-chains)).
-- A ready-made console: `reagentlive::cli::RunConsole({prefix, exeName, layout}, argc, argv)`
-  ([host verbs](hosting.md#host-verbs) for commands of your own).
-- Commands that exist only in the console (`get`, `batch`,
-  `entries`, the cache, the result cap) are reached through its JSON calls,
-  as the Python client does ([design](design/architecture.md#frontends)). So is
-  `game-thread`, which has no typed wrapper.
+`core/client.h` is the API reference. What it does not say:
+
+- Synchronous, one request in flight per `Client`, not thread-safe, used
+  from one thread (the slot is a mutex, which belongs to a thread).
+- Results are `std::expected<T, reagentlive::Error>`; `Error::kind` is
+  `Agent` (a refusal), `Timeout`, `Attach` or `Busy`.
+- **Clients take turns** on the agent's slot ([protocol](protocol.md#handshake)).
+- `CopyImage` reads whole images through the
+  [image window](protocol.md#handshake): code and constants, never values.
+- Commands that exist only in the console (`get`, `batch`, `entries`,
+  `game-thread`) are reached through its JSON calls, as the Python client
+  does ([design](design/architecture.md#frontends)). A ready-made console:
+  `reagentlive::cli::RunConsole` ([host verbs](hosting.md#host-verbs)).
 
 ## Generated Python functions
 
@@ -109,26 +90,11 @@ with Session(r'path\to\console.exe') as s:
 ```
 
 - **One method per verb, named by origin:** core verbs on `Console`
-  (`c.read`, `c.sig_check`), a pack's and the host's under their origin
-  (`c.ue.find`, `c.host.world`). Required arguments first (by
-  position or name), the others keyword-only, named by the console's keys
-  (the table refuses a Python keyword, so `cls`, never `class`). An
-  argument that takes several values takes a list, an object a dict, except bytes, patterns and text, which are one string (or
-  `bytes`). Each docstring is the verb's usage, arguments and notes.
-- **Every verb but `quit`:** a host's blocking ones are there too and
-  hold the script for their duration, unlike MCP, which leaves them out.
-  The session's `watch(seconds, ranges)` is a blocking capture:
-  `watch-start`, a wait, then `watch-stop`'s result.
-- **Typed:** argument types from the row (`addr` is `int | str`, an int
-  goes as hex), each result annotated with a `TypedDict` of the console's
-  keys (named types are classes: `Chain`, `Object`, `UeName`), so a type
-  checker reads a script before it runs. A wrong argument name is a
-  `TypeError` at the call.
-- **The console's shape:** a method returns its verb's strict `Record`
-  (below), key for key what the console printed; an `addr` stays its hex
-  text.
-- **Literal refs:** calls go as JSON, which takes the `ref` a result
-  printed ([JSON calls](commands/console.md#json-calls)).
+  (`c.read`), a pack's and the host's under their origin (`c.ue.find`,
+  `c.host.world`). Arguments are named by the console's keys (`cls`, never
+  `class`). Each docstring is the verb's usage.
+- **Every verb but `quit`:** a host's blocking verbs are there too and hold
+  the script, unlike MCP, which leaves them out.
 - **A stale module does not run:** it carries the table hash, and
   `Console(s)` raises `StaleTableError` when the console's differs.
   Generate it again after a build that changes any row.
@@ -137,209 +103,97 @@ with Session(r'path\to\console.exe') as s:
 
 `frontends/python/reagentlive_session.py` drives any ReAgentLive console
 through its stateful stdin mode, standard library only. The generated
-module calls through it; scripts use it for the rest.
+module calls through it; scripts use it for the rest. Its module docstring
+has the API (`call`, `help`, `batch_results`, background runs, helpers).
 
-- **Results are strict.** At start the session reads the console's verb
-  table (`help` with `json`) and wraps every result in a `Record` typed by its
-  verb's row. A key the result type lacks raises `ResultKeyError` naming
-  the valid keys; an optional key that is absent gives `None`; nested
-  objects, named types and list rows are strict too. A key guessed wrong
-  fails on the line that guessed it, never as a quiet `None` or a caught
-  `KeyError`. `record.raw` is the plain dict.
-- `s.call(verb, args, max_chars=None)` sends one JSON call with arguments
-  named as `help` with `verb` shows them (None and False left out, bytes
-  as hex) and returns the strict result. `s.help('<verb>')` shows a verb's arguments
-  and result keys; `s.send(line)` is the raw exchange (the envelope as
-  plain dicts).
-- **Two helpers, for what a generated function cannot do:**
-  `s.batch_results(calls)` (`(items, same_tick)`, each item a strict
-  result or a `ReAgentLiveError`) and the module's `samples(result)` (a
-  watch's rows with values as bytes). Nothing else in the session names a
-  verb. Paging, filtering and retrying are the console's: follow
-  `next_cursor` with `view.start`, or use the verb's `view.limit`
-  (0 for every row on `census`).
-- `s.table_hash` is the console's `table_hash`.
-- **Result cap:** a result past the call's `max_chars` (characters; 0
-  none) comes back as a `Digest` in place of the record, and
-  `s.digest` holds the last one (else `None`): its size, largest parts and
-  `next`, the call narrowed, or `file`, where the console kept the whole
-  result of a call that must not run again
-  ([result cap](commands/console.md#fewer-round-trips)). A session
-  started with `caller='tool'` has the console's tool cap by
-  default; `'script'` has none. `s.context_warning` is the last call's
-  `context_warning` (a tool caller's session past the console's
-  `--context-limit`), else `None`.
-- `Session(console, args, caller='script')` starts the console with
-  `--caller`: its [usage log](commands/console.md#usage-log-and-usage)
-  counts a script's output apart from an agent's context. Pass
-  `caller='tool'` when an agent reads every result. `table=` takes a
-  `help` with `json` result read before: the session then asks only for the
-  hash (`help` with `hash`) and reads the table again only when it changed.
-- `Session(console, packs=['explore', 'native', 'observe'])` runs the
-  console with that [`--packs`](commands/console.md#one-shot-use)
-  ceiling: the generated module keeps every verb, and a call outside the
-  packs (a `batch` item too) raises `ReAgentLiveError` whose `kind` is
-  `pack`. A script that must not change the target leaves `modify` out.
-- **No timeout:** a call waits until the console answers or exits. The
-  console's own waits still apply: `busy_wait` seconds for the slot
-  another client holds (default 10), then `busy`, naming the holder.
+- **Results are strict.** The session reads the console's verb table and
+  wraps every result in a `Record` typed by its verb's row. A key the type
+  lacks raises `ResultKeyError` naming the valid keys; an absent optional
+  key gives `None`. A key guessed wrong fails on the line that guessed it,
+  never as a quiet `None`. `record.raw` is the plain dict.
+- **Callers:** `Session(console, args, caller='script')` is counted apart
+  from an agent's context in the
+  [usage log](commands/console.md#usage-log-and-usage); pass `caller='tool'`
+  when an agent reads every result. A tool session gets the console's
+  [result cap](commands/console.md#fewer-round-trips), a script none.
+- **Packs ceiling:** `Session(console, packs=['explore', 'native'])` runs
+  the console with that [`--packs`](commands/console.md#one-shot-use)
+  ceiling; a call outside it raises `ReAgentLiveError` of kind `pack`. A
+  script that must not change the target leaves `modify` out.
+- **No timeout:** a call waits until the console answers or exits; the
+  console's busy wait still applies.
 - **Sharing the agent:** a session's console takes the agent's slot per
-  request (a held command such as a batch for its length) and frees it
-  between calls, so an MCP server or another script runs in between
-  ([console](commands/console.md#agent-and-console)). Values from two
-  calls are never from one moment: make one `batch` for that.
-- **Background runs:** `s.call('run', {'plan': path, 'background':
-  True})` starts the plan in its own console and returns `{'run': id}` at
-  once. `s.run_status(id)` gives `state` (`running`, `done` or `stopped`),
-  `progress` (the newest progress line, such as `12/40 blocks`) and
-  `seconds`; `s.run_read(id)` the result once done, as `call` returns
-  `run`'s (raises kind `running` before); `s.run_stop(id)` ends it and
-  deletes its files. A run gets the session's packs and takes the slot in
-  turns like any client. Its files (`<console>.runs/`: the call, stdout,
-  stderr) stay until `run_stop` or the session ends; past 16 MB of output
-  it is stopped and says so (checked whenever its status is read). Each run is a Windows job object, so a
-  session that dies ends its runs, and the next frontend deletes their
-  files.
-- `addr()` turns an `addr` or `hex` value into an int, `unhex()` a `bytes`
-  value into bytes, `f32`/`u64`/... decode those bytes, and `pack` goes
-  the other way: `f32(unhex(c.read(a, len=4)['hex']))`.
+  request and frees it between calls, so an MCP server or another script
+  runs in between ([console](commands/console.md#agent-and-console)). Values
+  from two calls are never from one moment: make one `batch` (or `get`) for
+  that.
+- **Background runs:** `s.call('run', {'plan': path, 'background': True})`
+  starts the plan in its own console; `run_status`, `run_read` and
+  `run_stop` follow it. Runs end with the session.
 
 Errors raise `ReAgentLiveError` with the console's error object. Use it
-instead of hand-written session loops or parsing console JSON. Separate
-calls never share a host tick (each crosses the stdin pipe, about 1 ms);
-put what must line up in one `batch` or `get`.
+instead of hand-written session loops or parsing console JSON.
 
 ## MCP tools
 
 `frontends/mcp/reagentlive_mcp.py` serves the console's verbs as MCP
 tools over standard input and output, so an agent picks a tool and fills
-in checked, named arguments instead of writing a command line:
-
-```
-python reagentlive_mcp.py --console <console.exe> [--name <server name>] [--output-schemas compact|off]
-                          [--packs explore,native] [--allow observe,modify] [--context-limit <chars>]
-                          [-- <console args: pid, --names <file>>]
-```
+in checked, named arguments instead of writing a command line. `--help`
+lists its options. It needs the MCP Python SDK 2
+(`pip install --upgrade "mcp>=2"`).
 
 - **One tool per verb:** a core verb by name (`read`), a pack's or the
-  host's with its origin (`ue_find`, `host_world`); `-` becomes `_`
-  (`sig_check`). The adapter reads the console's `help` with `json` (no target
-  needed) and makes each tool from its row: the argument schema from the
-  row's arguments (named by the row's keys, so a call goes on as the
-  console's JSON call), the result schema from its result's top-level
-  keys, the description from its summary, usage and notes. Nothing is
-  written per tool and no module file is involved.
+  host's with its origin (`ue_find`, `host_world`); `-` becomes `_`. Each
+  tool is made from the verb's row in the console's `help` with `json`:
+  nothing is written per tool. A rebuilt console's changed table is read on
+  the next call and the client told the list changed
+  ([design](tool-interface.md#tool-interface)).
 - **The console decides the target.** `--console` must be the console of
   the host you loaded: the Unreal example's agent is reached only by
   `reagentlive-ue.exe`, the own-thread example's only by `reagentlive.exe`.
-- **Arguments are checked before a console starts,** against the row of
-  the console's current table: a guessed argument name is refused with the
-  verb's usage. A null argument counts as left out. Every tool also takes
-  `max_chars` (the console's [result cap](commands/console.md#fewer-round-trips)).
+  A console built without the pack serves no pack tools.
 - **Tool packs:** a tool is served while its verb's
-  [pack](tool-interface.md#tool-packs) is on. `--packs` names the packs
-  on from the start (default `explore`, always on), `--allow` those the
-  agent may turn on later; `modify`, which holds every verb that writes or
-  calls, is reachable only when one of them names it. The `packs` tool is
-  always served and read-only: with no arguments it lists each pack, its
-  state (`on`, `off`, `outside` the ceiling) and its tools; `{"action":
-  "enable", "pack": "native"}` adds a pack's tools and tells the client
-  the list changed, `disable` removes them. A pack outside `--packs` and
-  `--allow` is refused: the person who starts the server sets the
-  ceiling. Every console the adapter starts gets that ceiling as its own
-  [`--packs`](commands/console.md#one-shot-use), so the console refuses a
-  verb past it too.
+  [pack](tool-interface.md#tool-packs) is on. `--packs` names the packs on
+  from the start (default `explore`), `--allow` those the agent may turn on
+  later; `modify`, which holds every verb that writes or calls, is
+  reachable only when one of them names it. The `packs` tool lists the
+  packs and enables or disables them within the ceiling. The person who
+  starts the server sets the ceiling; every console the adapter starts gets
+  it as its own [`--packs`](commands/console.md#one-shot-use), so the
+  console refuses past it too.
 - **Marks:** a verb that writes the target's memory or calls into it is
-  `destructiveHint`, every other one `readOnlyHint`, so a client can
-  allow the read-only tools and ask first for the rest. `call-pure` is
-  marked read-only: the agent checks the function is pure before calling
-  ([design](design/README.md)). `status` reads the game-thread mode;
-  `game-thread` only arms and removes the tick. The skill's approval rules
-  still apply (the first call on a new host or in a new game needs the
-  user's approval, `call-pure` included: a wrong engine layout can crash
-  the game).
-- **Only what the console has:** the tools are its table's rows, so a
-  console built without the pack ([hosting](hosting.md#using-it-in-your-project)) serves no
-  pack tools.
+  `destructiveHint`, every other one `readOnlyHint`, so a client can allow
+  the read-only tools and ask first for the rest. `call-pure` is marked
+  read-only: the agent checks the function is pure before calling
+  ([design](design/README.md)). The skill's approval rules still apply (the
+  first call on a new host or game needs the user's approval, `call-pure`
+  included: a wrong engine layout can crash the game).
 - **Left out:** `quit` (the adapter owns the console) and verbs marked
-  `blocks` (a host's countdown capture): a call would outlast a client's
-  timeout. Captures go as `watch-start`, then `watch-read` or `watch-stop`.
-  A blocking verb with a `background` argument (`run`) is served as a
-  background run instead.
+  `blocks`, which would outlast a client's timeout. Captures go as
+  `watch-start`, then `watch-read` or `watch-stop`. A blocking verb with a
+  `background` argument (`run`) is served as a background run: `run`
+  answers `{run, state}` at once and `run_status`, `run_read` and
+  `run_stop` (asked first: it ends a process) follow it.
 - **`batch`** takes a list of `{verb, args}` (console verb names:
-  `sig-check`, not `sig_check`) and runs them in as few host ticks as
-  possible, one envelope each. It takes only verbs of the packs that are
-  on, and none marked as writing: a write, call or `game-thread` inside it
-  is refused, so it goes as its own tool and is approved.
-- **State in arguments:** tools take the literal refs results carry and
-  the ids of timed writes and captures.
+  `sig-check`) and runs them in as few host ticks as possible. It takes
+  only verbs of the packs that are on and none marked as writing: a write,
+  call or `game-thread` inside it is refused, so it goes as its own tool
+  and is approved.
 - **A console per call:** each tool call starts the console and ends it,
-  one call at a time. Clients take the agent's slot in turns: a call that
-  finds it taken (a script's held batch, a run's block) waits up to its
-  console's `--busy-wait` (default 10 s; pass `-- --busy-wait N` to the
-  server), then is refused as `busy`, naming the holder.
-- **Background runs:** `run` is served as a background run only: the call
-  starts the plan in its own console, with the packs enabled at that
-  moment, and answers `{run, state}` at once. `run_status`, `run_read`
-  (the result once done, digested past the `max_chars` given to `run`) and
-  `run_stop` (asked first: it ends a process) follow it, as in the [Python session](#python-session).
-  Runs end with the server.
-- **Refusals made here are logged:** a tool of a pack that is off, a batch
-  item past the packs, or arguments the input schema refuses never reach
-  the target, but each goes to a one-shot console as a call with
-  `refused`, so `usage` counts them with the console's own
-  ([console](commands/console.md#one-shot-use)).
-  Nothing holds the executable between calls, so the
-  console can be rebuilt while the server runs and the next call runs the
-  new build. With no target the console answers `help` and `usage` and
-  refuses the rest as `startup`.
-- **A rebuilt console's tools:** each start reads the table's hash
-  (`help` with `hash`). When it changed, the adapter reads the new table before
-  the call runs and tells the client the list changed. A client that asks
-  again gets the new list with no reconnect; one that ignores the notice
-  keeps working for verbs whose arguments and result did not change, and
-  needs a reconnect for the rest ([design](tool-interface.md#tool-interface)).
-- **Results past `max_chars`** (the console's tool cap by default): the
-  tool returns the console's `digest` and a text naming the call to make
-  next, or the file holding the result of a call that must not run again
-  ([result cap](commands/console.md#fewer-round-trips)).
-- **Usage:** every console runs with `--caller tool` and one session id
-  per server, so `usage` counts every tool result as context and groups
-  the server's calls. `--context-limit` goes to every console
-  ([context limit](commands/console.md#usage-log-and-usage)): past it a
-  result's text gets a second block, `Context warning: ...`, and the
-  result itself is unchanged. Each result goes to the client twice, as text and
-  as structured content.
-- **A smaller tool list:** a client that loads every tool up front pays
-  for the whole list before any work, so result schemas are `compact`
-  (each result's top-level keys and their JSON types; the console still
-  checks every result in full). `--output-schemas off` advertises none,
-  and the packs left off are not listed; an unknown pack name stops the
-  server with the list, and the server's instructions say which packs it
-  serves and which `packs` can add. Why and what it saved:
-  [tool interface](tool-interface.md#tool-packs).
-- The server's instructions tell the agent to load the `reagentlive`
-  skill (and the host's own skill) before its first call: an agent reads
-  them when it starts using the tools, where a line in a project file is
-  easy to pass over.
-- The server's instructions mark text read from the target (names,
-  strings, chat) as untrusted data: in a multiplayer game other people
+  one at a time, so the console can be rebuilt while the server runs.
+  Clients take the agent's slot in turns: a call that finds it taken waits
+  up to `--busy-wait` (default 10 s), then is refused as `busy`, naming the
+  holder. With no target the console answers `help` and `usage` and refuses
+  the rest as `startup`.
+- **Refusals made here are logged** as `refused` calls, so `usage` counts
+  them with the console's own ([console](commands/console.md#one-shot-use)).
+- **Results past `max_chars`** come back as the console's `digest` and the
+  call to make next ([result cap](commands/console.md#fewer-round-trips)).
+  Every console runs with `--caller tool`, so `usage` counts each result as
+  context; past `--context-limit` a result's text gets a `Context warning`.
+- **Instructions:** the server tells the agent to load the `reagentlive`
+  skill (and the host's own) before its first call, and marks text read
+  from the target as untrusted data: in a multiplayer game other people
   write much of it, so an agent must never act on it as an instruction.
-- The name option (in the usage above) sets the server name clients
-  show (default `reagentlive`).
-- Needs the MCP Python SDK 2 (`pip install --upgrade "mcp>=2"`; its low-level
-  server). A rebuilt console's new tool list reaches a 2026-07-28 client on its
-  `subscriptions/listen` stream and an older one as a plain notification. Check a
-  build with the MCP Inspector: it lists the tools and calls one with no
-  AI client.
-
-## Helpers
-
-Not interfaces: they never drive the agent.
-
-- **IDA side** (the `reagentlive_ida` package in `frontends/ida/`, with a
-  loader stub in IDA's loaders folder): opens what `disasm`'s `save` wrote, so IDA decompiles
-  it without the whole image, and carries names both ways through the
-  labels file ([IDA loader](commands/ida-loader.md)).
-- **Round-trip timings** (`frontends/python/benchmark.py`): measures calls
-  against a running host.
+  Result schemas are `compact` by default to keep the tool list small
+  ([tool interface](tool-interface.md#tool-packs)).

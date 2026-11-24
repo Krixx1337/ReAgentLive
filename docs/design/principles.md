@@ -20,19 +20,14 @@ of [design](README.md).
   the search worker, allowed only by `Host::backgroundSearch`: a single
   thread that runs search jobs, the console's internal scans and image
   copies (reads only, no engine calls) while the host tick only polls.
-- **Two opt-in pointer swaps, never code.** The Unreal pack's
-  `calls-start` swaps one `UFunction`'s native pointer (heap data) for a
-  fixed thunk that records and forwards each call, and puts it back with a
-  compare-and-swap; a pointer something else replaced since is left alone
-  and the thunk keeps forwarding. A host opts in by listing the ops; each
-  recording is a write the host approves. Taken because "what did the game
-  pass to this function" has no read-only route, a watch sees only state,
-  and the swap touches nothing the engine does not itself rewrite. The
-  second is the host helper `reagentlive::ue-draw`: when `game-thread` arms it, it
-  writes one pointer in the game viewport object, pointing it at a private
-  copy of its interface vtable
-  ([decision](unreal.md#a-game-thread-tick-through-the-viewports-draw)). Code, the
-  game's own vtables and imports are never written by either.
+- **Two opt-in pointer swaps, never code.** The Unreal pack's `calls-start`
+  swaps one `UFunction`'s native pointer (heap data) for a thunk that records
+  and forwards each call, and puts it back with a compare-and-swap; "what did
+  the game pass to this function" has no read-only route. The host helper
+  `reagentlive::ue-draw` points the game viewport object at a private copy of
+  its interface vtable ([decision](unreal.md#a-game-thread-tick-through-the-viewports-draw)).
+  A host opts in by listing the ops, and each is a write the host approves.
+  Code, the game's own vtables and imports are never written.
 - **One safety boundary, set by a person, held by the console:** every
   verb that writes or calls is marked and sits in the `modify` pack, and
   the console's `--packs` ceiling refuses it, whichever frontend sends it
@@ -50,25 +45,21 @@ of [design](README.md).
 
 ## Goals and non-goals
 
-**Goals**
+**Goals:** drop the core into any Windows process that has a safe place to
+call `Tick()`; add an engine through a pack and a game through host glue,
+without touching core; work under any injection style (mapped image,
+LoadLibrary, ASI loader).
 
-- Drop the core into any Windows process that has a safe place to call
-  `Tick()`.
-- Add an engine through a pack and a game through host glue, without
-  touching core.
-- Work under any injection style: mapped image, LoadLibrary or ASI loader.
-
-**Non-goals**
-
-- Other platforms, network transport, protocol negotiation, plugin DLLs,
-  scripting languages.
-- Packs for engines nobody is using yet (Unity/IL2CPP, Source, custom).
-- Use against online or anti-cheat-protected games.
+**Non-goals:** other platforms, network transport, protocol negotiation,
+plugin DLLs, scripting languages, packs for engines nobody is using yet,
+use against online or anti-cheat-protected games.
 
 ## Not now
 
-- A transport interface, or a channel split out of agent and client (add
-  either with a second real transport).
+Each is added when a real second case exists. The single home of what is
+out of scope; [ideas](../ideas.md) holds what waits for a trigger.
+
+- A transport interface, or a channel split out of agent and client.
 - Async/futures/callbacks in the client API.
 - A C ABI or native Python bindings over `Client` (the Python client drives
   the console instead).
@@ -79,5 +70,5 @@ of [design](README.md).
 - Packs for other engines until a real project needs one.
 - Package-manager packaging (`install()`, `find_package`): the library is
   its own repository, consumed as a submodule or with `FetchContent` at a
-  pinned tag, and each consumer compiles its sources with its own flags
+  pinned tag, each consumer compiling its sources with its own flags
   ([hosting](../hosting.md#using-it-in-your-project)).

@@ -3,7 +3,7 @@
 Several agents, subagents or a background run on one agent. Clients take
 its slot in turns, a request at a time: parallel work is safe when nobody
 leans on state another client can replace. How a frontend starts and
-follows a background run: the console-driving reference.
+follows a background run: the interfaces reference.
 
 ## Split the work
 
@@ -16,13 +16,9 @@ follows a background run: the console-driving reference.
   from (the host's world refs, objects already found), the read-only rule
   and the skills to load first. Results carry literal refs, so a subagent
   never needs another's session state.
-- Values from two calls, or two clients, are never from one moment. For
-  values that must line up: one `get` with several `paths`, or a `batch`
-  of `read`s. A `batch` holding `get` spans ticks through its lookups
-  (2-3 ticks each, other clients or not), and a batch of `read`s often
-  spans 2-3. Values that change every frame and must line up (camera and
-  projectile, aim and target): `watch-start`, which samples them in one
-  tick, every tick.
+- Values from two calls or clients are never from one moment (SKILL.md
+  rules). A `batch` holding `get` spans ticks through its lookups; for
+  values that change every frame and must line up, `watch-start`.
 
 ## Shared resources: one at a time
 

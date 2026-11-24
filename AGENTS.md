@@ -4,17 +4,10 @@ An in-process agent library for live game memory and runtime inspection
 (Windows x64, C++23), with its console, Python and MCP frontends. Read this
 before changing the repo; details live in [docs/contributing.md](docs/contributing.md).
 
-## Four audiences
-
-Each file set has one reader and one style. Write for the reader of the
-file you touch.
-
-| Files | Reader | Style |
-|---|---|---|
-| [README.md](README.md), [docs/](docs/README.md) | humans: what it is, how it works | page header, plain explanations |
-| [.claude/skills/reagentlive/](.claude/skills/reagentlive/SKILL.md) | an agent **using** ReAgentLive to investigate | agent-only, imperative |
-| [docs/agents/](docs/agents/README.md) | an agent **installing or updating** it | numbered steps, report block |
-| `AGENTS.md` (this file) | an agent **changing** ReAgentLive | orchestrator: commands, rules, links |
+Four readers, four styles: humans (README, docs), agents using it (skill),
+agents installing it ([docs/agents/](docs/agents/README.md)) and agents changing
+it (this file). Write for the reader of the file you touch
+([docs](docs/contributing.md#docs)).
 
 ## Build and test
 
@@ -33,13 +26,10 @@ ctest --test-dir build --output-on-failure
   `REAGENTLIVE_FORBIDDEN_NAMES`), so this repo never has to spell them.
 - `reagentlive.python-mcp` skips itself without the MCP Python SDK
   (`python -m pip install --upgrade "mcp>=2"`); a skip is not a pass.
-- After changing a row of the verb table, regenerate both generated pages:
+- After changing a verb-table row, regenerate the generated pages
+  ([adding a command](docs/contributing.md#adding-a-command)):
   `build/reagentlive-table --write docs/commands/results.md` and
-  `build/reagentlive-table --write-reference docs/commands/reference.md`
-  (`reagentlive.results-doc` and `reagentlive.reference-doc` fail while
-  stale; `reagentlive.verb-names` fails on a doc naming a verb or arg the
-  table lacks, `reagentlive.json-examples` on a doc's JSON call the
-  console would refuse).
+  `build/reagentlive-table --write-reference docs/commands/reference.md`.
 - A change is done only when every test passes. What each suite covers:
   [contributing: tests](docs/contributing.md#tests).
 
@@ -88,31 +78,15 @@ ctest --test-dir build --output-on-failure
 
 ## Large changes
 
-A change across several files or layers:
-
-1. **Plan first.** Write the plan to a file, list the open decisions, and
-   wait for the user's answers before writing code.
-2. **Orchestrate.** Give every subagent the whole plan plus a contract:
-   the settled decisions, the vocabulary (names, terms, phrasing), the files
-   it owns and the hand-off file it writes when done.
-3. **Writers on disjoint files.** No two writers edit the same file; a shared
-   file has one owner, and the others send it their text through hand-offs.
-4. **Verify with fresh eyes.** A verifier that did not write the change reads
-   the diff against the plan and the hard rules above.
-5. **Tests last:** the full build and `ctest`, then fix and rerun until green.
+Plan first and wait for the user's answers. Give subagents the whole plan,
+disjoint files and a hand-off file; have a fresh verifier read the diff;
+run the full build and `ctest` last.
 
 ## Read next
 
 - [contributing](docs/contributing.md): layers, source layout, adding a
   command or a pack, tests, code rules, docs rules.
 - [design](docs/design/README.md): why it is built this way, what was rejected.
-- [protocol](docs/protocol.md): the wire format, ops, statuses, limits.
+- [protocol](docs/protocol.md): exchange, handshake, takeover, op ranges.
 - [tool interface](docs/tool-interface.md): the verb table, `help` with `json`,
   generated functions and MCP tools.
-
-## Collaboration note
-
-We are building this together. If you notice something important, a useful
-guardrail or a workflow improvement that should live in this file, add it
-proactively: one line in the right section, details linked to their home,
-and the file kept under 120 lines.

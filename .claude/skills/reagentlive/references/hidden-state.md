@@ -5,18 +5,12 @@ memory (`docs/commands/memory.md`).
 
 ## An unreflected object
 
-No reflection, no engine pack, or a native member behind a reflected one:
-
-1. **What is it?** `{"verb": "peek", "args": {"addr": "0x1f2e3d4c50"}}` (its `region` says
-   what memory it is): a `module` value in slot 0 is usually the vtable.
-2. **Its class:** `vtable` (slot targets carry `module` and `rva` for the
-   static tool), with `rtti` where the image carries MSVC type information
-   (engine game code often does not). A secondary base or interface part:
-   `offset` (`func` on an interface reports it).
-3. **Read through it:**
-   `{"verb": "read", "args": {"addr": {"base": "0x1f2e3d4c50", "chain": ["0x30", "0x10"]}, "len": 8, "type": "ptr"}}`;
-   the result's `chain` names a null or unreadable hop.
-4. **What a slot does:** `disasm` of the slot's target with `function`.
+`peek` the address (a `module` value in slot 0 is usually the vtable),
+`vtable` with `rtti` for its class and slot targets, and `read` through a
+chain: `{"verb": "read", "args": {"addr": {"base": "0x1f2e3d4c50", "chain": ["0x30", "0x10"]}, "len": 8, "type": "ptr"}}`.
+The result's `chain` names a null or unreadable hop. A secondary interface
+part: `offset` (`func` reports it). What a slot does: `disasm` of its
+target with `function`.
 
 ## Hidden state
 
@@ -64,24 +58,15 @@ No reflection, no engine pack, or a native member behind a reflected one:
   table storage): read the layout and stride from `get` with `mode` `types` or a static
   tool, `read` the allocation (one `batch` for several ranges), then `name` the FName keys.
 
-## Narrowing by change
+## Narrowing and searching
 
-- Which bytes of a range react to an action: `mem-snap` of the owner,
-  `{"verb": "mem-diff", "args": {"compare": "unchanged", "type": "f32", "keep": true}}`
-  while nothing happens (drops noise), the user acts, the same with `compare`
-  `decreased` (or `changed`, `increased`);
-  repeat until a few rows remain, then capture them for the timing. Use the
-  type the value really has, and start the snap aligned: elements step by
-  its size from the snap's start.
-- `mem-diff` is one read of the range, not one tick: confirm a candidate
-  with a capture before naming it.
-
-## Searching memory
-
-- Narrow long searches (`scope`; `help` on `search`): the heap for structs (search a
-  vtable pointer to find every copy), one module for code and static data,
-  in the main module by default. A long one answers `state: running`: do
-  other reads and poll `{"verb": "search-job", "args": {"job": 3}}`; end it with `stop`.
-- `search` matches exact bytes. For a value that moves, search while it
-  rests at a known value (full, zero), or search the exact bytes a getter
-  returned in the same `batch`.
+- Which bytes react to an action: `mem-snap`, then `mem-diff` with
+  `compare` `unchanged` while nothing happens (drops noise), the user acts,
+  then `decreased`, `changed` or `increased`, with `keep`; repeat until a
+  few rows remain. Use the type the value really has and start the snap
+  aligned. `mem-diff` is one read, not one tick: confirm a candidate with a
+  capture before naming it.
+- `search` matches exact bytes: search while a moving value rests at a
+  known value, or the exact bytes a getter returned in the same `batch`.
+  Scope long searches; a long one answers `state: running`: poll
+  `{"verb": "search-job", "args": {"job": 3}}`.

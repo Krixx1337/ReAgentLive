@@ -11,65 +11,44 @@ a table of fields over every live instance of a class in one tick, and
 ## find
 
 Objects whose full name (`Base_N`) contains `text` (any case) and/or whose
-class or a parent class is named `cls` (any case; `cls` `Character`
-includes vendors), in pages of 24 from the object-table slot `view.start`.
-`view.limit` (1..1000) asks for pages until that many rows or the end.
-The first page scans the whole table and counts the total; a later page
-starts scanning at its cursor and stops once full, so paging a broad class
-is linear, not quadratic. `live` skips class default and archetype objects,
-as `census` does.
+class or a parent class is named `cls` (`Character` includes vendors), in
+pages from the object-table slot `view.start`. The first page scans the
+whole table and counts the total; a later page starts at its cursor, so
+paging a broad class is linear, not quadratic. `live` skips class default
+and archetype objects, as `census` does.
 
-- **Class index:** with `cls` (and in `each`) the agent visits only the
-  slots its class index names: per slot, the object last seen and its
-  class. Every query first compares each slot's pointer with the kept one
-  and reads only changed slots, then works out which classes match the
-  name (kept per name); the whole index is rebuilt once a minute (a new
-  object at a freed object's address in the same slot is the one change a
-  pass misses until then). A candidate still gets every check below, so a
-  stale entry can only hide an object, never add one. `text` alone walks
-  the whole table: add `cls` when the class is known.
-- **Checks:** while scanning, an object only needs a readable header (one
-  `VirtualQuery` per allocator region, the last eight regions kept per
-  tick) and a matching table index; only matches get the host's full
-  `Context::object` check. Decoded base names are cached by FName index
-  for the process (the name pool never changes an entry), so repeated
-  finds skip almost all name decoding.
+- **Class index:** with `cls` (and in `each`) the agent visits only the slots
+  its class index names, rebuilt once a minute. A candidate still gets every
+  check, so a stale entry can only hide an object, never add one. `text`
+  alone walks the whole table: add `cls` when the class is known.
+- Only matches get the host's full `Context::object` check; decoded base
+  names are cached for the process, so repeated finds skip most name
+  decoding.
 
 `find` and `describe` rows name each object's `outer` (`{name, ref}`): a
 function's or property's class, a subobject's owner; a package has none.
-
-## describe
-
-Checks the thread and object table before returning the object's name,
-class and full ref. Weak pointers must match the table slot and serial.
+`describe` checks the thread and object table before returning the object's
+name, class and full ref; weak pointers must match the table slot and
+serial.
 
 ## name and name-find
 
 - **`name`:** FName comparison indices as base text, gameplay tags and
-  DataTable row names included; up to 1024 indices, which the console
-  pages to the agent. Each index must be where a pool entry starts: its
-  block is walked from the first entry (one walk per block per request),
-  so an index inside an entry returns empty rather than its text read as
-  a header.
+  DataTable row names included. Each index must be where a pool entry
+  starts, so an index inside an entry returns empty rather than its text read
+  as a header.
 - **`name-find`** walks the engine's name pool (base names, including tags
-  and row names no object carries) for a substring, any case; 64 matches
-  per page with the next comparison index as cursor. Where entries carry a
-  kind byte, kinds 1 and 2 are obfuscated: their text is always 22
-  characters, zero-padded, while the header keeps the original name's
-  length, so each entry takes the longer of the two; a kind-2 entry shows
-  its 22 characters, a kind-1 entry the header's length of them.
+  and row names no object carries) for a substring, any case, paged with the
+  next comparison index as cursor. Some entries are obfuscated (fixed-length
+  text with the real length in the header); it takes the longer reading.
 
 ## enum
 
-An enum's names and values in its order, named in one `name` request. The
-agent reads `UEnum::Names` as the SDK has it (pairs of FName and int64)
-or, as UE 5.6 and later keep them, as two arrays (FNames and int64 values,
-bit 0 of each pointer a dynamic-allocation tag, at `Names - 8` and
-`Names`) and an int32 count at `Names + 8`; a layout counts only when
-every name decodes, else the enum is refused. A Blueprint enum's names are
-its stored `NewEnumeratorN`, not its display names. Byte and enum
-properties print numbers; this says what they mean. An enum by name is an
-exact find under `Enum` (user-defined enums included).
+An enum's names and values in its order. The agent reads two layouts of
+`UEnum::Names` (pairs, or, as UE 5.6 and later keep them, two arrays) and
+refuses the enum when the names do not decode. A Blueprint enum's names are
+its stored `NewEnumeratorN`, not its display names. Byte and enum properties
+print numbers; this says what they mean.
 
 ## Object filters
 
@@ -79,185 +58,131 @@ object:
 
 | Filter | Keeps |
 |---|---|
-| `cls` | instances of the class or a subclass. A name that is no class (any case) is refused as not found, naming up to five classes whose names contain it, so a typo is never read as no instances; `each` checks it first, `find` and `census` only when nothing matched |
-| `outer` | objects with that object up their outer chain (at most 16 steps). It is an object when it parses as one (a literal ref, an address), checked like any object argument (a gone one is refused as not found, never a filter by whatever reuses its address), else text an outer's name contains, any case (no match is no rows) |
+| `cls` | instances of the class or a subclass. A name that is no class is refused as not found, naming classes whose names contain it, so a typo is never read as no instances |
+| `outer` | objects with that object up their outer chain. An object when it parses as one (a literal ref, an address; a gone one is refused, never a filter by whatever reuses its address), else text an outer's name contains |
 | `live` (`find`) | no class default or archetype objects (`each` and `census` skip them always) |
 
 ## census
 
 One table scan counting live instances per exact class, optionally only
 classes under `cls` (and `outer`); class default and archetype objects are
-skipped. Each row carries the class ref, its name, the count and up to
-three sample refs; most instances first. `view.match` keeps rows whose
-class name contains the text (any case); the scan, `classes` and
-`instances` stay the whole census, and `view.limit` applies after the
-filter.
+skipped. Each row carries the class ref, name, count and sample refs; most
+instances first. `view.match` keeps rows whose class name contains the text;
+the scan, `classes` and `instances` stay the whole census.
 
-<a id="census-changes"></a>**Pages and changes.** A result shows `from`,
-`total` (rows after `view.match`) and, while more rows remain,
-`next_cursor` with a `hint`. `view.start` is a later page of the last
-census with the same filter (and the same `diff`): the stored rows,
-sliced, with no new scan and `ms` 0, so the pages of one filter join
-without gaps; refused when there is none. A census without `view.start`
-scans again. Every census becomes the baseline for its filter (`cls` and
-`outer`, either may be absent), in the session and the cache file (which
-keeps the census before it too, for later pages of a `diff`).
+<a id="census-changes"></a>**Pages and changes.** Every census becomes the
+baseline for its filter (`cls` and `outer`), in the session and the cache
+file. `view.start` is a later page of the last census with the same filter
+(and `diff`): the stored rows, sliced, with no new scan, so the pages of one
+filter join without gaps. A census without `view.start` scans again.
 
 `census` with `diff` runs a new census and prints only the classes whose
-count differs from that baseline, largest change first: each row's
-`count` is the count now and `before` the count then, and the result's
-`before` holds the baseline's `classes` and `instances`; then the new
-census is the baseline. So, around the action:
+count differs from that baseline, largest change first (`count` now,
+`before` then); the new census is the baseline. So, around the action:
 
 ```json
 {"verb": "census", "args": {"cls": "Actor"}}
 {"verb": "census", "args": {"cls": "Actor", "diff": true}}
 ```
 
-It is refused when there is no baseline for that filter (none taken,
-another agent instance, or another filter). Classes match by ref. Samples
-are any live instances, not the new ones: for a class absent before they
-are necessarily new, otherwise follow up with `find` with `cls`; a class
-now gone has none.
+It is refused when there is no baseline for that filter (none taken, another
+agent instance, or another filter). Samples are any live instances, not the
+new ones: for a class absent before they are necessarily new, otherwise
+follow up with `find` with `cls`.
 
-- A census scans across several ticks, so it is not one moment in time,
-  and an object that lives a tick or two can fall between two censuses.
-  For those, `watch-start` a container or use `each` with `seconds`.
-- A broad filter shows unrelated churn (effects, audio, UI). Narrow
-  `cls` to a base class instead.
+- A census scans across several ticks, so it is not one moment in time, and
+  an object that lives a tick or two can fall between two censuses. For
+  those, `watch-start` a container or use `each` with `seconds`.
+- A broad filter shows unrelated churn (effects, audio, UI). Narrow `cls` to
+  a base class instead.
 
 ## each
 
-`each` lists the live instances of the class or a subclass (the scan spans
-ticks; up to 1024, then `capped`), then reads up to 16 field paths for
-every instance, as a table: `columns` once, then `rows` of
-`{ref, name, values}`, one value per column in the order asked. `name` is
-the instance's object name, described for the rows shown (after `where`
-and `view.limit`) in a few requests. `each` only reads: a function column
-is refused and named to `call-each`
-([calls](unreal-calls.md#call-each)), so the `writes` mark is exact per
-verb.
+`each` lists the live instances of the class or a subclass, then reads field
+paths for every instance, as a table: `columns` once, then `rows` of
+`{ref, name, values}`, one value per column in the order asked. `each` only
+reads: a function column is refused and named to `call-each`
+([calls](unreal-calls.md#call-each)), so the `writes` mark is exact per verb.
 
 - **Columns** take paths as `get` takes them (`Owner:Field` or a readable
   name, struct members, object, class and weak object pointers).
-- **Passes.** The paths are resolved on the class. What they need inside
-  the instance (a field, or the pointer a path follows) is grouped into
-  passes of at most 64 bytes: one agent `each` per pass, the first with
-  the scan, the rest over its cached instance list, each pass in one tick
-  on the game thread. A path's part past a pointer is resolved and read
-  per instance, as `get` does. `same_tick` is true when one pass with no
-  pointer path read every value.
-- **Failed cells.** A cell that cannot be read (a null pointer on the way,
-  an instance gone by a later pass) is null, with an `errors` entry (`ref`,
-  `column`, `message`). The row stays, so no instance is hidden.
-- **Cost.** Listing the instances dominates, and a column adds none. The
-  listing goes through the class index ([find](#find)): after the first,
-  a pass over the table's changed slots, not a walk of every object.
-- **`seconds`** (one column) repeats every 100 ms on the cached instance
-  list and prints each changed row to stderr as it happens. Not in a
-  `batch`.
-- **`where`** (`{"field": ["Name"], "contains": "text"}`) keeps the
-  instances whose field's value contains the text, any case: a string, an
-  FName's or a text's string, else the value's JSON. The field is read as
-  one more column and shown only when it is one; `matched` counts the
-  instances kept. Not with `seconds`.
-- **`Outer`, `Name` and `Class`** name the instance itself, as columns and
-  in `where`, when no field takes the name: one describe-many of the
-  instances, then one of their distinct outers. `Outer` is `{name, ref}`.
-  They match text: `where` on `["Class"]` containing `Body` is a substring
-  of the class's own name, while `cls` takes a class and its subclasses.
-- **Containers.** An array, set or map column reads its header in the pass
-  and its elements per instance after it (8 shown, `view.elements` up to
-  256), so `same_tick` is false; a set or map is not held to the 64 bytes.
-- **`view.limit`** caps the rows shown (default 100, 0 for all); `omitted`
-  counts the rest. Unfiltered output over a whole class is large: locate
-  the object first, or filter.
+- **Passes.** What the paths need inside the instance is grouped into passes
+  of at most 64 bytes sharing the scan, each in one tick on the game thread;
+  a path's part past a pointer is read per instance. `same_tick` is true when
+  one pass with no pointer path read every value.
+- **Failed cells.** A cell that cannot be read is null, with an `errors`
+  entry. The row stays, so no instance is hidden.
+- **`seconds`** (one column) repeats on the cached instance list and prints
+  each changed row to stderr as it happens. Not in a `batch`.
+- **`where`** (`{"field": ["Name"], "contains": "text"}`) keeps the instances
+  whose field's value contains the text, any case; `matched` counts them. Not
+  with `seconds`.
+- **`Outer`, `Name` and `Class`** name the instance itself, as columns and in
+  `where`, when no field takes the name. They match text: `where` on
+  `["Class"]` containing `Body` is a substring of the class's own name, while
+  `cls` takes a class and its subclasses.
+- **`view.limit`** caps the rows shown; `omitted` counts the rest.
+  Unfiltered output over a whole class is large: locate the object first, or
+  filter.
 
 ## owner and route
 
-Two questions that otherwise take hundreds of reads: which object holds
-this address, and how does the engine reach this object. Both read
-reflection only; neither scans raw memory for pointers.
+Two questions that otherwise take hundreds of reads: which object holds this
+address, and how does the engine reach this object. Both read reflection
+only; neither scans raw memory for pointers.
 
 ```json
 {"verb": "owner", "args": {"addrs": ["0x1f2e3d4c78", "0x2a0b1c0008"], "within": ["0x1f2e3d4c50#123:4"]}}
 {"verb": "route", "args": {"object": "0x1f2e3d4c50#123:4", "sources": ["pawn"], "depth": 6}}
 ```
 
-- **owner** takes addresses as `search` rows give them. One object-table
-  scan per 64 addresses keeps, for each address, the nearest object at
-  or below it, and accepts it when the offset is inside the object's
-  class size (objects do not overlap). The console then names the slot
-  through the field tables: `path` into structs (readable names, `raw`
-  beside them where they differ), `outer` for the object's `Outer`
-  pointer (the usual back-pointer behind many `search` hits), and the
-  offset. No index is kept between calls: a scan is pointer compares
-  only, so a fresh one is cheap and never stale.
+- **owner** takes addresses as `search` rows give them and finds the nearest
+  object at or below each, accepted when the offset is inside its class size.
+  It names the slot: `path` into structs, `outer` for the object's `Outer`
+  pointer (the usual back-pointer behind many `search` hits), and the offset.
+  No index is kept between calls, so it is never stale.
 - **Heap storage** (an array's, set's or map's elements) belongs to no
-  object. For those addresses the console reads the arrays, sets and maps
-  of the `within` objects and of the other rows' owners, and names the
-  element (`Items[3].Member`, `container`). Give the searched object's
-  outer, or the object you suspect, as `within`.
-- **route** walks breadth-first from the sources (host roots by name,
-  as `status` lists them, or objects; by default every root) over
-  reflected references: object and interface fields, arrays, sets and map
-  values of objects or of structs holding them, and structs holding any
-  of these. Class, weak, soft and lazy pointers are not followed (they
-  lead into the asset graph), nor are containers inside a container's
-  elements; `outer` adds a step from each object up to its `Outer`, as a
-  last resort. It never steps down, so an object only its children's
-  `Outer` points to stays out of reach.
-- **Bounds:** `depth` hops and `budget` objects visited. It answers up
-  to 4 routes of the shortest length, or `end` says why there is none
-  (`depth`, `budget`, or `none` when every reachable object was visited),
-  never a partial guess. The walk spans ticks: each object is identified
-  when found and resolved again before its fields are read, but one can
-  still die between the walk and your next call, so check a route with
-  `get` before writing it into code.
-- **Paths:** each step's `field` is relative to the previous object, and
-  `path` joins them from the root. `get` follows the field steps; an
-  indexed step (`Items[3]`) is an `entries` read. A set or map step names
-  the element by its key (`Modes[Walking]`) when the key is a name or an
-  object, as `entries` lists it; otherwise `[slot N]` is the sparse slot,
-  free slots counted, not `entries`' row number.
-- **Cost:** a route found a few hops out takes about a second; a walk
-  that runs out its budget takes several. A low `budget` fails fast.
+  object. For those addresses the console reads the containers of the
+  `within` objects and names the element (`Items[3].Member`). Give the
+  searched object's outer, or the object you suspect, as `within`.
+- **route** walks breadth-first from the sources (host roots by name, as
+  `status` lists them, or objects) over reflected references: object and
+  interface fields and containers of them. Class, weak, soft and lazy
+  pointers are not followed (they lead into the asset graph); `outer` adds a
+  step up to an object's `Outer`, as a last resort. It never steps down, so
+  an object only its children's `Outer` points to stays out of reach.
+- **Bounds:** `depth` and `budget`. It answers up to a few routes of the
+  shortest length, or `end` says why there is none, never a partial guess.
+  The walk spans ticks, so an object can die between the walk and your next
+  call: check a route with `get` before writing it into code.
+- **Paths:** each step's `field` is relative to the previous object. An
+  indexed step (`Items[3]`) is an `entries` read; a set or map step names
+  the element by its key when it is a name or an object, otherwise `[slot N]`
+  is the sparse slot, free slots counted, not `entries`' row number.
 
 ## Class names
 
 `get` with `mode` `types`, `func` and `funcs` also take a bare class or
 struct name (`{"verb": "get", "args": {"object": "Character", "mode": "types"}}`).
 The console finds the object of that exact name under `Struct` once per
-agent instance and reuses its ref through the cache file. Names up to 127
-characters: the agent compares the whole name, and the reply's name (cut
-at 63) is compared that far. A name starting with `Default__` is that
-default object (an exact find, any class), so `object` `Default__Character`
+agent instance and reuses its ref through the cache file. A name starting
+with `Default__` is that default object, so `object` `Default__Character`
 reads the object. `get` (in other modes), `rows`, `entries`, `call` and
 `call-pure` take a `Default__` name in place of an object
 (`{"verb": "get", "args": {"object": "Default__GameSettings", "paths": [["Scale"]]}}`),
 never a bare class name: `get` on `Character` is refused with that hint.
-The lookup is an exact `find` (`FindExact`): the agent stops at the first
-match instead of scanning and counting the whole table, so a class costs
-the slots up to it; only a name that is no class costs a full scan.
 
 ## Assets to files
 
-`assets-export` writes the live instances of up to 16 classes (`cls`,
-and their subclasses; no `Default__` or archetype objects) into `dir`,
-optionally only those whose name contains `view.match`, one
-JSON file per object, so asset data can be read, searched and compared
-between builds offline instead of live again:
+`assets-export` writes the live instances of some classes (and their
+subclasses; no `Default__` or archetype objects) into `dir`, optionally only
+those whose name contains `view.match`, one JSON file per object, so asset
+data can be read, searched and compared between builds offline instead of
+live again:
 
-- The file is `<dir>/<Class>/<name>.json` (characters Windows refuses
-  become `_`; a second object of the same name gets `~2`), holding `ref`,
-  `name`, `class`, `get` (`get`'s result with `view.nonzero`) and, for a
-  data or curve table, `rows` (`rows`' result with `view.limit` 0). A
-  table is an object with a `RowStruct` field, or whose class or the class
-  asked for names `CurveTable`. A read that failed is `{error}` in its
-  place, and the object counts in `failed`.
-- `<dir>/index.json` lists every object (`name`, `class`, `ref`, `file`,
-  `table_rows`, `error`); the result carries `exported`, `tables`,
-  `failed`, the first 100 rows and `omitted`. At most 2000 objects per
-  call, then `capped`: narrow with `view.match` or fewer classes.
-- Each object costs the reads of its `get` and `rows`, run as batch items
-  run (no result cap per item); the files are replaced on every call.
+- The file is `<dir>/<Class>/<name>.json`, holding `ref`, `name`, `class`,
+  the object's `get` (non-zero fields) and, for a data or curve table, its
+  `rows`. A read that failed is `{error}` in its place.
+- `<dir>/index.json` lists every object; the files are replaced on every
+  call, and a capped call says so: narrow with `view.match` or fewer
+  classes.

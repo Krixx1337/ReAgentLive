@@ -2,16 +2,11 @@
 
 ## Building
 
-- **Use the host's build script** when it has one (host notes). A good one
-  loads the compiler environment, refuses to build without it, and prints
-  one PASS/FAIL line per target, with the exit code.
-- Without a script: build from a Visual Studio developer shell
-  (`Launch-VsDevShell.ps1 -Arch amd64`). A build without that environment
-  can exit 0 when nothing recompiles, then fail on the next header. A
-  configure without it writes placeholder tools into the cache (`ml`,
-  `CMAKE_LINKER-NOTFOUND`); fix that with `cmake --fresh`.
-- Filtering build output hides failures; check the exit code of every
-  build, or tests run on stale binaries.
+Use the host's build script when it has one (host notes). Otherwise build
+from a Visual Studio developer shell: without it a build can exit 0 when
+nothing recompiles and a configure caches placeholder tools (`cmake
+--fresh` fixes it). Check every build's exit code; filtered output hides
+failures.
 
 ## Reinjecting
 
@@ -20,10 +15,6 @@
   ("agent layout differs"); after an update, `docs/agents/update.md#7-running-targets`.
   Restart the target, then inject: never load a DLL with a changed
   protocol into a process that runs the old agent.
-- A call that finds the slot taken waits up to its console's
-  `--busy-wait`, then is refused as `busy`, naming the holder (caller
-  kind, pid, since when): usually a long held command; retry, or end that
-  client if it hangs.
 - Re-injecting into the same process stacks host copies; prefer a fresh
   game start for behaviour checks.
 - `status` shows the answering agent's `build` time and `replaced_agents`.

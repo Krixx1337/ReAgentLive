@@ -54,16 +54,14 @@ the last member ≤ `Size`.
 ## typed (live)
 
 - `FBoolProperty`: four bytes (`FieldSize`, `ByteOffset`, `ByteMask`,
-  `FieldMask`) right after `FProperty`. Collect every bool property of
-  `Engine`, `PlayerController`, `Actor`, `PrimitiveComponent`,
-  `SceneComponent` and `CharacterMovementComponent` (by `FFieldClass.Name`,
-  or cast flags when names are hashed). The base is the one offset where
-  every bool has `FieldSize` 1, `ByteOffset` below 8, a single-bit
-  `ByteMask`, and `FieldMask` equal to `ByteMask` (a bitfield bool) or 0xFF
-  (a native `bool`: `ByteMask` 1). Expect both kinds. More than one offset
-  fits: refuse.
+  `FieldMask`) right after `FProperty`. Over the bool properties of core
+  classes (`Actor`, `PlayerController`, `CharacterMovementComponent`), the
+  base is the one offset where every bool has `FieldSize` 1, `ByteOffset`
+  below 8, a single-bit `ByteMask`, and `FieldMask` equal to `ByteMask`
+  (bitfield) or 0xFF (native `bool`). Expect both kinds; more than one
+  offset fits: refuse.
 - `FStructProperty.Struct`: `TwoVectors`' members point to the `Vector`
-  struct object.
+  struct.
 - `FObjectProperty.PropertyClass`: `Controller.Pawn` → class `Pawn`,
   `Controller.PlayerState` → `PlayerState`
   (`{"verb": "get", "args": {"object": "Controller", "mode": "types"}}`
@@ -93,16 +91,14 @@ the last member ≤ `Size`.
 | `ReturnValueOffset` (uint16) | `Add_IntInt`: 8; 0xFFFF for a function with no return |
 
 `NumParms`, `ParmsSize` and `ReturnValueOffset` follow `FunctionFlags` in
-stock. Confirm in static: `UFunction::Invoke` or ProcessEvent reads
-`ReturnValueOffset` and compares it with 0xFFFF.
+stock; `UFunction::Invoke` compares `ReturnValueOffset` with 0xFFFF.
 
 ## enum (live)
 
-- Before 5.6: a `TArray` of `{FName, int64}` pairs. `ENetRole` has 5
-  entries, `ETraceTypeQuery` 0x22.
+- Before 5.6: a `TArray` of `{FName, int64}` pairs (`ENetRole` has 5).
 - 5.6 and later: `FName*` at `Names - 8`, `int64*` at `Names`, int32 count
   at `Names + 8`; bit 0 of each pointer is an allocation tag. The values
-  array reads 0, 1, 2, ... for `ECollisionChannel`.
+  read 0, 1, 2, ... for `ECollisionChannel`.
 - The profile records `Names`: the pair array, or the value array.
 
 ## datatable (live)
@@ -113,11 +109,10 @@ Check on any data table: a sparse array of `{FName, uint8*}` pairs.
 ## curvetable (live)
 
 `UCurveTable::RowMap` is a `TMap<FName, FRealCurve*>`; `CurveTableMode`
-(1 simple, 2 rich) follows it. Check on two tables, one of each mode:
-every row's curve pointer holds its keys `TArray` at `FSimpleCurve.Keys`
-(8-byte keys: time, value; `InterpMode` byte at `FSimpleCurve.InterpMode`)
-or `FRichCurve.Keys` (0x1C-byte keys: mode bytes, time at +4, value at
-+8), counts small and times ascending. `rows` then reads both.
+(1 simple, 2 rich) follows it. Check one table of each mode: every row's
+curve pointer holds a small, time-ascending keys `TArray` (8-byte simple
+keys; 0x1C-byte rich keys with time at +4, value at +8). `rows` then reads
+both.
 
 ## interface (static, then live)
 
@@ -131,10 +126,9 @@ subclass, and its `PointerOffset` is inside the implementing class's
 ## set and map layouts (static, then live)
 
 `FScriptSetLayout` and `FScriptMapLayout` sit right after the inner
-pointers. Static: `FSetProperty`'s and `FMapProperty`'s constructors or
-`LinkInternal` store them. Live: the pack's `ContainerLayoutValid` (key at
-0, value after it, adjacent hash links, stride ≤ 512) must hold on every
-map and set property you try.
+pointers (stored by the property constructors or `LinkInternal`). Live:
+`ContainerLayoutValid` (key at 0, value after it, adjacent hash links,
+stride ≤ 512) must hold on every map and set property you try.
 
 ## call (live slot, static frame)
 
@@ -142,12 +136,8 @@ A wrong call crashes, so every member needs code evidence, not data.
 
 - **ProcessEvent slot.** In `UObject`'s vtable (`vtable` on any object), the
   slot whose function tests `UFunction::FunctionFlags` against
-  `FUNC_Native` (0x400), e.g. `test dword ptr [reg+0B0h], 400h`, early in
-  its body. Static: also reached from `UObject::ProcessEvent`'s callers
-  (the `CallFunctionByNameWithArguments` path). Games move it from
-  `StockUE5`'s slot.
+  `FUNC_Native` (0x400) early in its body. Games move it from `StockUE5`'s
+  slot.
 - **`FFrame::Node` and `::Locals`.** The `FFrame` constructor stores the
-  function at `Node` and the parameter block at `Locals`. ProcessEvent
-  builds a frame on its stack before calling `ExecFunction`.
-- Then the known-answer call, on the game thread, with the user's
-  approval (SKILL.md rules): the game-thread reference.
+  function at `Node` and the parameter block at `Locals`.
+- Then the known-answer call: the game-thread reference.
