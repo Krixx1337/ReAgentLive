@@ -78,10 +78,9 @@ no `improvement`):
    with `reagentlive` (the library's targets). It names the DLL
    (`<name>.dll`), the console (`<name>-console.exe`) and the agent's
    section, so two projects never see each other's agents.
-3. "Where should it go?" `<project>`, default
-   `$HOME\reagentlive-projects\<name>`: one folder for all of them, so the
-   user and an agent find them. It must not exist yet, or be an empty
-   folder.
+3. "Where should it go?" `<project>`: wherever the user keeps their
+   code; there is no default, and the machine record lists every project
+   wherever it is. It must not exist yet, or be an empty folder.
 4. "Do you use ReAgentLive as a user or as a developer?" picks
    `<improvement>`: after a task the skill reviews what slowed it down
    ([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
