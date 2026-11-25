@@ -30,7 +30,11 @@ of [design](README.md).
   Code, the game's own vtables and imports are never written. Recordings
   share the core's recorder slots (`core/recorder.h`): one ring, deadline,
   compare-and-swap restore and read path for every kind, each kind
-  bringing only its thunks, its start op and its row payload.
+  bringing only its thunks, its start op and its row payload. A vtable
+  entry is swapped through the core's vtable copies (`core/vtable_copy.h`):
+  one private copy per object and vptr offset, shared by every entry
+  swapped in it, never freed, and the vptr put back by compare-and-swap
+  only once no entry is swapped.
 - **One safety boundary, set by a person, held by the console:** every
   verb that writes or calls is marked and sits in the `modify` pack, and
   the console's `--packs` ceiling refuses it, whichever frontend sends it

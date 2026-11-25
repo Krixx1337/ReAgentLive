@@ -138,7 +138,9 @@ thread a tick on it, with no per-build address: when `game-thread` arms it,
 it finds the first live `GameViewportClient`, copies the vtable of its Draw
 interface (offset and index in `engine_layout.h`, confirmed per game),
 swaps Draw in the copy and writes one pointer, that interface's vtable
-pointer inside the viewport object, to the copy. The hook forwards every
+pointer inside the viewport object, to the copy. The copy is the core's
+(`core/vtable_copy.h`), shared with any other entry swapped on that
+interface. The hook forwards every
 call first, then ticks the host only for that viewport and only on the
 process's first thread. `off` restores the pointer only if it still holds
 the copy. Host API: [hosting](../hosting.md#game-thread-tick).

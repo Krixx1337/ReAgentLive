@@ -8,8 +8,8 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <cstring>
-#include <new>
 #include "reagentlive/packs/ue/host_draw.h"
+#include "reagentlive/core/vtable_copy.h"
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/request_ue.h"
 
@@ -18,8 +18,6 @@ namespace {
 using DrawFn = void (*)(void* self, void* viewport, void* canvas);
 // Stock UE5 (engine_layout.h): the viewport client's Draw interface and Draw's entry.
 constexpr uint32_t InterfaceOffset = layout::ViewportInterfaceOffset, DrawIndex = layout::ViewportDrawIndex;
-// Entries copied: the table up to its first entry outside the game's image.
-constexpr uint32_t MaxEntries = 256;
 // A Draw tick this recent keeps the host's other tick out (ms).
 constexpr uint64_t LiveMilliseconds = 500;
 
@@ -31,7 +29,7 @@ LogFn g_log;
 DWORD g_gameThread;
 void** g_interface;   // viewport + InterfaceOffset: where the vtable pointer lives.
 void** g_table;       // The game's vtable.
-void** g_copy;        // Our copy's first entry (the slot before it holds table[-1]).
+vtable::Entry g_entry; // Draw in the table copy, while on.
 DrawFn g_original;
 const void* g_viewport;
 const char* g_text = "off: the host does not tick on the game thread";
@@ -42,12 +40,6 @@ GameThreadMode Mode() { return static_cast<GameThreadMode>(InterlockedCompareExc
 bool InImage(const void* pointer) {
     const auto value = reinterpret_cast<uint64_t>(pointer);
     return value >= g_imageBase && value < g_imageEnd;
-}
-bool Executable(const void* address) {
-    MEMORY_BASIC_INFORMATION info{};
-    constexpr DWORD Execute = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
-    return address && VirtualQuery(address, &info, sizeof(info)) && info.State == MEM_COMMIT &&
-        (info.Protect & Execute) && !(info.Protect & (PAGE_GUARD | PAGE_NOACCESS));
 }
 
 void Enter(GameThreadMode mode, const char* text, unsigned status = 0) {
@@ -97,37 +89,44 @@ void Install() {
     const auto* viewport = reinterpret_cast<const uint8_t*>(FirstLiveInstance("GameViewportClient"));
     if (!viewport) return Enter(GameThreadMode::Waiting, "waiting for the game viewport (any Unreal command locates the engine)");
     g_viewport = viewport;
-    auto** interfacePointer = reinterpret_cast<void**>(const_cast<uint8_t*>(viewport) + InterfaceOffset);
+    auto* object = const_cast<uint8_t*>(viewport);
     void** table = nullptr;
-    if (!GuardedCopy(&table, interfacePointer, sizeof(table)) || !InImage(table) || !InImage(table - 1))
+    const bool copied = GuardedCopy(&table, object + InterfaceOffset, sizeof(table)) &&
+        vtable::InCopy(reinterpret_cast<uintptr_t>(table));
+    if (!copied && (!InImage(table) || !InImage(table - 1)))
         return Enter(GameThreadMode::Conflict, "the viewport's interface table is not in the game's image; not installed");
-    // Our own copy: the table's entries up to the first that leaves the image,
-    // with the slot before them (where MSVC keeps RTTI) copied too.
-    void* entries[MaxEntries + 1];
-    uint32_t count = 0;
-    if (!GuardedCopy(&entries[0], table - 1, sizeof(void*)))
-        return Enter(GameThreadMode::Conflict, "the viewport's interface table is unreadable; not installed");
-    for (; count < MaxEntries; ++count) {
-        void* entry = nullptr;
-        if (!GuardedCopy(&entry, table + count, sizeof(entry)) || !InImage(entry)) break;
-        entries[count + 1] = entry;
-    }
-    g_table = table;
-    if (count <= DrawIndex || !Executable(entries[DrawIndex + 1]))
+    // A private copy of the table (core/vtable_copy.h) with the viewport's
+    // interface pointed at it (or the copy another entry already uses); Draw
+    // is then swapped in the copy.
+    vtable::Entry entry{};
+    switch (vtable::Take(object, InterfaceOffset, DrawIndex, entry)) {
+    case vtable::Taken::Ok: break;
+    case vtable::Taken::Foreign:
+        return Enter(GameThreadMode::Conflict, "the viewport's interface table is not in the game's image; not installed");
+    case vtable::Taken::NotCode:
         return Enter(GameThreadMode::Conflict, "the interface table has no Draw entry in the game's code; not installed");
-    auto** copy = new (std::nothrow) void*[count + 1];
-    if (!copy) return Enter(GameThreadMode::Conflict, "no memory for the table copy");
-    for (uint32_t i = 0; i <= count; ++i) copy[i] = entries[i];
-    g_original = reinterpret_cast<DrawFn>(entries[DrawIndex + 1]);
-    copy[DrawIndex + 1] = reinterpret_cast<void*>(&OnDraw);
-    g_interface = interfacePointer;
-    g_copy = copy + 1;
+    case vtable::Taken::Unreadable:
+        return Enter(GameThreadMode::Conflict, "the viewport's interface table is unreadable; not installed");
+    case vtable::Taken::Busy:
+        return Enter(GameThreadMode::Conflict, "the viewport's Draw entry is taken already; not installed");
+    case vtable::Taken::Changed:
+        return Enter(GameThreadMode::Conflict, "the viewport's table changed while installing; not installed");
+    case vtable::Taken::Full: return Enter(GameThreadMode::Conflict, "no table copy free; not installed");
+    case vtable::Taken::NoMemory: return Enter(GameThreadMode::Conflict, "no memory for the table copy");
+    }
+    g_table = entry.table;
+    if (!InImage(entry.table) || !InImage(entry.table - 1)) {
+        vtable::Give(entry);
+        return Enter(GameThreadMode::Conflict, "the viewport's interface table is not in the game's image; not installed");
+    }
+    g_original = reinterpret_cast<DrawFn>(entry.original);
+    g_interface = reinterpret_cast<void**>(object + InterfaceOffset);
+    g_entry = entry;
     // On before the swap: the first Draw through the copy may come at once.
     Enter(GameThreadMode::On, "on: the host ticks on the game thread (Draw); engine calls work", g_gameThread);
-    if (InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(interfacePointer), g_copy, table) != table) {
-        g_copy = nullptr;
-        delete[] copy; // Never published.
-        return Enter(GameThreadMode::Conflict, "the viewport's table changed while installing; not installed");
+    if (!vtable::Swap(entry, reinterpret_cast<void*>(&OnDraw))) {
+        vtable::Give(entry);
+        return Enter(GameThreadMode::Conflict, "the viewport's Draw entry changed while installing; not installed");
     }
 }
 }
@@ -175,11 +174,16 @@ void Disable() {
         if (Mode() == GameThreadMode::Waiting) Enter(GameThreadMode::Off, "off: the host does not tick on the game thread");
         return;
     }
-    // Put the game's table back only if the pointer still holds our copy.
-    if (InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(g_interface), g_table, g_copy) == g_copy)
-        Enter(GameThreadMode::Stopped, "off: the viewport's table restored");
-    else
+    // Draw back in the copy, then the game's table back only if the pointer
+    // still holds the copy and nothing else is swapped in it.
+    vtable::Unswap(g_entry, reinterpret_cast<void*>(&OnDraw));
+    switch (vtable::Give(g_entry)) {
+    case vtable::Given::Restored: Enter(GameThreadMode::Stopped, "off: the viewport's table restored"); break;
+    case vtable::Given::Shared: Enter(GameThreadMode::Stopped, "off: Draw restored; the copy stays for its other entries"); break;
+    case vtable::Given::Left:
         Enter(GameThreadMode::Stopped, "off: the viewport's table was replaced by someone else; left alone");
+        break;
+    }
     InterlockedExchange64(&g_lastTick, 0);
 }
 

@@ -88,7 +88,8 @@ add_library(reagentlive-core INTERFACE)
 add_library(reagentlive::core ALIAS reagentlive-core)
 target_sources(reagentlive-core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_search.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_recorder.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_recorder.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_vtable_copy.cpp")
 target_include_directories(reagentlive-core INTERFACE "${reagentlive_include_root}")
 target_compile_features(reagentlive-core INTERFACE cxx_std_23)
 
@@ -293,7 +294,8 @@ if(REAGENTLIVE_BUILD_TESTS)
         tests/ue/layout_tests.cpp tests/ue/index_tests.cpp)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
-        tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp tests/loopback/recorder_tests.cpp)
+        tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp tests/loopback/recorder_tests.cpp
+        tests/loopback/vtable_copy_tests.cpp)
     target_link_libraries(reagentlive-loopback-tests PRIVATE reagentlive-core reagentlive-client reagentlive-ue-client reagentlive-cli reagentlive-doctest)
     # The real console against a fake engine: an in-process agent whose pack
     # ops answer from a synthetic world (tests/console/fake_engine.h).

@@ -7,7 +7,8 @@
 
 // The core never hooks and never starts threads (its pointer-swap recorder
 // slots, core/recorder.h, behind ops a host opts into, swap one code pointer
-// in writable data, never code): the host calls Tick() from a
+// in writable data, never code; a vtable entry only in a private copy of the
+// table, core/vtable_copy.h): the host calls Tick() from a
 // thread it trusts (for engines, usually the game thread). Constant-initialised
 // state and fixed buffers only, so it works in mapped images without static TLS
 // or dynamic initialisation.

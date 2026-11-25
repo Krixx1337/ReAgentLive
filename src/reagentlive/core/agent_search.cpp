@@ -13,6 +13,7 @@
 #include <cstring>
 #include "reagentlive/core/agent.h"
 #include "reagentlive/core/agent_internal.h"
+#include "reagentlive/core/vtable_copy.h"
 
 namespace reagentlive {
 namespace detail {
@@ -114,8 +115,9 @@ bool OwnBuffer(uintptr_t address) {
         const auto start = reinterpret_cast<uintptr_t>(base);
         return base && address >= start && address < start + size;
     };
-    return detail::InAgentState(address) || inside(g_imageView, ImageWindowBytes) || inside(g_job, sizeof(SearchJob)) ||
-        inside(g_background, sizeof(SearchJob)) || inside(g_searchJob, sizeof(SearchJob)) || SectionView(address);
+    return detail::InAgentState(address) || vtable::InCopy(address) || inside(g_imageView, ImageWindowBytes) ||
+        inside(g_job, sizeof(SearchJob)) || inside(g_background, sizeof(SearchJob)) || inside(g_searchJob, sizeof(SearchJob)) ||
+        SectionView(address);
 }
 // Records a match; true once the page of hits is full.
 bool Hit(SearchJob& job, uintptr_t at) {
