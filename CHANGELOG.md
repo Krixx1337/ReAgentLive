@@ -77,7 +77,11 @@ Setup and docs:
   `%LOCALAPPDATA%\reagentlive\setup.json`.
   An install from before: ask your agent to run the
   [setup](docs/agents/setup.md) again; its last step retires the old one.
-  Your lessons stay.
+- **Lessons live in the project:** `.reagentlive/lessons/` in the project
+  root, committed with it by default so they survive a reinstall and reach
+  the team (was `%LOCALAPPDATA%\reagentlive\lessons\`, lost with the
+  machine). Setup's last step moves old ones in; to keep them private,
+  list the folder in your `.gitignore`.
 - **The docs index is `docs/README.md`** (was `docs/INDEX.md`): fix the
   `ReAgentLive docs:` line in your agent's instructions file. Commands
   are in `docs/commands/README.md`, design in `docs/design/`.
@@ -174,7 +178,7 @@ plans run in the background, and IDA names native functions in one step.
   returns a dict; read the keys.
 - **Local lessons moved** to `%LOCALAPPDATA%\reagentlive\lessons\`; move
   the lines of an old `references/local-lessons.md` into `lessons\general.md`
-  ([improving](.claude/skills/reagentlive/references/improving.md#local-lessons)).
+  ([improving](.claude/skills/reagentlive/references/improving.md#lessons)).
 - **`Session(hold=...)` is gone:** drop the argument. A busy agent now
   refuses the call as `busy` instead of the console; C++ `Client::Attach`
   no longer returns `Busy`.

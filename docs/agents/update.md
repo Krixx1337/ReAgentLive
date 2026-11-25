@@ -139,11 +139,11 @@ that already had an agent (step 6).
 
 ## 8. Lessons and the IDA side
 
-**Lessons:** read the user's lessons against the updated skill: every file
-in `%LOCALAPPDATA%\reagentlive\lessons\`. No folder: skip. Propose dropping
+**Lessons:** read the project's lessons against the updated skill: every
+file in `<project>\.reagentlive\lessons\`. No folder: skip. Propose dropping
 each lesson the skill now covers, one line each; the user decides. How the
-file works:
-[the improvement guide](../../.claude/skills/reagentlive/references/improving.md#local-lessons).
+files work:
+[the improvement guide](../../.claude/skills/reagentlive/references/improving.md#lessons).
 
 **IDA side:** only when the machine record's `ida` is `true`:
 

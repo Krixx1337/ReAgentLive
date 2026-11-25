@@ -89,7 +89,7 @@ Ask the user, in one message:
 
    | Answer | `<improvement>` | The skill may |
    |---|---|---|
-   | user (the default, also when unsure) | `user` | keep its own lessons, without asking, in `%LOCALAPPDATA%\reagentlive\lessons\` and write nothing else; anything else (docs or code problems, host notes, findings) becomes a one-line suggestion at the end of a task |
+   | user (the default, also when unsure) | `user` | keep lessons, without asking, in the project's `.reagentlive\lessons\` (committed with it, for the user to commit) and write nothing else; anything else (docs or code problems, host notes, findings) becomes a one-line suggestion at the end of a task |
    | developer | `dev` | propose changes to the skill, docs and ReAgentLive code, each on the user's yes; code changes on a branch with the build and tests run, never committed unasked |
    | neither ("off", "no") | `off` | nothing |
 
@@ -303,8 +303,10 @@ MCP entry and skill link. Ask the user before each removal:
   `$HOME\.codex\AGENTS.md`);
 - `setup.json` itself, and the old clone once the user says so.
 
-Keep `%LOCALAPPDATA%\reagentlive\lessons\` and `machine.json`: they serve
-every project.
+Keep `machine.json`: it serves every project. Lessons in an old
+`%LOCALAPPDATA%\reagentlive\lessons\`: ask, then move the files into the
+project's `.reagentlive\lessons\` (merging `INDEX.md` and `general.md`)
+and remove the old folder.
 
 ## 11. Report
 

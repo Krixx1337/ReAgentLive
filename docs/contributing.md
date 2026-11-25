@@ -231,7 +231,7 @@ Check this table before adding a fact; if it has a home, link there.
 | How to describe it | [positioning.md](positioning.md) | README: the short pitch |
 | Agent procedures (setup, update), the project and machine records | [agents/](agents/README.md) | README: the prompts only |
 | Starting from an example; the agent tooling in a project (`agent_link.py`, `build_project.ps1`, `update.ps1`) | [hosting.md](hosting.md#starting-from-an-example) | README: the commands only |
-| When and how an agent proposes skill lessons | the skill's `references/improving.md`; the user's lessons live outside the repo | anything tracked |
+| When and how an agent proposes skill lessons | the skill's `references/improving.md`; the lessons live in each host project's `.reagentlive/lessons/`, never in this repo | anything tracked here |
 | Commands, hard rules, large changes for an agent changing this repo | [`AGENTS.md`](../AGENTS.md) | this page keeps the details |
 | Where code goes, tests, these rules | this page | |
 

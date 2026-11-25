@@ -12,9 +12,9 @@ this skill.
 
 **Setup:** read the project record `reagentlive.json` in the project root if
 present (`console`), the machine record `%LOCALAPPDATA%\reagentlive\machine.json`
-if present (`improvement`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
+if present (`improvement`), then the project's `.reagentlive/lessons/INDEX.md`
 if present and what it routes to (`general.md`; the game's file once `status`
-names the exe): the user's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
+names the exe): the project's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
 skill folder lives in (in a project, its `reagentlive/` submodule), else
 `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
 `status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`).
