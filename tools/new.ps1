@@ -5,6 +5,9 @@
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/tools/new.ps1))) -Kit unreal -Name my-tool -Dir D:\code\my-tool
 #   tools/new.ps1 -Kit own_thread -Name my-tool -Dir D:\code\my-tool -Mcp claude-code,cursor
 #
+# Headless with every argument given; a person at a terminal is asked for a missing -Kit, -Name or -Dir.
+# Never asks when the input is redirected or PowerShell runs with -NonInteractive (an agent): a missing
+# argument is then a FAIL line, never a prompt that waits.
 # -Improvement defaults to the machine record's (docs/agents/setup.md#1-check-the-machine), else user.
 # -Revision checks the submodule out at a branch, tag or commit instead of the default branch. Installs
 # nothing: a missing prerequisite is a FAIL line saying what to install. Prints one PASS/FAIL line per
@@ -14,9 +17,9 @@
 # Windows PowerShell 5.1 and PowerShell 7.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('own_thread', 'unreal')][string]$Kit,
-    [Parameter(Mandatory = $true)][string]$Name,
-    [Parameter(Mandatory = $true)][string]$Dir,
+    [string]$Kit = '',
+    [string]$Name = '',
+    [string]$Dir = '',
     [string]$Improvement = '',
     [string]$Mcp = 'claude-code',
     [string]$Repository = 'https://github.com/Krixx1337/ReAgentLive.git',
@@ -25,9 +28,30 @@ param(
 # Native tools write progress to stderr, which Windows PowerShell turns into errors under Stop: check
 # exit codes instead.
 $ErrorActionPreference = 'Continue'
-$logs = Join-Path ([IO.Path]::GetTempPath()) "reagentlive-new-$Name"
 
 function Fail([string]$line) { throw "FAIL $line" }
+
+# A person at a terminal: not started with -NonInteractive, input not redirected.
+function Test-Interactive {
+    if (-not [Environment]::UserInteractive) { return $false }
+    if ([Environment]::GetCommandLineArgs() | Where-Object { $_ -like '-noni*' }) { return $false }
+    try { if ([Console]::IsInputRedirected) { return $false } } catch { }
+    return $true
+}
+
+# The argument's value, asked for until it passes $valid when a person runs this; otherwise a FAIL.
+function Get-Argument([string]$name, [string]$value, [string]$hint, [scriptblock]$valid, [string]$rule) {
+    while (-not $value -or -not (& $valid $value)) {
+        if (-not $script:interactive) {
+            if ($value) { Fail "arguments: -$name ${value}: $rule" }
+            Fail "arguments: -$name missing ($rule)"
+        }
+        if ($value) { Write-Host "  not $value`: $rule" }
+        Write-Host $hint
+        $value = (Read-Host $name).Trim().Trim('"')
+    }
+    return $value
+}
 function Run([string]$name, [scriptblock]$command) {
     $log = Join-Path $logs (($name -replace '[\\/:*?"<>|]', '_') + '.log')
     & $command *> $log
@@ -39,8 +63,21 @@ function Run([string]$name, [scriptblock]$command) {
 }
 
 $code = 0
+$script:interactive = Test-Interactive
 try {
+    $Kit = Get-Argument 'Kit' $Kit `
+        'Kit: own_thread (any Windows x64 process: memory, code, native objects) or unreal (any UE5 game: objects and fields by name, engine calls)' `
+        { param($v) $v -in 'own_thread', 'unreal' } 'own_thread or unreal'
+    # The same rule as tools/project.py, checked before anything is created.
+    $Name = Get-Argument 'Name' $Name `
+        'Project name: it names the DLL (<name>.dll), the console (<name>-console.exe) and the agent''s section' `
+        { param($v) $v -cmatch '^[a-z][a-z0-9-]{0,31}$' -and -not $v.StartsWith('reagentlive') -and
+                    $v -notin 'all', 'clean', 'help', 'install', 'test', 'package', 'package_source', 'edit_cache', 'rebuild_cache' } `
+        'lowercase letters, digits and dashes, starting with a letter, at most 32, not reagentlive... or a CMake target name'
+    $Dir = Get-Argument 'Dir' $Dir 'Folder for the project, new or empty, wherever you keep your code' `
+        { param($v) -not ((Test-Path $v) -and (Get-ChildItem -Force $v | Select-Object -First 1)) } 'a new or empty folder'
     if ($Improvement -and $Improvement -notin 'user', 'dev', 'off') { Fail 'arguments: -Improvement is user, dev or off' }
+    $logs = Join-Path ([IO.Path]::GetTempPath()) "reagentlive-new-$Name"
     New-Item -ItemType Directory -Force $logs | Out-Null
 
     # 1. The machine. Visual Studio, CMake and Ninja are the build script's own check (exit 2).
@@ -64,10 +101,7 @@ try {
         }
     }
 
-    # 2. The folder: new, or empty.
-    if ((Test-Path $Dir) -and (Get-ChildItem -Force $Dir | Select-Object -First 1)) {
-        Fail "folder: $Dir is not empty; pick a new folder"
-    }
+    # 2. The folder (checked new or empty above).
     New-Item -ItemType Directory -Force $Dir | Out-Null
     $Dir = (Resolve-Path $Dir).Path
     $sub = Join-Path $Dir 'reagentlive'

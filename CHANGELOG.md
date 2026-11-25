@@ -34,8 +34,8 @@ tokens, one way to page, one count, one time unit.
 - **Projects from a kit:** setup copies the `own_thread` or `unreal` kit
   into a folder of your own, named after it, with ReAgentLive as its
   pinned `reagentlive/` submodule and the skill and MCP server set up for
-  that project. By hand, one command: `tools/new.ps1`
-  ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
+  that project. By hand, one command: `tools/new.ps1`, which asks for
+  what you leave out ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
 - **Updates are a script too:** `tools/update.ps1` previews what is coming,
   `-Apply` moves, rebuilds and checks, `-Rollback` goes back, `-All` runs
   on every project ([update](docs/agents/update.md)).

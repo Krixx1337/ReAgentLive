@@ -38,7 +38,8 @@ By hand, pick the kit for your target:
 | A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
 
 and make a project from it, in a new folder (it checks your machine,
-creates the folder, builds and checks the result):
+creates the folder, builds and checks the result; leave out the arguments
+to be asked for them):
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/tools/new.ps1))) -Kit unreal -Name my-tool -Dir C:\code\my-tool

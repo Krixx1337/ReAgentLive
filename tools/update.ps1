@@ -11,7 +11,9 @@
 # Lines: PASS, FAIL, SKIP, and NOTE for what the user must still decide or do: the kit's changes to bring
 # into the project's own files, a protocol change (restart the targets), a changed MCP server (restart
 # the session). The kit's changes are never applied here: they go into the user's own code. A project
-# without reagentlive.json (a host of its own) is moved but not built. Exits 1 on any FAIL.
+# without reagentlive.json (a host of its own) is moved but not built. Exits 1 on any FAIL. A person at a
+# terminal is asked after the preview whether to apply it; with redirected input or -NonInteractive (an
+# agent) the preview only prints, and the agent runs -Apply once the user agrees.
 # Windows PowerShell 5.1 and PowerShell 7.
 [CmdletBinding(DefaultParameterSetName = 'Preview')]
 param(
@@ -26,6 +28,15 @@ $ErrorActionPreference = 'Continue'
 $here = Split-Path -Parent $PSScriptRoot
 $script:failed = 0
 $script:shell = (Get-Process -Id $PID).Path
+
+# A person at a terminal: not started with -NonInteractive, input not redirected.
+function Test-Interactive {
+    if (-not [Environment]::UserInteractive) { return $false }
+    if ([Environment]::GetCommandLineArgs() | Where-Object { $_ -like '-noni*' }) { return $false }
+    try { if ([Console]::IsInputRedirected) { return $false } } catch { }
+    return $true
+}
+$script:interactive = Test-Interactive
 
 # Arguments go as one array: a bare -- or --flag passed through a function's $args can be eaten. Not
 # named Git: command names ignore case, so git inside it would call itself.
@@ -110,16 +121,25 @@ function Update-Project([string]$dir) {
     if ($protocol.Count -or $protocolLine.Count) { Write-Host "NOTE ${label}: protocol change: restart every target and load the new DLL into the fresh process" }
     $server = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', 'src/reagentlive/frontends/mcp', 'src/reagentlive/frontends/python'))
     if ($server.Count) { Write-Host "NOTE ${label}: the MCP server changed: restart the agent's session after the update" }
+    $kitChanged = $false
     $kit = $null
     $recordPath = Join-Path $dir 'reagentlive.json'
     if (Test-Path $recordPath) { $kit = (Get-Content $recordPath -Raw | ConvertFrom-Json).kit }
     if ($kit) {
         $kitFiles = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', "examples/$kit"))
         if ($kitFiles.Count) {
+            $kitChanged = $true
             Write-Host "NOTE ${label}: the $kit kit changed ($($kitFiles -join ', ')); bring what the project needs into its own files: git -C `"$sub`" diff $old $new -- examples/$kit"
         }
     }
-    if (-not $Apply) { Write-Host "  preview only: run again with -Apply to update"; return }
+    if (-not $Apply) {
+        $question = "Apply the update to ${label}? [y/N]"
+        if ($kitChanged) { $question = "Apply the update to ${label}? Bring the kit's changes over first if the build needs them. [y/N]" }
+        if (-not $script:interactive -or (Read-Host $question) -notmatch '^(y|yes)$') {
+            Write-Host "  preview only: run again with -Apply to update"
+            return
+        }
+    }
 
     Invoke-Git $sub @('checkout', '--detach', $new) | Out-Null
     if ($script:gitCode -ne 0) { Fail "${label}: cannot check out $new"; return }

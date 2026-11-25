@@ -114,7 +114,9 @@ run it from the repository:
 `<clients>` lists the clients that read a project MCP file,
 comma-separated: `claude-code` (`.mcp.json`), `cursor`
 (`.cursor/mcp.json`), `copilot` (`.vscode/mcp.json`). For Codex or another
-client, pass `claude-code` and register it by hand in step 5. Each step
+client, pass `claude-code` and register it by hand in step 5. Pass every
+argument: the script asks only a person at a terminal, so under an agent
+a missing one is a `FAIL arguments` line, never a prompt. Each step
 prints `PASS` or `FAIL`; the first `FAIL` stops it. A `FAIL` before `git
 init` (a missing prerequisite, a folder that is not empty) has created
 nothing: report it, fix it with the user, run it again. A later one leaves
@@ -147,7 +149,7 @@ The build ran as the last part of step 3; to run it again (after a fix,
 or for a clone of a project made earlier):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "<project>\reagentlive\tools\build_project.ps1" -Check
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<project>\reagentlive\tools\build_project.ps1" -Check
 ```
 
 The build script loads the x64 Visual Studio environment itself and builds the

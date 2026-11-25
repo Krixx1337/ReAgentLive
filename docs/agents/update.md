@@ -36,10 +36,12 @@ dropping it from the record). `-Rollback` takes one project, never
 ## 2. Show what is coming
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>"
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>"
 ```
 
-It checks the submodule, fetches and prints, changing nothing:
+It checks the submodule, fetches and prints, changing nothing. Run by a
+person at a terminal, it then asks whether to apply; under an agent
+(`-NonInteractive`) it never asks:
 
 | Line | Means | Do |
 |---|---|---|
@@ -70,7 +72,7 @@ against the new ReAgentLive: step 4 checks them.
 ## 4. Update
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>" -Apply
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>" -Apply
 ```
 
 It checks again, moves the submodule to the new commit, rebuilds with
@@ -85,7 +87,7 @@ or `console.cpp` usually means step 3 left a needed change out) and ask
 the user. On their yes, undo step 3's edits and:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>" -Rollback <old>
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>" -Rollback <old>
 ```
 
 then skip to step 8, and report `<old>` as the commit, and the failure.
