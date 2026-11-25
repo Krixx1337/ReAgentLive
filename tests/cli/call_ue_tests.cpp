@@ -525,7 +525,7 @@ TEST_CASE("calls-start takes an object or class, a function and a duration; read
     const auto latest = Call(R"({"verb": "calls-read", "args": {"stop": true}})");
     REQUIRE(latest.has_value());
     CHECK(latest->target == "stop");
-    CHECK(latest->callsSlot == ue::CallsLatest);
+    CHECK(latest->callsSlot == RecorderLatest);
     CHECK(Call(R"({"verb": "calls-read", "args": {"stop": true, "view": {"cursor": 5}}})")->callsAfter == 5);
     CHECK(Why(R"({"verb": "calls-stop"})").starts_with("unknown verb"));
     CHECK(Why(R"({"verb": "calls-read", "args": {"slot": 8}})").starts_with("slot is"));

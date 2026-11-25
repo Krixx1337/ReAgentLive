@@ -547,8 +547,8 @@ Parsed LineTrace(const Args& args, const ParseContext&) {
 namespace {
 // slot (default: the last started recording).
 bool CallsSlot(const Args& args, Command& command) {
-    command.callsSlot = args.Int("slot", ue::CallsLatest);
-    return !args.Has("slot") || command.callsSlot < ue::MaxCallsSlots;
+    command.callsSlot = args.Int("slot", RecorderLatest);
+    return !args.Has("slot") || command.callsSlot < MaxRecorderSlots;
 }
 }
 
@@ -560,8 +560,8 @@ Parsed CallsStart(const Args& args, const ParseContext&) {
     if (!ObjectOrClass(args.Str("object"), command)) return Fail(ObjectOrClassWhy);
     if (auto why = FunctionName(args, request); !why.empty()) return Fail(why);
     const uint64_t milliseconds = args.Milliseconds("duration");
-    if (milliseconds > ue::MaxCallsMilliseconds)
-        return Fail("duration is at most " + std::to_string(ue::MaxCallsMilliseconds / 1000) + " s");
+    if (milliseconds > MaxRecorderMilliseconds)
+        return Fail("duration is at most " + std::to_string(MaxRecorderMilliseconds / 1000) + " s");
     request.args[1] = milliseconds;
     request.flags = args.Has("dry") ? ue::CallsDry : 0;
     request.op = ue::op::CallsStart;
@@ -572,7 +572,7 @@ Parsed CallsStart(const Args& args, const ParseContext&) {
 
 Parsed CallsRead(const Args& args, const ParseContext&) {
     Command command;
-    if (!CallsSlot(args, command)) return Fail("slot is 0.." + std::to_string(ue::MaxCallsSlots - 1));
+    if (!CallsSlot(args, command)) return Fail("slot is 0.." + std::to_string(MaxRecorderSlots - 1));
     command.callsAfter = args.Int("cursor");
     command.request.op = ue::op::CallsRead;
     command.kind = Kind::Calls;

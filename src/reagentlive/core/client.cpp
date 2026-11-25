@@ -722,6 +722,60 @@ Result<uint32_t> Client::WatchStop() {
     return static_cast<uint32_t>(response->detail);
 }
 
+namespace {
+Result<RecorderStatus> RecorderStatusFrom(const Response& response) {
+    RecorderStatus status{};
+    if (response.length < sizeof(status)) return std::unexpected(BadResponse("invalid recorder reply"));
+    memcpy(&status, response.data, sizeof(status));
+    if (status.slot >= MaxRecorderSlots || status.payload > MaxRecorderPayload || !status.kind)
+        return std::unexpected(BadResponse("invalid recorder status"));
+    return status;
+}
+}
+
+Result<RecorderRows> Client::RecorderRead(uint32_t op, uint64_t slot, uint64_t after) {
+    RecorderRows result{{}, {}, after};
+    Request request{};
+    request.op = op;
+    request.args[0] = slot;
+    for (;;) {
+        request.args[1] = result.last;
+        auto response = Exchange(*this, request);
+        if (!response) return std::unexpected(response.error());
+        auto status = RecorderStatusFrom(*response);
+        if (!status) return std::unexpected(status.error());
+        result.status = *status;
+        request.args[0] = status->slot; // Later pages read the same recording.
+        size_t at = sizeof(RecorderStatus);
+        uint64_t previous = result.last;
+        while (at < response->length) {
+            RecorderCall call{};
+            if (response->length - at < sizeof(RecorderRow)) return std::unexpected(BadResponse("truncated recorder row"));
+            memcpy(&call.row, response->data + at, sizeof(RecorderRow));
+            at += sizeof(RecorderRow);
+            if (call.row.size > MaxRecorderPayload || response->length - at < call.row.size || call.row.sequence <= previous)
+                return std::unexpected(BadResponse("invalid recorder row"));
+            call.payload.assign(response->data + at, response->data + at + call.row.size);
+            at += call.row.size;
+            previous = call.row.sequence;
+            result.calls.push_back(std::move(call));
+        }
+        if (response->detail != previous) return std::unexpected(BadResponse("recorder cursor mismatch"));
+        const bool more = response->detail != result.last && response->detail < status->written;
+        result.last = response->detail;
+        if (!more) return result;
+    }
+}
+
+Result<RecorderStatus> Client::RecorderStop(uint32_t op, uint64_t slot) {
+    Request request{};
+    request.op = op;
+    request.args[0] = slot;
+    auto response = Exchange(*this, request);
+    if (!response) return std::unexpected(response.error());
+    return RecorderStatusFrom(*response);
+}
+
 Result<WatchInfo> Client::WatchStatus() {
     Request request{};
     request.op = op::Watch;

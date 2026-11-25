@@ -58,6 +58,14 @@ struct XrefQuery {
 // range was unreadable or its guard changed).
 struct WatchRow { WatchRowHeader header; std::vector<std::vector<uint8_t>> ranges; };
 struct WatchRows { std::vector<WatchRow> rows; bool running; };
+// A pointer-swap recording's calls (protocol.h): each row and its payload,
+// whose shape the status's kind gives.
+struct RecorderCall { RecorderRow row; std::vector<uint8_t> payload; };
+struct RecorderRows {
+    RecorderStatus status;
+    std::vector<RecorderCall> calls; // Oldest first, every row after `after` the agent still holds.
+    uint64_t last;                   // The last sequence read (`after` when none).
+};
 // A pointer chain: base->a->b is *(base + a) + b; every offset but the last
 // reads a pointer. Each hop is where a pointer was read and what it held.
 // `broken`: the hop that was unreadable or held null (`reason` says which);
@@ -210,6 +218,11 @@ public:
     Result<WatchInfo> WatchStatus();
     // The roots the host offers to follow (empty: none).
     Result<std::vector<std::string>> WatchRoots();
+    // A recording through the host's recorder read or stop op `op`: all
+    // pages of the rows after sequence `after` (slot RecorderLatest: the
+    // last started), or the stop's status.
+    Result<RecorderRows> RecorderRead(uint32_t op, uint64_t slot = RecorderLatest, uint64_t after = 0);
+    Result<RecorderStatus> RecorderStop(uint32_t op, uint64_t slot = RecorderLatest);
     // A loaded image's bytes, up to ImageWindowBytes in one request, read
     // from the image window the agent fills (on its worker when the host
     // allows). For code and constants: an image's data pages may be torn.

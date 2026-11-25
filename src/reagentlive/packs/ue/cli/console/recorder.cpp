@@ -1,5 +1,6 @@
 // reagentlive CLI console, Unreal pack: calls-start and calls-read
-// with its stop (the agent's call recorder, protocol_ue.h). Rows are decoded by
+// with its stop (the agent's call recorder, protocol_ue.h, on the core's
+// recorder slots: a slot of another kind is refused). Rows are decoded by
 // the recorded function's reflected parameters through the shared reader, as
 // a copy: names and objects are looked up, memory the block points into is
 // not read (the caller may have freed it since).
@@ -21,12 +22,12 @@
 namespace reagentlive::cli::detail {
 namespace {
 const char* StateText(uint32_t state) {
-    switch (static_cast<ue::CallsSlotState>(state)) {
-    case ue::CallsSlotState::Recording: return "recording";
-    case ue::CallsSlotState::Expired: return "expired";
-    case ue::CallsSlotState::Finished: return "finished";
-    case ue::CallsSlotState::Replaced: return "replaced";
-    case ue::CallsSlotState::Free: break;
+    switch (static_cast<RecorderState>(state)) {
+    case RecorderState::Recording: return "recording";
+    case RecorderState::Expired: return "expired";
+    case RecorderState::Finished: return "finished";
+    case RecorderState::Replaced: return "replaced";
+    case RecorderState::Free: break;
     }
     return "free";
 }
@@ -45,17 +46,17 @@ Recorded Lookup(Session& session, uint64_t function) {
     return out;
 }
 
-shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<const ue::CallsCall> calls,
+shape::Calls MakeCalls(Session& session, const RecorderStatus& state, std::span<const RecorderCall> calls,
                        uint64_t after, uint64_t last) {
     auto& structs = Ue(session).structs;
-    const Recorded function = Lookup(session, state.function);
+    const Recorded function = Lookup(session, state.target);
     shape::Calls out;
     out.function = function.name;
     out.state = StateText(state.state);
     out.slot = state.slot;
     out.calls = state.written;
-    out.events = state.events;
-    out.vm = state.vm;
+    out.events = state.counts[ue::CallsEventCount];
+    out.vm = state.counts[ue::CallsVmCount];
     // Rows the agent no longer held when read: before the first one returned.
     const uint64_t first = calls.empty() ? last + 1 : calls.front().row.sequence;
     out.dropped = first > after + 1 ? first - after - 1 : 0;
@@ -67,21 +68,21 @@ shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<
     const auto direction = [](const ue::Field& parameter) {
         return parameter.parameterFlags & ue::Return ? "return" : ue::InputParameter(parameter.parameterFlags) ? "in" : "out";
     };
-    const auto caller = [](const ue::CallsCall& call) {
+    const auto caller = [](const RecorderCall& call) {
         uint8_t bytes[8];
         memcpy(bytes, &call.row.object, sizeof(bytes));
         return std::vector<uint8_t>(bytes, bytes + sizeof(bytes));
     };
-    const auto each = [&](const ue::CallsCall& call, auto&& visit) {
-        if (!function.known || call.block.empty()) return;
+    const auto each = [&](const RecorderCall& call, auto&& visit) {
+        if (!function.known || call.payload.empty()) return;
         for (const auto& parameter : function.signature.parameters)
-            if (parameter.size && size_t{parameter.offset} + parameter.size <= call.block.size()) visit(parameter);
+            if (parameter.size && size_t{parameter.offset} + parameter.size <= call.payload.size()) visit(parameter);
     };
     for (const auto& call : calls) {
         reader.Named("ObjectProperty", caller(call));
         each(call, [&](const ue::Field& parameter) {
             bool ignored = false;
-            reader.Value(parameter, FieldBytes(call.block, parameter), ignored);
+            reader.Value(parameter, FieldBytes(call.payload, parameter), ignored);
         });
     }
     reader.Resolve();
@@ -90,7 +91,7 @@ shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<
         row.sequence = call.row.sequence;
         row.atMs = static_cast<double>(call.row.microseconds) / 1000.0;
         row.thread = call.row.thread;
-        row.via = call.row.via == ue::CallsEvent ? "event" : "vm";
+        row.via = call.row.tag == ue::CallsEvent ? "event" : "vm";
         if (const auto* named = reader.Named("ObjectProperty", caller(call))) {
             row.ref = FullRef(named->ref);
             row.objectName = named->name;
@@ -98,14 +99,14 @@ shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<
         } else {
             row.ref = {ReusableRef(Ref{static_cast<uintptr_t>(call.row.object), -1, 0}).text};
         }
-        if (function.known && !call.block.empty()) {
+        if (function.known && !call.payload.empty()) {
             std::vector<shape::CallsValue> values;
             each(call, [&](const ue::Field& parameter) {
                 shape::CallsValue value;
                 value.name = parameter.name;
                 value.direction = direction(parameter);
                 bool partial = false;
-                value.value = reader.Value(parameter, FieldBytes(call.block, parameter), partial);
+                value.value = reader.Value(parameter, FieldBytes(call.payload, parameter), partial);
                 value.truncated = partial;
                 values.push_back(std::move(value));
             });
@@ -160,12 +161,15 @@ void RunCalls(Session& session, const Command& original, std::string_view jsonCo
         return Emit(session, jsonCommand, std::move(out));
     }
     if (command.target == "stop") {
-        auto stopped = ue::CallsStop(client, command.callsSlot);
+        auto stopped = client.RecorderStop(ue::op::CallsStop, command.callsSlot);
         if (!stopped) return CommandError(session, jsonCommand, stopped.error());
         command.callsSlot = stopped->slot;
     }
-    auto read = ue::CallsRead(client, command.callsSlot, command.callsAfter);
+    auto read = client.RecorderRead(ue::op::CallsRead, command.callsSlot, command.callsAfter);
     if (!read) return CommandError(session, jsonCommand, read.error());
-    return Emit(session, jsonCommand, MakeCalls(session, read->state, read->calls, command.callsAfter, read->last));
+    if (read->status.kind != ue::CallsKind)
+        return JsonError(session, jsonCommand, ErrorKind::Validation,
+            "slot " + std::to_string(read->status.slot) + " holds another kind of recording");
+    return Emit(session, jsonCommand, MakeCalls(session, read->status, read->calls, command.callsAfter, read->last));
 }
 }

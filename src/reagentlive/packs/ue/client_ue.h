@@ -198,13 +198,5 @@ Result<EachResult> Each(Client& client, const EachQuery& query,
 // calls on that object address (0: all); `dry` reports without writing.
 Result<CallsStarted> CallsStart(Client& client, const Ref& object, std::string_view function, uint64_t milliseconds,
                                 uint64_t filter, bool dry);
-struct CallsCall { CallsRow row; std::vector<uint8_t> block; };
-struct CallsResult {
-    CallsState state;
-    std::vector<CallsCall> calls; // Oldest first, every row after `after` the agent still holds.
-    uint64_t last;               // The last sequence read (`after` when none).
-};
-// All pages of the rows after sequence `after` (slot CallsLatest: the last started).
-Result<CallsResult> CallsRead(Client& client, uint64_t slot = CallsLatest, uint64_t after = 0);
-Result<CallsState> CallsStop(Client& client, uint64_t slot = CallsLatest);
+// Reading and stopping: Client::RecorderRead and RecorderStop with op::CallsRead and op::CallsStop.
 }

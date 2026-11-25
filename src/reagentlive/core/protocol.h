@@ -330,6 +330,67 @@ constexpr bool TrialSpecValid(const TrialSpec& spec) {
         end <= spec.ownerAddress + spec.ownerSize;
 }
 
+// Pointer-swap recorders (agent side: core/recorder.h). A recording swaps one
+// code pointer held in writable data (never code, never read-only data, never
+// a protection change) for its slot's thunk, which records each call and
+// forwards it; the swap and the restore are compare-and-swaps, and a pointer
+// something else has replaced since is left alone (Replaced: the thunk then
+// forwards for good and the slot is never reused). Each kind of recording
+// has its own start op and row payload; reading and stopping are shared.
+// Read: args[0] = slot (RecorderLatest: the last started), args[1] = the
+// last sequence already read. Reply: RecorderStatus, then RecorderRow
+// headers each followed by `size` payload bytes, oldest first; detail = the
+// last sequence sent. A recording past its time is restored first.
+// Stop: args[0] = slot (or RecorderLatest); restores; reply RecorderStatus.
+constexpr uint32_t MaxRecorderSlots = 8, MaxRecorderRows = 256, MaxRecorderPayload = 1024;
+constexpr uint64_t MaxRecorderMilliseconds = 60000;
+constexpr uint64_t RecorderLatest = MaxRecorderSlots;
+enum class RecorderState : uint32_t { Free, Recording, Expired, Finished, Replaced };
+// A caller can load a thunk's address from the cell before the restore
+// swaps it back and enter the thunk later, past its in-flight count. A
+// finished slot is therefore reused only RecorderReuseGraceMs after its
+// restore, and the one restored longest ago first.
+constexpr int64_t RecorderReuseGraceMs = 1000;
+struct RecorderSlotView {
+    RecorderState state;
+    int32_t inFlight;
+    int64_t restoredMs; // When the restore succeeded (Finished only).
+};
+// The slot a new recording takes: the first free one, else the finished one
+// restored longest ago, idle and past the grace; `count` when none. Pure; tested.
+inline uint32_t PickRecorderSlot(const RecorderSlotView* slots, uint32_t count, int64_t nowMs) {
+    for (uint32_t i = 0; i < count; ++i)
+        if (slots[i].state == RecorderState::Free) return i;
+    uint32_t best = count;
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& slot = slots[i];
+        if (slot.state != RecorderState::Finished || slot.inFlight || nowMs - slot.restoredMs < RecorderReuseGraceMs) continue;
+        if (best == count || slot.restoredMs < slots[best].restoredMs) best = i;
+    }
+    return best;
+}
+// kind: which recorder armed the slot, so a reader knows its payload and
+// counters. A kind is a number in its owner's op range (core: under
+// op::PackFirst; a pack: its op::PackSlot), so two owners never clash; 0: none.
+// target: what the recording is about (the kind says: a function, an
+// object); original: the pointer the cell held, which the thunk forwards to.
+// payload and counts: the kind's own (the payload's usual size, two tallies).
+struct RecorderStatus {
+    uint64_t target, original, written;
+    uint32_t slot, state, kind, payload;
+    uint32_t counts[2];
+};
+// One call. object: the call's first argument (`this` for a method); tag:
+// the kind's own; size: payload bytes after the header.
+struct RecorderRow {
+    uint64_t sequence, object;
+    int64_t microseconds;           // Since the start.
+    uint32_t thread, size;
+    uint8_t tag, reserved[7];
+};
+// A full row fits a reply beside the status, so every row can be read.
+static_assert(sizeof(RecorderStatus) + sizeof(RecorderRow) + MaxRecorderPayload <= MaxRead);
+
 // Read: address, length. Write: address, length, data. Modules: length = index
 // of the first module of this page. Packs document their own use of address,
 // args, length, text and data. hold = RequestHold: more requests follow; the
@@ -434,7 +495,8 @@ constexpr uint32_t LayoutCore = static_cast<uint32_t>(sizeof(Section) * 31 + siz
     sizeof(Response) * 3 + sizeof(ModuleEntry) * 13 + offsetof(Section, request) + offsetof(Request, text) * 5 +
     sizeof(ReadSpan) * 17 + sizeof(Guard) * 19 + sizeof(PinSpec) * 23 + sizeof(PinState) * 29 +
     sizeof(TrialSpec) * 37 + sizeof(TrialState) * 41 + sizeof(WatchSpec) * 43 + sizeof(WatchRowHeader) * 47 +
-    sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59 + ProtocolRevision * 61 + sizeof(SearchJobInfo) * 67);
+    sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59 + ProtocolRevision * 61 + sizeof(SearchJobInfo) * 67 +
+    sizeof(RecorderStatus) * 71 + sizeof(RecorderRow) * 73);
 
 constexpr const char* StatusText(Status status) {
     switch (status) {

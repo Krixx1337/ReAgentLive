@@ -83,7 +83,7 @@ struct Object {
 
 // A recorded call: its row and its parameter block, as the agent's recorder keeps them.
 struct Call {
-    ue::CallsRow row{};
+    reagentlive::RecorderRow row{};
     std::vector<uint8_t> block;
 };
 // A reflected function: its parameters (flags in numbers.flags), block size and recorded calls.
@@ -507,12 +507,13 @@ inline Progress CallsRead(const Request& request, Response& response, bool, cons
     auto& world = TheWorld();
     if (world.functions.empty()) { reagentlive::Refuse(response, Status::NotFound, "no such recording"); return Progress::Done; }
     const auto& function = world.functions.back();
-    ue::CallsState state{};
-    state.function = world.objects[static_cast<size_t>(function.slot)].ref.address;
+    reagentlive::RecorderStatus state{};
+    state.target = world.objects[static_cast<size_t>(function.slot)].ref.address;
     state.written = function.calls.size();
-    state.state = static_cast<uint32_t>(ue::CallsSlotState::Finished);
-    state.events = static_cast<uint32_t>(function.calls.size());
-    state.blockSize = function.blockSize;
+    state.state = static_cast<uint32_t>(reagentlive::RecorderState::Finished);
+    state.kind = ue::CallsKind;
+    state.counts[ue::CallsEventCount] = static_cast<uint32_t>(function.calls.size());
+    state.payload = function.blockSize;
     memcpy(response.data, &state, sizeof(state));
     size_t used = sizeof(state);
     uint64_t last = request.args[1];

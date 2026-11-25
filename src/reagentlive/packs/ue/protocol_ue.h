@@ -674,73 +674,34 @@ struct GameThreadState {
     char text[96];              // The state as one line.
 };
 
-// The call recorder. A host opts in by listing these ops. CallsStart swaps
+// The call recorder, on the core's recorder slots (the recorder section of
+// core/protocol.h). A host opts in by listing these ops. CallsStart swaps
 // one UFunction's native pointer (UFunction::Func, a heap field: no code,
-// vtable or import is written) for one of MaxCallsSlots fixed thunks that
-// record each call and forward it to the original; the swap and the
-// restore are compare-and-swaps, and a pointer something else has replaced
-// since is left alone (the thunk then forwards forever).
+// vtable or import is written) for its slot's thunk.
 // CallsStart: object ref (an instance, a default object or a class), text =
 // "[Owner:]Function" (the ref holds args[0]), args[1] = milliseconds
-// (1..MaxCallsMilliseconds), data = an optional object address (length 8):
+// (1..MaxRecorderMilliseconds), data = an optional object address (length 8):
 // only calls on that object; flags CallsDry
 // resolves and reports without writing. Reply: CallsStarted.
-// CallsRead: args[0] = slot (CallsLatest: the last started), args[1] = the
-// last sequence already read. Reply: CallsState, then CallsRow headers each
-// followed by `size` block bytes, oldest first; detail = the last sequence
-// sent. A recording past its time is restored first.
-// CallsStop: args[0] = slot (or CallsLatest); restores; reply CallsState.
-// A row's block is the function's parameters after the call: on the
+// CallsRead and CallsStop: the core's read and stop (any kind).
+// A CallsKind row's object is the call's context object, its tag CallsEvent
+// or CallsVm, its payload the function's parameters after the call: on the
 // ProcessEvent path (the frame's Node is the function) the frame's locals
 // plus the return value; on the Blueprint VM path the arguments are
-// bytecode, so the row has no block (via CallsVm).
-constexpr uint32_t MaxCallsSlots = 8, MaxCallsRows = 256, MaxCallsBlock = 1024;
-constexpr uint64_t MaxCallsMilliseconds = 60000;
+// bytecode, so the row has no payload (CallsVm). Status: target = the
+// UFunction, payload = its parameter block's size, counts = {events, vm}.
+constexpr uint32_t CallsKind = op::CallsStart;
 constexpr uint32_t CallsDry = 1;
-constexpr uint64_t CallsLatest = MaxCallsSlots;
+constexpr uint32_t CallsEventCount = 0, CallsVmCount = 1;
 // UE5 frame and function layout the thunk reads (UObject::ProcessEvent,
 // FFrame's constructor and UFunction::Invoke, CL-516586): FFrame::Node and
 // ::Locals, UFunction::ReturnValueOffset (0xFFFF: none): the layout's
 // frameNode, frameLocals and returnValueOffset. Not in the SDK.
-enum class CallsSlotState : uint32_t { Free, Recording, Expired, Finished, Replaced };
-// A caller can load a thunk's address from the function before the restore
-// swaps it back and enter the thunk later, past its in-flight count. A
-// finished slot is therefore reused only CallsReuseGraceMs after its restore,
-// and the one restored longest ago first.
-constexpr int64_t CallsReuseGraceMs = 1000;
-struct CallsSlotView {
-    CallsSlotState state;
-    int32_t inFlight;
-    int64_t restoredMs; // When the restore succeeded (Finished only).
-};
-// The slot CallsStart takes: the first free one, else the finished one
-// restored longest ago, idle and past the grace; `count` when none. Pure; tested.
-inline uint32_t PickCallsSlot(const CallsSlotView* slots, uint32_t count, int64_t nowMs) {
-    for (uint32_t i = 0; i < count; ++i)
-        if (slots[i].state == CallsSlotState::Free) return i;
-    uint32_t best = count;
-    for (uint32_t i = 0; i < count; ++i) {
-        const auto& slot = slots[i];
-        if (slot.state != CallsSlotState::Finished || slot.inFlight || nowMs - slot.restoredMs < CallsReuseGraceMs) continue;
-        if (best == count || slot.restoredMs < slots[best].restoredMs) best = i;
-    }
-    return best;
-}
 struct CallsStarted {
     uint64_t function, original, thunk;
     uint32_t slot, blockSize, returnOffset, returnSize;
 };
-struct CallsState {
-    uint64_t function, written;
-    uint32_t slot, state, events, vm, blockSize, reserved;
-};
 constexpr uint8_t CallsEvent = 1, CallsVm = 2;
-struct CallsRow {
-    uint64_t sequence, object;
-    int64_t microseconds;           // Since the start.
-    uint32_t thread, size;
-    uint8_t via, reserved[7];
-};
 
 // Owner: data = 1..MaxOwnerAddresses addresses (uint64 each). One object-table
 // scan (budgeted per tick, like Census) finds, per address, the object whose
@@ -831,7 +792,7 @@ constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + si
     sizeof(FieldsPageHeader) * 107 + MaxPageRefs * 109 +
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
-    sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + sizeof(CallsState) * 97 + sizeof(CallsRow) * 103 +
+    sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + CallsKind * 97 +
     sizeof(EnumEntry) * 113 + sizeof(GameThreadState) * 127 + sizeof(OwnerEntry) * 131 + sizeof(RouteSpec) * 137 +
     sizeof(RouteHeader) * 139 + sizeof(RoutePath) * 149 + sizeof(RouteHop) * 151 +
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);

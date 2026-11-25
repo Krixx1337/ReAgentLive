@@ -26,6 +26,13 @@ before 0.6.0 are one line each; git history has the detail.
 
 ## Unreleased
 
+### Breaking
+
+- **The call recorder runs on core recorder slots**, shared by every
+  kind of recording to come; `calls-start` and `calls-read` behave as
+  before and hosts list the same ops. Rebuild the console with the agent.
+  Protocol change: rebuild and re-inject.
+
 ## 0.7.0
 
 ReAgentLive lives in your project: a submodule your team clones ready to

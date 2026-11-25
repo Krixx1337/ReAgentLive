@@ -146,7 +146,7 @@ struct Command {
     bool traceSimple = false;
     Ref traceIgnore{};
     // calls-start, calls-read: `target` is "start", "read" or "stop" (calls-read
-    // with `stop`); the recording's slot (ue::CallsLatest: the last started) and
+    // with `stop`); the recording's slot (RecorderLatest: the last started) and
     // calls-read's cursor; calls-start's request carries the object, the
     // function and the milliseconds (args[1]); the console adds an instance filter.
     uint64_t callsSlot = 0, callsAfter = 0;

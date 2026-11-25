@@ -17,7 +17,7 @@ path (`#include "reagentlive/core/agent.h"`). Code paths in these docs
 
 | Layer | What | Where | Depends on |
 |---|---|---|---|
-| Core agent | wire protocol, shared section, tick and dispatch, `read`/`write`/`modules`/`search` (and its job)/`xrefs`/`region`/`pin`/`watch` | `core/agent.*`, `core/agent_search.cpp`, `core/protocol.h` | Windows, standard library |
+| Core agent | wire protocol, shared section, tick and dispatch, `read`/`write`/`modules`/`search` (and its job)/`xrefs`/`region`/`pin`/`watch`; the pointer-swap recorder slots every recorder kind arms, reads and stops through | `core/agent.*`, `core/agent_search.cpp`, `core/agent_recorder.cpp`, `core/recorder.h` (for packs), `core/protocol.h` | Windows, standard library |
 | Core client | typed C++ API: attach, read, write, modules, search, xrefs, region, pointer chains, supported ops, raw `Send` | `core/client.*` | protocol |
 | Unreal pack | agent handlers for lookup, reflection, guarded object reads and calls, every one with no SDK (`ue-base`, layouts through `engine_layout.h`); the opt-in game-thread tick for hosts (`host_draw.*`, `ue-draw`) | `packs/ue/` | core; only `reagentlive::ue` also the host's `SDK/` headers (`engine_layout_sdk.h`, `agent_ue_globals.cpp`) |
 | CLI | command parsing and JSON Lines over the client API | `frontends/cli/` (by layer: [source layout](#source-layout)) | client, Unreal client calls |

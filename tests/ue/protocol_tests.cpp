@@ -644,25 +644,23 @@ TEST_CASE("the call recorder's requests are bounded") {
     request.flags = 0;
     request.args[1] = 0;
     CHECK(ue::Check(request) == Status::BadRequest);
-    request.args[1] = ue::MaxCallsMilliseconds + 1;
+    request.args[1] = MaxRecorderMilliseconds + 1;
     CHECK(ue::Check(request) == Status::BadRequest);
-    request.args[1] = ue::MaxCallsMilliseconds;
+    request.args[1] = MaxRecorderMilliseconds;
     request.address = 0;
     CHECK(ue::Check(request) == Status::BadRequest);
     request = {};
     request.op = ue::op::CallsRead;
-    request.args[0] = ue::CallsLatest;
+    request.args[0] = RecorderLatest;
     request.args[1] = 12345;
     CHECK(ue::Check(request) == Status::Ok);
-    request.args[0] = ue::CallsLatest + 1;
+    request.args[0] = RecorderLatest + 1;
     CHECK(ue::Check(request) == Status::BadRequest);
     request = {};
     request.op = ue::op::CallsStop;
     CHECK(ue::Check(request) == Status::Ok);
     request.address = 0x1000;
     CHECK(ue::Check(request) == Status::BadRequest);
-    // A full row fits a reply beside the state, so every row can be read.
-    CHECK(sizeof(ue::CallsState) + sizeof(ue::CallsRow) + ue::MaxCallsBlock <= MaxRead);
 }
 
 TEST_CASE("a name cut by a wire field equals the full name as far as the field reaches") {
@@ -689,23 +687,6 @@ TEST_CASE("enum requests take a ref and a bounded start") {
     request = {};
     request.op = ue::op::Enum;
     CHECK(ue::Check(request) == Status::BadRequest);
-}
-
-TEST_CASE("a finished recording slot is reused only after its grace, oldest first") {
-    using State = ue::CallsSlotState;
-    constexpr int64_t now = 10000;
-    ue::CallsSlotView slots[4]{{State::Recording, 0, 0}, {State::Finished, 0, now - 200},
-                               {State::Replaced, 0, 0}, {State::Finished, 0, now - 5000}};
-    CHECK(ue::PickCallsSlot(slots, 4, now) == 3);                     // Past the grace.
-    slots[3].restoredMs = now - 100;
-    CHECK(ue::PickCallsSlot(slots, 4, now) == 4);                     // Both too recent.
-    slots[1].restoredMs = now - ue::CallsReuseGraceMs;
-    slots[3].restoredMs = now - ue::CallsReuseGraceMs - 1;
-    CHECK(ue::PickCallsSlot(slots, 4, now) == 3);                     // The oldest restore.
-    slots[3].inFlight = 1;
-    CHECK(ue::PickCallsSlot(slots, 4, now) == 1);                     // A call still inside.
-    slots[2].state = State::Free;
-    CHECK(ue::PickCallsSlot(slots, 4, now) == 2);                     // A free slot first.
 }
 
 TEST_CASE("exec entries take only a row cursor") {

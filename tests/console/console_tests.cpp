@@ -218,7 +218,7 @@ const Extras& TheExtras() {
             parameter("Label", "StrProperty", 16, 16), parameter("Amount", "FloatProperty", 32, 4)};
         Call call;
         call.row.sequence = 1;
-        call.row.via = ue::CallsEvent;
+        call.row.tag = ue::CallsEvent;
         call.block.assign(40, 0);
         const auto buddy = std::ranges::find(world.objects, std::string("Buddy"), &Object::name);
         const auto caller = std::ranges::find(world.objects, std::string("Thing_0"), &Object::name);

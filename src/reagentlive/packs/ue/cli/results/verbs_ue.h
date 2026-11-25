@@ -11,7 +11,7 @@
 
 namespace reagentlive::cli {
 // The bounds the builders enforce, as the arg help below states them.
-static_assert(ue::MaxCallsSlots == 8 && MaxRead / 4 == 1024);
+static_assert(MaxRecorderSlots == 8 && MaxRead / 4 == 1024);
 // The pack's origin: its id on every row and the title headings show.
 inline constexpr Origin UnrealOrigin{"ue", "Unreal pack"};
 

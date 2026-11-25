@@ -99,11 +99,11 @@ inline Status Check(const Request& request) {
     case op::CallsStart:
         return request.address && Terminated(request.text) && detail::FunctionText(request.text) &&
             (!request.length || request.length == sizeof(uint64_t)) && request.args[1] &&
-            request.args[1] <= MaxCallsMilliseconds && !(request.flags & ~CallsDry)
+            request.args[1] <= MaxRecorderMilliseconds && !(request.flags & ~CallsDry)
             ? Status::Ok : Status::BadRequest;
     case op::CallsRead:
     case op::CallsStop:
-        return !request.address && !request.length && request.args[0] <= CallsLatest ? Status::Ok : Status::BadRequest;
+        return !request.address && !request.length && request.args[0] <= RecorderLatest ? Status::Ok : Status::BadRequest;
     case op::ExecEntries:
         return !request.address && !request.length && request.args[1] <= MaxExecEntries ? Status::Ok : Status::BadRequest;
     case op::Refs:

@@ -27,7 +27,10 @@ of [design](README.md).
   `reagentlive::ue-draw` points the game viewport object at a private copy of
   its interface vtable ([decision](unreal.md#a-game-thread-tick-through-the-viewports-draw)).
   A host opts in by listing the ops, and each is a write the host approves.
-  Code, the game's own vtables and imports are never written.
+  Code, the game's own vtables and imports are never written. Recordings
+  share the core's recorder slots (`core/recorder.h`): one ring, deadline,
+  compare-and-swap restore and read path for every kind, each kind
+  bringing only its thunks, its start op and its row payload.
 - **One safety boundary, set by a person, held by the console:** every
   verb that writes or calls is marked and sits in the `modify` pack, and
   the console's `--packs` ceiling refuses it, whichever frontend sends it
