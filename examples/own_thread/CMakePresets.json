@@ -1,0 +1,43 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "windows-x64",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "architecture": { "value": "x64", "strategy": "external" },
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            },
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+        },
+        {
+            "name": "x64-release",
+            "displayName": "x64 Release",
+            "description": "Release with the tests (when top-level): what the docs and scripts build",
+            "inherits": "windows-x64",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
+        {
+            "name": "x64-debug",
+            "displayName": "x64 Debug",
+            "description": "Debug for stepping through host code; no tests (a Debug build of the CLI tests passes the object file's section limit)",
+            "inherits": "windows-x64",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "REAGENTLIVE_BUILD_TESTS": "OFF" }
+        }
+    ],
+    "buildPresets": [
+        { "name": "x64-release", "configurePreset": "x64-release" },
+        { "name": "x64-debug", "configurePreset": "x64-debug" }
+    ],
+    "testPresets": [
+        {
+            "name": "x64-release",
+            "configurePreset": "x64-release",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

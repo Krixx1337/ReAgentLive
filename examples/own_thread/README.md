@@ -11,17 +11,17 @@ Tier: T0 Core ([tiers](../../docs/tiers.md)); why and what it cannot do:
 
 ## Build it
 
-Use it here, or copy `CMakeLists.txt`, `host.cpp` and `console.cpp` into a
+Use it here, or copy `CMakeLists.txt`, `CMakePresets.json`, `host.cpp` and `console.cpp` into a
 project of your own as a starting point
 ([starting from an example](../../docs/hosting.md#starting-from-an-example);
 [agent setup](../../docs/agents/setup.md) can do it for you).
 
-To build it here, from a Visual Studio x64 developer shell in the
-ReAgentLive folder:
+To build it here, from a Visual Studio x64 developer shell in this folder
+(its `CMakePresets.json` is the library's own):
 
 ```powershell
-cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/own-thread
+cmake --preset x64-release
+cmake --build --preset x64-release
 ```
 
 Its `CMakeLists.txt` leaves out the Unreal pack's verbs, which this host
@@ -34,9 +34,9 @@ Python process that loads it and waits a minute (Python needs the DLL's
 full path):
 
 ```powershell
-$dll = (Resolve-Path build\own-thread\reagentlive-own-thread.dll).Path
+$dll = (Resolve-Path out\build\x64-release\reagentlive-own-thread.dll).Path
 Start-Process python -ArgumentList '-c', "`"import ctypes,time; ctypes.WinDLL(r'$dll'); time.sleep(60)`"" -WindowStyle Hidden
-build\own-thread\reagentlive.exe -c '[{"verb": "status"}, {"verb": "modules"}, {"verb": "read", "args": {"addr": {"module": "python.exe", "rva": "0x1000"}, "len": 16}}]'
+out\build\x64-release\reagentlive.exe -c '[{"verb": "status"}, {"verb": "modules"}, {"verb": "read", "args": {"addr": {"module": "python.exe", "rva": "0x1000"}, "len": 16}}]'
 ```
 
 With no pid the console finds the one process that has the agent; with

@@ -1,6 +1,6 @@
-# Build trees (the docs build into build/) and Python caches.
-build/
+# Build trees (the presets build into out/), personal presets and Python caches.
 out/
+CMakeUserPresets.json
 __pycache__/
 *.pyc
 # The user's own skill lessons (references/improving.md).

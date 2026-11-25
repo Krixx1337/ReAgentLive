@@ -4,8 +4,8 @@
 # consumer of the library would, and works as a
 # starting point copied into a project of its own:
 #
-#   cmake -S examples/unreal -B build/unreal -G Ninja -DCMAKE_BUILD_TYPE=Release
-#   cmake --build build/unreal
+#   cmake --preset x64-release              (in this folder; CMakePresets.json)
+#   cmake --build --preset x64-release
 #
 # reagentlive's own build adds it for its tests.
 cmake_minimum_required(VERSION 3.25)

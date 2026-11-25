@@ -2,7 +2,8 @@
 every listed page opens with its header, and the skill's SKILL.md stays short and reaches every reference.
 AGENTS.md (for an agent changing the repo; CLAUDE.md imports it) stays within its line budget and needs no
 header; links and names are checked there as everywhere. The skill names repo files as inline code paths (`docs/tiers.md#the-ladder`), resolved to the user's build:
-every such path must exist, and no skill file links GitHub's main branch.
+every such path must exist, and no skill file links GitHub's main branch. Every example carries the library's
+CMakePresets.json unchanged, so a copied example builds as the library does.
 
 Usage: test_docs.py [--forbid WORD ...]. A host passes its own and its
 game's names, so the library never has to spell them.
@@ -278,6 +279,16 @@ class Docs(unittest.TestCase):
 
     def test_the_skill_never_links_main(self):
         self.assertEqual(check_main_urls(ROOT), [])
+
+    def test_every_example_carries_the_librarys_presets(self):
+        # A copied example builds as the library does: its CMakePresets.json is the root one, byte for byte.
+        def presets(folder):
+            with open(os.path.join(folder, 'CMakePresets.json'), encoding='utf-8') as handle:
+                return handle.read().replace('\r\n', '\n')
+        examples = os.path.join(ROOT, 'examples')
+        for name in sorted(os.listdir(examples)):
+            if os.path.isfile(os.path.join(examples, name, 'CMakeLists.txt')):
+                self.assertEqual(presets(os.path.join(examples, name)), presets(ROOT), name)
 
     def test_a_missing_file_or_anchor_fails(self):
         with Tree({'docs/a.md': '# A\n\n## Two words\n\n[ok](#two-words) [bad](#nope) [gone](b.md)\n'}) as root:

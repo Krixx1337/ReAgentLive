@@ -78,7 +78,7 @@ powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools
 It checks again, moves the submodule to the new commit, rebuilds (with
 `-Check` unless the record's `check` is false; the lines of
 [agent setup](setup.md#5-build-and-check)), and
-regenerates `build\console_api.py` when it exists. The project's
+regenerates `out\console_api.py` when it exists. The project's
 submodule pointer then shows as changed: commit it only when the user
 asks. If the link step cannot write the DLL, a running process still has
 it loaded: ask the user to close it, then run `-Apply` again.

@@ -11,14 +11,16 @@ it (this file). Write for the reader of the file you touch
 
 ## Build and test
 
-From an x64 Visual Studio developer shell, in this folder (tests are on by
-default when it is the top-level project; Release, since a Debug build of
-the CLI tests passes the object file's section limit):
+From an x64 Visual Studio developer shell, in this folder, with the
+`x64-release` preset (`CMakePresets.json`; tests are on when it is the
+top-level project; `x64-debug` has none, since a Debug build of the CLI
+tests passes the object file's section limit). It builds into
+`out/build/x64-release`:
 
 ```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake --preset x64-release
+cmake --build --preset x64-release
+ctest --preset x64-release
 ```
 
 - The docs test alone: `python -I tests/python/test_docs.py`. Add
@@ -28,8 +30,8 @@ ctest --test-dir build --output-on-failure
   (`python -m pip install --upgrade "mcp>=2"`); a skip is not a pass.
 - After changing a verb-table row, regenerate the generated pages
   ([adding a command](docs/contributing.md#adding-a-command)):
-  `build/reagentlive-table --write docs/commands/results.md` and
-  `build/reagentlive-table --write-reference docs/commands/reference.md`.
+  `out/build/x64-release/reagentlive-table --write docs/commands/results.md` and
+  `out/build/x64-release/reagentlive-table --write-reference docs/commands/reference.md`.
 - A change is done only when every test passes. What each suite covers:
   [contributing: tests](docs/contributing.md#tests).
 

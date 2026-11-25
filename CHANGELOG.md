@@ -100,6 +100,15 @@ Setup and docs:
   `%LOCALAPPDATA%\reagentlive\machine.json`).
   An install from before: ask your agent to run the
   [setup](docs/agents/setup.md) again; it retires the old one first.
+- **CMake presets; builds go to `out/build/<preset>`:** the library and
+  each example carry the same `CMakePresets.json` (`x64-release` with the
+  tests, `x64-debug` without): `cmake --preset x64-release`, `cmake --build
+  --preset x64-release`, `ctest --preset x64-release`. A project made from
+  an example copies it too; it builds into `out/build/x64-release` (was
+  `build/`), logs in `out/logs`, `console_api.py` in `out/`. Such a
+  project: copy `CMakePresets.json` from its example, set `out/` and
+  `CMakeUserPresets.json` in `.gitignore`, and run `tools/agent_link.py`
+  with the new `--console` and `--dll` paths.
 - **Lessons live in the project:** `.reagentlive/lessons/` in the project
   root, committed with it by default so they survive a reinstall and reach
   the team (was `%LOCALAPPDATA%\reagentlive\lessons\`, lost with the

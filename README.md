@@ -57,7 +57,7 @@ Then wire your agent to it: MCP server, skill and instructions, for any
 host ([an agent in your project](docs/hosting.md#an-agent-in-your-project)):
 
 ```powershell
-python -I reagentlive\tools\agent_link.py --console build\reagentlive-ue.exe --dll build\reagentlive-unreal.dll
+python -I reagentlive\tools\agent_link.py --console out\build\x64-release\reagentlive-ue.exe --dll out\build\x64-release\reagentlive-unreal.dll
 ```
 
 Every project carries its own pinned ReAgentLive, so updating one never

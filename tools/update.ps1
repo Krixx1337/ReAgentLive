@@ -61,7 +61,7 @@ function Build([string]$dir, [string]$sub, [string]$label) {
     if ($record.check -ne $false) { $check = @('-Check') }
     & $script:shell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $sub 'tools\build_project.ps1') -Project $dir @check | Out-Host
     if ($LASTEXITCODE -ne 0) { return $false }
-    $api = Join-Path $dir 'build\console_api.py'
+    $api = Join-Path $dir 'out\console_api.py'
     if (Test-Path $api) {
         $gen = Join-Path $sub 'src\reagentlive\frontends\python\reagentlive_gen.py'
         & python $gen --console (Join-Path $dir $record.console) -o $api *> $null

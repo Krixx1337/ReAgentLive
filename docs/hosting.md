@@ -39,7 +39,7 @@ another host's agent in the same process.
 ## Starting from an example
 
 Either example works as a starting point outside this tree: copy its
-`CMakeLists.txt`, `host.cpp` and `console.cpp` into a project of your own
+`CMakeLists.txt`, `CMakePresets.json`, `host.cpp` and `console.cpp` into a project of your own
 that carries ReAgentLive as its `reagentlive/` submodule; the copied
 `CMakeLists.txt` finds the library there (elsewhere: set
 `REAGENTLIVE_DIR`). Change the section prefix
@@ -65,7 +65,7 @@ copied from an example or not:
   all: a clone of the project then works with no setup. It writes nothing
   outside the project. Run again, it updates all of it in place.
 - **`tools/build_project.ps1`** loads Visual Studio's x64 environment and
-  runs the record's `build`, or CMake on the project into `build/`. With
+  runs the record's `build`, or CMake on the project (its `x64-release` preset) into `out/build/x64-release`. With
   `-Check` it loads the DLL into a throwaway Python process and checks its
   `status`, which fits a host that ticks on its own thread (`check` false
   for one that ticks only inside the game).

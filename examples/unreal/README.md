@@ -13,17 +13,17 @@ layout, each group checked on known objects first
 
 ## Build it
 
-Use it here, or copy `CMakeLists.txt`, `host.cpp` and `console.cpp` into a
+Use it here, or copy `CMakeLists.txt`, `CMakePresets.json`, `host.cpp` and `console.cpp` into a
 project of your own as a starting point
 ([starting from an example](../../docs/hosting.md#starting-from-an-example);
 [agent setup](../../docs/agents/setup.md) can do it for you).
 
-To build it here, from a Visual Studio x64 developer shell in the
-ReAgentLive folder:
+To build it here, from a Visual Studio x64 developer shell in this folder
+(its `CMakePresets.json` is the library's own):
 
 ```powershell
-cmake -S examples/unreal -B build/unreal -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/unreal
+cmake --preset x64-release
+cmake --build --preset x64-release
 ```
 
 ## Use it
@@ -31,7 +31,7 @@ cmake --build build/unreal
 Load `reagentlive-unreal.dll` into the game with any DLL loader, then:
 
 ```powershell
-build/unreal/reagentlive-ue.exe -c '[{"verb": "status"}, {"verb": "get", "args": {"object": "Vector", "mode": "types"}}, {"verb": "enum", "args": {"enum": "ENetRole"}}]'
+out/build/x64-release/reagentlive-ue.exe -c '[{"verb": "status"}, {"verb": "get", "args": {"object": "Vector", "mode": "types"}}, {"verb": "enum", "args": {"enum": "ENetRole"}}]'
 ```
 
 - **The first Unreal command stalls the game once**, for up to seconds

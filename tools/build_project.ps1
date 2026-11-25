@@ -2,7 +2,8 @@
 # throwaway Python process and checks its status. The project is the folder that carries this clone
 # (default: the git project it is a submodule of) and its record, reagentlive.json (tools/agent_link.py writes it):
 # `dll` and `console`, and `build`, a command run in the project folder; without `build`, CMake builds the
-# project into build/. Prints one PASS/FAIL line per step, with the console and DLL paths. Exits 1 on any
+# project into out/build/x64-release, through its CMakePresets.json's x64-release preset when it has one (the
+# examples do). Logs go to out/logs. Prints one PASS/FAIL line per step, with the console and DLL paths. Exits 1 on any
 # failure, 2 when the compiler environment cannot load (nothing is built then). Runs in Windows
 # PowerShell 5.1 and PowerShell 7.
 #
@@ -31,8 +32,10 @@ if (-not (Test-Path $recordPath)) {
     exit 1
 }
 $record = Get-Content $recordPath -Raw | ConvertFrom-Json
-$build = Join-Path $Project 'build'
-$example = @{ Console = $record.console; Dll = $record.dll }
+$out = Join-Path $Project 'out'
+$build = Join-Path $out 'build\x64-release'
+$preset = Test-Path (Join-Path $Project 'CMakePresets.json')
+$example =@{ Console = $record.console; Dll = $record.dll }
 Set-Location $Project
 
 # The compiler environment: cl, the linker, CMake and Ninja on PATH.
@@ -64,7 +67,7 @@ if ($missing) {
     exit 2
 }
 
-$logs = Join-Path $build 'logs'
+$logs = Join-Path $out 'logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 $failed = 0
 function Step([string]$name, [string]$log, [scriptblock]$run) {
@@ -144,9 +147,11 @@ if ($record.build) {
     $env:REAGENTLIVE_BUILD = $record.build
     $built = Step "build $name" (Join-Path $logs "build.log") { cmd /d /c "%REAGENTLIVE_BUILD%" }
 } else {
-    $configure = @('-S', $Project, '-B', $build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release')
+    # The project's x64-release preset when it has presets (it names the same folder), else the same by hand.
+    $configure = if ($preset) { @('--preset', 'x64-release') } else { @('-S', $Project, '-B', $build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release') }
+    $compile = if ($preset) { @('--build', '--preset', 'x64-release') } else { @('--build', $build) }
     if (Step "configure $name" (Join-Path $logs "configure.log") { cmake @configure }) {
-        $built = Step "build $name" (Join-Path $logs "build.log") { cmake --build $build }
+        $built = Step "build $name" (Join-Path $logs "build.log") { cmake @compile }
     }
 }
 if ($built) {

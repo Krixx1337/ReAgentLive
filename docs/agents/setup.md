@@ -76,8 +76,8 @@ Ask the user, in one message:
 
      | Target | `<example>` | `<console>` | `<dll>` | Starts at |
      |---|---|---|---|---|
-     | Any x64 process | [`own_thread`](../../examples/own_thread/README.md) | `build/reagentlive.exe` | `build/reagentlive-own-thread.dll` | T0 |
-     | A UE5 game (no dump, no mod needed) | [`unreal`](../../examples/unreal/README.md) | `build/reagentlive-ue.exe` | `build/reagentlive-unreal.dll` | T1-T2; T3 once `game-thread` is on |
+     | Any x64 process | [`own_thread`](../../examples/own_thread/README.md) | `out/build/x64-release/reagentlive.exe` | `out/build/x64-release/reagentlive-own-thread.dll` | T0 |
+     | A UE5 game (no dump, no mod needed) | [`unreal`](../../examples/unreal/README.md) | `out/build/x64-release/reagentlive-ue.exe` | `out/build/x64-release/reagentlive-unreal.dll` | T1-T2; T3 once `game-thread` is on |
 
      What each tier can do: [tiers](../tiers.md). Then ask for a short
      name (`<name>`: lowercase letters, digits and dashes; it names the
@@ -138,8 +138,8 @@ it does not yet, with the user.
 New-Item -ItemType Directory -Force "<project>" | Out-Null
 git -C "<project>" init
 git -C "<project>" submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
-Copy-Item "<project>\reagentlive\examples\<example>\CMakeLists.txt", "<project>\reagentlive\examples\<example>\host.cpp", "<project>\reagentlive\examples\<example>\console.cpp" "<project>"
-Set-Content "<project>\.gitignore" "build/"
+Copy-Item "<project>\reagentlive\examples\<example>\CMakeLists.txt", "<project>\reagentlive\examples\<example>\CMakePresets.json", "<project>\reagentlive\examples\<example>\host.cpp", "<project>\reagentlive\examples\<example>\console.cpp" "<project>"
+Set-Content "<project>\.gitignore" "out/", "CMakeUserPresets.json"
 ```
 
 In the copied `host.cpp` and `console.cpp`, set `SectionPrefix` to
@@ -188,12 +188,12 @@ powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<project>\<
 
 Leave out `-Check` when the record's `check` is false. The script loads
 the x64 Visual Studio environment itself and runs the record's `build`, or
-CMake on the project into `<project>\build` (the first build on a machine
+CMake on the project into `<project>\out\build\x64-release` (its `x64-release` preset; the first build on a machine
 fetches the library's dependencies into a shared cache, so it needs
 network access; later projects build offline). It prints one `PASS`
 or `FAIL` line per step and the console and DLL paths. Exit 2: the
 environment did not load (step 1's Visual Studio check); exit 1: a step
-failed, and its `FAIL` line names the log under `<project>\build\logs`.
+failed, and its `FAIL` line names the log under `<project>\out\logs`.
 Report a failure; do not work around it.
 
 `-Check` then loads the DLL into a throwaway Python process, asks it for
@@ -239,7 +239,7 @@ Only for Python scripts; the MCP server needs no module (it reads the
 console's table each time it starts).
 
 ```powershell
-python "<project>\<sub>\src\reagentlive\frontends\python\reagentlive_gen.py" --console "<project>\<console>" -o "<project>\build\console_api.py"
+python "<project>\<sub>\src\reagentlive\frontends\python\reagentlive_gen.py" --console "<project>\<console>" -o "<project>\out\console_api.py"
 ```
 
 It prints the number of verbs and the table hash. The update script
