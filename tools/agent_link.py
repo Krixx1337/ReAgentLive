@@ -109,6 +109,8 @@ def block(clone, record, names):
         f'read `{clone}/.claude/skills/reagentlive/SKILL.md` and follow it; docs: `{clone}/docs/README.md`.',
         f"DLL `{record['dll']}`, console `{record['console']}`. Build: {build}.",
         f'Update: `{script}/update.ps1 -Project .` previews, `-Apply` updates (`{clone}/docs/agents/update.md`).',
+        f"No {tools} MCP tools, or no `{record['console']}`: this machine is not set up yet; say what is missing "
+        f'and offer `{clone}/docs/agents/setup.md` (a clone of a project wired earlier).',
     ]
     return f'{BEGIN}\n## ReAgentLive\n\n' + '\n'.join(fill(item) for item in items) + f'\n{END}\n'
 

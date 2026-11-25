@@ -27,8 +27,10 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
 
 - Before the first `fetch` of a session run `python -I tools/ida_setup.py`
   (read-only): `stale` or `missing`: give the user its `why` and ask them
-  to run it with `--install` (`docs/commands/ida-loader.md`). In an IDA
-  session open since an update, `rl.reload()` first.
+  to run it with `--install` (`docs/commands/ida-loader.md`;
+  `docs/agents/setup.md#9-the-ida-side-once-per-machine` also writes the
+  machine record's `ida`). In an IDA session open since an update,
+  `rl.reload()` first.
 - Never set `REAGENTLIVE_CONSOLE` on the user's machine yourself.
 
 ## The loop

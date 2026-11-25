@@ -100,7 +100,9 @@ Ask the user, in one message:
 A clone of a project wired earlier (it has `reagentlive.json`) carries
 everything step 4 writes. It needs `git submodule update --init`, step 1,
 step 5, and step 6 for Codex or another client without a project MCP
-file; then steps 8 and 9 as on any machine.
+file. Steps 2, 8 and 9 wait until they are needed: `improvement` is
+`user` without a record, and the skill asks about the injector or IDA the
+first time the user wants one.
 
 ## 3. Put ReAgentLive into the project
 

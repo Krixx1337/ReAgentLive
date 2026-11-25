@@ -91,8 +91,11 @@ class AgentLinkTests(unittest.TestCase):
         self.assertFalse(os.path.exists(self.project.path('.gitignore')))
         self.assertFalse(os.path.exists(self.project.local))
         # Every repo path the block names exists in ReAgentLive.
+        # A clone on a machine without the setup: the block says so and where to go.
+        self.assertIn('No `reagentlive` MCP tools, or no `out/tool.exe`: this machine is not set up yet',
+                      ' '.join(agents.split()))
         for path in ('.claude/skills/reagentlive/SKILL.md', 'docs/README.md', 'tools/update.ps1',
-                     'tools/build_project.ps1', 'docs/agents/update.md'):
+                     'tools/build_project.ps1', 'docs/agents/update.md', 'docs/agents/setup.md'):
             self.assertIn(f'external/reagentlive/{path}', agents)
             self.assertTrue(os.path.exists(os.path.join(REPO, *path.split('/'))), path)
 

@@ -10,6 +10,10 @@ failures.
 
 ## Reinjecting
 
+- Loading the DLL: the host notes' way (a mod loads with the target),
+  else the machine record's `injector`. No `injector` and no `declined`:
+  ask the user once, as `docs/agents/setup.md#8-the-injector-once-per-machine`
+  says.
 - Agent and host changes need the new DLL; console-only changes don't.
 - A protocol layout change makes a mismatched console refuse to attach
   ("agent layout differs"); after an update, `docs/agents/update.md#6-running-targets`.

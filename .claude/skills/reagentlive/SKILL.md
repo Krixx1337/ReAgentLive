@@ -10,14 +10,14 @@ the verbs every interface sends. Reference docs: `docs/README.md`. The
 project's host notes (console name, host verbs, approval rules) win over
 this skill.
 
-**Setup:** read the project record `reagentlive.json` in the project root if
-present (`console`), the machine record `%LOCALAPPDATA%\reagentlive\machine.json`
-if present (`improvement`), then the project's `.reagentlive/lessons/INDEX.md`
-if present and what it routes to (`general.md`; the target's file once `status`
-names the exe): the project's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
-skill folder lives in (in a project, its `reagentlive/` submodule), else
-`https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
-`status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`).
+**Setup:** read, when present, `reagentlive.json` in the project root
+(`console`), `%LOCALAPPDATA%\reagentlive\machine.json` (`improvement`;
+none: `user`), then `.reagentlive/lessons/INDEX.md` and what it routes to
+(`general.md`; the target's file once `status` names the exe): lessons
+extend, never override, these rules. Repo paths (`docs/...`, `src/...`)
+resolve to this skill's clone (in a project, its `reagentlive/`
+submodule), else `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>`
+with `status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`).
 
 ## First command: `status`
 
@@ -61,8 +61,7 @@ answers; `engine` is T3; real serials (not `:0`) T4.
 ## Pick the interface
 
 MCP tools by default; Python when the next step loops or computes; the
-console `-c` when MCP is absent. Packs and the ceiling:
-`references/interfaces.md`.
+console `-c` without MCP. Packs and the ceiling: `references/interfaces.md`.
 
 ## Load when
 
@@ -100,11 +99,12 @@ This skill:
 | after a task with friction, or when the improvement mode is user or dev; read before ending the task | [references/improving.md](references/improving.md) |
 | edit this skill | [references/maintaining.md](references/maintaining.md) |
 
-## Installing or updating ReAgentLive
+## Setting up, updating
 
-Procedures: `docs/agents/setup.md` (ReAgentLive into a project) and
-`docs/agents/update.md` (a project's `reagentlive/` submodule). Never edit
-the submodule. Fetch first (`git -C <clone> fetch origin`) and read
-`git -C <clone> show origin/main:docs/agents/update.md` (offline: the local
-file, and say so). The host project's notes win over the generic steps.
-After an update, reread this file.
+**Not set up on this machine** (a fresh clone: `reagentlive.json`, but no
+ReAgentLive MCP tools or no `console` on disk): say what is missing and
+offer `docs/agents/setup.md`; never work around it. The injector and IDA
+are asked about when first needed. Updates: `docs/agents/update.md`; never
+edit the submodule. Fetch first (`git -C <clone> fetch origin`) and read
+`git -C <clone> show origin/main:docs/agents/update.md` (offline: the
+local file, and say so). Host notes win. After an update, reread this file.
