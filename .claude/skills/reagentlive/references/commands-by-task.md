@@ -35,11 +35,11 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 
 | Question | Verb |
 |---|---|
-| Run a getter / any reflected function | `call-pure` or `call-each` (approval only for the first call on a new host or target) / `call` (approval), `release` a kept result |
+| Run a getter / any reflected function | `call-pure` or `call-each` (approval only for the first call on a new host or target) / `call` (approval: SKILL.md), `release` a kept result |
 | What a Blueprint function reads and calls | `script` |
 | Which Blueprints name a tag or name | `name-refs` |
 | What a line from A to B hits | `line-trace` |
-| What the target passed to a function | `calls-start`, `calls-read` (`stop` ends it; approval) |
+| What the target passed to a function | `calls-start`, `calls-read` (`stop` ends it; approval: SKILL.md) |
 | Get the game-thread tick | `game-thread` (approval for `on`) |
 
 ## Memory (`docs/commands/memory.md`, `docs/commands/native-objects.md`)
@@ -53,8 +53,8 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 | Where a value or string lives | `search` (long ones: `search-job` with its `job`) |
 | Which bytes of a range react to an action | `mem-snap`, then `mem-diff` |
 | A native object's class, bases, virtual table | `vtable` with `rtti` |
-| Change memory once / every tick / once with an undo | `write` / `write` with `hold` / with `undo` (approval) |
-| Which timed writes are active; end them | `timed-writes` (read-only, but in `modify`); `write` with `clear` (`modify`, approval) |
+| Change memory once / every tick / once with an undo | `write` / `write` with `hold` / with `undo` (approval: SKILL.md) |
+| Which timed writes are active; end them | `timed-writes` (read-only, but in `modify`); `write` with `clear` (`modify`; approval: SKILL.md) |
 
 ## Over time
 

@@ -40,6 +40,12 @@ tokens, one way to page, one count, one time unit.
   machine still missing the MCP SDK or the built console, the skill and
   the `AGENTS.md` block say what is missing and offer setup; the injector
   and IDA are asked about when first needed.
+- **Approval is the project's choice:** `reagentlive.json`'s `approval`
+  is `each` (the default: ask before every write and state-changing call)
+  or `invasive` (ask only before writes to code, read-only data, vtables
+  or hook slots, `calls-start` and `game-thread` `on`). The first call on a
+  new host or target is always asked
+  ([setup](docs/agents/setup.md#2-ask-about-the-project)).
 - **`tools/check.ps1`** checks, and only reads, the machine and a project:
   build tools, Python and its MCP SDK, the submodule, record, built
   console and DLL, MCP entry; each failed item names its fix

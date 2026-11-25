@@ -1,7 +1,8 @@
 """Wire an AI agent to a host project: the MCP server for its console, the skill, agent instructions.
 
     python -I <clone>/tools/agent_link.py --console <exe> --dll <dll> [--build <command>] [--check yes|no]
-                                          [--mcp claude-code,cursor,copilot] [--project <dir>]
+                                          [--approval each|invasive] [--mcp claude-code,cursor,copilot]
+                                          [--project <dir>]
 
 The project is any folder that builds a host DLL and its console and carries this clone at a fixed path
 inside it (a git submodule; default project: the git project it is a submodule of, else pass --project).
@@ -10,7 +11,9 @@ Paths are relative to the project. Writes, and on every later run updates in pla
 - reagentlive.json, the project record: `library` (this clone's path in the project), `mcp` (the clients),
   `console`, `dll`, `build` (a command run in the project folder;
   without it tools/build_project.ps1 runs CMake on the project), `check` (false for a host that ticks
-  only inside the game, so the update builds without loading the DLL into a test process). Arguments
+  only inside the game, so the update builds without loading the DLL into a test process), `approval`
+  (which writes the agent asks the user about first: `each`, the default, or `invasive`; the skill's
+  Approval rule). Arguments
   left out keep the record's values. It is committed: nothing personal goes in it (the improvement mode is
   the machine record's).
 - the ReAgentLive server in each client's project MCP file: the one already there (any server running
@@ -309,6 +312,11 @@ def run(args):
             raise Refused('--check is yes or no')
         record['check'] = args.check == 'yes'
     record.setdefault('check', True)
+    if args.approval is not None:
+        record['approval'] = args.approval
+    record.setdefault('approval', 'each')
+    if record['approval'] not in ('each', 'invasive'):
+        raise Refused('--approval is each or invasive')
     configs, names = {}, {}
     for client in clients:
         path, key, _ = MCP_FILES[client]
@@ -346,6 +354,7 @@ def main(argv=None):
     parser.add_argument('--console', help="the host's console, relative to the project")
     parser.add_argument('--dll', help='the host DLL, relative to the project')
     parser.add_argument('--build', help='the build command, run in the project folder (default: CMake)')
+    parser.add_argument('--approval', help='each or invasive: which writes the agent asks about first (default each)')
     parser.add_argument('--check', help='yes or no: whether a build loads the DLL into a test process (no: it ticks only in the game)')
     parser.add_argument('--mcp', help='comma-separated: ' + ', '.join(MCP_FILES) + " (default: the record's, else claude-code)")
     parser.add_argument('--project', help='the project folder (default: the git project this clone is a submodule of)')

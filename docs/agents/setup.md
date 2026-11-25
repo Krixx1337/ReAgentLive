@@ -96,6 +96,17 @@ Ask the user, in one message:
 
    Write the answer to the machine record's `improvement`. With it
    already set, use it and say so in the report.
+3. "Before which writes into the target should I ask you?" picks
+   `<approval>`, the project's (committed, so the team's):
+
+   | Answer | `<approval>` | The agent asks first for |
+   |---|---|---|
+   | every one (the default, also when unsure) | `each` | every write, state-changing call, `calls-start`, `game-thread` `on` |
+   | only invasive ones (a target the user owns, offline) | `invasive` | writes to code, read-only data, vtables or hook slots, `calls-start`, `game-thread` `on`; it says what any other write does first |
+
+   Either way the first call on a new host or target is asked, and the
+   project's own notes can ask for more
+   ([the rule](../../.claude/skills/reagentlive/SKILL.md#rules)).
 
 A clone of a project wired earlier (it has `reagentlive.json`) carries
 everything step 4 writes. It needs `git submodule update --init`, step 1,
@@ -136,7 +147,7 @@ files are the user's from now on.
 ## 4. Wire the agent
 
 ```powershell
-python -I "<project>\<sub>\tools\agent_link.py" --project "<project>" --console <console> --dll <dll> --mcp <clients>
+python -I "<project>\<sub>\tools\agent_link.py" --project "<project>" --console <console> --dll <dll> --approval <approval> --mcp <clients>
 ```
 
 Add `--build "<command>"` for a project with a build of its own, and
@@ -151,7 +162,7 @@ nothing). It writes, keeping what the project already has:
 
 | File | What |
 |---|---|
-| `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`; the skill and the scripts read it, and it is committed, so nothing personal goes in it |
+| `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`, `approval`; the skill and the scripts read it, and it is committed, so nothing personal goes in it |
 | the MCP files of `<clients>` | the ReAgentLive server: the project's own when it has one (any server running `reagentlive_mcp.py`, under its name, its other flags kept), else a new `reagentlive`; other servers stay. `servers` in the output names it |
 | `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); no `CLAUDE.md` is made (Claude Code reads `AGENTS.md`), and an existing one that does not import `AGENTS.md` gets the block too |
 | `.claude\skills\reagentlive\SKILL.md`, `.agents\skills\reagentlive\SKILL.md` | a pointer skill for Claude Code and for Codex, Cursor and others that read Agent Skills there: the skill's name and description, sending the agent to the submodule's skill, so updating the submodule updates the skill |
