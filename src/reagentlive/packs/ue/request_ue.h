@@ -97,9 +97,10 @@ inline Status Check(const Request& request) {
             offset <= MaxObjectBytes - header && request.address <= UINT64_MAX - offset - header ? Status::Ok : Status::BadRequest;
     }
     case op::CallsStart:
-        return request.address && Terminated(request.text) && detail::FunctionText(request.text) &&
-            (!request.length || request.length == sizeof(uint64_t)) && request.args[1] &&
-            request.args[1] <= MaxRecorderMilliseconds && !(request.flags & ~CallsDry)
+        if (!request.address || !request.args[1] || request.args[1] > MaxRecorderMilliseconds ||
+            (request.flags & ~(CallsDry | CallsObject)) || !Terminated(request.text)) return Status::BadRequest;
+        if (request.flags & CallsObject) return !request.text[0] && !request.length ? Status::Ok : Status::BadRequest;
+        return detail::FunctionText(request.text) && (!request.length || request.length == sizeof(uint64_t))
             ? Status::Ok : Status::BadRequest;
     case op::ExecEntries:
         return !request.address && !request.length && request.args[1] <= MaxExecEntries ? Status::Ok : Status::BadRequest;

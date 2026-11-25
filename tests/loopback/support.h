@@ -27,6 +27,7 @@
 #include "reagentlive/frontends/cli/call/build.h"
 #include "reagentlive/frontends/cli/call/build_internal.h"
 #include "reagentlive/frontends/cli/code/xrefs.h"
+#include "reagentlive/packs/ue/object_calls.h"
 #include "reagentlive/packs/ue/request_ue.h"
 #include "doctest.h"
 
@@ -35,7 +36,7 @@ using namespace std::chrono_literals;
 
 namespace loopback {
 // Test-only ops in the game range.
-constexpr uint32_t OpSlow = 4096, OpThrow = 4097;
+constexpr uint32_t OpSlow = 4096, OpThrow = 4097, OpObjectCalls = 4098;
 constexpr uint32_t Layout = LayoutCore + 7;
 
 inline std::atomic<bool> g_permissive; // Readable lies "yes" to force a guarded fault.
@@ -93,6 +94,21 @@ inline Progress FakeDescribeMany(const Request& request, Response& response, boo
     return Progress::Done;
 }
 
+// The Unreal pack's object recorder on a fake object (no object table):
+// address = the object, args[1] = milliseconds, flags ue::CallsDry; the
+// stock layout's ProcessEvent slot and ParmsSize. Reply: ObjectCallsStarted.
+inline Progress ObjectCallsStart(const Request& request, Response& response, bool, const Host&) {
+    const auto& stock = ue::layout::StockUE5;
+    ue::ObjectCallsStarted started{};
+    const auto refusal = ue::object_calls::Start(reinterpret_cast<void*>(request.address),
+        {static_cast<uint32_t>(stock.processEventSlot), stock.parmsSize}, request.args[1],
+        (request.flags & ue::CallsDry) != 0, started);
+    if (refusal.why) { Refuse(response, Status::Refused, refusal.why, refusal.detail); return Progress::Done; }
+    memcpy(response.data, &started, sizeof(started));
+    response.length = sizeof(started);
+    return Progress::Done;
+}
+
 // A host root for watch --follow: the object g_root points at, guarded on its identity.
 struct RootThing {
     uint64_t identity;
@@ -127,6 +143,7 @@ constexpr Command Commands[] = {
     {op::RecorderRead, "recorder read", &RecorderRead},
     {op::RecorderStop, "recorder stop", &RecorderStop},
     {op::NativeCallsStart, "native calls start", &NativeCallsStart},
+    {OpObjectCalls, "object calls start", &ObjectCallsStart},
 };
 
 inline std::wstring SectionName() { return L"Local\\reagentlive-test-" + std::to_wstring(GetCurrentProcessId()); }

@@ -518,6 +518,22 @@ TEST_CASE("calls-start takes an object or class, a function and a duration") {
               .starts_with("unknown key 'owner'"));
 }
 
+TEST_CASE("calls-start without a function records one object's ProcessEvent") {
+    const auto parsed = Call(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "duration": 2}})");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->kind == Kind::Calls);
+    CHECK(parsed->request.op == ue::op::CallsStart);
+    CHECK(ue::GetRef(parsed->request) == One);
+    CHECK(parsed->request.text[0] == 0);
+    CHECK(parsed->request.flags == ue::CallsObject);
+    CHECK(ue::Check(parsed->request) == Status::Ok);
+    const auto dry = Call(R"({"verb": "calls-start", "args": {"object": "0x2000", "duration": 1, "dry": true}})");
+    REQUIRE(dry.has_value());
+    CHECK(dry->request.flags == (ue::CallsObject | ue::CallsDry));
+    // A class names no one object.
+    CHECK(Why(R"({"verb": "calls-start", "args": {"object": "SomeClass", "duration": 1}})").starts_with("object is a literal ref"));
+}
+
 TEST_CASE("label names an unreflected member by object or class, offset, type and name") {
     auto parsed = Call(R"({"verb": "member-name", "args": {"object": "0x1000#5:2", "offset": "0x538", "type": "f64[3]", "name": "Start"}})");
     REQUIRE(parsed.has_value());

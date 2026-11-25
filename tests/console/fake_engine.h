@@ -100,6 +100,7 @@ struct World {
     std::vector<Object> objects;                // By slot.
     std::vector<std::string> names{"None"};     // The FName pool, by comparison index.
     std::deque<Function> functions;             // The last one is the recording calls-read reads.
+    std::atomic<bool> objectRecording{false};   // calls-read answers it as one object's ProcessEvents.
     std::vector<std::pair<int32_t, std::vector<std::pair<std::string, int64_t>>>> enums; // By the enum's slot.
     std::atomic<uint32_t> scansFromZero{0};     // Find requests from slot 0: each counts the whole table.
 
@@ -501,27 +502,37 @@ inline Progress EnumOp(const Request& request, Response& response, bool, const H
     return Progress::Done;
 }
 
-// The recorder: the last function's calls, after the sequence asked for.
+// The recorder: the last function's calls, after the sequence asked for;
+// with objectRecording, the same calls as the calling object's recording
+// (each row the function, then its block).
 inline Progress CallsRead(const Request& request, Response& response, bool, const Host&) {
     if ((response.status = reagentlive::Check(request)) != Status::Ok) return Progress::Done;
     auto& world = TheWorld();
     if (world.functions.empty()) { reagentlive::Refuse(response, Status::NotFound, "no such recording"); return Progress::Done; }
     const auto& function = world.functions.back();
+    const uint64_t functionAddress = world.objects[static_cast<size_t>(function.slot)].ref.address;
+    const bool object = world.objectRecording && !function.calls.empty();
     reagentlive::RecorderStatus state{};
-    state.target = world.objects[static_cast<size_t>(function.slot)].ref.address;
+    state.target = object ? function.calls.front().row.object : functionAddress;
     state.written = function.calls.size();
     state.state = static_cast<uint32_t>(reagentlive::RecorderState::Finished);
-    state.kind = ue::CallsKind;
-    state.counts[ue::CallsEventCount] = static_cast<uint32_t>(function.calls.size());
-    state.payload = function.blockSize;
+    state.kind = object ? ue::ObjectCallsKind : ue::CallsKind;
+    if (!object) state.counts[ue::CallsEventCount] = static_cast<uint32_t>(function.calls.size());
+    state.payload = object ? ue::MaxObjectCallParams : function.blockSize;
     memcpy(response.data, &state, sizeof(state));
     size_t used = sizeof(state);
     uint64_t last = request.args[1];
     for (const auto& call : function.calls) {
         if (call.row.sequence <= request.args[1]) continue;
-        memcpy(response.data + used, &call.row, sizeof(call.row));
-        memcpy(response.data + used + sizeof(call.row), call.block.data(), call.block.size());
-        used += sizeof(call.row) + call.block.size();
+        reagentlive::RecorderRow row = call.row;
+        const ue::ObjectCall head{functionAddress};
+        const size_t extra = object ? sizeof(head) : 0;
+        row.size = static_cast<uint32_t>(extra + call.block.size());
+        if (object) row.tag = 0;
+        memcpy(response.data + used, &row, sizeof(row));
+        if (object) memcpy(response.data + used + sizeof(row), &head, sizeof(head));
+        memcpy(response.data + used + sizeof(row) + extra, call.block.data(), call.block.size());
+        used += sizeof(row) + row.size;
         last = call.row.sequence;
     }
     response.length = static_cast<uint32_t>(used);

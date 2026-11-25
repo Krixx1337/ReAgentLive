@@ -1,7 +1,8 @@
 // reagentlive Unreal pack: the call recorder (protocol_ue.h, CallsStart) on
 // the core's recorder slots (core/recorder.h). One UFunction's native pointer
 // is swapped for a fixed thunk that records the call and forwards it. Only
-// heap data is written; code, vtables and imports are never touched.
+// heap data is written; code, vtables and imports are never touched. With
+// CallsObject, one object's ProcessEvent instead (agent_ue_object_calls.cpp).
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -16,6 +17,7 @@
 #include "reagentlive/core/recorder.h"
 #include "reagentlive/packs/ue/agent_ue.h"
 #include "reagentlive/packs/ue/agent_ue_internal.h"
+#include "reagentlive/packs/ue/object_calls.h"
 
 namespace reagentlive::ue {
 namespace {
@@ -65,6 +67,22 @@ template<unsigned... I> constexpr auto MakeThunks(std::integer_sequence<unsigned
 }
 constexpr auto Thunks = MakeThunks(std::make_integer_sequence<unsigned, MaxRecorderSlots>{});
 
+// CallsObject: every ProcessEvent on one live object (object_calls.h).
+Progress ObjectCallsStart(const Request& request, Response& response, Object* object) {
+    const auto& engine = Engine();
+    if (engine.processEventSlot < 0 || engine.parmsSize < 0) {
+        Refuse(response, Status::Refused, "the layout has no ProcessEvent slot or ParmsSize");
+        return Progress::Done;
+    }
+    ObjectCallsStarted started{};
+    const object_calls::Layout layout{static_cast<uint32_t>(engine.processEventSlot), engine.parmsSize};
+    const auto refusal = object_calls::Start(object, layout, request.args[1], (request.flags & CallsDry) != 0, started);
+    if (refusal.why) { Refuse(response, Status::Refused, refusal.why, refusal.detail); return Progress::Done; }
+    memcpy(response.data, &started, sizeof(started));
+    response.length = sizeof(started);
+    return Progress::Done;
+}
+
 Native* FuncField(Object* function) { return reinterpret_cast<Native*>(ExecFunctionSlot(function)); }
 
 bool Executable(const void* address) {
@@ -82,6 +100,7 @@ Progress CallsStart(const Request& request, Response& response, bool, const Host
     recorder::Sweep();
     Object* object = ResolveRequestObject(request, pack);
     if (!object) { Refuse(response, Status::NotFound, "object gone or not a valid object"); return Progress::Done; }
+    if (request.flags & CallsObject) return ObjectCallsStart(request, response, object);
     const auto [owner, name] = SplitFunction(request.text);
     // The recorder swaps the function's native pointer: UFunctions are heap
     // data the engine itself writes, never code.

@@ -153,16 +153,19 @@ inline const std::vector<Verb>& UnrealVerbs() {
             Of<shape::Trace>, build::LineTrace,
             "Runs on the game thread; changes no state. Two points need ignore (the world comes from ignore, else "
             "an end's object). cm; distance from start. A socket needs a mesh component."},
-        {"calls-start", "ue", ToolPack::Modify, "record a reflected function's calls, with their arguments, for a while",
-            {{"object", "str", "whose function: an instance (ref or \"0x...\": records only its calls) or a class (ref, \"0x...\" or name: every instance)", {}, true, false, ref},
-             {"function", "str", function, {}, true},
+        {"calls-start", "ue", ToolPack::Modify, "record a reflected function's calls, or every ProcessEvent on one object, with their arguments, for a while",
+            {{"object", "str", "with function, whose function: an instance (ref or \"0x...\": records only its calls) or a class (ref, \"0x...\" or name: every instance); without, the instance (ref or \"0x...\") whose every ProcessEvent is recorded", {}, true, false, ref},
+             {"function", "str", "the function, as Owner:Function where the name is ambiguous; omit to record every ProcessEvent on object"},
              {"duration", "dur", "how long, in seconds (at most 60)", {}, true},
              {"dry", "bool", "resolve and show the pointer that would be swapped; write nothing"}},
             Of<shape::CallsStart>, build::CallsStart,
-            "Swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk; restores it at "
-            "the end or on calls-read with stop. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with "
-            "parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. 256 rows "
-            "per recording.", true},
+            "With function: swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk. "
+            "Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with parameters; Blueprint-to-native "
+            "calls show only the object; direct C++ calls are not seen. Without function: points the object's vptr "
+            "at a private copy of its vtable and swaps ProcessEvent there (the table is never written): every "
+            "ProcessEvent on that one object, any function, with its parameters; Blueprint calls inside the VM and "
+            "direct C++ calls skip ProcessEvent and are not seen. Either is restored at the end or on calls-read "
+            "with stop. 256 rows per recording.", true},
         {"describe", "ue", ToolPack::Explore, "an object's name, class and reusable ref",
             {{"object", "ref", "the object: ref or \"0x...\"", {}, false, false, ref},
              {"slot", "int", "in place of object: an object-table slot (a weak pointer's), with serial"},

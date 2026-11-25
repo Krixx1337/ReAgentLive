@@ -65,6 +65,8 @@ enum class Taken {
 // Takes entry `index` of the table whose pointer is at `object + offset`:
 // finds or makes its copy and points the vptr at it.
 Taken Take(void* object, uint32_t offset, uint32_t index, Entry& out);
+// A refusal's reason, for an installer's reply.
+const char* TakenText(Taken taken);
 
 enum class Given {
     Restored,  // The last entry: the vptr holds the table again.

@@ -561,4 +561,19 @@ Result<CallsStarted> CallsStart(Client& client, const Ref& object, std::string_v
     memcpy(&started, response->data, sizeof(started));
     return started;
 }
+
+Result<ObjectCallsStarted> ObjectCallsStart(Client& client, const Ref& object, uint64_t milliseconds, bool dry) {
+    Request request{};
+    request.op = op::CallsStart;
+    request.flags = CallsObject | (dry ? CallsDry : 0);
+    SetRef(request, object);
+    request.args[1] = milliseconds;
+    auto response = client.Send(request);
+    if (!response) return std::unexpected(response.error());
+    if (response->status != Status::Ok) return std::unexpected(AgentError(*response));
+    ObjectCallsStarted started{};
+    if (response->length != sizeof(started)) return std::unexpected(BadResponse("invalid calls-start reply"));
+    memcpy(&started, response->data, sizeof(started));
+    return started;
+}
 }

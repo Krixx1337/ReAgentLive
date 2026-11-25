@@ -114,7 +114,8 @@ class first, then those declared on each native interface, marked
 
 ## Call recorder
 
-`calls-start` records a reflected function's calls; the core's
+`calls-start` records a reflected function's calls, or without `function`
+every `ProcessEvent` on one object; the core's
 `calls-read` returns them so far, with `stop` it ends the recording early.
 A host offers it by listing `CallsStart` and the core's two recorder ops;
 the start is a write the host approves. A virtual or native function
@@ -142,6 +143,33 @@ through a pointer: [native calls](native-objects.md#native-calls).
   that memory after the call.
 - The frame layout it reads is stock UE5, not described by an SDK (see
   `engine_layout.h`), and fault-guarded. Bounds: [limits](../protocol.md#limits).
+
+### On one object
+
+Without `function`, `object` (a ref or address, never a class) is the
+target: every function called on it through `ProcessEvent`, for "what is
+this actor being told to do".
+
+- **What is written:** the object's vptr, pointed at a private copy of its
+  table, and the `ProcessEvent` entry in the copy (the layout's
+  `ProcessEventSlot`); the game's table is never written. The copy is the
+  one `native-calls-start` uses for that object, so entries recorded both
+  ways coexist. At the end the entry and then the vptr go back by
+  compare-and-swap, only if they still hold ours.
+- **What is seen:** every `ProcessEvent` with this object as `self`: RPCs,
+  Blueprint events, delegates, C++ callers that go through
+  reflection, and `call`. Each row names the function (`function`,
+  `function_ref`) and decodes its parameters as above. A Blueprint calling
+  another function inside the VM, and direct C++ calls, skip
+  `ProcessEvent` and are not seen; neither are other instances of the class.
+- **Values** are the parameter block read after the call: inputs as passed,
+  outputs and the return value filled. A block larger than a row keeps its
+  start (`truncated`); one that cannot be read keeps the function only
+  (`copy_faulted`).
+- **Refused:** an object not in the object table, a `ProcessEvent` entry
+  that is not code in a loaded module or already recorded, a vptr outside a
+  module image (another owner's copy) and the vtable copy's other limits
+  ([native calls](native-objects.md#native-calls)).
 
 ## line-trace
 

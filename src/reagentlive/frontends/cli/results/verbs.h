@@ -262,7 +262,8 @@ inline const std::vector<Verb>& CoreVerbs() {
              View("cursor")},
             Of<shape::Calls>, build::CallsRead,
             "recorder names the verb that started it; its keys follow. calls-start: values in, out and return by "
-            "name, read after the call; objects named while they live; strings and containers print headers only. "
+            "name, read after the call; objects named while they live; strings and containers print headers only; "
+            "on one object (target set) each row also names its function, truncated marks a block cut to the row. "
             "native-calls-start: args (rcx, rdx, r8, r9) and xmm (low 8 bytes of xmm0..3) as hex, ret with its "
             "module, rva and ret_name from the labels files, bytes for a copy. A recording past its time is "
             "restored first. state replaced: something else swapped the pointer since; it was left alone and the "

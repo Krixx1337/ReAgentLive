@@ -198,5 +198,7 @@ Result<EachResult> Each(Client& client, const EachQuery& query,
 // calls on that object address (0: all); `dry` reports without writing.
 Result<CallsStarted> CallsStart(Client& client, const Ref& object, std::string_view function, uint64_t milliseconds,
                                 uint64_t filter, bool dry);
+// The object recorder: every ProcessEvent on `object` (a live instance).
+Result<ObjectCallsStarted> ObjectCallsStart(Client& client, const Ref& object, uint64_t milliseconds, bool dry);
 // Reading and stopping: Client::RecorderRead and RecorderStop (the core's).
 }

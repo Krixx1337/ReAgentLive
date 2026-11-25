@@ -113,21 +113,6 @@ const char* CellRefusal(uint64_t address) {
     return nullptr;
 }
 
-const char* TakenText(vtable::Taken taken) {
-    switch (taken) {
-    case vtable::Taken::Unreadable: return "the object's vptr cannot be read or written";
-    case vtable::Taken::Foreign: return "the vptr points outside a loaded module (another owner's copy)";
-    case vtable::Taken::NotCode: return "the entry is past the table's code run or not in its module's code";
-    case vtable::Taken::TooLong: return "the table's code run reaches the copy's cap";
-    case vtable::Taken::Busy: return "the entry is taken already (recorded, or another user of the copy)";
-    case vtable::Taken::Changed: return "the vptr changed while installing";
-    case vtable::Taken::Full: return "every vtable copy is in use or in its grace";
-    case vtable::Taken::NoMemory: return "no memory for the vtable copy";
-    case vtable::Taken::Ok: break;
-    }
-    return "refused";
-}
-
 Progress Refused(Response& response, const char* why, uint64_t detail = 0) {
     Refuse(response, Status::Refused, why, detail);
     return Progress::Done;
@@ -217,7 +202,7 @@ Progress NativeCallsStart(const Request& request, Response& response, bool, cons
         vtable::Entry entry{};
         if (viaVtable) {
             const auto taken = vtable::Take(reinterpret_cast<void*>(spec.address), spec.offset, spec.index, entry);
-            if (taken != vtable::Taken::Ok) return Refused(response, TakenText(taken));
+            if (taken != vtable::Taken::Ok) return Refused(response, vtable::TakenText(taken));
             cell = entry.cell;
             original = entry.original;
             started.cell = reinterpret_cast<uint64_t>(entry.cell);

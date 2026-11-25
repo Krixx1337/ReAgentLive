@@ -546,16 +546,23 @@ Parsed LineTrace(const Args& args, const ParseContext&) {
 
 // calls-start: record a function's calls for a while. An instance (a literal
 // ref) narrows the recording to it; the console decides, as it can tell a class.
+// Without function, every ProcessEvent on the object (a literal ref) instead.
 Parsed CallsStart(const Args& args, const ParseContext&) {
     Command command;
     Request& request = command.request;
-    if (!ObjectOrClass(args.Str("object"), command)) return Fail(ObjectOrClassWhy);
-    if (auto why = FunctionName(args, request); !why.empty()) return Fail(why);
+    const bool object = !args.Has("function");
+    if (object) {
+        if (!Object(args.Str("object"), request))
+            return Fail("object is a literal ref or \"0x...\" without function: the object whose ProcessEvent is recorded");
+    } else {
+        if (!ObjectOrClass(args.Str("object"), command)) return Fail(ObjectOrClassWhy);
+        if (auto why = FunctionName(args, request); !why.empty()) return Fail(why);
+    }
     const uint64_t milliseconds = args.Milliseconds("duration");
     if (milliseconds > MaxRecorderMilliseconds)
         return Fail("duration is at most " + std::to_string(MaxRecorderMilliseconds / 1000) + " s");
     request.args[1] = milliseconds;
-    request.flags = args.Has("dry") ? ue::CallsDry : 0;
+    request.flags = (args.Has("dry") ? ue::CallsDry : 0) | (object ? ue::CallsObject : 0);
     request.op = ue::op::CallsStart;
     command.kind = Kind::Calls;
     return command;

@@ -222,6 +222,21 @@ bool Unswap(const Entry& entry, void* replacement) {
 
 bool InCode(const void* address) { return CodeModule(address) != nullptr; }
 
+const char* TakenText(Taken taken) {
+    switch (taken) {
+    case Taken::Unreadable: return "the object's vptr cannot be read or written";
+    case Taken::Foreign: return "the vptr points outside a loaded module (another owner's copy)";
+    case Taken::NotCode: return "the entry is past the table's code run or not in its module's code";
+    case Taken::TooLong: return "the table's code run reaches the copy's cap";
+    case Taken::Busy: return "the entry is taken already (recorded, or another user of the copy)";
+    case Taken::Changed: return "the vptr changed while installing";
+    case Taken::Full: return "every vtable copy is in use or in its grace";
+    case Taken::NoMemory: return "no memory for the vtable copy";
+    case Taken::Ok: break;
+    }
+    return "refused";
+}
+
 bool InCopy(uintptr_t address) {
     for (Copy* copy : g_copies) {
         const auto start = reinterpret_cast<uintptr_t>(copy);

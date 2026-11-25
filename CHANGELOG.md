@@ -36,6 +36,12 @@ before 0.6.0 are one line each; git history has the detail.
   only in writable data; only calls through that pointer are seen
   ([native calls](docs/commands/native-objects.md#native-calls)). An
   approved write, like `calls-start`.
+- **Record everything one Unreal object is told:** `calls-start` without
+  `function` records every `ProcessEvent` on that object (RPCs, Blueprint
+  events, delegates, `call`), each row naming its function and decoding its
+  parameters; its result says `target` (`function` or `object`)
+  ([on one object](docs/commands/unreal-calls.md#on-one-object)).
+  Protocol change: rebuild and re-inject.
 
 ### Breaking
 

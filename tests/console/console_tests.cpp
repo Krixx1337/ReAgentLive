@@ -346,3 +346,25 @@ TEST_CASE("calls-read decodes a recorded block through the shared reader, as a c
     CHECK(values["Amount"] == 12.5);
     CHECK(values["Label"] != "Rifle");                // The caller's string memory is not read.
 }
+
+TEST_CASE("calls-read names each function of an object's recording and decodes its block") {
+    TheExtras();
+    auto& world = fake::TheWorld();
+    world.objectRecording = true;
+    const auto calls = Result(CallText("calls-read"));
+    world.objectRecording = false;
+    CHECK(calls["recorder"] == "calls-start");
+    CHECK_FALSE(calls.contains("function"));
+    CHECK(calls["truncated"] == 0);
+    REQUIRE(calls["rows"].size() == 1);
+    const auto& row = calls["rows"][0];
+    CHECK(row["function"].get<std::string>().find("TakeDamage") != std::string::npos);
+    CHECK(row.contains("function_ref"));
+    CHECK(row["object_name"] == "Thing_0");
+    CHECK(row["via"] == "event");
+    std::map<std::string, Json> values;
+    for (const auto& value : row["values"]) values[value["name"].get<std::string>()] = value["value"];
+    CHECK(values["Instigator"]["name"] == "Buddy");
+    CHECK(values["Bone"] == "head");
+    CHECK(values["Amount"] == 12.5);
+}

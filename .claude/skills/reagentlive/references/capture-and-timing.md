@@ -53,9 +53,15 @@
   It sees only calls through that pointer, never direct or devirtualised
   ones; zero rows can mean the game calls it directly
   (`docs/commands/native-objects.md#native-calls`).
-- Which recorder: reflected (Unreal) function: `calls-start`, decoded
-  parameters; virtual entry or function pointer: `native-calls-start`,
-  raw registers (decode them with the signature from the static tool).
+- Everything one Unreal object is told, any function:
+  `{"verb": "calls-start", "args": {"object": "0x1f2e3d4c50#123:4", "duration": 10}}`
+  (no `function`): every `ProcessEvent` on that object, each row named and
+  decoded. Blueprint calls inside the VM and direct C++ calls are missed.
+- Which recorder: one reflected (Unreal) function on any instance:
+  `calls-start` with `function`; which events one object receives:
+  `calls-start` without; virtual entry or function pointer:
+  `native-calls-start`, raw registers (decode them with the signature from
+  the static tool).
 
 ## Pitfalls
 

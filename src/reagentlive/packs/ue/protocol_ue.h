@@ -40,7 +40,7 @@ constexpr uint32_t Refs = Find + 14;
 constexpr uint32_t DescribeMany = Find + 15;
 constexpr uint32_t ExecEntries = Find + 16;
 constexpr uint32_t Entries = Find + 17;
-constexpr uint32_t CallsStart = Find + 18;
+constexpr uint32_t CallsStart = Find + 18;  // Find + 19: ObjectCallsKind, a recording kind (no op).
 constexpr uint32_t Enum = Find + 21;
 constexpr uint32_t GameThread = Find + 22;
 constexpr uint32_t Owner = Find + 23, Route = Find + 24;
@@ -684,6 +684,7 @@ struct GameThreadState {
 // (1..MaxRecorderMilliseconds), data = an optional object address (length 8):
 // only calls on that object; flags CallsDry
 // resolves and reports without writing. Reply: CallsStarted.
+// With CallsObject the target is the object instead (below): text empty, no data.
 // A CallsKind row's object is the call's context object, its tag CallsEvent
 // or CallsVm, its payload the function's parameters after the call: on the
 // ProcessEvent path (the frame's Node is the function) the frame's locals
@@ -691,7 +692,7 @@ struct GameThreadState {
 // bytecode, so the row has no payload (CallsVm). Status: target = the
 // UFunction, payload = its parameter block's size, counts = {events, vm}.
 constexpr uint32_t CallsKind = op::CallsStart;
-constexpr uint32_t CallsDry = 1;
+constexpr uint32_t CallsDry = 1, CallsObject = 2;
 constexpr uint32_t CallsEventCount = 0, CallsVmCount = 1;
 // UE5 frame and function layout the thunk reads (UObject::ProcessEvent,
 // FFrame's constructor and UFunction::Invoke, CL-516586): FFrame::Node and
@@ -702,6 +703,28 @@ struct CallsStarted {
     uint32_t slot, blockSize, returnOffset, returnSize;
 };
 constexpr uint8_t CallsEvent = 1, CallsVm = 2;
+
+// The object recorder: CallsStart with CallsObject on a live object (ref).
+// Its primary vtable is copied (core/vtable_copy.h; the table is never
+// written) and the ProcessEvent entry (the layout's processEventSlot) swapped
+// there for a thunk that forwards, then records: every ProcessEvent on that
+// one object, any function. Reply: ObjectCallsStarted (cell, count: 0 with CallsDry,
+// which writes nothing; cell is then the table's entry).
+// An ObjectCallsKind row's object is self, its payload an ObjectCall then a
+// copy of the parameter block after the call (the function's ParmsSize bytes,
+// at most MaxObjectCallParams); tag ObjectCallTruncated when the block is
+// larger, ObjectCallFaulted when it could not be read (no bytes then).
+// Status: target = the object, payload = MaxObjectCallParams, counts =
+// {truncated, faulted}. The kind is the op after CallsStart, which is no op.
+constexpr uint32_t ObjectCallsKind = op::CallsStart + 1;
+constexpr uint32_t ObjectTruncatedCount = 0, ObjectFaultedCount = 1;
+constexpr uint8_t ObjectCallTruncated = 1, ObjectCallFaulted = 2;
+struct ObjectCallsStarted {
+    uint64_t object, table, cell, original, thunk;
+    uint32_t slot, entry, count, reserved;
+};
+struct ObjectCall { uint64_t function; };
+constexpr uint32_t MaxObjectCallParams = MaxRecorderPayload - sizeof(ObjectCall);
 
 // Owner: data = 1..MaxOwnerAddresses addresses (uint64 each). One object-table
 // scan (budgeted per tick, like Census) finds, per address, the object whose
@@ -793,6 +816,7 @@ constexpr uint32_t LayoutPart = static_cast<uint32_t>(sizeof(FindEntry) * 5 + si
     sizeof(FunctionEntry) * 3 + sizeof(Ref) * 53 + sizeof(ArrayHeader) * 59 + sizeof(FunctionNameEntry) * 61 +
     sizeof(CensusEntry) * 67 + sizeof(ScriptEntry) * 71 + sizeof(RefsEntry) * 73 + sizeof(SparseHeader) * 79 +
     sizeof(ExecEntry) * 83 + sizeof(CallsStarted) * 89 + CallsKind * 97 +
+    sizeof(ObjectCallsStarted) * 157 + sizeof(ObjectCall) * 163 + ObjectCallsKind * 167 +
     sizeof(EnumEntry) * 113 + sizeof(GameThreadState) * 127 + sizeof(OwnerEntry) * 131 + sizeof(RouteSpec) * 137 +
     sizeof(RouteHeader) * 139 + sizeof(RoutePath) * 149 + sizeof(RouteHop) * 151 +
     op::Fields * 101 + MaxArrayElementBytes * 7 + MaxClassName * 13);

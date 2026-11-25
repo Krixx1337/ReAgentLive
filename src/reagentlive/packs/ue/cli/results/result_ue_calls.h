@@ -194,22 +194,30 @@ struct Trace {
     }
 };
 // calls-start: the recording armed (or with `dry`, what would be swapped).
+// target function: the function's native pointer; object: the object's
+// ProcessEvent entry in its private vtable copy (exec: ProcessEvent).
 struct CallsStart {
-    std::string function;
+    std::string target;                 // function|object
+    std::optional<std::string> function;
     uint32_t slot = 0;
     Addr exec, thunk;
-    uint32_t blockSize = 0;
+    std::optional<uint32_t> blockSize;
     std::optional<Addr> objectAddr;
+    std::optional<Addr> table;          // object: the object's own table.
+    std::optional<uint32_t> entry;      // object: ProcessEvent's index in it.
     uint64_t durationMs = 0;
     bool dry = false;
     std::optional<std::string> note;    // What the recording will not see, when that is known up front.
     template<class V> static void Describe(V& v) {
+        v("target", &CallsStart::target, "function|object");
         v("function", &CallsStart::function);
         v("slot", &CallsStart::slot);
         v("exec", &CallsStart::exec);
         v("thunk", &CallsStart::thunk);
         v("block_size", &CallsStart::blockSize);
         v("object_addr", &CallsStart::objectAddr);
+        v("table", &CallsStart::table);
+        v("entry", &CallsStart::entry);
         v("duration_ms", &CallsStart::durationMs);
         v("dry", &CallsStart::dry);
         v("note", &CallsStart::note);

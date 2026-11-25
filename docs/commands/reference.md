@@ -655,9 +655,9 @@ Pack `modify`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
-Result: `{recorder: calls-start\|native-calls-start, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, dropped: u64, function?: str, events?: u64, vm?: u64, target?: addr, original?: addr, original_module?: str, original_rva?: hex, copied?: u64, faulted?: u64, rows: [{sequence: u64, at_ms: f64, thread: u32, ref?: ref, object_name?: str, object_class?: str, via?: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}], args?: [hex], xmm?: [hex], ret?: addr, ret_module?: str, ret_rva?: hex, ret_name?: str, bytes?: bytes, copy_faulted?: bool}], next_cursor?: u64, unnamed?: u32}`
+Result: `{recorder: calls-start\|native-calls-start, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, dropped: u64, function?: str, events?: u64, vm?: u64, target?: addr, original?: addr, original_module?: str, original_rva?: hex, copied?: u64, faulted?: u64, truncated?: u64, rows: [{sequence: u64, at_ms: f64, thread: u32, ref?: ref, object_name?: str, object_class?: str, via?: event\|vm, function?: str, function_ref?: ref, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}], truncated?: bool, args?: [hex], xmm?: [hex], ret?: addr, ret_module?: str, ret_rva?: hex, ret_name?: str, bytes?: bytes, copy_faulted?: bool}], next_cursor?: u64, unnamed?: u32}`
 
-recorder names the verb that started it; its keys follow. calls-start: values in, out and return by name, read after the call; objects named while they live; strings and containers print headers only. native-calls-start: args (rcx, rdx, r8, r9) and xmm (low 8 bytes of xmm0..3) as hex, ret with its module, rva and ret_name from the labels files, bytes for a copy. A recording past its time is restored first. state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
+recorder names the verb that started it; its keys follow. calls-start: values in, out and return by name, read after the call; objects named while they live; strings and containers print headers only; on one object (target set) each row also names its function, truncated marks a block cut to the row. native-calls-start: args (rcx, rdx, r8, r9) and xmm (low 8 bytes of xmm0..3) as hex, ret with its module, rva and ret_name from the labels files, bytes for a copy. A recording past its time is restored first. state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
 
 ```json
 {"args":{},"verb":"calls-read"}
@@ -1062,23 +1062,23 @@ Runs on the game thread; changes no state. Two points need ignore (the world com
 
 ### calls-start
 
-record a reflected function's calls, with their arguments, for a while.
+record a reflected function's calls, or every ProcessEvent on one object, with their arguments, for a while.
 
 Pack `modify`; **writes or calls**.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `object` | `str` | yes |  | whose function: an instance (ref or "0x...": records only its calls) or a class (ref, "0x..." or name: every instance) |
-| `function` | `str` | yes |  | the function, as Owner:Function where the name is ambiguous |
+| `object` | `str` | yes |  | with function, whose function: an instance (ref or "0x...": records only its calls) or a class (ref, "0x..." or name: every instance); without, the instance (ref or "0x...") whose every ProcessEvent is recorded |
+| `function` | `str` |  |  | the function, as Owner:Function where the name is ambiguous; omit to record every ProcessEvent on object |
 | `duration` | `dur` | yes |  | how long, in seconds (at most 60) |
 | `dry` | `bool` |  |  | resolve and show the pointer that would be swapped; write nothing |
 
-Result: `{function: str, slot: u32, exec: addr, thunk: addr, block_size: u32, object_addr?: addr, duration_ms: u64, dry: bool, note?: str}`
+Result: `{target: function\|object, function?: str, slot: u32, exec: addr, thunk: addr, block_size?: u32, object_addr?: addr, table?: addr, entry?: u32, duration_ms: u64, dry: bool, note?: str}`
 
-Swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk; restores it at the end or on calls-read with stop. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. 256 rows per recording.
+With function: swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. Without function: points the object's vptr at a private copy of its vtable and swaps ProcessEvent there (the table is never written): every ProcessEvent on that one object, any function, with its parameters; Blueprint calls inside the VM and direct C++ calls skip ProcessEvent and are not seen. Either is restored at the end or on calls-read with stop. 256 rows per recording.
 
 ```json
-{"args":{"duration":5,"function":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"calls-start"}
+{"args":{"duration":5,"object":"0x1f2e3d4c50#123:4"},"verb":"calls-start"}
 ```
 
 ### describe

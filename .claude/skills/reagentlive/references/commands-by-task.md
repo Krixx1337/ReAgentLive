@@ -39,7 +39,7 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 | What a Blueprint function reads and calls | `script` |
 | Which Blueprints name a tag or name | `name-refs` |
 | What a line from A to B hits | `line-trace` |
-| What the target passed to a function | `calls-start` (reflected) or `native-calls-start` (a vtable entry or function pointer), then `calls-read` (`stop` ends it; approval: SKILL.md) |
+| What the target passed to a function | `calls-start` (reflected; without `function`: every `ProcessEvent` on one object) or `native-calls-start` (a vtable entry or function pointer), then `calls-read` (`stop` ends it; approval: SKILL.md) |
 | Get the game-thread tick | `game-thread` (approval for `on`) |
 
 ## Memory (`docs/commands/memory.md`, `docs/commands/native-objects.md`)

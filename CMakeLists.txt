@@ -305,7 +305,8 @@ if(REAGENTLIVE_BUILD_TESTS)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
         tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp tests/loopback/recorder_tests.cpp
-        tests/loopback/vtable_copy_tests.cpp tests/loopback/native_calls_tests.cpp)
+        tests/loopback/vtable_copy_tests.cpp tests/loopback/native_calls_tests.cpp tests/loopback/object_calls_tests.cpp
+        src/reagentlive/packs/ue/agent_ue_object_calls.cpp)
     target_link_libraries(reagentlive-loopback-tests PRIVATE reagentlive-core reagentlive-client reagentlive-ue-client reagentlive-cli reagentlive-doctest)
     # The real console against a fake engine: an in-process agent whose pack
     # ops answer from a synthetic world (tests/console/fake_engine.h).

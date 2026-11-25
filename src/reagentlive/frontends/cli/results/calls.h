@@ -54,10 +54,14 @@ struct CallsRow {
     uint64_t sequence = 0;
     double atMs = 0;                    // Since the recording began.
     uint32_t thread = 0;
-    // calls-start (a pack's): the calling object and its parameters.
+    // calls-start (a pack's): the calling object and its parameters; on an
+    // object's recording also the function called and whether its block was cut.
     std::optional<RefId> ref;
     std::optional<std::string> objectName, objectClass, via;
+    std::optional<std::string> function;
+    std::optional<RefId> functionRef;
     std::optional<std::vector<CallsValue>> values;
+    std::optional<bool> truncated;
     // native-calls-start: rcx, rdx, r8, r9; xmm0..3's low 8 bytes; where the
     // call returns (module, rva, a labels name); the guarded copy.
     std::optional<std::vector<HexNum>> args, xmm;
@@ -74,7 +78,10 @@ struct CallsRow {
         v("object_name", &CallsRow::objectName);
         v("object_class", &CallsRow::objectClass);
         v("via", &CallsRow::via, "event|vm");
+        v("function", &CallsRow::function);
+        v("function_ref", &CallsRow::functionRef);
         v("values", &CallsRow::values);
+        v("truncated", &CallsRow::truncated);
         v("args", &CallsRow::args);
         v("xmm", &CallsRow::xmm);
         v("ret", &CallsRow::ret);
@@ -89,11 +96,13 @@ struct Calls {
     std::string recorder, state;        // recorder: the verb that started it.
     uint32_t slot = 0;
     uint64_t calls = 0, dropped = 0;
-    std::optional<std::string> function;    // calls-start: Owner:Name.
-    std::optional<uint64_t> events, vm;     // calls-start: by path.
-    std::optional<Addr> target, original;   // native-calls-start: the object or cell, and the code swapped.
+    std::optional<std::string> function;    // calls-start on a function: Owner:Name.
+    std::optional<uint64_t> events, vm;     // calls-start on a function: by path.
+    std::optional<Addr> target, original;   // native-calls-start: the object or cell, and the code swapped;
+                                            // calls-start on an object: the object.
     Location originalWhere;
-    std::optional<uint64_t> copied, faulted; // native-calls-start with copy.
+    std::optional<uint64_t> copied, faulted; // native-calls-start with copy; faulted: calls-start on an object too.
+    std::optional<uint64_t> truncated;      // calls-start on an object: blocks cut to the row's size.
     std::vector<CallsRow> rows;
     std::optional<uint64_t> nextCursor;
     std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
@@ -111,6 +120,7 @@ struct Calls {
         v.flat("original_", &Calls::originalWhere);
         v("copied", &Calls::copied);
         v("faulted", &Calls::faulted);
+        v("truncated", &Calls::truncated);
         v("rows", &Calls::rows);
         v("next_cursor", &Calls::nextCursor);
         v("unnamed", &Calls::unnamed);

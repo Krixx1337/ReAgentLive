@@ -95,6 +95,15 @@ lost. Behaviour: [Unreal pack](../commands/unreal.md). Part of
   and go); a thread of its own (the pass fits the existing scan budget, and
   a pack thread would need a host opt-in); a name-to-class index built by
   one scan (thousands of pages for a large game).
+- **One object's `ProcessEvent` through a private vtable copy.** "What is
+  this object being told to do" is one object's events, so `calls-start`
+  without a function points that object at the core's vtable copy
+  (`core/vtable_copy.h`) and swaps `ProcessEvent` there: only that object
+  pays, nothing shared is written, and other owners of the game's table are
+  untouched. Rejected: the shared `ProcessEvent` entry or code (read-only
+  data, every object's calls on the engine's hottest path, a clash with
+  other hooks); swapping every `UFunction::Func` of the class (many
+  pointers for one question, and Blueprint functions share one entry).
 - **Known debt: the interface stub pattern decodes bytes in the agent.**
   `func` on an interface function matches one stub shape
   (`StubVtableSlot`) inside the agent, against the rule that the agent reads
