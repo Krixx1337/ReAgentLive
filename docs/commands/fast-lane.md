@@ -128,7 +128,9 @@ plus unlisted code in pieces.
   `[rip + disp]` (globals) is never a member; stack bases are left out
   unless `bases` names them. `access` is as `disp-scan`'s (`write`, `read`
   or `any`), default `any`; `read` looks for the code that consumes a block
-  instead of the code that writes it, and drops struct copies.
+  instead of the code that writes it, and drops struct copies. The default
+  differs on purpose: `touches` scans a few functions, where every use
+  matters; `disp-scan` scans the whole image, where `write` cuts the noise.
 - **rbp is not only a frame pointer.** Optimised code uses it as a plain
   register, struct pointers included: in one sweep of a large game image,
   36% of the byte writes to one field went through rbp. For "who writes
