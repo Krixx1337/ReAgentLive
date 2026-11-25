@@ -26,8 +26,13 @@ before 0.6.0 are one line each; git history has the detail.
 
 ## Unreleased
 
-Smaller, more uniform tool surface: about a third fewer MCP tool-list
-tokens, one way to page, one count, one time unit.
+## 0.7.0
+
+ReAgentLive lives in your project: a submodule your team clones ready to
+use (MCP server, skill, notes and approval mode committed with it), with a
+shared dependency cache and CMake presets; and a smaller, more uniform tool
+surface: about a third fewer MCP tool-list tokens, one way to page, one
+count, one time unit.
 
 ### New
 
