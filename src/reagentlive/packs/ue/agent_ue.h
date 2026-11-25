@@ -88,18 +88,10 @@ Progress ExecEntries(const Request&, Response&, bool first, const Host&);
 // shortest reflected references from a source to an object.
 Progress Owner(const Request&, Response&, bool first, const Host&);
 Progress Route(const Request&, Response&, bool first, const Host&);
-// The call recorder (protocol_ue.h): opt-in by listing these ops. Each
-// recording swaps one UFunction's native pointer (heap data) for a fixed
-// thunk and puts it back; nothing in code, vtables or imports is written.
-// The slots are the core's (core/recorder.h): read and stop serve any kind.
+// The call recorder (protocol_ue.h): opt-in by listing this op with the
+// core's op::RecorderRead and op::RecorderStop (agent.h), which read, stop
+// and restore it. Each recording swaps one UFunction's native pointer (heap
+// data) for a fixed thunk and puts it back; nothing in code, vtables or
+// imports is written.
 Progress CallsStart(const Request&, Response&, bool first, const Host&);
-Progress CallsRead(const Request&, Response&, bool first, const Host&);
-Progress CallsStop(const Request&, Response&, bool first, const Host&);
-// For a host that lists them: restore recordings past their time (game
-// thread, once per tick is plenty), and restore all before the host stops.
-// A pointer replaced by something else since is left alone; its thunk keeps
-// forwarding, so the host's image must stay loaded (it never unloads).
-// Both act on every core recorder slot, whatever its kind.
-void SweepCallRecordings();
-void StopCallRecordings();
 }

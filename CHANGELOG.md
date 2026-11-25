@@ -26,12 +26,30 @@ before 0.6.0 are one line each; git history has the detail.
 
 ## Unreleased
 
+### New
+
+- **Record calls through a vtable entry or a function pointer:**
+  `native-calls-start` keeps each call's argument registers, the low
+  halves of xmm0..3, where it returns (named from your labels) and
+  optionally up to 64 bytes at one register; read it with `calls-read`. A
+  vtable entry is swapped in a private copy of one object's table, a cell
+  only in writable data; only calls through that pointer are seen
+  ([native calls](docs/commands/native-objects.md#native-calls)). An
+  approved write, like `calls-start`.
+
 ### Breaking
 
-- **The call recorder runs on core recorder slots**, shared by every
-  kind of recording to come; `calls-start` and `calls-read` behave as
-  before and hosts list the same ops. Rebuild the console with the agent.
-  Protocol change: rebuild and re-inject.
+- **`calls-read` is a core verb** that reads every recorder; its result
+  says which (`recorder`), `ref` and `via` are present only on
+  `calls-start` rows. Hosts list the core's `op::RecorderRead` and
+  `op::RecorderStop` (`reagentlive::RecorderRead`, `RecorderStop`) in place
+  of `ue::op::CallsRead` and `CallsStop`, add `op::NativeCallsStart`
+  (`reagentlive::NativeCallsStart`) to offer native calls, drop
+  `ue::SweepCallRecordings()` (`Tick` restores recordings past their time)
+  and call `reagentlive::StopRecorders()` in place of
+  `ue::StopCallRecordings()` ([hosting](docs/hosting.md)). The agent now
+  assembles one MASM file: the host's toolchain needs the x64 assembler
+  (part of the MSVC tools). Protocol change: rebuild and re-inject.
 
 ## 0.7.0
 

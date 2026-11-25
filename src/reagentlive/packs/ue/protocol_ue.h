@@ -40,7 +40,7 @@ constexpr uint32_t Refs = Find + 14;
 constexpr uint32_t DescribeMany = Find + 15;
 constexpr uint32_t ExecEntries = Find + 16;
 constexpr uint32_t Entries = Find + 17;
-constexpr uint32_t CallsStart = Find + 18, CallsRead = Find + 19, CallsStop = Find + 20;
+constexpr uint32_t CallsStart = Find + 18;
 constexpr uint32_t Enum = Find + 21;
 constexpr uint32_t GameThread = Find + 22;
 constexpr uint32_t Owner = Find + 23, Route = Find + 24;
@@ -675,7 +675,8 @@ struct GameThreadState {
 };
 
 // The call recorder, on the core's recorder slots (the recorder section of
-// core/protocol.h). A host opts in by listing these ops. CallsStart swaps
+// core/protocol.h). A host opts in by listing CallsStart with the core's
+// op::RecorderRead and op::RecorderStop, which read and stop it. CallsStart swaps
 // one UFunction's native pointer (UFunction::Func, a heap field: no code,
 // vtable or import is written) for its slot's thunk.
 // CallsStart: object ref (an instance, a default object or a class), text =
@@ -683,7 +684,6 @@ struct GameThreadState {
 // (1..MaxRecorderMilliseconds), data = an optional object address (length 8):
 // only calls on that object; flags CallsDry
 // resolves and reports without writing. Reply: CallsStarted.
-// CallsRead and CallsStop: the core's read and stop (any kind).
 // A CallsKind row's object is the call's context object, its tag CallsEvent
 // or CallsVm, its payload the function's parameters after the call: on the
 // ProcessEvent path (the frame's Node is the function) the frame's locals

@@ -18,7 +18,7 @@
 namespace reagentlive::cli {
 enum class Kind { Remote, TypedCall, Release, Dump, Snap, Each, Help, Status, Quit, Pin, Watch, Batch, Get,
     Trial, TimedWrites, Script, NameRefs, Peek, Entries, LabelsExport, Sig, Disasm, Xrefs, Vtable, Touches, DispScan, LabelsSign, LabelsPort, LabelsCheck, MemberName, Usage, Layout,
-    MemSnap, MemDiff, LineTrace, Calls, Rows, Enum, GameThread, AssetsExport, Run, Owner, Route };
+    MemSnap, MemDiff, LineTrace, Calls, CallsRead, NativeCalls, Rows, Enum, GameThread, AssetsExport, Run, Owner, Route };
 struct Verb;
 struct Command {
     Kind kind = Kind::Remote;
@@ -145,11 +145,14 @@ struct Command {
     uint8_t traceChannel = 0;
     bool traceSimple = false;
     Ref traceIgnore{};
-    // calls-start, calls-read: `target` is "start", "read" or "stop" (calls-read
-    // with `stop`); the recording's slot (RecorderLatest: the last started) and
-    // calls-read's cursor; calls-start's request carries the object, the
-    // function and the milliseconds (args[1]); the console adds an instance filter.
+    // calls-read: `target` is "read" or "stop" (with `stop`), the recording's
+    // slot (RecorderLatest: the last started) and the cursor. calls-start (a
+    // pack's): its request carries the object, the function and the
+    // milliseconds (args[1]); the console adds an instance filter.
+    // native-calls-start: the spec; request.address is the object or cell
+    // (copied into the spec once a chain is followed).
     uint64_t callsSlot = 0, callsAfter = 0;
+    NativeCallsSpec nativeCalls{};
     // script decode: the bytecode as statements; entry: from this offset
     // to the event's end (an uber-graph entry); to: statements before this
     // offset only (with entry: from entry to it, past returns).

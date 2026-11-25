@@ -244,7 +244,7 @@ pack, sized so a normal question stays inside the default ones:
 | `explore` (always on) | find objects and read their state and data | the table and session verbs, finds, field and data reads, names, function metadata, memory reads |
 | `native` | read code and keep names across builds | disassembly, references, signatures, memory search, labels, layout files |
 | `observe` | watch behaviour over time without changing it | captures, census, memory snapshots, `line-trace`, `call-pure`, `call-each` |
-| `modify` | change the target or call into it | `write` (and `clear`), `timed-writes` (listing), `call`, `release`, the call recorder, `game-thread` |
+| `modify` | change the target or call into it | `write` (and `clear`), `timed-writes` (listing), `call`, `release`, the call recorders, `game-thread` |
 
 Membership is each row's `pack`, a one-line change.
 

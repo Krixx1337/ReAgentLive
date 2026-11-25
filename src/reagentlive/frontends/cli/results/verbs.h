@@ -11,6 +11,7 @@
 #include "reagentlive/frontends/cli/code/code_json.h"
 #include "reagentlive/frontends/cli/code/label_sign.h"
 #include "reagentlive/frontends/cli/code/signature_json.h"
+#include "reagentlive/frontends/cli/results/calls.h"
 #include "reagentlive/frontends/cli/results/mem_json.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/frontends/cli/results/usage_report.h"
@@ -236,6 +237,36 @@ inline const std::vector<Verb>& CoreVerbs() {
             Of<shape::Vtable>, build::Vtable,
             "addr is the object, or the table itself when its first qword points into code. view.limit: 1..512 "
             "slots. rtti_error when the image has no locator."},
+        {"native-calls-start", "core", ToolPack::Modify, "record calls through one vtable entry or code pointer, with their argument registers, for a while",
+            {{"addr", "chain", "the object (with vtable), or the cell holding the code pointer", {}, true},
+             {"vtable", "obj", "record the object's vtable entry, swapped in a private copy of its table", {}, false, false, {},
+              {{"entry", "int", "the entry index (0..1023)", {}, true},
+               {"offset", "int", "the vptr's offset in the object (a multiple of 8)", "0"}}},
+             {"duration", "dur", "how long, in seconds (at most 60)", {}, true},
+             {"this", "addr", "only calls whose rcx (this) is this object"},
+             {"copy", "obj", "also copy bytes at an argument register on each call (guarded)", {}, false, false, {},
+              {{"reg", "rcx|rdx|r8|r9", "the register holding the address", {}, true},
+               {"len", "int", "bytes (1..64)", "64"}}},
+             {"dry", "bool", "check and show the pointer that would be swapped; write nothing"}},
+            Of<shape::NativeCallsStart>, build::NativeCallsStart,
+            "Swaps one code pointer in writable data for a forwarding thunk; restores it at the end or on calls-read "
+            "with stop. vtable: the object's vptr is pointed at a private copy of its table and the entry is "
+            "swapped there; the table itself is never written. Without vtable, addr is a cell (a field or a global "
+            "in a writable section) that holds a pointer into a module's code; read-only data, code and the import "
+            "table are refused. Only calls through that pointer are seen: direct and devirtualised calls are not. "
+            "Rows keep rcx, rdx, r8, r9, the low 8 bytes of xmm0..3 and the return address; no return value. "
+            "256 rows per recording.", true},
+        {"calls-read", "core", ToolPack::Modify, "a recording's calls so far, any recorder; stop ends it first",
+            {{"slot", "int", "the recording, 0..7 (default: the last started)"},
+             {"stop", "bool", "end the recording now (restores the pointer) and return its calls"},
+             View("cursor")},
+            Of<shape::Calls>, build::CallsRead,
+            "recorder names the verb that started it; its keys follow. calls-start: values in, out and return by "
+            "name, read after the call; objects named while they live; strings and containers print headers only. "
+            "native-calls-start: args (rcx, rdx, r8, r9) and xmm (low 8 bytes of xmm0..3) as hex, ret with its "
+            "module, rva and ret_name from the labels files, bytes for a copy. A recording past its time is "
+            "restored first. state replaced: something else swapped the pointer since; it was left alone and the "
+            "thunk keeps forwarding."},
     };
     return verbs;
 }

@@ -480,6 +480,8 @@ bool Execute(Session& session, const InputLine& input, bool inBatch) {
     case Kind::LabelsPort: RunLabelsPort(session, *parsed, jsonCommand); return false;
     case Kind::LabelsCheck: RunLabelsCheck(session, *parsed, jsonCommand); return false;
     case Kind::Vtable: RunVtable(session, *parsed, jsonCommand); return false;
+    case Kind::CallsRead: RunCallsRead(session, *parsed, jsonCommand); return false;
+    case Kind::NativeCalls: RunNativeCalls(session, *parsed, jsonCommand); return false;
     case Kind::MemSnap: RunMemSnap(session, *parsed, jsonCommand); return false;
     case Kind::MemDiff: RunMemDiff(session, *parsed, jsonCommand); return false;
     default: break;

@@ -218,11 +218,13 @@ public:
     Result<WatchInfo> WatchStatus();
     // The roots the host offers to follow (empty: none).
     Result<std::vector<std::string>> WatchRoots();
-    // A recording through the host's recorder read or stop op `op`: all
-    // pages of the rows after sequence `after` (slot RecorderLatest: the
-    // last started), or the stop's status.
-    Result<RecorderRows> RecorderRead(uint32_t op, uint64_t slot = RecorderLatest, uint64_t after = 0);
-    Result<RecorderStatus> RecorderStop(uint32_t op, uint64_t slot = RecorderLatest);
+    // A pointer-swap recording of any kind (op::RecorderRead): all pages of
+    // the rows after sequence `after` (slot RecorderLatest: the last
+    // started); or stopped (op::RecorderStop), its status.
+    Result<RecorderRows> RecorderRead(uint64_t slot = RecorderLatest, uint64_t after = 0);
+    Result<RecorderStatus> RecorderStop(uint64_t slot = RecorderLatest);
+    // A native call recording (op::NativeCallsStart; protocol.h).
+    Result<NativeCallsStarted> NativeCallsStart(const NativeCallsSpec& spec);
     // A loaded image's bytes, up to ImageWindowBytes in one request, read
     // from the image window the agent fills (on its worker when the host
     // allows). For code and constants: an image's data pages may be torn.

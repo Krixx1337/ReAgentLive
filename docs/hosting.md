@@ -221,9 +221,12 @@ Ops and numbers: [protocol](protocol.md#ops).
   Where `Tick` runs is the host's decision and its responsibility. A host
   that sets `Host::backgroundSearch` lets search jobs, the console's
   internal scans and image copies run on one agent-owned worker thread;
-  without it they run in slices of each host tick. The two opt-in swaps are
-  the call recorder and `reagentlive::ue-draw`; neither writes code or the
-  game's tables.
+  without it they run in slices of each host tick. The opt-in swaps are
+  the call recorders (the core's `NativeCallsStart`, the Unreal pack's
+  `CallsStart`, both read and stopped through `RecorderRead` and
+  `RecorderStop`) and `reagentlive::ue-draw`; none writes code, read-only
+  data or the game's tables. `Tick` restores recordings past their time;
+  call `StopRecorders()` before the host stops.
 - **Held requests** make the agent spin briefly on the host's thread for the
   client's next request and run it in the same tick, bounded by the host's
   budgets ([protocol](protocol.md#exchange)).

@@ -32,7 +32,7 @@ constexpr uint32_t CoreFirst = 1, PackFirst = 256, GameFirst = 4096;
 constexpr uint32_t PackSlotSize = 256, PackSlots = (GameFirst - PackFirst) / PackSlotSize;
 constexpr uint32_t PackSlot(uint32_t slot) { return PackFirst + slot * PackSlotSize; }
 constexpr uint32_t Read = 1, Write = 2, Modules = 3, ReadBatch = 4, Search = 5, Pin = 6, Watch = 7, Trial = 8, Xrefs = 9, Region = 10,
-    ImageCopy = 11;
+    ImageCopy = 11, RecorderRead = 12, RecorderStop = 13, NativeCallsStart = 14;
 }
 
 // Small and generic on purpose. Pack-specific detail goes in Response::reason
@@ -336,12 +336,13 @@ constexpr bool TrialSpecValid(const TrialSpec& spec) {
 // forwards it; the swap and the restore are compare-and-swaps, and a pointer
 // something else has replaced since is left alone (Replaced: the thunk then
 // forwards for good and the slot is never reused). Each kind of recording
-// has its own start op and row payload; reading and stopping are shared.
-// Read: args[0] = slot (RecorderLatest: the last started), args[1] = the
-// last sequence already read. Reply: RecorderStatus, then RecorderRow
+// has its own start op and row payload; reading and stopping are the core's
+// (op::RecorderRead, op::RecorderStop), for every kind.
+// RecorderRead: args[0] = slot (RecorderLatest: the last started), args[1] =
+// the last sequence already read. Reply: RecorderStatus, then RecorderRow
 // headers each followed by `size` payload bytes, oldest first; detail = the
 // last sequence sent. A recording past its time is restored first.
-// Stop: args[0] = slot (or RecorderLatest); restores; reply RecorderStatus.
+// RecorderStop: args[0] = slot (or RecorderLatest); restores; reply RecorderStatus.
 constexpr uint32_t MaxRecorderSlots = 8, MaxRecorderRows = 256, MaxRecorderPayload = 1024;
 constexpr uint64_t MaxRecorderMilliseconds = 60000;
 constexpr uint64_t RecorderLatest = MaxRecorderSlots;
@@ -381,15 +382,75 @@ struct RecorderStatus {
     uint32_t counts[2];
 };
 // One call. object: the call's first argument (`this` for a method); tag:
-// the kind's own; size: payload bytes after the header.
+// the kind's own; size: payload bytes after the header. microseconds: since
+// the start, in microseconds on the wire whatever clock the thunk read (a
+// thunk that calls nothing stores time-stamp counter ticks, which the read
+// converts against the performance counter).
 struct RecorderRow {
     uint64_t sequence, object;
-    int64_t microseconds;           // Since the start.
+    int64_t microseconds;
     uint32_t thread, size;
     uint8_t tag, reserved[7];
 };
 // A full row fits a reply beside the status, so every row can be read.
 static_assert(sizeof(RecorderStatus) + sizeof(RecorderRow) + MaxRecorderPayload <= MaxRead);
+
+// The native call recorder (core/agent_native_calls.cpp): one code pointer,
+// a vtable entry or a cell, swapped for a generic thunk that saves the
+// argument registers, records them and jumps to the original with the
+// caller's stack and registers as they were. Only calls through that
+// pointer are seen (virtual and pointer dispatch); direct or devirtualised
+// calls never read it. The return value is not recorded.
+// NativeCallsStart: data = NativeCallsSpec (length = sizeof). Reply:
+// NativeCallsStarted. Targets:
+// - Vtable: `address` is the object, its vptr at `offset`, entry `index`;
+//   swapped in the object's private vtable copy (core/vtable_copy.h), never
+//   in the table itself.
+// - Cell: `address` is an 8-byte aligned cell holding a pointer into an
+//   executable section of a loaded module: in writable memory outside an
+//   image, or in an image section that is writable (not .rdata, not the
+//   import address table). Read-only, executable or guard pages are refused;
+//   no protection is ever changed.
+// filter: 0, or only calls whose rcx is this. copyRegister/copyBytes: a
+// guarded copy of up to MaxNativeCopy bytes at that argument register.
+// NativeCallsDry resolves and reports without writing.
+// A NativeCallsKind row: object = rcx, payload a NativeCall, then the copy
+// when tag has NativeCopied. Status: target = `address`, payload = the
+// usual row size, counts = {copied, copy faulted}.
+enum class NativeTarget : uint32_t { Vtable = 1, Cell = 2 };
+enum class NativeRegister : uint32_t { None, Rcx, Rdx, R8, R9 };
+constexpr uint32_t NativeCallsKind = op::NativeCallsStart;
+constexpr uint32_t NativeCallsDry = 1;
+constexpr uint32_t MaxNativeCopy = 64, MaxNativeIndex = 1024, MaxNativeOffset = 0x100000;
+constexpr uint8_t NativeCopied = 1;
+constexpr uint32_t NativeCopiedCount = 0, NativeFaultedCount = 1;
+struct NativeCallsSpec {
+    uint64_t address, filter;
+    uint32_t target, index, offset, milliseconds;
+    uint32_t copyRegister, copyBytes, flags, reserved;
+};
+// cell: the pointer swapped (vtable: the entry in the copy; with dry, the
+// table's own entry); table: vtable only, the object's own table; count:
+// vtable only, the entries the copy can swap.
+struct NativeCallsStarted {
+    uint64_t cell, original, thunk, table;
+    uint32_t slot, count;
+};
+// rcx, rdx, r8, r9; the low 8 bytes of xmm0..xmm3; where the call returns.
+struct NativeCall {
+    uint64_t args[4], xmm[4], returnAddress;
+};
+static_assert(sizeof(NativeCall) + MaxNativeCopy <= MaxRecorderPayload);
+constexpr bool NativeCallsSpecValid(const NativeCallsSpec& spec) {
+    const bool vtable = spec.target == static_cast<uint32_t>(NativeTarget::Vtable);
+    const bool cell = spec.target == static_cast<uint32_t>(NativeTarget::Cell);
+    const bool copy = spec.copyRegister != static_cast<uint32_t>(NativeRegister::None);
+    return spec.address && (vtable || cell) && spec.milliseconds && spec.milliseconds <= MaxRecorderMilliseconds &&
+        spec.copyRegister <= static_cast<uint32_t>(NativeRegister::R9) && copy == (spec.copyBytes != 0) &&
+        spec.copyBytes <= MaxNativeCopy && !(spec.flags & ~NativeCallsDry) && !spec.reserved &&
+        (vtable ? spec.index < MaxNativeIndex && spec.offset < MaxNativeOffset && !(spec.offset & 7) :
+                  !spec.index && !spec.offset && !(spec.address & 7));
+}
 
 // Read: address, length. Write: address, length, data. Modules: length = index
 // of the first module of this page. Packs document their own use of address,
@@ -496,7 +557,8 @@ constexpr uint32_t LayoutCore = static_cast<uint32_t>(sizeof(Section) * 31 + siz
     sizeof(ReadSpan) * 17 + sizeof(Guard) * 19 + sizeof(PinSpec) * 23 + sizeof(PinState) * 29 +
     sizeof(TrialSpec) * 37 + sizeof(TrialState) * 41 + sizeof(WatchSpec) * 43 + sizeof(WatchRowHeader) * 47 +
     sizeof(RegionInfo) * 53 + sizeof(WatchInfo) * 59 + ProtocolRevision * 61 + sizeof(SearchJobInfo) * 67 +
-    sizeof(RecorderStatus) * 71 + sizeof(RecorderRow) * 73);
+    sizeof(RecorderStatus) * 71 + sizeof(RecorderRow) * 73 + sizeof(NativeCallsSpec) * 79 +
+    sizeof(NativeCallsStarted) * 83 + sizeof(NativeCall) * 89 + NativeCallsKind * 97);
 
 constexpr const char* StatusText(Status status) {
     switch (status) {
@@ -588,6 +650,16 @@ inline Status Check(const Request& request) {
         case TrialAction::Clear: return request.length || request.args[0] > UINT32_MAX ? Status::BadRequest : Status::Ok;
         }
         return Status::BadRequest;
+    case op::RecorderRead:
+    case op::RecorderStop:
+        return !request.address && !request.length && !request.flags && request.args[0] <= RecorderLatest ?
+            Status::Ok : Status::BadRequest;
+    case op::NativeCallsStart: {
+        if (request.length != sizeof(NativeCallsSpec)) return Status::BadRequest;
+        NativeCallsSpec spec;
+        memcpy(&spec, request.data, sizeof(spec));
+        return NativeCallsSpecValid(spec) ? Status::Ok : Status::BadRequest;
+    }
     case op::Watch:
         switch (static_cast<WatchAction>(request.flags)) {
         case WatchAction::Start: {

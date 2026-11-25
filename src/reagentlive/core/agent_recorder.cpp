@@ -2,26 +2,41 @@
 // arming, restoring, sweeping, and reading and stopping any kind.
 #include <cstring>
 #include <new>
+#include "reagentlive/core/agent_internal.h"
 #include "reagentlive/core/recorder.h"
 
-namespace reagentlive::recorder {
-Slot g_slots[MaxRecorderSlots];
+reagentlive::recorder::Slot reagentlive_recorder_slots[reagentlive::MaxRecorderSlots];
 
+namespace reagentlive::recorder {
 namespace {
 uint32_t g_latest = RecorderLatest;
+// Every thunk Start has put in a cell, with its slot: a kind has at most one
+// per slot, so a few kinds fill it.
+constexpr uint32_t MaxKnownThunks = 64;
+struct KnownThunk { const void* thunk; uint32_t slot; };
+KnownThunk g_thunks[MaxKnownThunks];
+uint32_t g_thunkCount;
 
 RecorderState StateOf(const Slot& slot) { return static_cast<RecorderState>(slot.state); }
 
+void Remember(const void* thunk, uint32_t index) {
+    for (uint32_t i = 0; i < g_thunkCount; ++i)
+        if (g_thunks[i].thunk == thunk) return;
+    if (g_thunkCount < MaxKnownThunks) g_thunks[g_thunkCount++] = {thunk, index};
+}
+
 // Puts the original pointer back if the cell still holds this slot's thunk;
-// otherwise something else replaced it, and the thunk forwards for good.
+// otherwise something else replaced it (or its memory is gone), and the
+// thunk forwards for good.
 void Restore(uint32_t index) {
     Slot& slot = g_slots[index];
     const auto state = StateOf(slot);
     if (state != RecorderState::Recording && state != RecorderState::Expired) return;
-    const auto previous = InterlockedCompareExchangePointer(slot.cell, slot.original, slot.thunk);
-    const bool restored = previous == slot.thunk;
+    void* previous = nullptr;
+    const bool restored = detail::GuardedExchange(slot.cell, slot.original, slot.thunk, previous) && previous == slot.thunk;
     if (restored) slot.restoredMs = static_cast<int64_t>(GetTickCount64());
     slot.state = static_cast<LONG>(restored ? RecorderState::Finished : RecorderState::Replaced);
+    if (restored && slot.release) slot.release(index);
 }
 
 void End(uint32_t index) {
@@ -49,6 +64,16 @@ RecorderStatus StatusOf(uint32_t index) {
     out.counts[1] = static_cast<uint32_t>(slot.counts[1]);
     return out;
 }
+
+// Microseconds per time-stamp tick, measured from the slot's start to now
+// against the performance counter (the counter is invariant on x64 parts
+// Windows supports); 0 before a tick has passed.
+double TscScale(const Slot& slot) {
+    const int64_t ticks = static_cast<int64_t>(__rdtsc()) - slot.tscStart;
+    const int64_t counted = Now() - slot.start;
+    if (ticks <= 0 || counted <= 0 || !slot.frequency) return 0;
+    return static_cast<double>(counted) * 1e6 / static_cast<double>(slot.frequency) / static_cast<double>(ticks);
+}
 }
 
 uint32_t Pick() {
@@ -70,19 +95,33 @@ Started Start(uint32_t index, const Arm& arm) {
     slot.thunk = arm.thunk;
     slot.target = arm.target;
     slot.filter = arm.filter;
+    slot.clock = arm.clock;
+    slot.release = arm.release;
     slot.frequency = frequency.QuadPart;
     slot.start = Now();
+    slot.tscStart = static_cast<int64_t>(__rdtsc());
     slot.deadline = slot.start + static_cast<int64_t>(arm.milliseconds) * frequency.QuadPart / 1000;
     slot.written = 0;
     slot.counts[0] = slot.counts[1] = 0;
     for (uint32_t r = 0; r < MaxRecorderRows; ++r) reinterpret_cast<RecorderRow*>(slot.rows + r * RowStride)->sequence = 0;
+    Remember(arm.thunk, index);
     InterlockedExchange(&slot.state, static_cast<LONG>(RecorderState::Recording));
-    if (InterlockedCompareExchangePointer(arm.cell, arm.thunk, arm.original) != arm.original) {
+    void* previous = nullptr;
+    if (!detail::GuardedExchange(arm.cell, arm.thunk, arm.original, previous) || previous != arm.original) {
         InterlockedExchange(&slot.state, static_cast<LONG>(RecorderState::Free));
         return Started::Changed;
     }
     g_latest = index;
     return Started::Armed;
+}
+
+bool IsThunk(const void* pointer, uint32_t& slot) {
+    for (uint32_t i = 0; i < g_thunkCount; ++i)
+        if (pointer && g_thunks[i].thunk == pointer) {
+            slot = g_thunks[i].slot;
+            return true;
+        }
+    return false;
 }
 
 void Sweep() {
@@ -105,6 +144,7 @@ Progress Read(const Request& request, Response& response) {
     memcpy(response.data, &status, sizeof(status));
     size_t used = sizeof(status);
     const uint64_t written = status.written;
+    const double scale = slot.clock == RecorderClock::Tsc ? TscScale(slot) : 0;
     uint64_t sequence = request.args[1] + 1;
     if (written > MaxRecorderRows && sequence < written - MaxRecorderRows + 1) sequence = written - MaxRecorderRows + 1;
     uint64_t last = request.args[1];
@@ -114,6 +154,7 @@ Progress Read(const Request& request, Response& response) {
         if (copy.sequence != sequence) break; // Still being written, or overwritten since.
         MemoryBarrier(); // The payload is read after the sequence that vouches for it.
         if (copy.size > MaxRecorderPayload || used + sizeof(copy) + copy.size > MaxRead) break;
+        if (slot.clock == RecorderClock::Tsc) copy.microseconds = static_cast<int64_t>(static_cast<double>(copy.microseconds) * scale);
         memcpy(response.data + used, &copy, sizeof(copy));
         memcpy(response.data + used + sizeof(copy), row + 1, copy.size);
         MemoryBarrier();
@@ -135,4 +176,18 @@ Progress Stop(const Request& request, Response& response) {
     response.length = sizeof(status);
     return Progress::Done;
 }
+}
+
+namespace reagentlive {
+Progress RecorderRead(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = Check(request)) != Status::Ok) return Progress::Done;
+    return recorder::Read(request, response);
+}
+
+Progress RecorderStop(const Request& request, Response& response, bool, const Host&) {
+    if ((response.status = Check(request)) != Status::Ok) return Progress::Done;
+    return recorder::Stop(request, response);
+}
+
+void StopRecorders() { recorder::StopAll(); }
 }

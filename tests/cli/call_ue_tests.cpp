@@ -498,11 +498,10 @@ TEST_CASE("trace takes two ends: points, objects or sockets, and its options") {
     }
 }
 
-TEST_CASE("calls-start takes an object or class, a function and a duration; read and stop take a slot") {
+TEST_CASE("calls-start takes an object or class, a function and a duration") {
     auto parsed = Call(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Owner:Damage", "duration": 10, "dry": true}})");
     REQUIRE(parsed.has_value());
     CHECK(parsed->kind == Kind::Calls);
-    CHECK(parsed->target == "start");
     CHECK(parsed->request.op == ue::op::CallsStart);
     CHECK(ue::GetRef(parsed->request) == One); // The duration must not overwrite the ref.
     CHECK(std::string(parsed->request.text) == "Owner:Damage");
@@ -517,18 +516,6 @@ TEST_CASE("calls-start takes an object or class, a function and a duration; read
     CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire"}})").starts_with("missing duration"));
     CHECK(Why(R"({"verb": "calls-start", "args": {"object": "0x1000#5:9", "function": "Fire", "duration": 5, "owner": "7"}})")
               .starts_with("unknown key 'owner'"));
-    const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "view": {"cursor": 40}}})");
-    REQUIRE(read.has_value());
-    CHECK(read->target == "read");
-    CHECK(read->callsSlot == 3);
-    CHECK(read->callsAfter == 40);
-    const auto latest = Call(R"({"verb": "calls-read", "args": {"stop": true}})");
-    REQUIRE(latest.has_value());
-    CHECK(latest->target == "stop");
-    CHECK(latest->callsSlot == RecorderLatest);
-    CHECK(Call(R"({"verb": "calls-read", "args": {"stop": true, "view": {"cursor": 5}}})")->callsAfter == 5);
-    CHECK(Why(R"({"verb": "calls-stop"})").starts_with("unknown verb"));
-    CHECK(Why(R"({"verb": "calls-read", "args": {"slot": 8}})").starts_with("slot is"));
 }
 
 TEST_CASE("label names an unreflected member by object or class, offset, type and name") {

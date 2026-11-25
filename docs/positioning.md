@@ -40,7 +40,7 @@ The rule and its table: [design](design/architecture.md#place-among-other-tools)
 |---|---|---|---|
 | A static tool (the main pairing) | whole-function logic, types, decompiling | live values, `module` and `rva`, exported labels, signature checks | names, what a function means |
 | An engine dumper | a full SDK and offsets | a live check that an offset is right | names for data the engine does not reflect |
-| An instrumentation tool | native call tracing, code hooks | exact addresses, live state before and after, reflected calls with their arguments (`calls-start`) | direct C++ callers and native arguments |
+| An instrumentation tool | native call tracing, code hooks | exact addresses, live state before and after, calls with their arguments through one pointer (`calls-start` for reflected ones, `native-calls-start` for a vtable entry or a function pointer) | direct C++ callers |
 | A memory scanner | narrowing scans, pointer scans | a consistent snapshot to confirm a find | candidate addresses |
 
 ## Ways to host it
@@ -63,7 +63,7 @@ skill): a lean in-process proxy for programs outside the game
 ## Low footprint
 
 It answers when asked and otherwise stays out of the process's way: no code
-hooks (two opt-in heap-pointer swaps, [principles](design/principles.md#principles)),
+hooks (opt-in pointer swaps in writable data, each approved, [principles](design/principles.md#principles)),
 no threads of its own beyond the host's tick, no process handle (requests
 travel through one named shared-memory section), next to nothing while idle.
 This means it does not disturb the target, not that it is hidden: see

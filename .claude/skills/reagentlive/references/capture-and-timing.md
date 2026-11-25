@@ -46,6 +46,16 @@
 - A container parameter that prints only its header: `call` the function
   yourself while recording, or `get` the state it left.
 - `calls-read` while it runs; with `stop` it restores at once.
+- A virtual function or a function pointer, not reflected:
+  `{"verb": "native-calls-start", "args": {"addr": "0x1f2e3d4c50", "vtable": {"entry": 12}, "duration": 10}}`
+  (or `addr` alone: a cell holding a code pointer) records the argument
+  registers and where each call returns (approval: it swaps one pointer).
+  It sees only calls through that pointer, never direct or devirtualised
+  ones; zero rows can mean the game calls it directly
+  (`docs/commands/native-objects.md#native-calls`).
+- Which recorder: reflected (Unreal) function: `calls-start`, decoded
+  parameters; virtual entry or function pointer: `native-calls-start`,
+  raw registers (decode them with the signature from the static tool).
 
 ## Pitfalls
 

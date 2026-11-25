@@ -101,9 +101,6 @@ inline Status Check(const Request& request) {
             (!request.length || request.length == sizeof(uint64_t)) && request.args[1] &&
             request.args[1] <= MaxRecorderMilliseconds && !(request.flags & ~CallsDry)
             ? Status::Ok : Status::BadRequest;
-    case op::CallsRead:
-    case op::CallsStop:
-        return !request.address && !request.length && request.args[0] <= RecorderLatest ? Status::Ok : Status::BadRequest;
     case op::ExecEntries:
         return !request.address && !request.length && request.args[1] <= MaxExecEntries ? Status::Ok : Status::BadRequest;
     case op::Refs:

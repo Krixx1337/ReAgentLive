@@ -337,8 +337,7 @@ bool WritesOrCalls(const Command& command) {
     if (request.op == reagentlive::op::Write || request.op == reagentlive::op::Pin || request.op == reagentlive::op::Trial)
         return true;
     if (request.op == ue::op::Call && !(request.flags & ue::CallPure)) return true;
-    if (request.op == ue::op::CallsStart || request.op == ue::op::CallsStop) return true;
-    if (command.kind == Kind::Calls && command.target == "stop") return true;
+    if (request.op == ue::op::CallsStart || request.op == reagentlive::op::NativeCallsStart) return true;
     return request.op == ue::op::GameThread && request.flags != static_cast<uint32_t>(ue::GameThreadAction::Status);
 }
 }

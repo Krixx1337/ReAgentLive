@@ -1,6 +1,6 @@
-// reagentlive CLI console, Unreal pack: calls-start and calls-read
-// with its stop (the agent's call recorder, protocol_ue.h, on the core's
-// recorder slots: a slot of another kind is refused). Rows are decoded by
+// reagentlive CLI console, Unreal pack: calls-start, and its recordings'
+// rows for the core's calls-read (pack.h PackCalls; the agent's call
+// recorder, protocol_ue.h, on the core's recorder slots). Rows are decoded by
 // the recorded function's reflected parameters through the shared reader, as
 // a copy: names and objects are looked up, memory the block points into is
 // not read (the caller may have freed it since).
@@ -21,17 +21,6 @@
 
 namespace reagentlive::cli::detail {
 namespace {
-const char* StateText(uint32_t state) {
-    switch (static_cast<RecorderState>(state)) {
-    case RecorderState::Recording: return "recording";
-    case RecorderState::Expired: return "expired";
-    case RecorderState::Finished: return "finished";
-    case RecorderState::Replaced: return "replaced";
-    case RecorderState::Free: break;
-    }
-    return "free";
-}
-
 // The recorded function's "Owner:Name" and parameters, from its address.
 struct Recorded { std::string name; ue::Signature signature; bool known = false; };
 Recorded Lookup(Session& session, uint64_t function) {
@@ -45,21 +34,18 @@ Recorded Lookup(Session& session, uint64_t function) {
     }
     return out;
 }
+}
 
-shape::Calls MakeCalls(Session& session, const RecorderStatus& state, std::span<const RecorderCall> calls,
-                       uint64_t after, uint64_t last) {
+bool PackCalls(Session& session, const RecorderRows& read, shape::Calls& out) {
+    if (read.status.kind != ue::CallsKind) return false;
+    const RecorderStatus& state = read.status;
+    const auto& calls = read.calls;
     auto& structs = Ue(session).structs;
     const Recorded function = Lookup(session, state.target);
-    shape::Calls out;
+    out.recorder = "calls-start";
     out.function = function.name;
-    out.state = StateText(state.state);
-    out.slot = state.slot;
-    out.calls = state.written;
     out.events = state.counts[ue::CallsEventCount];
     out.vm = state.counts[ue::CallsVmCount];
-    // Rows the agent no longer held when read: before the first one returned.
-    const uint64_t first = calls.empty() ? last + 1 : calls.front().row.sequence;
-    out.dropped = first > after + 1 ? first - after - 1 : 0;
     // The calling objects and every parameter, through one reader: its names,
     // objects and pointers resolved together, then printed.
     RowReader reader(session, structs, RowReader::PreviewNested);
@@ -86,18 +72,16 @@ shape::Calls MakeCalls(Session& session, const RecorderStatus& state, std::span<
         });
     }
     reader.Resolve();
-    for (const auto& call : calls) {
-        shape::CallsRow row;
-        row.sequence = call.row.sequence;
-        row.atMs = static_cast<double>(call.row.microseconds) / 1000.0;
-        row.thread = call.row.thread;
+    for (size_t i = 0; i < calls.size(); ++i) {
+        const auto& call = calls[i];
+        shape::CallsRow& row = out.rows[i];
         row.via = call.row.tag == ue::CallsEvent ? "event" : "vm";
         if (const auto* named = reader.Named("ObjectProperty", caller(call))) {
             row.ref = FullRef(named->ref);
             row.objectName = named->name;
             row.objectClass = named->className;
         } else {
-            row.ref = {ReusableRef(Ref{static_cast<uintptr_t>(call.row.object), -1, 0}).text};
+            row.ref = ReusableRef(Ref{static_cast<uintptr_t>(call.row.object), -1, 0});
         }
         if (function.known && !call.payload.empty()) {
             std::vector<shape::CallsValue> values;
@@ -112,64 +96,48 @@ shape::Calls MakeCalls(Session& session, const RecorderStatus& state, std::span<
             });
             row.values = std::move(values);
         }
-        out.rows.push_back(std::move(row));
     }
-    if (last < state.written) out.nextCursor = last;
     if (reader.Unnamed()) out.unnamed = reader.Unnamed();
-    return out;
-}
+    return true;
 }
 
 void RunCalls(Session& session, const Command& original, std::string_view jsonCommand) {
     Client& client = session.client;
     Command command = original;
-    if (!client.Supports(command.request.op) || (command.target == "stop" && !client.Supports(ue::op::CallsStop)))
+    if (!client.Supports(command.request.op) || !client.Supports(op::RecorderRead) || !client.Supports(op::RecorderStop))
         return JsonError(session, jsonCommand, ErrorKind::Unsupported, "this host does not offer the call recorder");
-    if (command.target == "start") {
-        uint64_t filter = 0;
-        if (!command.className.empty()) {
-            auto type = ResolveObjectOrClass(session, command.className);
-            if (!type) return CommandError(session, jsonCommand, type.error());
-            ue::SetRef(command.request, *type);
-        } else {
-            // An instance narrows the recording to it; a class or a class default object (by ref)
-            // records every instance.
-            const auto described = ue::Describe(client, ue::GetRef(command.request));
-            if (!described) return CommandError(session, jsonCommand, described.error());
-            if (!described->className.ends_with("Class") && !described->name.starts_with("Default__"))
-                filter = described->ref.address;
-        }
-        const Request& request = command.request;
-        const bool dry = (request.flags & ue::CallsDry) != 0;
-        auto started = ue::CallsStart(client, ue::GetRef(request), request.text, request.args[1], filter, dry);
-        if (!started) return CommandError(session, jsonCommand, started.error());
-        shape::CallsStart out;
-        out.function = Lookup(session, started->function).name;
-        out.slot = started->slot;
-        out.exec = started->original;
-        out.thunk = started->thunk;
-        out.blockSize = started->blockSize;
-        if (filter) out.objectAddr = filter;
-        out.durationMs = request.args[1];
-        out.dry = dry;
-        // A Blueprint function runs through the shared script entry: a call
-        // from another Blueprint never goes through its pointer.
-        if (auto info = ue::Function(client, ue::GetRef(request), request.text);
-            info && !(info->flags & ue::flags::FunctionNative))
-            out.note = "a Blueprint function: calls from other Blueprints are not seen; events through ProcessEvent are. "
-                       "To see it used, record a native function it calls.";
-        return Emit(session, jsonCommand, std::move(out));
+    uint64_t filter = 0;
+    if (!command.className.empty()) {
+        auto type = ResolveObjectOrClass(session, command.className);
+        if (!type) return CommandError(session, jsonCommand, type.error());
+        ue::SetRef(command.request, *type);
+    } else {
+        // An instance narrows the recording to it; a class or a class default object (by ref)
+        // records every instance.
+        const auto described = ue::Describe(client, ue::GetRef(command.request));
+        if (!described) return CommandError(session, jsonCommand, described.error());
+        if (!described->className.ends_with("Class") && !described->name.starts_with("Default__"))
+            filter = described->ref.address;
     }
-    if (command.target == "stop") {
-        auto stopped = client.RecorderStop(ue::op::CallsStop, command.callsSlot);
-        if (!stopped) return CommandError(session, jsonCommand, stopped.error());
-        command.callsSlot = stopped->slot;
-    }
-    auto read = client.RecorderRead(ue::op::CallsRead, command.callsSlot, command.callsAfter);
-    if (!read) return CommandError(session, jsonCommand, read.error());
-    if (read->status.kind != ue::CallsKind)
-        return JsonError(session, jsonCommand, ErrorKind::Validation,
-            "slot " + std::to_string(read->status.slot) + " holds another kind of recording");
-    return Emit(session, jsonCommand, MakeCalls(session, read->status, read->calls, command.callsAfter, read->last));
+    const Request& request = command.request;
+    const bool dry = (request.flags & ue::CallsDry) != 0;
+    auto started = ue::CallsStart(client, ue::GetRef(request), request.text, request.args[1], filter, dry);
+    if (!started) return CommandError(session, jsonCommand, started.error());
+    shape::CallsStart out;
+    out.function = Lookup(session, started->function).name;
+    out.slot = started->slot;
+    out.exec = started->original;
+    out.thunk = started->thunk;
+    out.blockSize = started->blockSize;
+    if (filter) out.objectAddr = filter;
+    out.durationMs = request.args[1];
+    out.dry = dry;
+    // A Blueprint function runs through the shared script entry: a call
+    // from another Blueprint never goes through its pointer.
+    if (auto info = ue::Function(client, ue::GetRef(request), request.text);
+        info && !(info->flags & ue::flags::FunctionNative))
+        out.note = "a Blueprint function: calls from other Blueprints are not seen; events through ProcessEvent are. "
+                   "To see it used, record a native function it calls.";
+    return Emit(session, jsonCommand, std::move(out));
 }
 }

@@ -15,6 +15,7 @@
 #include <iterator>
 #include "reagentlive/core/agent.h"
 #include "reagentlive/core/agent_internal.h"
+#include "reagentlive/core/recorder.h"
 
 namespace reagentlive {
 namespace {
@@ -442,6 +443,7 @@ void TickServices(const Host& host) {
             if (g_trials[i].used) CheckTrial(host, g_trials[i], false);
     if (g_watch && g_watch->running) SampleWatch(host);
     detail::TickSearchJob();
+    recorder::Sweep(); // Restores recordings past their time.
 }
 }
 
@@ -701,6 +703,7 @@ void Tick(const Host& host, std::span<const Command> commands) {
         if (g_trials)
             for (size_t i = 0; i < MaxTrials; ++i)
                 if (g_trials[i].used) CheckTrial(host, g_trials[i], true);
+        recorder::StopAll(); // Nothing would read or restore them after.
         Log(host, LogLevel::Info, 0, "Dev agent: a newer agent in this process took over; this one stops");
         return;
     }

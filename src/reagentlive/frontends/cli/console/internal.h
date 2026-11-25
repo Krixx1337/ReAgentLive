@@ -261,6 +261,14 @@ std::expected<const image::Layout*, std::string> LayoutOf(Session& session, cons
 bool InCode(Session& session, uint64_t address);
 // The module's PE timestamp (ties labels to one build); nullopt when its header is unreadable.
 std::optional<uint32_t> ImageTimestamp(Session& session, const Module& module);
+// This build's names in labels files, by address (the highest-ranked row per
+// address): the given files, or the console's and the host's.
+std::map<uint64_t, std::string> LabelNames(const Module& module, uint32_t timestamp,
+                                           std::span<const std::filesystem::path> files);
+std::map<uint64_t, std::string> LabelNames(Session& session, const Module& module, uint32_t timestamp);
+// calls-read (any recorder) and native-calls-start (console/recorder.cpp).
+void RunCallsRead(Session& session, const Command& command, std::string_view jsonCommand);
+void RunNativeCalls(Session& session, const Command& command, std::string_view jsonCommand);
 
 // One page of a scan on the agent's worker thread when the host allows it,
 // else in host-tick slices; a refusal for background is remembered.

@@ -503,7 +503,7 @@ inline Progress EnumOp(const Request& request, Response& response, bool, const H
 
 // The recorder: the last function's calls, after the sequence asked for.
 inline Progress CallsRead(const Request& request, Response& response, bool, const Host&) {
-    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
+    if ((response.status = reagentlive::Check(request)) != Status::Ok) return Progress::Done;
     auto& world = TheWorld();
     if (world.functions.empty()) { reagentlive::Refuse(response, Status::NotFound, "no such recording"); return Progress::Done; }
     const auto& function = world.functions.back();
@@ -662,7 +662,7 @@ constexpr reagentlive::Command Commands[] = {
     {ue::op::Entries, "entries", &Entries},
     {ue::op::Function, "function", &FunctionOp},
     {ue::op::Parameters, "parameters", &Parameters},
-    {ue::op::CallsRead, "calls read", &CallsRead},
+    {reagentlive::op::RecorderRead, "calls read", &CallsRead},
     {ue::op::Enum, "enum", &EnumOp},
     {ue::op::Owner, "owner", &OwnerOp},
     {ue::op::Route, "route", &RouteOp},

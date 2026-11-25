@@ -48,6 +48,8 @@ Parsed LabelsPort(const Args& args, const ParseContext& context);
 Parsed LabelsCheck(const Args& args, const ParseContext& context);
 Parsed DispScan(const Args& args, const ParseContext& context);
 Parsed SigBytes(const Args& args, const ParseContext& context);
+Parsed CallsRead(const Args& args, const ParseContext& context);
+Parsed NativeCallsStart(const Args& args, const ParseContext& context);
 
 // Unreal pack (packs/ue/cli/call/build_unreal.cpp).
 Parsed Find(const Args& args, const ParseContext& context);
@@ -71,7 +73,6 @@ Parsed AssetsExport(const Args& args, const ParseContext& context);
 Parsed Get(const Args& args, const ParseContext& context);
 Parsed LineTrace(const Args& args, const ParseContext& context);
 Parsed CallsStart(const Args& args, const ParseContext& context);
-Parsed CallsRead(const Args& args, const ParseContext& context);
 Parsed Census(const Args& args, const ParseContext& context);
 Parsed NameRefs(const Args& args, const ParseContext& context);
 Parsed NameFind(const Args& args, const ParseContext& context);

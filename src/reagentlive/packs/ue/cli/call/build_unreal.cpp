@@ -544,14 +544,6 @@ Parsed LineTrace(const Args& args, const ParseContext&) {
     return command;
 }
 
-namespace {
-// slot (default: the last started recording).
-bool CallsSlot(const Args& args, Command& command) {
-    command.callsSlot = args.Int("slot", RecorderLatest);
-    return !args.Has("slot") || command.callsSlot < MaxRecorderSlots;
-}
-}
-
 // calls-start: record a function's calls for a while. An instance (a literal
 // ref) narrows the recording to it; the console decides, as it can tell a class.
 Parsed CallsStart(const Args& args, const ParseContext&) {
@@ -566,17 +558,6 @@ Parsed CallsStart(const Args& args, const ParseContext&) {
     request.flags = args.Has("dry") ? ue::CallsDry : 0;
     request.op = ue::op::CallsStart;
     command.kind = Kind::Calls;
-    command.target = "start";
-    return command;
-}
-
-Parsed CallsRead(const Args& args, const ParseContext&) {
-    Command command;
-    if (!CallsSlot(args, command)) return Fail("slot is 0.." + std::to_string(MaxRecorderSlots - 1));
-    command.callsAfter = args.Int("cursor");
-    command.request.op = ue::op::CallsRead;
-    command.kind = Kind::Calls;
-    command.target = args.Has("stop") ? "stop" : "read";
     return command;
 }
 

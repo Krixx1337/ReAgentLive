@@ -181,7 +181,8 @@ class McpTests(unittest.TestCase):
             self.assertFalse(any(tool.annotations.destructive_hint for tool in tools.values()), names)
         everything = self.tool_list(packs=ALL)
         self.assertEqual({name for name, tool in everything.items() if tool.annotations.destructive_hint},
-                         {'write', 'ue_call', 'ue_release', 'ue_calls_start', 'ue_game_thread'})
+                         {'write', 'ue_call', 'ue_release', 'ue_calls_start', 'native_calls_start',
+                          'ue_game_thread'})
         self.assertEqual(packs['each'], 'explore')
         with self.assertRaisesRegex(ValueError, '--packs: unknown pack nope'):
             reagentlive_mcp.build(sys.executable, ['-I', FAKE], packs=['nope'])

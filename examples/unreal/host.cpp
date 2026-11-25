@@ -61,8 +61,9 @@ constexpr Command Commands[] = {
     {ue::op::Route, "route", &ue::Route, false},
     {ue::op::ExecEntries, "exec entries", &ue::ExecEntries, false},
     {ue::op::CallsStart, "calls-start", &ue::CallsStart},
-    {ue::op::CallsRead, "calls-read", &ue::CallsRead, false},
-    {ue::op::CallsStop, "calls-stop", &ue::CallsStop},
+    {op::NativeCallsStart, "native-calls-start", &NativeCallsStart},
+    {op::RecorderRead, "calls-read", &RecorderRead, false},
+    {op::RecorderStop, "calls-stop", &RecorderStop},
     {ue::op::GameThread, "game-thread", &ue::draw::GameThread},
 };
 
@@ -96,7 +97,6 @@ void TickAgent(bool onDraw) {
     if (InterlockedCompareExchange(&g_ticking, 1, 0)) return;
     ue::Context pack{&ue::ObjectInTable, onDraw ? &ue::draw::OnGameThread : &NotGameThread};
     pack.offThreadReads = true;
-    if (onDraw) ue::SweepCallRecordings();
     const Host host{.sectionName = g_section,
                     .layout = Layout,
                     .readable = &Readable,

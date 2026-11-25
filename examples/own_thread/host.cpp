@@ -39,6 +39,10 @@ constexpr Command Commands[] = {
     {op::Pin, "pin", &Pin},
     {op::Trial, "trial", &Trial},
     {op::Watch, "watch", &Watch, false},
+    // Pointer-swap recorders: each start is approved like any write.
+    {op::NativeCallsStart, "native-calls-start", &NativeCallsStart},
+    {op::RecorderRead, "calls-read", &RecorderRead, false},
+    {op::RecorderStop, "calls-stop", &RecorderStop},
 };
 
 wchar_t g_section[64];

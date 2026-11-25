@@ -52,7 +52,9 @@ release.
 The core is engine-agnostic; a pack adds object lookup, reflected fields
 and engine-thread calls ([hosting](hosting.md#host-checklist)). Build one
 only for a real project in that engine
-([design](design/principles.md#not-now)).
+([design](design/principles.md#not-now)). A Unity pack would not record
+calls by swapping a method's `methodPointer`: callers compiled ahead of time
+call it directly, so few calls would be seen.
 
 ### 22 · `entries` through a struct path
 

@@ -1,12 +1,13 @@
 # Native objects
 
-*Home of:* reading a native (non-reflected) object with no engine pack: `vtable` (and `rtti`, `parts`), pointer chains, the region `read` and `peek` report, C strings.
+*Home of:* reading a native (non-reflected) object with no engine pack: `vtable` (and `rtti`, `parts`), pointer chains, the region `read` and `peek` report, C strings; recording calls through a vtable entry or a function pointer (`native-calls-start`), and `calls-read` for every recorder.
 
 **TL;DR:** When a game has no engine pack, or an object is plain C++ that
 reflection does not list, these commands still say what it is: its
 vtable and the functions in it, its MSVC class name, what kind of memory
-an address is, and the strings it points to. They only read; names they
-report are hints to confirm, not proof.
+an address is, and the strings it points to. They only read, but for
+`native-calls-start`, an approved write; names they report are hints to
+confirm, not proof.
 
 What the engine-agnostic side says about a native object, with no engine
 pack ([design](../design/native.md#native-objects)).
@@ -56,6 +57,43 @@ an interface part. Where the slot holds no locator (no type information,
 another compiler, or not a virtual table) `rtti_error` says why. Engines
 often build their game code without it; most native programs and libraries
 keep it. **Names are hints, not proof:** confirm them against the code.
+
+## Native calls
+
+`native-calls-start` records what callers pass through one code pointer for
+up to 60 s; `calls-read` returns the calls so far (`stop` ends it early). A
+host offers it by listing the core's three recorder ops; the start is a
+write the host approves.
+
+- **Which pointer:** with `vtable` (`entry`, and `offset` for a vptr past
+  the object's start), one object's vtable entry: its vptr is pointed at a
+  private copy of the table and the entry swapped there, so the table and
+  other instances are untouched. Without it, `addr` is a cell that holds a
+  pointer into a module's code: a field, or a global in a writable section.
+  Read-only pages and sections, code, the import table, a value that is not
+  code and a pointer already recorded are refused; nothing changes a page's
+  protection. `dry` checks and shows the swap without writing.
+- **What is seen:** only calls through that pointer: virtual calls on that
+  object, or calls through that cell. Direct, devirtualised and inlined
+  calls, and the same function through another object, are not seen; the
+  result's `note` says so. `this` keeps only calls whose rcx is that object.
+- **Each row:** `args` (rcx, rdx, r8, r9) and `xmm` (the low 8 bytes of
+  xmm0..3) as hex, in the order the x64 convention passes them (a struct
+  returned through a hidden pointer shifts the arguments one register on);
+  `ret`, where the call returns, with its module, rva and `ret_name` (the
+  labelled function holding it, from the labels files); `bytes`, with
+  `copy`, up to 64 bytes at an argument register, read under a fault guard
+  (`copy_faulted` when unreadable). No return value.
+- **Stopping:** at the end, or `calls-read` with `stop`, the pointer goes
+  back only if it still holds the thunk; otherwise something else swapped it
+  since and it is left alone (`state: replaced`) while the thunk keeps
+  forwarding. Stopping the last entry recorded on an object puts its vptr
+  back. 256 rows per recording, the newest kept; eight recordings of every
+  kind at once.
+
+Which recorder: a reflected function (Unreal) is `calls-start`, with its
+parameters decoded by name; a virtual function or a function pointer is
+`native-calls-start`, with raw registers.
 
 ## Pointer chains
 

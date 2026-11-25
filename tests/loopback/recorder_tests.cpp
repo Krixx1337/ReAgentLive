@@ -14,7 +14,7 @@ template<unsigned I> int Thunk(void* self, int x) {
     recorder::Slot& slot = recorder::g_slots[I];
     const uint64_t object = reinterpret_cast<uint64_t>(self);
     int64_t now = 0;
-    const bool armed = recorder::Enter(slot, object, now);
+    const bool armed = recorder::Enter(slot, TestKind, object) && recorder::InTime(slot, now);
     const int result = reinterpret_cast<Fn>(slot.original)(self, x);
     if (armed) {
         const recorder::Pending row = recorder::Claim(slot, object, now);
@@ -35,7 +35,8 @@ constexpr auto Thunks = MakeThunks(std::make_integer_sequence<unsigned, MaxRecor
 struct Cell { Fn volatile fn = &Twice; };
 
 uint32_t Arm(Cell& cell, uint64_t milliseconds, uint64_t filter = 0) {
-    const uint32_t index = recorder::Pick();
+    uint32_t index = MaxRecorderSlots;
+    WaitFor([&] { return (index = recorder::Pick()) < MaxRecorderSlots; }, 3000); // Past a slot's reuse grace.
     REQUIRE(index < MaxRecorderSlots);
     const recorder::Arm arm{TestKind, 8, reinterpret_cast<void* volatile*>(const_cast<Fn*>(&cell.fn)),
         reinterpret_cast<void*>(cell.fn), reinterpret_cast<void*>(Thunks[index]), 0x1234, filter, milliseconds};
@@ -68,7 +69,7 @@ TEST_CASE("a recording swaps the cell, records each call, and stop restores it")
     const uint32_t index = Arm(cell, 10000);
     CHECK(cell.fn == Thunks[index]);
     for (int i = 1; i <= 3; ++i) CHECK(cell.fn(&self, i) == i * 2); // Forwarded exactly.
-    auto read = client.RecorderRead(OpRecorderRead);
+    auto read = client.RecorderRead();
     REQUIRE(read);
     CHECK(read->status.slot == index);
     CHECK(read->status.kind == TestKind);
@@ -91,11 +92,11 @@ TEST_CASE("a recording swaps the cell, records each call, and stop restores it")
     }
     // The cursor: only newer rows.
     cell.fn(&self, 9);
-    auto later = client.RecorderRead(OpRecorderRead, index, read->last);
+    auto later = client.RecorderRead(index, read->last);
     REQUIRE(later);
     REQUIRE(later->calls.size() == 1);
     CHECK(later->calls[0].row.sequence == 4);
-    auto stopped = client.RecorderStop(OpRecorderStop, index);
+    auto stopped = client.RecorderStop(index);
     REQUIRE(stopped);
     CHECK(stopped->state == static_cast<uint32_t>(RecorderState::Finished));
     CHECK(cell.fn == &Twice);
@@ -108,14 +109,14 @@ TEST_CASE("a filtered recording keeps only calls on its object; the ring keeps t
     const uint32_t index = Arm(cell, 10000, reinterpret_cast<uint64_t>(&mine));
     for (int i = 0; i < 300; ++i) cell.fn(&mine, i);
     cell.fn(&other, 1); // Forwarded, not recorded.
-    auto read = client.RecorderRead(OpRecorderRead, index);
+    auto read = client.RecorderRead(index);
     REQUIRE(read);
     CHECK(read->status.written == 300);
     REQUIRE(read->calls.size() == MaxRecorderRows);
     CHECK(read->calls.front().row.sequence == 300 - MaxRecorderRows + 1);
     CHECK(read->calls.back().row.sequence == 300);
     for (const auto& call : read->calls) CHECK(call.row.object == reinterpret_cast<uint64_t>(&mine));
-    REQUIRE(client.RecorderStop(OpRecorderStop, index));
+    REQUIRE(client.RecorderStop(index));
     CHECK(cell.fn == &Twice);
 }
 
@@ -125,7 +126,7 @@ TEST_CASE("a cell something else swapped since is left alone: replaced") {
     int self = 0;
     const uint32_t index = Arm(cell, 10000);
     cell.fn = &Thrice; // Another owner.
-    auto stopped = client.RecorderStop(OpRecorderStop, index);
+    auto stopped = client.RecorderStop(index);
     REQUIRE(stopped);
     CHECK(stopped->state == static_cast<uint32_t>(RecorderState::Replaced));
     CHECK(cell.fn == &Thrice);
@@ -140,11 +141,9 @@ TEST_CASE("a recording past its time stops recording and the sweep restores it")
     int self = 0;
     const uint32_t index = Arm(cell, 1);
     Sleep(20);
-    CHECK(cell.fn(&self, 2) == 4);
-    CHECK(recorder::g_slots[index].state == static_cast<LONG>(RecorderState::Expired));
-    recorder::Sweep();
-    CHECK(cell.fn == &Twice);
-    auto read = client.RecorderRead(OpRecorderRead, index);
+    CHECK(Thunks[index](&self, 2) == 4); // Past its time: forwarded, not recorded.
+    CHECK(WaitFor([&] { return cell.fn == &Twice; })); // The agent's tick restored it.
+    auto read = client.RecorderRead(index);
     REQUIRE(read);
     CHECK(read->status.state == static_cast<uint32_t>(RecorderState::Finished));
     CHECK(read->calls.empty());
@@ -164,7 +163,7 @@ TEST_CASE("concurrent callers each get their own row") {
         });
     for (auto& caller : callers) caller.join();
     CHECK(wrong == 0);
-    auto read = client.RecorderRead(OpRecorderRead, index);
+    auto read = client.RecorderRead(index);
     REQUIRE(read);
     CHECK(read->status.written == Threads * Each);
     CHECK(read->status.counts[0] == Threads * Each);
@@ -178,13 +177,13 @@ TEST_CASE("concurrent callers each get their own row") {
     }
     std::ranges::sort(seen);
     CHECK(std::ranges::adjacent_find(seen) == seen.end());
-    REQUIRE(client.RecorderStop(OpRecorderStop, index));
+    REQUIRE(client.RecorderStop(index));
     CHECK(cell.fn == &Twice);
 }
 
 TEST_CASE("an unknown slot is not found") {
     Client client = Attach();
-    auto read = client.RecorderRead(OpRecorderRead, MaxRecorderSlots - 1);
+    auto read = client.RecorderRead(MaxRecorderSlots - 1);
     // The last slot is free unless a case above took every other one.
     if (recorder::g_slots[MaxRecorderSlots - 1].state == static_cast<LONG>(RecorderState::Free)) {
         REQUIRE_FALSE(read);

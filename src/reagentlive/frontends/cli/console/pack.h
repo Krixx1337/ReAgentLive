@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "reagentlive/frontends/cli/results/calls.h"
 #include "reagentlive/frontends/cli/state/cache.h"
 #include "reagentlive/frontends/cli/console/internal.h"
 
@@ -63,6 +64,10 @@ struct SaveLayouts {
     uint64_t types = 0;
 };
 Result<SaveLayouts> PackSaveLayouts(Session& session, std::span<const std::string> functionNames);
+// calls-read: a recording of a kind the pack started, decoded (its function,
+// counts and rows on top of `base`, which holds what every kind shares);
+// false for a kind that is not the pack's.
+bool PackCalls(Session& session, const RecorderRows& read, shape::Calls& base);
 // peek: which pointer-shaped values are live objects, then name hints for value rows.
 void DescribePeek(Session& session, std::span<PeekValue> values);
 void NamePeek(Session& session, std::span<PeekValue> values, std::span<const Module> modules);

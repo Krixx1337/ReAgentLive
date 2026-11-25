@@ -20,7 +20,7 @@ mechanics: `docs/commands/console.md`.
 ## Packs
 
 `explore` is always on; `native`, `observe` and `modify` (writes, `call`,
-`calls-start`, `game-thread`) when the task needs one. `packs` lists what
+`calls-start`, `native-calls-start`, `game-thread`) when the task needs one. `packs` lists what
 each holds.
 
 - **Enable before the first call that needs it:** MCP: the `packs` tool,

@@ -163,14 +163,6 @@ inline const std::vector<Verb>& UnrealVerbs() {
             "the end or on calls-read with stop. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with "
             "parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. 256 rows "
             "per recording.", true},
-        {"calls-read", "ue", ToolPack::Modify, "a recording's calls so far, decoded by the function's parameters; stop ends it first",
-            {{"slot", "int", "the recording, 0..7 (default: the last started)"},
-             {"stop", "bool", "end the recording now (restores the pointer) and return its calls"},
-             View("cursor")},
-            Of<shape::Calls>, build::CallsRead,
-            "values: in, out and return by name, read after the call. Objects named while they live; strings and "
-            "containers print headers only. A recording past its time is restored first. state replaced: something "
-            "else swapped the pointer since; it was left alone and the thunk keeps forwarding."},
         {"describe", "ue", ToolPack::Explore, "an object's name, class and reusable ref",
             {{"object", "ref", "the object: ref or \"0x...\"", {}, false, false, ref},
              {"slot", "int", "in place of object: an object-table slot (a weak pointer's), with serial"},

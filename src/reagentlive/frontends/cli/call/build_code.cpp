@@ -1,4 +1,5 @@
-// reagentlive CLI: building the native code verbs (disasm, xrefs, touches, vtable, sig-*).
+// reagentlive CLI: building the native code verbs (disasm, xrefs, touches, vtable, sig-*) and
+// the pointer-swap recorders' (native-calls-start, calls-read).
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -217,6 +218,57 @@ Parsed SigBytes(const Args& args, const ParseContext& context) {
     command.sigMode = Command::SigMode::Bytes;
     command.request.op = op::Read;
     command.request.length = static_cast<uint32_t>(length);
+    return command;
+}
+// calls-read: a recording of any kind; slot defaults to the last started.
+Parsed CallsRead(const Args& args, const ParseContext&) {
+    Command command;
+    command.callsSlot = args.Int("slot", RecorderLatest);
+    if (args.Has("slot") && command.callsSlot >= MaxRecorderSlots)
+        return Fail("slot is 0.." + std::to_string(MaxRecorderSlots - 1));
+    command.callsAfter = args.Int("cursor");
+    command.request.op = op::RecorderRead;
+    command.kind = Kind::CallsRead;
+    command.target = args.Has("stop") ? "stop" : "read";
+    return command;
+}
+
+// native-calls-start: a vtable entry (vtable given) or a cell at addr.
+Parsed NativeCallsStart(const Args& args, const ParseContext& context) {
+    Command command;
+    NativeCallsSpec& spec = command.nativeCalls;
+    if (auto why = Place(args, "addr", context, command, true); !why.empty()) return Fail(why);
+    const uint64_t milliseconds = args.Milliseconds("duration");
+    if (milliseconds > MaxRecorderMilliseconds)
+        return Fail("duration is at most " + std::to_string(MaxRecorderMilliseconds / 1000) + " s");
+    spec.milliseconds = static_cast<uint32_t>(milliseconds);
+    if (args.Has("vtable")) {
+        spec.target = static_cast<uint32_t>(NativeTarget::Vtable);
+        const uint64_t entry = args.Int("entry"), offset = args.Int("offset");
+        if (entry >= MaxNativeIndex) return Fail("vtable.entry is 0.." + std::to_string(MaxNativeIndex - 1));
+        if (offset >= MaxNativeOffset || offset % 8) return Fail("vtable.offset is a multiple of 8 under 0x100000");
+        spec.index = static_cast<uint32_t>(entry);
+        spec.offset = static_cast<uint32_t>(offset);
+    } else {
+        spec.target = static_cast<uint32_t>(NativeTarget::Cell);
+    }
+    if (args.Has("this")) {
+        auto place = value::Address(args.At("this"), context.modules);
+        if (!place) return Fail("this: " + place.error());
+        if (!place->address) return Fail("this: give an object's address");
+        spec.filter = place->address;
+    }
+    if (args.Has("copy")) {
+        const std::string reg = args.Str("reg");
+        const uint64_t bytes = args.Int("len", MaxNativeCopy);
+        spec.copyRegister = static_cast<uint32_t>(reg == "rcx" ? NativeRegister::Rcx : reg == "rdx" ? NativeRegister::Rdx :
+            reg == "r8" ? NativeRegister::R8 : NativeRegister::R9);
+        if (!bytes || bytes > MaxNativeCopy) return Fail("copy.len is 1.." + std::to_string(MaxNativeCopy));
+        spec.copyBytes = static_cast<uint32_t>(bytes);
+    }
+    if (args.Has("dry")) spec.flags = NativeCallsDry;
+    command.request.op = op::NativeCallsStart;
+    command.kind = Kind::NativeCalls;
     return command;
 }
 }

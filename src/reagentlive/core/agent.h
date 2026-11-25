@@ -5,13 +5,13 @@
 #include <span>
 #include "reagentlive/core/protocol.h"
 
-// The core never hooks and never starts threads (its pointer-swap recorder
-// slots, core/recorder.h, behind ops a host opts into, swap one code pointer
-// in writable data, never code; a vtable entry only in a private copy of the
-// table, core/vtable_copy.h): the host calls Tick() from a
-// thread it trusts (for engines, usually the game thread). Constant-initialised
-// state and fixed buffers only, so it works in mapped images without static TLS
-// or dynamic initialisation.
+// The core never hooks code and never starts threads (its pointer-swap
+// recorders, core/recorder.h, behind ops a host opts into, swap one code
+// pointer in writable data, never code or read-only data; a vtable entry
+// only in a private copy of the table, core/vtable_copy.h): the host calls
+// Tick() from a thread it trusts (for engines, usually the game thread).
+// Constant-initialised state and fixed buffers only, so it works in mapped
+// images without static TLS or dynamic initialisation.
 namespace reagentlive {
 enum class LogLevel { Info, Warning };
 struct Host;
@@ -92,4 +92,16 @@ Progress Region(const Request&, Response&, bool first, const Host&);
 // Relative references to an address (protocol.h): Search's machinery with a
 // computed compare at every byte.
 Progress Xrefs(const Request&, Response&, bool first, const Host&);
+// Pointer-swap recorders (protocol.h), opt-in by listing these ops: read and
+// stop any kind's recording (a pack's start op, or NativeCallsStart).
+// NativeCallsStart swaps one vtable entry (in the object's private copy) or
+// one code pointer in a writable cell for a generic thunk that records the
+// argument registers and jumps on. Tick restores recordings past their time.
+Progress RecorderRead(const Request&, Response&, bool first, const Host&);
+Progress RecorderStop(const Request&, Response&, bool first, const Host&);
+Progress NativeCallsStart(const Request&, Response&, bool first, const Host&);
+// Restores every recording, of every kind: call it before the host stops. A
+// pointer replaced by something else since is left alone; its thunk keeps
+// forwarding, so the host's image must stay loaded (it never unloads).
+void StopRecorders();
 }

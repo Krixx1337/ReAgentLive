@@ -35,7 +35,7 @@ using namespace std::chrono_literals;
 
 namespace loopback {
 // Test-only ops in the game range.
-constexpr uint32_t OpSlow = 4096, OpThrow = 4097, OpRecorderRead = 4098, OpRecorderStop = 4099;
+constexpr uint32_t OpSlow = 4096, OpThrow = 4097;
 constexpr uint32_t Layout = LayoutCore + 7;
 
 inline std::atomic<bool> g_permissive; // Readable lies "yes" to force a guarded fault.
@@ -93,14 +93,6 @@ inline Progress FakeDescribeMany(const Request& request, Response& response, boo
     return Progress::Done;
 }
 
-// The core recorder's read and stop, as a kind's ops would offer them.
-inline Progress RecorderRead(const Request& request, Response& response, bool, const Host&) {
-    return recorder::Read(request, response);
-}
-inline Progress RecorderStop(const Request& request, Response& response, bool, const Host&) {
-    return recorder::Stop(request, response);
-}
-
 // A host root for watch --follow: the object g_root points at, guarded on its identity.
 struct RootThing {
     uint64_t identity;
@@ -132,8 +124,9 @@ constexpr Command Commands[] = {
     {op::Watch, "watch", &Watch},
     {OpSlow, "slow", &Slow},
     {OpThrow, "throw", &Throw},
-    {OpRecorderRead, "recorder read", &RecorderRead},
-    {OpRecorderStop, "recorder stop", &RecorderStop},
+    {op::RecorderRead, "recorder read", &RecorderRead},
+    {op::RecorderStop, "recorder stop", &RecorderStop},
+    {op::NativeCallsStart, "native calls start", &NativeCallsStart},
 };
 
 inline std::wstring SectionName() { return L"Local\\reagentlive-test-" + std::to_wstring(GetCurrentProcessId()); }

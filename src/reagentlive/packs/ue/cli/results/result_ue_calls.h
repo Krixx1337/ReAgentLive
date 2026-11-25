@@ -1,5 +1,6 @@
 // reagentlive CLI, Unreal pack: result structs (results/schema.h) of the
-// functions and calls: funcs, func, call and release, trace, calls-start, calls-read, game-thread.
+// functions and calls: funcs, func, call and release, trace, calls-start, game-thread
+// (calls-read's are the core's, results/calls.h).
 // Built from client results only (no I/O); conventions in results/result_json.h,
 // the verb table naming each verb's type in verbs_ue.h.
 #pragma once
@@ -9,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include "reagentlive/frontends/cli/results/calls.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/packs/ue/cli/values/json_output.h"
 #include "reagentlive/packs/ue/cli/state/native_names.h"
@@ -211,58 +213,6 @@ struct CallsStart {
         v("duration_ms", &CallsStart::durationMs);
         v("dry", &CallsStart::dry);
         v("note", &CallsStart::note);
-    }
-};
-// One parameter of a recorded call, decoded by reflection.
-struct CallsValue {
-    std::string name, direction;
-    Json value;
-    bool truncated = false;
-    template<class V> static void Describe(V& v) {
-        v("name", &CallsValue::name);
-        v("direction", &CallsValue::direction, "in|out|return");
-        v("value", &CallsValue::value);
-        v("truncated", &CallsValue::truncated);
-    }
-};
-struct CallsRow {
-    uint64_t sequence = 0;
-    double atMs = 0;                    // Since the recording began.
-    uint32_t thread = 0;
-    RefId ref;
-    std::optional<std::string> objectName, objectClass;
-    std::string via;
-    std::optional<std::vector<CallsValue>> values;
-    template<class V> static void Describe(V& v) {
-        v("sequence", &CallsRow::sequence);
-        v("at_ms", &CallsRow::atMs);
-        v("thread", &CallsRow::thread);
-        v("ref", &CallsRow::ref);
-        v("object_name", &CallsRow::objectName);
-        v("object_class", &CallsRow::objectClass);
-        v("via", &CallsRow::via, "event|vm");
-        v("values", &CallsRow::values);
-    }
-};
-// calls-read, with or without stop: the recording's state and its rows.
-struct Calls {
-    std::string function, state;
-    uint32_t slot = 0;
-    uint64_t calls = 0, events = 0, vm = 0, dropped = 0;
-    std::vector<CallsRow> rows;
-    std::optional<uint64_t> nextCursor;
-    std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
-    template<class V> static void Describe(V& v) {
-        v("function", &Calls::function);
-        v("state", &Calls::state, "recording|expired|finished|replaced");
-        v("slot", &Calls::slot);
-        v("calls", &Calls::calls);
-        v("events", &Calls::events);
-        v("vm", &Calls::vm);
-        v("dropped", &Calls::dropped);
-        v("rows", &Calls::rows);
-        v("next_cursor", &Calls::nextCursor);
-        v("unnamed", &Calls::unnamed);
     }
 };
 }

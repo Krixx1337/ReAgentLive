@@ -649,18 +649,6 @@ TEST_CASE("the call recorder's requests are bounded") {
     request.args[1] = MaxRecorderMilliseconds;
     request.address = 0;
     CHECK(ue::Check(request) == Status::BadRequest);
-    request = {};
-    request.op = ue::op::CallsRead;
-    request.args[0] = RecorderLatest;
-    request.args[1] = 12345;
-    CHECK(ue::Check(request) == Status::Ok);
-    request.args[0] = RecorderLatest + 1;
-    CHECK(ue::Check(request) == Status::BadRequest);
-    request = {};
-    request.op = ue::op::CallsStop;
-    CHECK(ue::Check(request) == Status::Ok);
-    request.address = 0x1000;
-    CHECK(ue::Check(request) == Status::BadRequest);
 }
 
 TEST_CASE("a name cut by a wire field equals the full name as far as the field reaches") {

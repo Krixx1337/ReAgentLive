@@ -669,3 +669,47 @@ TEST_CASE("the version text matches its parts") {
         std::to_string(REAGENTLIVE_VERSION_MINOR) + "." + std::to_string(REAGENTLIVE_VERSION_PATCH);
     CHECK(std::string(Version) == expected);
 }
+
+TEST_CASE("calls-read takes a slot and a cursor; native-calls-start a cell or a vtable entry") {
+    const auto read = Call(R"({"verb": "calls-read", "args": {"slot": 3, "view": {"cursor": 40}}})");
+    REQUIRE(read.has_value());
+    CHECK(read->target == "read");
+    CHECK(read->callsSlot == 3);
+    CHECK(read->callsAfter == 40);
+    const auto latest = Call(R"({"verb": "calls-read", "args": {"stop": true}})");
+    REQUIRE(latest.has_value());
+    CHECK(latest->target == "stop");
+    CHECK(latest->callsSlot == RecorderLatest);
+    CHECK(Call(R"({"verb": "calls-read", "args": {"stop": true, "view": {"cursor": 5}}})")->callsAfter == 5);
+    CHECK(Why(R"({"verb": "calls-stop"})").starts_with("unknown verb"));
+    CHECK(Why(R"({"verb": "calls-read", "args": {"slot": 8}})").starts_with("slot is"));
+    CHECK(read->request.op == op::RecorderRead);
+    const auto cell = Call(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 2, "this": "0x3000",
+        "copy": {"reg": "rdx", "len": 16}}})");
+    REQUIRE(cell.has_value());
+    CHECK(cell->kind == Kind::NativeCalls);
+    CHECK(cell->request.op == op::NativeCallsStart);
+    CHECK(cell->request.address == 0x2000);
+    CHECK(cell->nativeCalls.target == static_cast<uint32_t>(NativeTarget::Cell));
+    CHECK(cell->nativeCalls.milliseconds == 2000);
+    CHECK(cell->nativeCalls.filter == 0x3000);
+    CHECK(cell->nativeCalls.copyRegister == static_cast<uint32_t>(NativeRegister::Rdx));
+    CHECK(cell->nativeCalls.copyBytes == 16);
+    const auto entry = Call(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 1,
+        "vtable": {"entry": 5, "offset": 8}, "dry": true}})");
+    REQUIRE(entry.has_value());
+    CHECK(entry->nativeCalls.target == static_cast<uint32_t>(NativeTarget::Vtable));
+    CHECK(entry->nativeCalls.index == 5);
+    CHECK(entry->nativeCalls.offset == 8);
+    CHECK(entry->nativeCalls.flags == NativeCallsDry);
+    CHECK(Call(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 1, "copy": {"reg": "r8"}}})")
+              ->nativeCalls.copyBytes == MaxNativeCopy);
+    CHECK(Why(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 61}})").starts_with("duration is"));
+    CHECK(Why(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 1, "vtable": {"entry": 1024}}})")
+              .starts_with("vtable.entry"));
+    CHECK(Why(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 1, "vtable": {"entry": 1, "offset": 4}}})")
+              .starts_with("vtable.offset"));
+    CHECK(Why(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 1, "copy": {"reg": "rcx", "len": 65}}})")
+              .starts_with("copy.len"));
+    CHECK(Why(R"({"verb": "native-calls-start", "args": {"addr": "0x2000", "duration": 1, "copy": {"reg": "rax"}}})").size() > 0);
+}

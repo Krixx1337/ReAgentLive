@@ -8,7 +8,20 @@
 #include <windows.h>
 #include <new>
 #include "reagentlive/core/agent.h"
+#include "reagentlive/core/agent_internal.h"
 #include "reagentlive/core/vtable_copy.h"
+
+namespace reagentlive::detail {
+bool GuardedExchange(void* volatile* cell, void* value, void* expected, void*& previous) {
+    __try {
+        previous = InterlockedCompareExchangePointer(cell, value, expected);
+        return true;
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
+                EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return false;
+    }
+}
+}
 
 namespace reagentlive::vtable {
 namespace {
@@ -73,16 +86,7 @@ HMODULE CodeModule(const void* address) {
     return nullptr;
 }
 
-// Compare-and-swap that survives a freed object; false on a fault.
-bool GuardedExchange(void* volatile* cell, void* value, void* expected, void*& previous) {
-    __try {
-        previous = InterlockedCompareExchangePointer(cell, value, expected);
-        return true;
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION || GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ?
-                EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        return false;
-    }
-}
+using detail::GuardedExchange;
 
 Taken Hand(Copy& copy, uint32_t number, uint32_t index, Entry& out) {
     if (index >= copy.count || CodeModule(copy.originals[index]) != ModuleOf(copy.table)) return Taken::NotCode;
@@ -215,6 +219,8 @@ bool Swap(const Entry& entry, void* replacement) {
 bool Unswap(const Entry& entry, void* replacement) {
     return InterlockedCompareExchangePointer(entry.cell, entry.original, replacement) == replacement;
 }
+
+bool InCode(const void* address) { return CodeModule(address) != nullptr; }
 
 bool InCopy(uintptr_t address) {
     for (Copy* copy : g_copies) {

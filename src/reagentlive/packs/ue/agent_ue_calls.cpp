@@ -27,7 +27,7 @@ template<unsigned I> void Thunk(void* context, void* stack, void* result) {
     recorder::Slot& slot = recorder::g_slots[I];
     const uint64_t object = reinterpret_cast<uint64_t>(context);
     int64_t now = 0;
-    const bool armed = recorder::Enter(slot, object, now);
+    const bool armed = recorder::Enter(slot, CallsKind, object) && recorder::InTime(slot, now);
     const auto original = reinterpret_cast<Native>(slot.original);
     if (!armed) {
         original(context, stack, result);
@@ -75,10 +75,6 @@ bool Executable(const void* address) {
 }
 }
 
-void SweepCallRecordings() { recorder::Sweep(); }
-
-void StopCallRecordings() { recorder::StopAll(); }
-
 Progress CallsStart(const Request& request, Response& response, bool, const Host& host) {
     const Context& pack = Pack(host);
     if (!PackReady(pack, host, response) || !LayoutReady(GroupsCall, host, response)) return Progress::Done;
@@ -92,8 +88,10 @@ Progress CallsStart(const Request& request, Response& response, bool, const Host
     auto* function = const_cast<Object*>(FindFunction(TypeOf(object), owner, name, pack));
     if (!function) { Refuse(response, Status::NotFound, "function not found on the class chain"); return Progress::Done; }
     const Native current = *FuncField(function);
-    for (unsigned i = 0; i < MaxRecorderSlots; ++i)
-        if (current == Thunks[i]) { Refuse(response, Status::Refused, "already recorded by slot", i); return Progress::Done; }
+    if (uint32_t recorded = 0; recorder::IsThunk(reinterpret_cast<const void*>(current), recorded)) {
+        Refuse(response, Status::Refused, "already recorded by slot", recorded);
+        return Progress::Done;
+    }
     if (!Executable(reinterpret_cast<const void*>(current))) {
         Refuse(response, Status::Refused, "the function's native pointer is not code", reinterpret_cast<uint64_t>(current));
         return Progress::Done;
@@ -136,18 +134,5 @@ Progress CallsStart(const Request& request, Response& response, bool, const Host
     memcpy(response.data, &started, sizeof(started));
     response.length = sizeof(started);
     return Progress::Done;
-}
-
-// The core's read and stop, behind the pack's ops.
-Progress CallsRead(const Request& request, Response& response, bool, const Host& host) {
-    if (!PackReady(Pack(host), host, response)) return Progress::Done;
-    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    return recorder::Read(request, response);
-}
-
-Progress CallsStop(const Request& request, Response& response, bool, const Host& host) {
-    if (!PackReady(Pack(host), host, response)) return Progress::Done;
-    if ((response.status = ue::Check(request)) != Status::Ok) return Progress::Done;
-    return recorder::Stop(request, response);
 }
 }

@@ -80,6 +80,9 @@ Given Give(const Entry& entry);
 bool Swap(const Entry& entry, void* replacement);
 bool Unswap(const Entry& entry, void* replacement);
 
+// Whether `address` is in an executable section of a loaded module.
+bool InCode(const void* address);
+
 // The copy's address range, for a search that skips the agent's own state.
 bool InCopy(uintptr_t address);
 }

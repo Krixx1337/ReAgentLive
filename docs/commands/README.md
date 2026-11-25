@@ -19,6 +19,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `search`, `search-job` | T0 | [memory](memory.md#search) (text: [fast lane](fast-lane.md#search-text)) |
 | `read` with a layout `type` | T0 | [memory](memory.md#typed-layouts) |
 | `read` with `type` `cstr\|wstr`, pointer chains, `vtable`, its `rtti` | T0 | [native objects](native-objects.md) |
+| `native-calls-start`, `calls-read` | T0; the host lists the ops | [native objects](native-objects.md#native-calls) |
 | `mem-snap`, `mem-diff` | T0 | [memory](memory.md#mem-snap-and-mem-diff) |
 | `disasm`, `xrefs`, `touches`, `disp-scan` | T0 | [fast lane](fast-lane.md) |
 | `sig-check` (one `pattern` or a `file`), `sig-bytes` | T0 | [fast lane](fast-lane.md#signatures) |
@@ -31,7 +32,7 @@ offers (`packs`). **T3** commands also need the game thread
 | `get` (every mode), `entries`, `rows`, `member-name`, `layout-export`, `layout-check` | T2 | [Unreal fields](unreal-fields.md#every-field-and-its-filters) (`snap`, `changed`) |
 | `func`, `funcs` | T2 (`func`'s `params`: T3) | [Unreal calls](unreal-calls.md#func-and-funcs) |
 | `call`, `call-pure`, `call-each`, `release`, `line-trace` | T3 | [Unreal calls](unreal-calls.md) |
-| `calls-start`, `calls-read` | T3; the host lists the ops | [Unreal calls](unreal-calls.md#call-recorder) |
+| `calls-start` (read with `calls-read`) | T3; the host lists the ops | [Unreal calls](unreal-calls.md#call-recorder) |
 | `game-thread` | Unreal pack, a host linking `reagentlive::ue-draw`; `on` gives T3 | [Unreal calls](unreal-calls.md#game-thread) |
 | `script` with `decode` | T2 (any thread) | [Unreal code](unreal-code.md#decode) |
 | `script`, `name-refs` | T3 | [Unreal code](unreal-code.md) |

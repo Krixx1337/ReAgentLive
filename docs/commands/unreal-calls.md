@@ -114,9 +114,11 @@ class first, then those declared on each native interface, marked
 
 ## Call recorder
 
-`calls-start` records a reflected function's calls; `calls-read` returns
-them so far, with `stop` it ends the recording early. A host offers it by listing the
-three ops; the start is a write the host approves.
+`calls-start` records a reflected function's calls; the core's
+`calls-read` returns them so far, with `stop` it ends the recording early.
+A host offers it by listing `CallsStart` and the core's two recorder ops;
+the start is a write the host approves. A virtual or native function
+through a pointer: [native calls](native-objects.md#native-calls).
 
 - **What is written:** one pointer, `UFunction::Func`, swapped by
   compare-and-swap for one of a few fixed thunks. No code, vtable or import.

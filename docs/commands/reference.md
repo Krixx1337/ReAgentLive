@@ -615,6 +615,54 @@ addr is the object, or the table itself when its first qword points into code. v
 {"args":{"addr":"0x140001000"},"verb":"vtable"}
 ```
 
+### native-calls-start
+
+record calls through one vtable entry or code pointer, with their argument registers, for a while.
+
+Pack `modify`; **writes or calls**.
+
+| Key | Type | Required | Default | What |
+|---|---|---|---|---|
+| `addr` | `chain` | yes |  | the object (with vtable), or the cell holding the code pointer |
+| `vtable` | `obj` |  |  | record the object's vtable entry, swapped in a private copy of its table |
+| `vtable.entry` | `int` | yes |  | the entry index (0..1023) |
+| `vtable.offset` | `int` |  | `0` | the vptr's offset in the object (a multiple of 8) |
+| `duration` | `dur` | yes |  | how long, in seconds (at most 60) |
+| `this` | `addr` |  |  | only calls whose rcx (this) is this object |
+| `copy` | `obj` |  |  | also copy bytes at an argument register on each call (guarded) |
+| `copy.reg` | `rcx\|rdx\|r8\|r9` | yes |  | the register holding the address |
+| `copy.len` | `int` |  | `64` | bytes (1..64) |
+| `dry` | `bool` |  |  | check and show the pointer that would be swapped; write nothing |
+
+Result: `{slot: u32, target: vtable\|cell, cell: addr, original: addr, original_module?: str, original_rva?: hex, table?: addr, entry?: u32, thunk: addr, duration_ms: u64, dry: bool, note: str}`
+
+Swaps one code pointer in writable data for a forwarding thunk; restores it at the end or on calls-read with stop. vtable: the object's vptr is pointed at a private copy of its table and the entry is swapped there; the table itself is never written. Without vtable, addr is a cell (a field or a global in a writable section) that holds a pointer into a module's code; read-only data, code and the import table are refused. Only calls through that pointer are seen: direct and devirtualised calls are not. Rows keep rcx, rdx, r8, r9, the low 8 bytes of xmm0..3 and the return address; no return value. 256 rows per recording.
+
+```json
+{"args":{"addr":"0x140001000","duration":5},"verb":"native-calls-start"}
+```
+
+### calls-read
+
+a recording's calls so far, any recorder; stop ends it first.
+
+Pack `modify`.
+
+| Key | Type | Required | Default | What |
+|---|---|---|---|---|
+| `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
+| `stop` | `bool` |  |  | end the recording now (restores the pointer) and return its calls |
+| `view` | `obj` |  |  | paging and filters |
+| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
+
+Result: `{recorder: calls-start\|native-calls-start, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, dropped: u64, function?: str, events?: u64, vm?: u64, target?: addr, original?: addr, original_module?: str, original_rva?: hex, copied?: u64, faulted?: u64, rows: [{sequence: u64, at_ms: f64, thread: u32, ref?: ref, object_name?: str, object_class?: str, via?: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}], args?: [hex], xmm?: [hex], ret?: addr, ret_module?: str, ret_rva?: hex, ret_name?: str, bytes?: bytes, copy_faulted?: bool}], next_cursor?: u64, unnamed?: u32}`
+
+recorder names the verb that started it; its keys follow. calls-start: values in, out and return by name, read after the call; objects named while they live; strings and containers print headers only. native-calls-start: args (rcx, rdx, r8, r9) and xmm (low 8 bytes of xmm0..3) as hex, ret with its module, rva and ret_name from the labels files, bytes for a copy. A recording past its time is restored first. state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
+
+```json
+{"args":{},"verb":"calls-read"}
+```
+
 ## Unreal pack
 
 ### find
@@ -1031,27 +1079,6 @@ Swaps the function's native pointer (UFunction::Func, heap data) for a forwardin
 
 ```json
 {"args":{"duration":5,"function":"Name","object":"0x1f2e3d4c50#123:4"},"verb":"calls-start"}
-```
-
-### calls-read
-
-a recording's calls so far, decoded by the function's parameters; stop ends it first.
-
-Pack `modify`.
-
-| Key | Type | Required | Default | What |
-|---|---|---|---|---|
-| `slot` | `int` |  |  | the recording, 0..7 (default: the last started) |
-| `stop` | `bool` |  |  | end the recording now (restores the pointer) and return its calls |
-| `view` | `obj` |  |  | paging and filters |
-| `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
-
-Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, at_ms: f64, thread: u32, ref: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
-
-values: in, out and return by name, read after the call. Objects named while they live; strings and containers print headers only. A recording past its time is restored first. state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
-
-```json
-{"args":{},"verb":"calls-read"}
 ```
 
 ### describe

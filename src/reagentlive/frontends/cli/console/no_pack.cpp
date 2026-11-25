@@ -49,6 +49,7 @@ Result<Guard> ObjectGuard(Session&, uint64_t object) {
 }
 std::expected<uint32_t, std::string> TrialOwnerSize(Session&, const Ref&) { return std::unexpected(NoPack); }
 Result<SaveLayouts> PackSaveLayouts(Session&, std::span<const std::string>) { return SaveLayouts{}; }
+bool PackCalls(Session&, const RecorderRows&, shape::Calls&) { return false; }
 void DescribePeek(Session&, std::span<PeekValue>) {}
 void NamePeek(Session&, std::span<PeekValue>, std::span<const Module>) {}
 }

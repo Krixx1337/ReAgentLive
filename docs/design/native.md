@@ -109,8 +109,9 @@ database:
 - **Not built, no case yet:** structured operands, struct recovery from
   offsets, and walking backwards from an unrecognised reference to its
   instruction start (unreliable on x86 without analysis). **Out for good:**
-  hooking a function to log its callers (a code hook; `calls-start` records
-  reflected calls through a pointer swap).
+  hooking a function to log its callers (a code hook). Callers through
+  virtual or pointer dispatch are in scope through a pointer swap
+  ([native calls](#native-calls)).
 
 ## Native objects
 
@@ -138,12 +139,50 @@ system; the commands are in [native objects](../commands/native-objects.md).
 - **Calls are opt-in and deferred.** `call-native` waits for a live case a
   read cannot replace ([backlog](../ideas.md#17--call-native-caution)); a
   host will enable it only where engine calls are safe. Out for good: code
-  hooks, native tracing and breakpoints (the call recorder swaps a
-  `UFunction` pointer, never code); calling by symbol name (shipping images
+  hooks, native tracing and breakpoints (the call recorders swap a pointer
+  in writable data, never code); calling by symbol name (shipping images
   have none).
 - **Rejected:** a struct or type system in ReAgentLive (layouts come from the
   engine pack, the host's SDK or the static tool; `read`'s `type` covers ad
   hoc ones).
+
+## Native calls
+
+`native-calls-start` records the calls made through one code pointer: a
+vtable entry of one object, or a cell (a field or a global in a writable
+section) that holds a pointer into a module's code. `calls-read` reads it,
+as it reads every recorder.
+
+- **What it sees, and what not.** Only calls that load that pointer: a
+  virtual call on that object, or a call through that cell. A direct call,
+  a devirtualised or inlined one, and the same function called through
+  another object's table never read it. The rows say what the call passed,
+  not what it returned.
+- **A vtable entry through a private copy.** The object's vptr is pointed
+  at a copy of its table (`core/vtable_copy.h`) and the entry swapped
+  there: the table stays read-only and shared, other instances are
+  untouched, and several entries of one object coexist. Stopping the last
+  one puts the vptr back by compare-and-swap.
+- **A cell only in writable data.** Read-only, executable and guard pages,
+  read-only image sections and the import address table are refused, as is
+  a value that is not code in a loaded module or is already a thunk. No
+  protection is ever changed.
+- **One generic thunk per slot, in MASM** (x64 MSVC has no inline
+  assembly): it saves rcx, rdx, r8, r9, rax, r10, r11 and xmm0-5, calls the
+  recorder and jumps to the original with the caller's registers and stack
+  exactly as they were, so any signature forwards, stack arguments and
+  hidden return pointers included. It has unwind data, uses RIP-relative
+  addresses only and imports nothing, so it fits mapped images. The upper
+  halves of ymm registers are not saved: the recorder uses no vector
+  instructions.
+- **The recorder calls nothing.** No allocation, lock, log or system call:
+  the thread id comes from the TEB, the time from the time-stamp counter
+  (converted to microseconds against the performance counter on read). One
+  optional copy of up to 64 bytes at an argument register runs under a
+  fault guard. The deadline is the agent's tick sweep.
+- **Rejected:** return values by rewriting the return address (breaks stack
+  walks and unwinding; the thunk tail-jumps instead), and a C++ thunk per
+  signature (the generic one needs no signature).
 
 ## Search jobs
 

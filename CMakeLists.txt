@@ -89,8 +89,17 @@ add_library(reagentlive::core ALIAS reagentlive-core)
 target_sources(reagentlive-core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_search.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_recorder.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_vtable_copy.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_vtable_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/agent_native_calls.cpp")
 target_include_directories(reagentlive-core INTERFACE "${reagentlive_include_root}")
+# The native call recorder's thunks (x64 MSVC has no inline assembly): MASM
+# assembled once here into a static library every agent target links, so a
+# host enables no assembler of its own, and an OBJECT library that carries
+# the agent passes it on to the image it ends up in.
+enable_language(ASM_MASM)
+add_library(reagentlive-core-thunks STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/reagentlive/core/native_thunks.asm")
+set_target_properties(reagentlive-core-thunks PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(reagentlive-core INTERFACE reagentlive-core-thunks)
 target_compile_features(reagentlive-core INTERFACE cxx_std_23)
 
 # The source tree's commit, for status (reagentlive/commit.h, refreshed on
@@ -141,6 +150,7 @@ set(reagentlive_call_sources "${reagentlive_cli_dir}/call/build.cpp"
 set(reagentlive_console_sources "${reagentlive_cli_dir}/console/console.cpp" "${reagentlive_cli_dir}/console/output.cpp"
     "${reagentlive_cli_dir}/console/memory.cpp" "${reagentlive_cli_dir}/console/sig.cpp" "${reagentlive_cli_dir}/console/label_sigs.cpp"
     "${reagentlive_cli_dir}/console/code.cpp" "${reagentlive_cli_dir}/console/native.cpp"
+    "${reagentlive_cli_dir}/console/recorder.cpp"
     "${reagentlive_cli_dir}/console/snapshot.cpp" "${reagentlive_cli_dir}/console/batch.cpp"
     "${reagentlive_cli_dir}/console/offline.cpp" "${reagentlive_cli_dir}/console/session_files.cpp")
 set(reagentlive_console_no_pack_sources "${reagentlive_cli_dir}/console/no_pack.cpp")
@@ -295,7 +305,7 @@ if(REAGENTLIVE_BUILD_TESTS)
     target_link_libraries(reagentlive-ue-tests PRIVATE reagentlive-cli reagentlive-doctest)
     add_executable(reagentlive-loopback-tests tests/loopback/main.cpp tests/loopback/memory_tests.cpp
         tests/loopback/services_tests.cpp tests/loopback/channel_tests.cpp tests/loopback/recorder_tests.cpp
-        tests/loopback/vtable_copy_tests.cpp)
+        tests/loopback/vtable_copy_tests.cpp tests/loopback/native_calls_tests.cpp)
     target_link_libraries(reagentlive-loopback-tests PRIVATE reagentlive-core reagentlive-client reagentlive-ue-client reagentlive-cli reagentlive-doctest)
     # The real console against a fake engine: an in-process agent whose pack
     # ops answer from a synthetic world (tests/console/fake_engine.h).

@@ -44,7 +44,7 @@ The project record's `approval` (none: `auto`) sets what runs unasked:
 | Mode | Runs unasked | Ask first | Not at all |
 |---|---|---|---|
 | `read-only` | reads, pure getters (`call-pure`, `call-each`) | the first call on a new host or target (a wrong engine layout can crash it) | any change: list it for the user |
-| `auto` | reads, pure getters, value writes, state-changing calls; say what each does | that first call; writes to code, read-only data, vtables or hook slots; `calls-start`; `game-thread` `on` | - |
+| `auto` | reads, pure getters, value writes, state-changing calls; say what each does | that first call; writes to code, read-only data, vtables or hook slots; `calls-start`, `native-calls-start`; `game-thread` `on` | - |
 | `bypass` | everything | nothing | - |
 
 Asking: address, bytes now and new, effect (a call: its `dry` output); one yes, one change. Host notes can ask more.

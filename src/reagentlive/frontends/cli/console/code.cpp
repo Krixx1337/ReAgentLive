@@ -115,6 +115,25 @@ std::expected<std::optional<touch::Piece>, std::string> UnlistedPiece(Session& s
     return piece;
 }
 } // namespace
+std::map<uint64_t, std::string> LabelNames(const Module& module, uint32_t timestamp,
+                                           std::span<const std::filesystem::path> files) {
+    std::vector<LabelRow> rows;
+    for (const auto& path : files) {
+        if (path.empty()) continue;
+        std::ifstream in(path);
+        for (std::string text; in && std::getline(in, text);)
+            if (auto row = ParseLabel(text, module, timestamp)) rows.push_back(std::move(*row));
+    }
+    std::map<uint64_t, std::string> labels;
+    for (auto& row : MergeLabels(std::move(rows))) labels[module.base + row.rva] = std::move(row.name);
+    return labels;
+}
+
+std::map<uint64_t, std::string> LabelNames(Session& session, const Module& module, uint32_t timestamp) {
+    const std::filesystem::path files[] = {session.labels, session.hostLabels};
+    return LabelNames(module, timestamp, files);
+}
+
 void RunDisasm(Session& session, const Command& command, std::string_view jsonCommand) {
     Client& client = session.client;
     if (!client.Supports(op::ReadBatch)) return JsonError(session, jsonCommand, ErrorKind::Unsupported, "disasm needs read-batch");
@@ -429,21 +448,11 @@ void RunDisasm(Session& session, const Command& command, std::string_view jsonCo
     // `save.labels`, else the console's labels file and the host's names file,
     // those that exist: the names this build's rows give, by address (the
     // highest-ranked row per address).
-    std::map<uint64_t, std::string> labels;
-    {
-        std::vector<std::filesystem::path> files;
-        if (!command.labels.empty()) files.push_back(command.labels);
-        else files = {session.labels, session.hostLabels};
-        std::vector<LabelRow> rows;
-        for (const auto& path : files) {
-            if (path.empty()) continue;
-            std::ifstream in(path);
-            if (!in && !command.labels.empty()) return JsonError(session, jsonCommand, ErrorKind::File, "cannot read " + command.labels);
-            for (std::string text; in && std::getline(in, text);)
-                if (auto row = ParseLabel(text, *module, *timestamp)) rows.push_back(std::move(*row));
-        }
-        for (auto& row : MergeLabels(std::move(rows))) labels[module->base + row.rva] = std::move(row.name);
-    }
+    if (!command.labels.empty() && !std::ifstream(command.labels))
+        return JsonError(session, jsonCommand, ErrorKind::File, "cannot read " + command.labels);
+    const std::filesystem::path given[] = {command.labels};
+    std::map<uint64_t, std::string> labels = command.labels.empty() ?
+        LabelNames(session, *module, *timestamp) : LabelNames(*module, *timestamp, given);
     std::vector<save::Saved> saved;
     for (size_t i = 0; i < listings.size(); ++i)
         if (!listings[i].rows.empty()) saved.push_back({starts[i], listings[i].rows, owners[i]});

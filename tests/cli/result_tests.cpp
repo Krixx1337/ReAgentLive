@@ -5,6 +5,7 @@
 #include "reagentlive/packs/ue/cli/results/call_text.h"
 #include "reagentlive/packs/ue/cli/results/census.h"
 #include "reagentlive/packs/ue/cli/results/layout.h"
+#include "reagentlive/frontends/cli/results/calls.h"
 #include "reagentlive/frontends/cli/results/labels.h"
 #include "reagentlive/frontends/cli/results/result_json.h"
 #include "reagentlive/packs/ue/cli/results/result_ue_objects.h"
@@ -731,4 +732,37 @@ TEST_CASE("a layout line round-trips and names the first thing that differs") {
     CHECK_FALSE(ParseLayoutLine(R"({"owner": "Pawn", "field": "X"})").has_value());
     CHECK_FALSE(ParseLayoutLine(R"({"owner": "Pawn", "field": "X", "offset": "nope"})").has_value());
     CHECK_FALSE(ParseLayoutLine("not json").has_value());
+}
+
+TEST_CASE("a native recording's rows show the registers, where each call returns and the copy") {
+    const std::vector<Module> modules{{"game.exe", 0x7ff600000000, 0x100000}};
+    RecorderStatus status{0x2000, 0x7ff600001000, 3, 2, static_cast<uint32_t>(RecorderState::Recording), NativeCallsKind,
+        static_cast<uint32_t>(sizeof(NativeCall)) + 4, {1, 1}};
+    NativeCall call{{0x3000, 2, 3, 4}, {0x3ff8000000000000, 0, 0, 0}, 0x7ff600002010};
+    std::vector<RecorderCall> calls(2);
+    for (auto& each : calls) {
+        each.payload.resize(sizeof(call));
+        memcpy(each.payload.data(), &call, sizeof(call));
+    }
+    calls[0].row = {2, 0x3000, 1500, 7, sizeof(call) + 4, NativeCopied, {}};
+    calls[0].payload.insert(calls[0].payload.end(), {0xde, 0xad, 0xbe, 0xef});
+    calls[1].row = {3, 0x3000, 2500, 7, sizeof(call), 0, {}};
+    const auto names = [](uint64_t address) { return address == 0x7ff600002010 ? std::string("Owner::Fire+0x10") : std::string(); };
+    const auto json = Checked(MakeNativeCalls(status, calls, 0, 3, modules, names));
+    CHECK(json["recorder"] == "native-calls-start");
+    CHECK(json["target"] == "0x2000");
+    CHECK(json["original_module"] == "game.exe");
+    CHECK(json["original_rva"] == "0x1000");
+    CHECK(json["dropped"] == 1);              // Row 1 was gone when read.
+    CHECK((json["copied"] == 1 && json["faulted"] == 1));
+    REQUIRE(json["rows"].size() == 2);
+    const auto& first = json["rows"][0];
+    CHECK(first["args"] == Json{"0x3000", "0x2", "0x3", "0x4"});
+    CHECK(first["xmm"][0] == "0x3ff8000000000000");
+    CHECK(first["ret_rva"] == "0x2010");
+    CHECK(first["ret_name"] == "Owner::Fire+0x10");
+    CHECK(first["bytes"] == "de ad be ef");
+    CHECK(first["at_ms"] == 1.5);
+    CHECK(json["rows"][1]["copy_faulted"] == true);
+    CHECK_FALSE(json.contains("next_cursor"));
 }

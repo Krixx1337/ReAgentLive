@@ -733,10 +733,10 @@ Result<RecorderStatus> RecorderStatusFrom(const Response& response) {
 }
 }
 
-Result<RecorderRows> Client::RecorderRead(uint32_t op, uint64_t slot, uint64_t after) {
+Result<RecorderRows> Client::RecorderRead(uint64_t slot, uint64_t after) {
     RecorderRows result{{}, {}, after};
     Request request{};
-    request.op = op;
+    request.op = op::RecorderRead;
     request.args[0] = slot;
     for (;;) {
         request.args[1] = result.last;
@@ -767,13 +767,27 @@ Result<RecorderRows> Client::RecorderRead(uint32_t op, uint64_t slot, uint64_t a
     }
 }
 
-Result<RecorderStatus> Client::RecorderStop(uint32_t op, uint64_t slot) {
+Result<RecorderStatus> Client::RecorderStop(uint64_t slot) {
     Request request{};
-    request.op = op;
+    request.op = op::RecorderStop;
     request.args[0] = slot;
     auto response = Exchange(*this, request);
     if (!response) return std::unexpected(response.error());
     return RecorderStatusFrom(*response);
+}
+
+Result<NativeCallsStarted> Client::NativeCallsStart(const NativeCallsSpec& spec) {
+    Request request{};
+    request.op = op::NativeCallsStart;
+    request.length = sizeof(spec);
+    memcpy(request.data, &spec, sizeof(spec));
+    auto response = Exchange(*this, request);
+    if (!response) return std::unexpected(response.error());
+    NativeCallsStarted started{};
+    if (response->length != sizeof(started)) return std::unexpected(BadResponse("invalid native-calls-start reply"));
+    memcpy(&started, response->data, sizeof(started));
+    if (started.slot >= MaxRecorderSlots) return std::unexpected(BadResponse("invalid native-calls-start reply"));
+    return started;
 }
 
 Result<WatchInfo> Client::WatchStatus() {

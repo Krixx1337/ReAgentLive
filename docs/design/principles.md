@@ -20,21 +20,33 @@ of [design](README.md).
   the search worker, allowed only by `Host::backgroundSearch`: a single
   thread that runs search jobs, the console's internal scans and image
   copies (reads only, no engine calls) while the host tick only polls.
-- **Two opt-in pointer swaps, never code.** The Unreal pack's `calls-start`
-  swaps one `UFunction`'s native pointer (heap data) for a thunk that records
-  and forwards each call, and puts it back with a compare-and-swap; "what did
-  the game pass to this function" has no read-only route. The host helper
-  `reagentlive::ue-draw` points the game viewport object at a private copy of
-  its interface vtable ([decision](unreal.md#a-game-thread-tick-through-the-viewports-draw)).
-  A host opts in by listing the ops, and each is a write the host approves.
-  Code, the game's own vtables and imports are never written. Recordings
-  share the core's recorder slots (`core/recorder.h`): one ring, deadline,
-  compare-and-swap restore and read path for every kind, each kind
-  bringing only its thunks, its start op and its row payload. A vtable
-  entry is swapped through the core's vtable copies (`core/vtable_copy.h`):
-  one private copy per object and vptr offset, shared by every entry
-  swapped in it, never freed, and the vptr put back by compare-and-swap
-  only once no entry is swapped.
+- **Pointer swaps in writable data, never code, each approved.** "What did
+  the game pass to this function" has no read-only route, so a few opt-in
+  verbs swap one code pointer held in writable data for a thunk that records
+  and forwards each call, and put it back with a compare-and-swap: the Unreal
+  pack's `calls-start` (a `UFunction`'s native pointer, heap data) and the
+  core's `native-calls-start` (a vtable entry, or a code pointer in a
+  writable cell). The host helper `reagentlive::ue-draw` points the game
+  viewport object at a private copy of its interface vtable
+  ([decision](unreal.md#a-game-thread-tick-through-the-viewports-draw)).
+  A host opts in by listing the ops, and each start is a write the host
+  approves. Code, read-only data (the game's own vtables, `.rdata`), imports
+  and page protections are never written. Recordings share the core's
+  recorder slots (`core/recorder.h`): one ring, deadline, compare-and-swap
+  restore, read and stop for every kind, each kind bringing only its thunks,
+  its start op and its row payload. A vtable entry is swapped through the
+  core's vtable copies (`core/vtable_copy.h`): one private copy per object
+  and vptr offset, shared by every entry swapped in it, never freed, and the
+  vptr put back by compare-and-swap only once no entry is swapped. Only
+  calls through the swapped pointer are seen (virtual and pointer dispatch);
+  direct and devirtualised calls never read it.
+- **Rejected for pointer swaps** (not proposed again): return values by
+  rewriting return addresses (breaks stack walks and unwinding); import or
+  export tables and shared vtable entries (read-only data, a protection
+  change, global to every caller, clashes with other owners); the script
+  VM's native table (global, the hottest path); engine-wide event dispatch
+  (one shared slot); graphics interface vtable copies (the host's job, which
+  owns its graphics hooks).
 - **One safety boundary, set by a person, held by the console:** every
   verb that writes or calls is marked and sits in the `modify` pack, and
   the console's `--packs` ceiling refuses it, whichever frontend sends it
