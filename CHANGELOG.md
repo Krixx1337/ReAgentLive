@@ -41,11 +41,12 @@ tokens, one way to page, one count, one time unit.
   the `AGENTS.md` block say what is missing and offer setup; the injector
   and IDA are asked about when first needed.
 - **Approval is the project's choice, autonomous by default:**
-  `reagentlive.json`'s `approval` is `read-only` (no changes; the agent
-  lists them), `auto` (the default: values and calls run, saying what each
-  does; code, read-only data, vtables, hooks, `calls-start`, `game-thread`
-  `on` and the first call on a new host or target are asked) or `bypass`
-  (nothing asked) ([setup](docs/agents/setup.md#2-ask-about-the-project)).
+  `reagentlive.json`'s `approval` is `read-only` (reads and pure getters
+  only; the agent lists the changes it would make), `auto` (the default:
+  values and calls run, saying what each does; code, read-only data,
+  vtables, hooks, `calls-start` and `game-thread` `on` are asked) or
+  `bypass` (nothing asked). Both but `bypass` ask before the first call on
+  a new host or target ([setup](docs/agents/setup.md#2-ask-about-the-project)).
 - **`tools/check.ps1`** checks, and only reads, the machine and a project:
   build tools, Python and its MCP SDK, the submodule, record, built
   console and DLL, MCP entry; each failed item names its fix

@@ -40,13 +40,13 @@ answers; `engine` is T3; real serials (not `:0`) T4.
 ## Rules
 
 - **Approval** (the project record's `approval`; none: `auto`). Reads and
-  pure getters (`call-pure`, `call-each`) run in every mode; say what each
-  change does before it runs. `read-only`: no write, state-changing `call`,
-  `calls-start` or `game-thread` `on`; list them for the user instead.
-  `auto`: ask first only for writes to code, read-only data, vtables or
-  hook slots, `calls-start`, `game-thread` `on`, and the first call on a
-  new host or target (a wrong engine layout can crash it); the rest runs.
-  `bypass`: ask nothing. Asking: address, bytes now and new, effect (a
+  pure getters (`call-pure`, `call-each`) run unasked in every mode, but
+  the first call on a new host or target is asked unless `bypass` (a wrong
+  engine layout can crash it). `read-only`: no write, state-changing
+  `call`, `calls-start` or `game-thread` `on`; list them instead. `auto`:
+  ask first only for writes to code, read-only data, vtables or hook
+  slots, `calls-start`, `game-thread` `on`; the rest runs, saying what
+  each does first. `bypass`: ask nothing. Asking: address, bytes now and new, effect (a
   call: its `dry` output); one yes, one change. Host notes can ask more.
 - Never guess an arg or a result key: `{"verb": "help", "args": {"verb": "get"}}`
   (no target needed). Behaviour: the verb's page (`docs/commands/README.md`).

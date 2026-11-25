@@ -102,9 +102,12 @@ Ask the user, in one message:
 
    | Answer | `<approval>` | The agent |
    |---|---|---|
-   | never (a target others rely on) | `read-only` | reads only; lists the changes it would make for the user to run or approve |
-   | the safe ones (the default, also when unsure) | `auto` | writes values and calls functions on its own, saying what each does; asks first for code, read-only data, vtables, hook slots, `calls-start`, `game-thread` `on`, and the first call on a new host or target |
+   | never (a target others rely on) | `read-only` | reads and calls pure getters freely; makes no change, but lists the ones it would make for the user to run or approve |
+   | the safe ones (the default, also when unsure) | `auto` | writes values and calls functions on its own, saying what each does; asks first for code, read-only data, vtables, hook slots, `calls-start`, `game-thread` `on` |
    | everything (a target the user owns, offline) | `bypass` | asks nothing |
+
+   `read-only` and `auto` also ask before the first call on a new host or
+   target: a wrong engine layout can crash it.
 
    The project's own notes can ask for more
    ([the rule](../../.claude/skills/reagentlive/SKILL.md#rules)).
