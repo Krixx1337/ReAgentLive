@@ -384,5 +384,9 @@ if(REAGENTLIVE_BUILD_TESTS)
         add_test(NAME reagentlive.agent-link
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_agent_link.py")
         set_tests_properties(reagentlive.agent-link PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # tools/check.ps1: the read-only machine and project check, under Windows PowerShell.
+        add_test(NAME reagentlive.check
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_check.py")
+        set_tests_properties(reagentlive.check PROPERTIES LABELS "reagentlive" TIMEOUT 180)
     endif()
 endif()

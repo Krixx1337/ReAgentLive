@@ -102,8 +102,8 @@ This skill:
 ## Setting up, updating
 
 **Not set up on this machine** (a fresh clone: `reagentlive.json`, but no
-ReAgentLive MCP tools or no `console` on disk): say what is missing and
-offer `docs/agents/setup.md`; never work around it. The injector and IDA
+ReAgentLive MCP tools or no `console` on disk): `tools/check.ps1` says
+what is missing; offer `docs/agents/setup.md`, never work around it. The injector and IDA
 are asked about when first needed. Updates: `docs/agents/update.md`; never
 edit the submodule. Fetch first (`git -C <clone> fetch origin`) and read
 `git -C <clone> show origin/main:docs/agents/update.md` (offline: the

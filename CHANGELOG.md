@@ -40,6 +40,10 @@ tokens, one way to page, one count, one time unit.
   machine still missing the MCP SDK or the built console, the skill and
   the `AGENTS.md` block say what is missing and offer setup; the injector
   and IDA are asked about when first needed.
+- **`tools/check.ps1`** checks, and only reads, the machine and a project:
+  build tools, Python and its MCP SDK, the submodule, record, built
+  console and DLL, MCP entry; each failed item names its fix
+  ([setup](docs/agents/setup.md#1-check-the-machine)).
   A project wired by hand keeps its own server (name and flags) and its
   own tracked skill folder. No `CLAUDE.md` is made: Claude Code reads
   `AGENTS.md`.

@@ -12,6 +12,7 @@ Wire, build and update a project that carries ReAgentLive.
 
 | Script | What | Who runs it | Explained in |
 |---|---|---|---|
+| `check.ps1` | checks, and only reads, whether this machine and a project are ready: the tools a build needs, the MCP Python SDK, the project's submodule, record, built console and DLL, MCP entry; each failed item names its fix | the [setup](../docs/agents/setup.md#1-check-the-machine) procedure, the skill on a machine not set up yet, or the user | [setup](../docs/agents/setup.md#1-check-the-machine) |
 | `agent_link.py` | wires an AI agent to a host project: the project record, the MCP files, an `AGENTS.md` block, pointer skills; all committed, so a clone needs no setup; run again, it updates them | the [setup](../docs/agents/setup.md#4-wire-the-agent) procedure, or the user | [an agent in your project](../docs/hosting.md#an-agent-in-your-project) |
 | `build_project.ps1` | builds a project (the record's `build`, or CMake) in Visual Studio's x64 environment; with `-Check`, loads its DLL into a throwaway Python process and checks its `status` | the [setup](../docs/agents/setup.md#5-build-and-check) and [update](../docs/agents/update.md#4-update) procedures, or the user | [setup](../docs/agents/setup.md#5-build-and-check) |
 | `update.ps1` | updates a project's submodule: a preview that only reads (a person is then asked whether to apply), `-Apply` (move, rebuild, check) and `-Rollback` | the [update](../docs/agents/update.md) procedure, or the user | [update](../docs/agents/update.md#2-show-what-is-coming) |

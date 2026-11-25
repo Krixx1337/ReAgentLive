@@ -17,21 +17,21 @@ machine record. Later updates: [the update procedure](update.md).
 
 ## 1. Check the machine
 
-All of these must be present. Check each one; do not install anything
-without asking the user.
+Before ReAgentLive is in a project, run the check from any clone of it
+(a project wired earlier: its `<sub>`); it only reads:
 
-| Need | Check | If missing |
-|---|---|---|
-| Windows x64 | `$env:PROCESSOR_ARCHITECTURE` is `AMD64` | stop: ReAgentLive is Windows x64 only |
-| Visual Studio 2022 or newer with the C++ x64 tools | `& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath` prints a path | ask the user to install "Desktop development with C++" (Build Tools are enough) |
-| CMake 3.25 or newer | `cmake --version` | ask; Visual Studio ships one in its developer shell |
-| Ninja | `ninja --version` | ask; Visual Studio ships one in its developer shell |
-| Git | `git --version` | ask |
-| Python 3.10 or newer | `python --version` | ask |
-| The MCP Python SDK 2 | `python -c "import mcp.server.subscriptions"` | `python -m pip install --upgrade "mcp>=2"` (ask first) |
+```powershell
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools\check.ps1" -Project "<project>"
+```
 
-The build script loads the developer shell itself (step 5): check CMake and
-Ninja again there before you report them missing.
+It prints one JSON object: `ok`, and `machine` and `project` items
+(`name`, `ok`, `detail`, `fix`): Windows x64, Visual Studio's C++ tools,
+CMake 3.25+, Ninja (on PATH or Visual Studio's), Git, Python 3.10+, the
+MCP Python SDK; the project's submodule, record, built console and DLL,
+MCP entry. For each failed item, tell the user and act on its `fix`
+only on their yes (`windows-x64` failing: stop, it is x64 only). No
+clone yet (a new project): check the same by hand, then run it after
+step 3.
 
 Then read the machine record, `%LOCALAPPDATA%\reagentlive\machine.json`.
 No file: this is the first project on the machine. With an old
