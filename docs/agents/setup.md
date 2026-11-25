@@ -195,8 +195,9 @@ the console instead is the skill's
 [`interfaces.md`](../../.claude/skills/reagentlive/references/interfaces.md).
 The server is `<sub>/src/reagentlive/frontends/mcp/reagentlive_mcp.py`
 with `--console` set to the project's console; optional flags `--packs`
-and `--allow` (name `modify` only for a session that may write):
-[MCP tools](../client.md#mcp-tools).
+and `--allow`: [MCP tools](../client.md#mcp-tools). Never name `modify`
+in the project's MCP file: it is committed, so a wider ceiling is the
+user's own, at local scope.
 
 - **Claude Code, Cursor, Copilot:** step 4 wrote the project's MCP file.
   The client asks once to allow the project's server; Claude Code runs it

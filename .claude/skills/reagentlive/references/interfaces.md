@@ -28,8 +28,10 @@ each holds.
   packs=[...])`; console: `--packs`. Enable `modify` only inside the
   user's ceiling; past it, ask.
 - **`outside` the ceiling, or a refusal of kind `pack`:** the user set
-  it; never work around it. Ask the user to restart with the pack in
-  `--allow` (MCP) or `--packs`.
+  it; never work around it. Ask the user to widen their own ceiling (MCP:
+  a local-scope server, never the committed MCP file:
+  [MCP tools](../../../../docs/client.md#mcp-tools)) or restart with
+  `--packs`.
 - MCP `batch` refuses items from packs that are off, and every verb
   `help` marks `writes`: send those as their own tools.
 
