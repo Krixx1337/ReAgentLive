@@ -237,28 +237,38 @@ def server_name(servers, path):
     return names[0] if names else 'reagentlive'
 
 
-def allows_modify(entry, path):
-    """Refuses a committed server whose ceiling names modify: that is one person's, never the team's."""
-    if not is_server(entry):
-        return
-    args = entry['args']
-    for flag in ('--packs', '--allow'):
-        if flag in args and args.index(flag) + 1 < len(args) and 'modify' in str(args[args.index(flag) + 1]).split(','):
-            raise Refused(f'{path}: the ReAgentLive server names modify in {flag}; the file is committed, so take it '
-                          'out and keep it for yourself as a local-scope server (docs/client.md#mcp-tools)')
-
-
-def server_entry(entry, script, console):
-    """The server entry with this script and console; its other keys and arguments (--packs, --allow, --name) stay."""
-    if not is_server(entry):
-        return {'command': 'python', 'args': [script, '--console', console]}
-    entry = dict(entry)
-    args = [script if isinstance(a, str) and a.endswith(SERVER_SCRIPT) else a for a in entry['args']]
-    if '--console' in args and args.index('--console') + 1 < len(args):
-        args[args.index('--console') + 1] = console
+def set_packs(args, flag, modify):
+    """args with flag's pack list holding modify or not, in place (other packs kept); the flag goes when its
+    list empties, and is appended when it is new."""
+    args = list(args)
+    at = args.index(flag) if flag in args and args.index(flag) + 1 < len(args) else None
+    packs = [p for p in str(args[at + 1]).split(',') if p and p != 'modify'] if at is not None else []
+    if modify:
+        packs.append('modify')
+    if at is None:
+        return args + [flag, ','.join(packs)] if packs else args
+    if packs:
+        args[at + 1] = ','.join(packs)
     else:
-        args[1:1] = ['--console', console]
-    entry['args'] = args
+        del args[at:at + 2]
+    return args
+
+
+def server_entry(entry, script, console, approval):
+    """The server entry with this script and console, and the pack ceiling the approval mode gives: modify may be
+    turned on (--allow) unless read-only, and is never on from the start (--packs). Its other keys and arguments
+    (--name, other packs) stay."""
+    if is_server(entry):
+        entry = dict(entry)
+        args = [script if isinstance(a, str) and a.endswith(SERVER_SCRIPT) else a for a in entry['args']]
+        if '--console' in args and args.index('--console') + 1 < len(args):
+            args[args.index('--console') + 1] = console
+        else:
+            args[1:1] = ['--console', console]
+    else:
+        entry, args = {'command': 'python'}, [script, '--console', console]
+    args = set_packs(args, '--packs', False)
+    entry['args'] = set_packs(args, '--allow', approval != 'read-only')
     return entry
 
 
@@ -325,7 +335,6 @@ def run(args):
         if not isinstance(servers, dict):
             raise Refused(f'{path}: `{key}` is not a JSON object: fix it')
         names[client] = server_name(servers, path)
-        allows_modify(servers.get(names[client]), path)
     kept = own_skills(project)
 
     written = []
@@ -336,7 +345,7 @@ def run(args):
         config = configs[client]
         servers = config.setdefault(key, {})
         servers[names[client]] = server_entry(servers.get(names[client]), f'{root}{clone}/{SERVER_SCRIPT}',
-                                              root + record['console'])
+                                              root + record['console'], record['approval'])
         if write_json(os.path.join(project, *path.split('/')), config):
             written.append(path)
     text = block(clone, record, sorted(set(names.values())))

@@ -69,10 +69,11 @@ class AgentLinkTests(unittest.TestCase):
         self.assertIn('build_project.ps1 -Project .`, with `-Check` to check',
                       ' '.join(self.project.read('AGENTS.md').split()))
         claude = json.loads(self.project.read('.mcp.json'))['mcpServers']['reagentlive']
+        # auto (the default): modify may be turned on, and is not on from the start.
         self.assertEqual(claude['args'], ['external/reagentlive/src/reagentlive/frontends/mcp/reagentlive_mcp.py',
-                                          '--console', 'out/tool.exe'])
+                                          '--console', 'out/tool.exe', '--allow', 'modify'])
         copilot = json.loads(self.project.read('.vscode/mcp.json'))['servers']['reagentlive']
-        self.assertEqual(copilot['args'][-1], '${workspaceFolder}/out/tool.exe')
+        self.assertEqual(copilot['args'][1:3], ['--console', '${workspaceFolder}/out/tool.exe'])
         agents = self.project.read('AGENTS.md')
         self.assertIn('external/reagentlive/.claude/skills/reagentlive/SKILL.md', agents)
         self.assertFalse(os.path.exists(self.project.path('CLAUDE.md')))  # Claude Code reads AGENTS.md
@@ -175,18 +176,25 @@ class AgentLinkTests(unittest.TestCase):
         self.assertEqual(set(servers), {'other', 'my-dev'})
         self.assertEqual(servers['my-dev'], {'command': 'python', 'env': {'A': '1'}, 'args': [
             'external/reagentlive/src/reagentlive/frontends/mcp/reagentlive_mcp.py',
-            '--console', 'out/tool.exe', '--name', 'my-dev', '--packs', 'explore']})
+            '--console', 'out/tool.exe', '--name', 'my-dev', '--packs', 'explore', '--allow', 'modify']})
         self.assertEqual(self.project.read('.claude/skills/reagentlive/SKILL.md'), '# pointer\n')
         self.assertIn('`my-dev` MCP tools', self.project.read('AGENTS.md'))
         # A pointer this script wrote is its own, tracked or not: a later run rewrites it.
         subprocess.run(['git', '-C', self.project.root, 'add', '.agents'], check=True)
         self.assertEqual(self.link()[1]['kept'], ['.claude/skills/reagentlive'])
-        # A committed ceiling with modify: refused (it is one person's).
-        servers['my-dev']['args'] += ['--allow', 'observe,modify']
+        # The approval mode sets the ceiling in place, other packs kept: read-only takes modify out of both
+        # lists (dropping a list it empties), auto puts it back in --allow only.
+        args = servers['my-dev']['args']
+        args[args.index('--packs') + 1] = 'explore,modify'
+        args[args.index('--allow') + 1] = 'observe,modify'
         self.project.put('.mcp.json', json.dumps({'mcpServers': servers}))
-        code, out = self.link()
-        self.assertIn('names modify in --allow', out['error'])
-        servers['my-dev']['args'] = servers['my-dev']['args'][:-2]
+        self.assertEqual(self.link('--approval', 'read-only')[0], 0)
+        read_only = json.loads(self.project.read('.mcp.json'))['mcpServers']['my-dev']['args']
+        self.assertEqual(read_only[-4:], ['--packs', 'explore', '--allow', 'observe'])
+        self.assertEqual(self.link('--approval', 'auto')[0], 0)
+        auto = json.loads(self.project.read('.mcp.json'))['mcpServers']['my-dev']['args']
+        self.assertEqual(auto[-4:], ['--packs', 'explore', '--allow', 'observe,modify'])
+        servers = json.loads(self.project.read('.mcp.json'))['mcpServers']
         # Two ReAgentLive servers: refused.
         servers['second'] = servers['my-dev']
         self.project.put('.mcp.json', json.dumps({'mcpServers': servers}))

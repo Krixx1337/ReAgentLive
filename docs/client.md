@@ -161,11 +161,14 @@ lists its options. It needs the MCP Python SDK 2
   starts the server sets the ceiling; every console the adapter starts gets
   it as its own [`--packs`](commands/console.md#one-shot-use), so the
   console refuses past it too.
-- **The committed ceiling is the team's; a wider one is personal.** Keep
-  the project's MCP file at a safe ceiling (no `modify`) and never widen
-  it there: the change would reach everyone who clones the project. A
-  person who wants more adds the same server for themself; in Claude Code
-  a local-scope server of the same name overrides the project's, and
+- **The committed ceiling follows the project's approval mode.**
+  `tools/agent_link.py` writes it from `reagentlive.json`'s `approval`:
+  `read-only` keeps `modify` out of both lists, so no tool that writes or
+  calls can appear; `auto` and `bypass` name `modify` in `--allow` (never
+  in `--packs`: the agent turns it on with the `packs` tool when a task
+  needs it). Change the mode, not the file. A person who wants more than
+  the project's mode adds the same server for themself; in Claude Code a
+  local-scope server of the same name overrides the project's, and
   removing it restores the project's:
 
   ```powershell

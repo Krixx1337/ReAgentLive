@@ -47,6 +47,9 @@ tokens, one way to page, one count, one time unit.
   vtables, hooks, `calls-start` and `game-thread` `on` are asked) or
   `bypass` (nothing asked). Both but `bypass` ask before the first call on
   a new host or target ([setup](docs/agents/setup.md#2-ask-about-the-project)).
+  `agent_link.py` writes the MCP pack ceiling from it: `read-only` keeps
+  `modify` out, so no write tool can appear; `auto` and `bypass` allow it
+  ([MCP tools](docs/client.md#mcp-tools)).
 - **`tools/check.ps1`** checks, and only reads, the machine and a project:
   build tools, Python and its MCP SDK, the submodule, record, built
   console and DLL, MCP entry; each failed item names its fix
