@@ -15,10 +15,22 @@ steps for every further project: what belongs to the machine (the
 injector, the IDA side, the user's answers) is set up once and kept in the
 machine record. Later updates: [the update procedure](update.md).
 
+## Which path
+
+Find out first which one the user has; ask when it is not clear from the
+folder you work in:
+
+| The user has | Path | Steps |
+|---|---|---|
+| a project with ReAgentLive already set up (it has `reagentlive.json`; a teammate's clone, say) | **clone** | `git -C "<project>" submodule update --init`, then 1, 5, and 6 for Codex or another client without a project MCP file. Steps 2, 8 and 9 wait until needed: `improvement` is `user` without a record, and the skill asks about the injector or IDA the first time the user wants one |
+| their own project (a mod) without ReAgentLive | **their project** | 1 to 11; step 3 "Their project". The project needs a host (a DLL that ticks the agent) and a console: step 3 says how |
+| no project yet | **new**, from an example | 1 to 11; step 3 "A new one" |
+
 ## 1. Check the machine
 
-Before ReAgentLive is in a project, run the check from any clone of it
-(a project wired earlier: its `<sub>`); it only reads:
+With a clone of ReAgentLive at hand (the clone path, or after step 3),
+run the check; it only reads. Before step 3 of a new project there is no
+clone yet: check the same items by hand, then run it after step 3.
 
 ```powershell
 powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools\check.ps1" -Project "<project>"
@@ -29,9 +41,7 @@ It prints one JSON object: `ok`, and `machine` and `project` items
 CMake 3.25+, Ninja (on PATH or Visual Studio's), Git, Python 3.10+, the
 MCP Python SDK; the project's submodule, record, built console and DLL,
 MCP entry. For each failed item, tell the user and act on its `fix`
-only on their yes (`windows-x64` failing: stop, it is x64 only). No
-clone yet (a new project): check the same by hand, then run it after
-step 3.
+only on their yes (`windows-x64` failing: stop, it is x64 only).
 
 Then read the machine record, `%LOCALAPPDATA%\reagentlive\machine.json`.
 No file: this is the first project on the machine. With an old
@@ -112,13 +122,6 @@ Ask the user, in one message:
    The project's own notes can ask for more
    ([the rule](../../.claude/skills/reagentlive/SKILL.md#approval)).
 
-A clone of a project wired earlier (it has `reagentlive.json`) carries
-everything step 4 writes. It needs `git submodule update --init`, step 1,
-step 5, and step 6 for Codex or another client without a project MCP
-file. Steps 2, 8 and 9 wait until they are needed: `improvement` is
-`user` without a record, and the skill asks about the injector or IDA the
-first time the user wants one.
-
 ## 3. Put ReAgentLive into the project
 
 **Their project**, when `git -C <project> submodule status` does not list
@@ -128,9 +131,16 @@ ReAgentLive yet:
 git -C "<project>" submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
 ```
 
-Then link the project's targets to the library
-([using it in your project](../hosting.md#using-it-in-your-project)) when
-it does not yet, with the user.
+The project then needs a host, unless it has one: a DLL that ticks the
+agent (`reagentlive::core`, or a pack such as `reagentlive::ue-base`,
+linked into the mod or a DLL of its own) and a console
+(`reagentlive::console`), each with the same section prefix and layout
+([CMake targets](../hosting.md#cmake-targets)). Show the user what that takes
+([host checklist](../hosting.md#host-checklist),
+[using it in your project](../hosting.md#using-it-in-your-project)); the
+examples' `host.cpp` and `console.cpp` are a starting point
+([starting from an example](../hosting.md#starting-from-an-example)).
+On their yes, make the changes in their files, then build (step 5).
 
 **A new one:**
 
