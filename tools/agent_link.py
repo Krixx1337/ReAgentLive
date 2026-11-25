@@ -13,7 +13,7 @@ Paths are relative to the project. Writes, and on every later run updates in pla
   without it tools/build_project.ps1 runs CMake on the project), `check` (false for a host that ticks
   only inside the game, so the update builds without loading the DLL into a test process), `approval`
   (what the agent may change in the target unasked: `read-only`, `auto` (the default) or `bypass`;
-  the skill's Approval rule). Arguments
+  the skill's Approval section). Arguments
   left out keep the record's values. It is committed: nothing personal goes in it (the improvement mode is
   the machine record's).
 - the ReAgentLive server in each client's project MCP file: the one already there (any server running

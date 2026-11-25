@@ -110,7 +110,7 @@ Ask the user, in one message:
    target: a wrong engine layout can crash it.
 
    The project's own notes can ask for more
-   ([the rule](../../.claude/skills/reagentlive/SKILL.md#rules)).
+   ([the rule](../../.claude/skills/reagentlive/SKILL.md#approval)).
 
 A clone of a project wired earlier (it has `reagentlive.json`) carries
 everything step 4 writes. It needs `git submodule update --init`, step 1,

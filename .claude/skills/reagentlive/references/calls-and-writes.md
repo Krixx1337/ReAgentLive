@@ -1,6 +1,6 @@
 # Engine calls and writes
 
-Approval: SKILL.md rules. Call semantics and named inputs:
+Approval: SKILL.md, Approval. Call semantics and named inputs:
 `docs/commands/unreal-calls.md#named-calls`; timed writes:
 `docs/commands/memory.md#timed-writes`.
 

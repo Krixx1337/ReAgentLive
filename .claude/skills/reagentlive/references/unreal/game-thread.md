@@ -41,7 +41,7 @@ in every new game before the first `on`:
   `host_thread: engine` once it ticks. Waiting: armed, installs on a later
   host tick. A conflict: not installed; report its text, do not retry.
 - **Known-answer call**, the first call on a new host or in a new game:
-  ask the user first (SKILL.md rules), then
+  ask the user first unless the mode is `bypass` (SKILL.md, Approval), then
   `{"verb": "call-pure", "args": {"object": "Default__KismetMathLibrary", "function": "Add_IntInt", "params": {"A": 2, "B": 3}}}`
   returns 5. Only then
   trust the game-thread verbs; later pure getters need no approval.

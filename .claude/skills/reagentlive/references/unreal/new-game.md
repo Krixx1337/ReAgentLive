@@ -36,7 +36,7 @@ user's tool is still analysing gets in their way; ask first.
   offsets, cast flags, pointer targets).
 - **Read, don't call.** Everything before the `call` group is reads. The
   first call is the known-answer call; it needs the user's approval
-  (SKILL.md rules) even through `call-pure`.
+  (SKILL.md, Approval) even through `call-pure`.
 - **A group you can't settle stays out of the profile.** A missing group
   turns its verbs off; a wrong one returns garbage, or crashes for `call`.
 - Query each comparison index with its own `name` command: a garbage index
