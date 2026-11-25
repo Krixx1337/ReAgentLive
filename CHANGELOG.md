@@ -36,7 +36,10 @@ tokens, one way to page, one count, one time unit.
   block and pointer skills for the ReAgentLive submodule it carries, for
   a mod of your own or a copy of an example
   ([an agent in your project](docs/hosting.md#an-agent-in-your-project)).
-  All of it is committed: a clone of the project works with no setup.
+  All of it is committed: a clone of the project works with no setup. On a
+  machine still missing the MCP SDK or the built console, the skill and
+  the `AGENTS.md` block say what is missing and offer setup; the injector
+  and IDA are asked about when first needed.
   A project wired by hand keeps its own server (name and flags) and its
   own tracked skill folder. No `CLAUDE.md` is made: Claude Code reads
   `AGENTS.md`.
