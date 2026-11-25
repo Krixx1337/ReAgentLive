@@ -59,10 +59,12 @@ copied from an example or not:
 - **`tools/agent_link.py --console <exe> --dll <dll>`** wires the project
   to that checkout: the project record `reagentlive.json` (where the
   checkout is, the clients, `console`, `dll`, an optional `build` command,
-  `check`, the skill's `improvement` mode), the `reagentlive` server in each client's project MCP file, a
-  ReAgentLive block in `AGENTS.md`, skill links (ignored by git), and the
-  project in the machine's list of projects. Run again, it updates all of
-  it in place; a fresh clone of the project runs it once.
+  `check`, the skill's `improvement` mode), the ReAgentLive server in each
+  client's project MCP file (the project's own when it has one), a
+  ReAgentLive block in `AGENTS.md` and skill links (ignored by git); a
+  skill folder the project tracks stays. It writes nothing outside the
+  project. Run again, it updates all of it in place; a fresh clone of the
+  project runs it once.
 - **`tools/build_project.ps1`** loads Visual Studio's x64 environment and
   runs the record's `build`, or CMake on the project into `build/`. With
   `-Check` it loads the DLL into a throwaway Python process and checks its
@@ -70,8 +72,7 @@ copied from an example or not:
   for one that ticks only inside the game).
 - **`tools/update.ps1`** previews an update (what is coming, and whether
   the headers a host includes changed), then with `-Apply` moves the
-  submodule, rebuilds and checks; `-Rollback` goes back, `-All` runs on
-  every project on the machine.
+  submodule, rebuilds and checks; `-Rollback` goes back.
 
 Each project pins its own commit, so updating one never breaks another;
 nothing is installed machine-wide. Why there is no global install or

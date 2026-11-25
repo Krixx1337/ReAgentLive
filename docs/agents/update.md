@@ -16,12 +16,8 @@ project put it elsewhere); `<console>` is the project record's
 
 The project is the folder you work in, or the one the user names. It holds
 the submodule when `git -C <project> submodule status` lists `reagentlive`.
-When the user asks for every project, add `-All` to each `update.ps1` call
-instead of `-Project`: it takes the `projects` of the machine record
-([its fields](setup.md#1-check-the-machine)), runs each with its own copy
-of the scripts, and prints `SKIP` for a path that is gone (ask before
-dropping it from the record). `-Rollback` takes one project, never
-`-All`.
+Each project updates on its own: for several, ask the user for their
+folders and follow these steps for each.
 
 - With `reagentlive.json` (a project [agent setup](setup.md) wired):
   follow every step.

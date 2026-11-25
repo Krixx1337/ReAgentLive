@@ -11,8 +11,8 @@ Instructions an AI agent follows on the user's machine; humans: see the
 | An update of the ReAgentLive in a project (its `reagentlive/` submodule) | [update.md](update.md) |
 
 The project record's fields: [setup.md](setup.md#4-wire-the-agent);
-the machine record's (every project, the injector, the IDA side, the
-improvement mode): [setup.md](setup.md#1-check-the-machine).
+the machine record's (the injector, the IDA side, the improvement
+mode): [setup.md](setup.md#1-check-the-machine).
 
 ## Rules every procedure shares
 

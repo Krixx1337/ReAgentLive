@@ -5,9 +5,7 @@
 #   reagentlive/tools/update.ps1 -Apply           moves the submodule, rebuilds, checks, regenerates console_api.py
 #   reagentlive/tools/update.ps1 -Rollback <old>  moves it back to <old> and rebuilds
 #
-# -Project picks the project (default: the git project this clone is a submodule of); -All runs on every project in
-# the machine record (docs/agents/setup.md#1-check-the-machine), each with its own copy of the scripts;
-# -Revision updates to a branch, tag or commit instead of origin/main. Preview only reads (it fetches).
+# -Project picks the project (default: the git project this clone is a submodule of); -Revision updates to a branch, tag or commit instead of origin/main. Preview only reads (it fetches).
 # Lines: PASS, FAIL, SKIP, and NOTE for what the user must still decide or do: changed host headers (the
 # host's code may need the CHANGELOG's breaking changes), a protocol change (restart the targets), a
 # changed MCP server (restart the session). The host's code is never changed here. A project without
@@ -19,7 +17,6 @@
 [CmdletBinding(DefaultParameterSetName = 'Preview')]
 param(
     [string]$Project,
-    [switch]$All,
     [string]$Revision = 'origin/main',
     [Parameter(ParameterSetName = 'Apply')][switch]$Apply,
     [Parameter(ParameterSetName = 'Rollback')][string]$Rollback
@@ -160,23 +157,10 @@ function Update-Project([string]$dir) {
     }
 }
 
-if ($All -and $Rollback) { Write-Host 'FAIL arguments: -Rollback goes back to one commit: name the project with -Project, not -All'; exit 1 }
-$projects = @()
-if ($All) {
-    $machine = Join-Path $env:LOCALAPPDATA 'reagentlive\machine.json'
-    if (-not (Test-Path $machine)) { Write-Host "FAIL arguments: no machine record at $machine"; exit 1 }
-    $projects = @((Get-Content $machine -Raw | ConvertFrom-Json).projects | Where-Object { $_ })
-    foreach ($dir in $projects) {
-        if (-not (Test-Path $dir)) { Write-Host "SKIP ${dir}: gone; drop it from the machine record if it is not coming back" }
-    }
-    $projects = @($projects | Where-Object { Test-Path $_ })
-} else {
-    if (-not $Project) {
-        $Project = (git -C $here rev-parse --show-superproject-working-tree 2>$null)
-        if (-not $Project) { Write-Host "FAIL arguments: $here is no git submodule of a project; pass -Project"; exit 1 }
-    }
-    $projects = @((Resolve-Path $Project).Path)
+if (-not $Project) {
+    $Project = (git -C $here rev-parse --show-superproject-working-tree 2>$null)
+    if (-not $Project) { Write-Host "FAIL arguments: $here is no git submodule of a project; pass -Project"; exit 1 }
 }
-foreach ($dir in $projects) { Update-Project $dir }
+Update-Project (Resolve-Path $Project).Path
 if ($script:failed -gt 0) { exit 1 }
 exit 0

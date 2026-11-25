@@ -13,15 +13,16 @@ Paths are relative to the project. Writes, and on every later run updates in pla
   without it tools/build_project.ps1 runs CMake on the project), `check` (false for a host that ticks
   only inside the game, so the update builds without loading the DLL into a test process),
   `improvement`. Arguments left out keep the record's values.
-- the `reagentlive` server in each client's project MCP file (other servers stay);
+- the ReAgentLive server in each client's project MCP file: the one already there (any server running
+  reagentlive_mcp.py, under its own name, keeping its other arguments), else a new `reagentlive`; other
+  servers stay;
 - a ReAgentLive block in AGENTS.md (CLAUDE.md gets `@AGENTS.md` when it has neither; an existing CLAUDE.md
   that does not import AGENTS.md gets the block too), between `<!-- reagentlive -->` markers;
 - skill links in .claude/skills and .agents/skills (a junction on Windows, a symlink elsewhere), and
-  their lines in .gitignore;
-- the project in the machine record's `projects` (%LOCALAPPDATA%\\reagentlive\\machine.json).
+  their lines in .gitignore; a skill folder the project tracks there is its own and stays.
 
-Prints one JSON object: `project`, `record`, `written`, `links`, `registered` (the machine record, or null
-without LOCALAPPDATA); or `error`. Exit 0 or 1.
+Nothing outside the project is written. Prints one JSON object: `project`, `record`, `written`, `servers`
+(each client's server name), `links`, `kept` (the project's own skill folders); or `error`. Exit 0 or 1.
 """
 import argparse
 import json
@@ -34,6 +35,7 @@ CLONE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILL = os.path.join(CLONE, '.claude', 'skills', 'reagentlive')
 LINKS = ('.claude/skills/reagentlive', '.agents/skills/reagentlive')
 RECORD = 'reagentlive.json'
+SERVER_SCRIPT = 'src/reagentlive/frontends/mcp/reagentlive_mcp.py'
 BEGIN, END = '<!-- reagentlive -->', '<!-- /reagentlive -->'
 # Claude Code starts a project's servers in the folder it runs in; Cursor and VS Code expand ${workspaceFolder}.
 MCP_FILES = {
@@ -79,14 +81,24 @@ def write(path, text, ending='\n'):
         handle.write(text.replace('\n', ending))
 
 
-def block(clone, record):
-    """The ReAgentLive lines for an agent in the project."""
+def write_json(path, value):
+    """Writes value as JSON when it differs from the file; True when it changed."""
+    text = json.dumps(value, indent=2) + '\n'
+    if os.path.isfile(path) and read_text(path)[0] == text:
+        return False
+    write(path, text)
+    return True
+
+
+def block(clone, record, names):
+    """The ReAgentLive lines for an agent in the project; names: its MCP servers."""
     script = f'powershell -NoProfile -ExecutionPolicy Bypass -File {clone}/tools'
     build = record.get('build') or f'{script}/build_project.ps1 -Project .'
+    tools = ' or '.join(f'`{name}`' for name in names)
     return f'''{BEGIN}
 ## ReAgentLive
 
-- Before investigating a running process with the reagentlive tools, read
+- Before investigating a running process with the {tools} MCP tools, read
   `{clone}/.claude/skills/reagentlive/SKILL.md` and follow it. ReAgentLive
   is the `{clone}/` submodule: never edit it here.
 - Docs: `{clone}/docs/README.md`; hosting: `{clone}/docs/hosting.md`.
@@ -131,22 +143,36 @@ def is_link(path):
         return False
 
 
-def check_links(project):
-    """Refuses before any write when a link path holds a real folder."""
+def tracked(project, relative):
+    """The project's git tracks a file under relative."""
+    try:
+        result = subprocess.run(['git', '-C', project, 'ls-files', '--', relative], capture_output=True, text=True)
+    except OSError:
+        return False
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def own_skills(project):
+    """The link paths that hold the project's own skill (a real folder it tracks), kept as they are; refuses
+    before any write on an untracked real folder (a stale copy)."""
+    kept = []
     for relative in LINKS:
         link = os.path.join(project, *relative.split('/'))
         if os.path.exists(link) and not is_link(link):
-            raise Refused(f'{relative} is a folder, not a link: move it away first')
+            if not tracked(project, relative):
+                raise Refused(f'{relative} is an untracked folder, not a link: move it away first')
+            kept.append(relative)
+    return kept
 
 
-def link_skill(project):
+def link_skill(project, kept):
     made = []
     for relative in LINKS:
+        if relative in kept:
+            continue
         link = os.path.join(project, *relative.split('/'))
         if is_link(link):
             os.rmdir(link) if os.name == 'nt' else os.unlink(link)
-        elif os.path.exists(link):
-            raise Refused(f'{relative} is a folder, not a link: move it away first')
         os.makedirs(os.path.dirname(link), exist_ok=True)
         if os.name == 'nt':
             try:
@@ -162,26 +188,33 @@ def link_skill(project):
     return made
 
 
-def machine_record():
-    base = os.environ.get('LOCALAPPDATA')
-    if not base:
-        return None, None
-    path = os.path.join(base, 'reagentlive', 'machine.json')
-    return path, read_json(path, 'the machine record')
+def is_server(entry):
+    """An MCP server entry that runs ReAgentLive's MCP server."""
+    args = entry.get('args') if isinstance(entry, dict) else None
+    return isinstance(args, list) and any(isinstance(a, str) and a.endswith(SERVER_SCRIPT) for a in args)
 
 
-def register(project, path, record):
-    if path is None:
-        return None
-    projects = record.get('projects') or []
-    if not isinstance(projects, list):
-        projects = [projects]
-    known = {os.path.normcase(os.path.normpath(p)) for p in projects if isinstance(p, str)}
-    if os.path.normcase(os.path.normpath(project)) not in known:
-        projects.append(project)
-    record['projects'] = projects
-    write(path, json.dumps(record, indent=2) + '\n')
-    return path
+def server_name(servers, path):
+    """The name of the project's ReAgentLive server in an MCP file: its own, whatever it is called, else
+    reagentlive. Refuses on more than one."""
+    names = [name for name, entry in servers.items() if is_server(entry)]
+    if len(names) > 1:
+        raise Refused(f'{path} has several ReAgentLive servers ({", ".join(names)}): keep one')
+    return names[0] if names else 'reagentlive'
+
+
+def server_entry(entry, script, console):
+    """The server entry with this script and console; its other keys and arguments (--packs, --allow, --name) stay."""
+    if not is_server(entry):
+        return {'command': 'python', 'args': [script, '--console', console]}
+    entry = dict(entry)
+    args = [script if isinstance(a, str) and a.endswith(SERVER_SCRIPT) else a for a in entry['args']]
+    if '--console' in args and args.index('--console') + 1 < len(args):
+        args[args.index('--console') + 1] = console
+    else:
+        args[1:1] = ['--console', console]
+    entry['args'] = args
+    return entry
 
 
 def default_project():
@@ -237,25 +270,28 @@ def run(args):
     record.setdefault('improvement', 'user')
     if record['improvement'] not in ('user', 'dev', 'off'):
         raise Refused('--improvement is user, dev or off')
-    configs = {}
+    configs, names = {}, {}
     for client in clients:
         path, key, _ = MCP_FILES[client]
         configs[client] = read_json(os.path.join(project, *path.split('/')), 'the MCP file')
-    machine = machine_record()
-    check_links(project)
+        servers = configs[client].get(key) or {}
+        if not isinstance(servers, dict):
+            raise Refused(f'{path}: `{key}` is not a JSON object: fix it')
+        names[client] = server_name(servers, path)
+    kept = own_skills(project)
 
     written = []
-    write(record_path, json.dumps(record, indent=2) + '\n')
-    written.append(RECORD)
+    if write_json(record_path, record):
+        written.append(RECORD)
     for client in clients:
         path, key, root = MCP_FILES[client]
         config = configs[client]
         servers = config.setdefault(key, {})
-        servers['reagentlive'] = {'command': 'python', 'args': [
-            f'{root}{clone}/src/reagentlive/frontends/mcp/reagentlive_mcp.py', '--console', root + record['console']]}
-        write(os.path.join(project, *path.split('/')), json.dumps(config, indent=2) + '\n')
-        written.append(path)
-    text = block(clone, record)
+        servers[names[client]] = server_entry(servers.get(names[client]), f'{root}{clone}/{SERVER_SCRIPT}',
+                                              root + record['console'])
+        if write_json(os.path.join(project, *path.split('/')), config):
+            written.append(path)
+    text = block(clone, record, sorted(set(names.values())))
     agents, claude = os.path.join(project, 'AGENTS.md'), os.path.join(project, 'CLAUDE.md')
     if put_block(agents, text):
         written.append('AGENTS.md')
@@ -266,13 +302,13 @@ def run(args):
         written.append('CLAUDE.md')
     ignore = os.path.join(project, '.gitignore')
     current, ending = read_text(ignore) if os.path.isfile(ignore) else ('', '\n')
-    missing = [link for link in LINKS if link not in current.split('\n')]
+    missing = [link for link in LINKS if link not in kept and link not in current.split('\n')]
     if missing:
         current = current.rstrip('\n')
         write(ignore, (current + '\n' if current else '') + ''.join(f'{link}\n' for link in missing), ending)
         written.append('.gitignore')
-    return {'project': project, 'record': record, 'written': written, 'links': link_skill(project),
-            'registered': register(project, *machine)}
+    return {'project': project, 'record': record, 'written': written, 'servers': names,
+            'links': link_skill(project, kept), 'kept': kept}
 
 
 def main(argv=None):

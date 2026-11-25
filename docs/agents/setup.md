@@ -40,7 +40,6 @@ record's. Its fields:
 
 | Field | Written by | Value |
 |---|---|---|
-| `projects` | `agent_link.py` (step 4) | every project wired on this machine, absolute paths |
 | `improvement` | step 2 | the user's answer, the default for every later project |
 | `injector` | step 8 | the path of `Injector.exe`, or `declined` |
 | `ida` | step 9 | `true` once the IDA side is set up, or `declined` |
@@ -149,7 +148,7 @@ nothing). It writes, keeping what the project already has:
 | File | What |
 |---|---|
 | `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`, `improvement`; the skill and the scripts read it |
-| the MCP files of `<clients>` | the `reagentlive` server; other servers stay |
+| the MCP files of `<clients>` | the ReAgentLive server: the project's own when it has one (any server running `reagentlive_mcp.py`, under its name, its other flags kept), else a new `reagentlive`; other servers stay. `servers` in the output names it |
 | `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); `CLAUDE.md` imports it, or gets the block when it does not |
 | `.gitignore` | the skill links |
 
@@ -157,8 +156,10 @@ It links the skill into `.claude\skills\reagentlive` (Claude Code) and
 `.agents\skills\reagentlive` (Codex, Cursor and others that read Agent
 Skills there), each a junction into the submodule, so updating the
 submodule updates the skill; a client without Agent Skills reads it
-through the `AGENTS.md` block. It adds the project to the machine record's
-`projects`. Run it again after any change to these values.
+through the `AGENTS.md` block. A skill folder the project tracks at either
+path is its own (a host's pointer skill, say): it stays, and `kept` names
+it. It writes nothing outside the project. Run
+it again after any change to these values.
 
 ## 5. Build and check
 

@@ -33,7 +33,8 @@ KEY_PATH = re.compile(r'^(view|scope|save|undo)\.([a-z_]+)$')
 FLAG = re.compile(r'(?<![\w-])--([a-z][a-z0-9-]*)')
 ONE_SHOT = re.compile(r"""(?<![\w-])-c\s+["']?(?![\s"']*[{\[@])""")
 # A span that runs one of these takes its own flags.
-PROGRAMS = ('python', 'py', 'cmake', 'ctest', 'git', 'pip', 'pwsh', 'powershell', 'reagentlive-table', 'ninja', 'cl')
+PROGRAMS = ('python', 'py', 'cmake', 'ctest', 'git', 'pip', 'pwsh', 'powershell', 'reagentlive-table', 'ninja', 'cl',
+            'claude', 'codex')
 # Session helpers that are not verbs, and console or tool options a span may name.
 SESSION_METHODS = {'call', 'batch', 'batch_results', 'watch', 'close', 'help', 'table', 'records', 'raw'}
 SKIP_DIRS = {'__pycache__', '.git', 'build', 'out', 'archive'}

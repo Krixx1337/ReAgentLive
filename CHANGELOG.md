@@ -36,15 +36,17 @@ tokens, one way to page, one count, one time unit.
   block and the skill links for the ReAgentLive submodule it carries, for
   a mod of your own or a copy of an example
   ([an agent in your project](docs/hosting.md#an-agent-in-your-project)).
+  A project wired by hand keeps its own server (name and flags) and its
+  own tracked skill folder.
 - **Build, check and update a project by script:** `tools/build_project.ps1
   -Check`; `tools/update.ps1` previews what is coming (and whether the
   host headers changed), `-Apply` moves, rebuilds and checks, `-Rollback`
-  goes back, `-All` runs on every project ([update](docs/agents/update.md)).
+  goes back ([update](docs/agents/update.md)).
 - **Later projects ask only about themselves:** the injector, the IDA side
   and your improvement mode are set up once and kept in
-  `%LOCALAPPDATA%\reagentlive\machine.json`, which also lists every
-  project, so "update all my ReAgentLive projects" works
-  ([setup](docs/agents/setup.md#1-check-the-machine)).
+  `%LOCALAPPDATA%\reagentlive\machine.json`
+  ([setup](docs/agents/setup.md#1-check-the-machine)); the agent writes
+  nothing else outside the project.
 
 ### Improved
 

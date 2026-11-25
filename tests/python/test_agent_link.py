@@ -1,11 +1,12 @@
 """tools/agent_link.py: wiring an agent to a host project writes the project record, the MCP files (keeping
 other servers), the ReAgentLive block in AGENTS.md (and CLAUDE.md only when it does not import AGENTS.md),
-the skill links and their .gitignore lines, and the machine record's project list; a second run updates
+the skill links and their .gitignore lines, and nothing outside the project; a second run updates
 all of it in place; a bad argument or record changes nothing. Runs the script from a copy of the repo's
 tools and skill, as a project's submodule at a path of its own."""
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,7 @@ class Project:
 
     def __init__(self, clone='external/reagentlive'):
         self.root = tempfile.mkdtemp()
-        self.local = os.path.join(self.root, 'local')  # LOCALAPPDATA: holds the machine record
+        self.local = os.path.join(self.root, 'local')  # LOCALAPPDATA: the script never writes there
         self.clone = os.path.join(self.root, *clone.split('/'))
         for folder in ('tools', os.path.join('.claude', 'skills')):
             shutil.copytree(os.path.join(REPO, folder), os.path.join(self.clone, folder))
@@ -51,7 +52,10 @@ class AgentLinkTests(unittest.TestCase):
         self.project = Project()
 
     def tearDown(self):
-        shutil.rmtree(self.project.root)
+        def writable(function, path, _):  # git's object files are read-only on Windows
+            os.chmod(path, stat.S_IWRITE)
+            function(path)
+        shutil.rmtree(self.project.root, onerror=writable)
 
     def link(self, *extra):
         return self.project.run('--console', 'out/tool.exe', '--dll', 'out/host.dll', *extra)
@@ -75,8 +79,7 @@ class AgentLinkTests(unittest.TestCase):
         for link in out['links']:
             self.assertIn(link, ignored)
             self.assertTrue(os.path.isfile(os.path.join(self.project.path(link), 'SKILL.md')), link)
-        machine = os.path.join(self.project.local, 'reagentlive', 'machine.json')
-        self.assertEqual(out['registered'], machine)
+        self.assertFalse(os.path.exists(self.project.local))
         # Every repo path the block names exists in ReAgentLive.
         for path in ('.claude/skills/reagentlive/SKILL.md', 'docs/README.md', 'docs/hosting.md', 'tools/update.ps1',
                      'tools/build_project.ps1', 'docs/agents/update.md'):
@@ -108,8 +111,9 @@ class AgentLinkTests(unittest.TestCase):
         self.assertEqual(agents.count('<!-- reagentlive -->'), 1)
         self.assertIn('out/renamed.exe', agents)
         self.assertEqual(self.project.read('.gitignore').count('.claude/skills/reagentlive'), 1)
-        with open(out['registered']) as handle:
-            self.assertEqual(json.load(handle)['projects'], [self.project.root])
+        # Nothing changed: nothing is written.
+        code, out = self.project.run()
+        self.assertEqual((code, out['written']), (0, []), out)
 
     def test_refusals_change_nothing(self):
         cases = [(('--dll', 'out/host.dll'), '--console'),
@@ -128,10 +132,40 @@ class AgentLinkTests(unittest.TestCase):
         os.remove(self.project.path('.mcp.json'))
         os.makedirs(self.project.path('.agents/skills/reagentlive'))
         code, out = self.link()
-        self.assertIn('is a folder, not a link', out['error'])
+        self.assertIn('is an untracked folder, not a link', out['error'])
         self.assertEqual(sorted(os.listdir(self.project.root)), ['.agents', 'external'])
         code, out = self.project.run('--console', 'a.exe', '--dll', 'a.dll', '--project', self.project.clone)
         self.assertIn('this clone itself', out['error'])
+
+    def test_a_project_wired_by_hand_keeps_its_server_and_skill(self):
+        # Its own server under its own name, with its own flags and absolute paths; its own tracked skill.
+        self.project.put('.mcp.json', json.dumps({'mcpServers': {
+            'other': {'command': 'x'},
+            'my-dev': {'command': 'python', 'env': {'A': '1'}, 'args': [
+                'C:/old/reagentlive/src/reagentlive/frontends/mcp/reagentlive_mcp.py',
+                '--console', 'C:/old/bin/dev.exe', '--name', 'my-dev', '--packs', 'explore']}}}))
+        self.project.put('.claude/skills/reagentlive/SKILL.md', '# pointer\n')
+        subprocess.run(['git', 'init', '-q', self.project.root], check=True)
+        subprocess.run(['git', '-C', self.project.root, 'add', '.claude/skills/reagentlive/SKILL.md'], check=True)
+        code, out = self.link()
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out['servers'], out['kept'], out['links']),
+                         ({'claude-code': 'my-dev'}, ['.claude/skills/reagentlive'], ['.agents/skills/reagentlive']))
+        servers = json.loads(self.project.read('.mcp.json'))['mcpServers']
+        self.assertEqual(set(servers), {'other', 'my-dev'})
+        self.assertEqual(servers['my-dev'], {'command': 'python', 'env': {'A': '1'}, 'args': [
+            'external/reagentlive/src/reagentlive/frontends/mcp/reagentlive_mcp.py',
+            '--console', 'out/tool.exe', '--name', 'my-dev', '--packs', 'explore']})
+        self.assertEqual(self.project.read('.claude/skills/reagentlive/SKILL.md'), '# pointer\n')
+        self.assertIn('`my-dev` MCP tools', self.project.read('AGENTS.md'))
+        ignored = self.project.read('.gitignore').split('\n')
+        self.assertNotIn('.claude/skills/reagentlive', ignored)
+        self.assertIn('.agents/skills/reagentlive', ignored)
+        # Two ReAgentLive servers: refused.
+        servers['second'] = servers['my-dev']
+        self.project.put('.mcp.json', json.dumps({'mcpServers': servers}))
+        code, out = self.link()
+        self.assertIn('several ReAgentLive servers', out['error'])
 
     def test_a_clone_that_is_no_submodule_needs_the_project_named(self):
         code, out = self.project.run('--console', 'b/c.exe', '--dll', 'b/h.dll', here=False)
