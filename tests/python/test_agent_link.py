@@ -66,7 +66,8 @@ class AgentLinkTests(unittest.TestCase):
         self.assertEqual(json.loads(self.project.read('reagentlive.json')),
                          {'library': 'external/reagentlive', 'mcp': ['claude-code', 'copilot'], 'console': 'out/tool.exe',
                           'dll': 'out/host.dll', 'check': True, 'improvement': 'user'})
-        self.assertIn('build_project.ps1 -Project . -Check', self.project.read('AGENTS.md'))
+        self.assertIn('build_project.ps1 -Project .`, with `-Check` to check',
+                      ' '.join(self.project.read('AGENTS.md').split()))
         claude = json.loads(self.project.read('.mcp.json'))['mcpServers']['reagentlive']
         self.assertEqual(claude['args'], ['external/reagentlive/src/reagentlive/frontends/mcp/reagentlive_mcp.py',
                                           '--console', 'out/tool.exe'])
@@ -74,14 +75,17 @@ class AgentLinkTests(unittest.TestCase):
         self.assertEqual(copilot['args'][-1], '${workspaceFolder}/out/tool.exe')
         agents = self.project.read('AGENTS.md')
         self.assertIn('external/reagentlive/.claude/skills/reagentlive/SKILL.md', agents)
-        self.assertEqual(self.project.read('CLAUDE.md'), '@AGENTS.md\n')
+        self.assertFalse(os.path.exists(self.project.path('CLAUDE.md')))  # Claude Code reads AGENTS.md
+        # Wrapped, but a code span (a command) is never split.
+        self.assertTrue(all(len(line) <= 80 or line.strip().count('`') == 2 for line in agents.split('\n')), agents)
+        self.assertTrue(all(line.count('`') % 2 == 0 for line in agents.split('\n')), agents)
         ignored = self.project.read('.gitignore').split('\n')
         for link in out['links']:
             self.assertIn(link, ignored)
             self.assertTrue(os.path.isfile(os.path.join(self.project.path(link), 'SKILL.md')), link)
         self.assertFalse(os.path.exists(self.project.local))
         # Every repo path the block names exists in ReAgentLive.
-        for path in ('.claude/skills/reagentlive/SKILL.md', 'docs/README.md', 'docs/hosting.md', 'tools/update.ps1',
+        for path in ('.claude/skills/reagentlive/SKILL.md', 'docs/README.md', 'tools/update.ps1',
                      'tools/build_project.ps1', 'docs/agents/update.md'):
             self.assertIn(f'external/reagentlive/{path}', agents)
             self.assertTrue(os.path.exists(os.path.join(REPO, *path.split('/'))), path)
@@ -99,7 +103,9 @@ class AgentLinkTests(unittest.TestCase):
         self.assertTrue(self.project.read('.gitignore').startswith('bin/\n.claude/skills/reagentlive\n'))
         record = json.loads(self.project.read('reagentlive.json'))
         self.assertEqual((record['build'], record['check'], record['improvement']), ('cmake --build out', False, 'dev'))
-        self.assertIn('build: `cmake --build out`', self.project.read('AGENTS.md'))
+        agents = ' '.join(self.project.read('AGENTS.md').split())
+        self.assertIn('Build: `cmake --build out` (it ticks only in the game', agents)
+        self.assertNotIn('-Check', agents)  # check is false: no check to run
 
     def test_a_second_run_updates_in_place(self):
         self.assertEqual(self.link('--mcp', 'cursor')[0], 0)

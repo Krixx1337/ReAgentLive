@@ -37,7 +37,8 @@ tokens, one way to page, one count, one time unit.
   a mod of your own or a copy of an example
   ([an agent in your project](docs/hosting.md#an-agent-in-your-project)).
   A project wired by hand keeps its own server (name and flags) and its
-  own tracked skill folder.
+  own tracked skill folder. No `CLAUDE.md` is made: Claude Code reads
+  `AGENTS.md`.
 - **Build, check and update a project by script:** `tools/build_project.ps1
   -Check`; `tools/update.ps1` previews what is coming (and whether the
   host headers changed), `-Apply` moves, rebuilds and checks, `-Rollback`

@@ -16,8 +16,8 @@ Paths are relative to the project. Writes, and on every later run updates in pla
 - the ReAgentLive server in each client's project MCP file: the one already there (any server running
   reagentlive_mcp.py, under its own name, keeping its other arguments), else a new `reagentlive`; other
   servers stay;
-- a ReAgentLive block in AGENTS.md (CLAUDE.md gets `@AGENTS.md` when it has neither; an existing CLAUDE.md
-  that does not import AGENTS.md gets the block too), between `<!-- reagentlive -->` markers;
+- a ReAgentLive block in AGENTS.md, between `<!-- reagentlive -->` markers (an existing CLAUDE.md that does
+  not import AGENTS.md gets the block too; none is made: Claude Code reads AGENTS.md);
 - skill links in .claude/skills and .agents/skills (a junction on Windows, a symlink elsewhere), and
   their lines in .gitignore; a skill folder the project tracks there is its own and stays.
 
@@ -93,21 +93,31 @@ def write_json(path, value):
 def block(clone, record, names):
     """The ReAgentLive lines for an agent in the project; names: its MCP servers."""
     script = f'powershell -NoProfile -ExecutionPolicy Bypass -File {clone}/tools'
-    build = record.get('build') or f'{script}/build_project.ps1 -Project .'
+    own = f'{script}/build_project.ps1 -Project .'
+    if record.get('build'):
+        build = f"`{record['build']}`"
+        build += f'; build and check: `{own} -Check`' if record.get('check') else ' (it ticks only in the game: check `status` there)'
+    else:
+        build = f'`{own}`, with `-Check` to check' if record.get('check') else f'`{own}`'
     tools = ' or '.join(f'`{name}`' for name in names)
-    return f'''{BEGIN}
-## ReAgentLive
+    items = [
+        f'`{clone}/` is the ReAgentLive submodule: never edit it here. Before using the {tools} MCP tools, '
+        f'read `{clone}/.claude/skills/reagentlive/SKILL.md` and follow it; docs: `{clone}/docs/README.md`.',
+        f"DLL `{record['dll']}`, console `{record['console']}`. Build: {build}.",
+        f'Update: `{script}/update.ps1 -Project .` previews, `-Apply` updates (`{clone}/docs/agents/update.md`).',
+    ]
+    return f'{BEGIN}\n## ReAgentLive\n\n' + '\n'.join(fill(item) for item in items) + f'\n{END}\n'
 
-- Before investigating a running process with the {tools} MCP tools, read
-  `{clone}/.claude/skills/reagentlive/SKILL.md` and follow it. ReAgentLive
-  is the `{clone}/` submodule: never edit it here.
-- Docs: `{clone}/docs/README.md`; hosting: `{clone}/docs/hosting.md`.
-- DLL `{record['dll']}`, console `{record['console']}`; build: `{build}`;
-  build and check: `{script}/build_project.ps1 -Project . -Check`.
-- Update: `{script}/update.ps1 -Project .` (a preview), then with `-Apply`
-  (`{clone}/docs/agents/update.md`).
-{END}
-'''
+
+def fill(item, width=76):
+    """A list item wrapped at width; a code span is never split, so a command copies whole."""
+    lines, line = [], '-'
+    for word in re.findall(r'`[^`]*`\S*|\S+', item):
+        if len(line) + 1 + len(word) > width and line.strip() not in ('-', ''):
+            lines.append(line)
+            line = ' '
+        line += ' ' + word
+    return '\n'.join(lines + [line])
 
 
 BLOCK = re.compile(r'\n?' + re.escape(BEGIN) + r'.*?' + re.escape(END) + r'\n?', re.S)
@@ -295,10 +305,7 @@ def run(args):
     agents, claude = os.path.join(project, 'AGENTS.md'), os.path.join(project, 'CLAUDE.md')
     if put_block(agents, text):
         written.append('AGENTS.md')
-    if not os.path.isfile(claude):
-        write(claude, '@AGENTS.md\n')
-        written.append('CLAUDE.md')
-    elif put_block(claude, None if imports_agents(claude) else text):
+    if os.path.isfile(claude) and put_block(claude, None if imports_agents(claude) else text):
         written.append('CLAUDE.md')
     ignore = os.path.join(project, '.gitignore')
     current, ending = read_text(ignore) if os.path.isfile(ignore) else ('', '\n')

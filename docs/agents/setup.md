@@ -149,7 +149,7 @@ nothing). It writes, keeping what the project already has:
 |---|---|
 | `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`, `improvement`; the skill and the scripts read it |
 | the MCP files of `<clients>` | the ReAgentLive server: the project's own when it has one (any server running `reagentlive_mcp.py`, under its name, its other flags kept), else a new `reagentlive`; other servers stay. `servers` in the output names it |
-| `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); `CLAUDE.md` imports it, or gets the block when it does not |
+| `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); no `CLAUDE.md` is made (Claude Code reads `AGENTS.md`), and an existing one that does not import `AGENTS.md` gets the block too |
 | `.gitignore` | the skill links |
 
 It links the skill into `.claude\skills\reagentlive` (Claude Code) and
