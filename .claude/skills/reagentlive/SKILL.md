@@ -10,11 +10,11 @@ the verbs every interface sends. Reference docs: `docs/README.md`. The
 project's host notes (console name, host verbs, approval rules) win over
 this skill.
 
-**Setup:** read `%LOCALAPPDATA%\reagentlive\setup.json` if present (`dir`,
-`improvement`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
+**Setup:** read the project record `reagentlive.json` in the project root if
+present (`console`, `improvement`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
 if present and what it routes to (`general.md`; the game's file once `status`
 names the exe): the user's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
-skill folder lives in, else `dir`, else
+skill folder lives in (in a project, its `reagentlive/` submodule), else
 `https://github.com/Krixx1337/ReAgentLive/blob/<commit>/<path>` with
 `status`'s `commit` (less `-dirty`; `unknown`: `main`, trust `help`).
 
@@ -101,8 +101,9 @@ This skill:
 
 ## Installing or updating ReAgentLive
 
-Procedures: `docs/agents/setup.md` (first install) and `docs/agents/update.md`.
-Fetch first (`git -C <clone> fetch origin`) and read
+Procedures: `docs/agents/setup.md` (a new project from a kit) and
+`docs/agents/update.md` (a project's `reagentlive/` submodule). Never edit
+the submodule. Fetch first (`git -C <clone> fetch origin`) and read
 `git -C <clone> show origin/main:docs/agents/update.md` (offline: the local
 file, and say so). The host project's notes win over the generic steps.
 After an update, reread this file.

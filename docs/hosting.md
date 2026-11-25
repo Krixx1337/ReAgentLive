@@ -1,6 +1,6 @@
 # Hosting the agent
 
-*Home of:* putting the agent into a process: the host checklist, CMake targets and options, the `Tick` call, the host thread, the game-thread tick host API (`reagentlive::ue-draw`) and host verbs.
+*Home of:* putting the agent into a process: projects made from a kit, the host checklist, CMake targets and options, the `Tick` call, the host thread, the game-thread tick host API (`reagentlive::ue-draw`) and host verbs.
 
 **TL;DR:** The agent only runs when something inside the target calls its
 `Tick`: that code is the host. Start from an example DLL (any process, or
@@ -35,6 +35,34 @@ point for a real host, not a supported one.
 
 Each example uses its own section prefix, which keeps it apart from
 another host's agent in the same process.
+
+## Starting from a kit
+
+Both examples are kits: a project of the user's own starts as a copy of
+one, and ReAgentLive stays apart from it, as the project's `reagentlive/`
+submodule, never edited there. `tools/project.py init` makes the copy
+([agent setup](agents/setup.md#3-create-the-project) runs it; by hand: the
+[README](../README.md#quick-start)):
+
+- **The project's names:** the kit's files with the DLL, the console and
+  the section prefix renamed after the project (`<name>.dll`,
+  `<name>-console.exe`, `Local\<name>-<pid>`), so two projects never see
+  each other's agents. The kit's `CMakeLists.txt` finds the library in
+  `reagentlive/` when it is a project and two folders up in this tree.
+- **The agent files:** the project record `reagentlive.json` (kit, outputs,
+  packs, the skill's improvement mode), `AGENTS.md` and `CLAUDE.md`, a
+  project MCP file per client, and skill links into the submodule (ignored
+  by git; `project.py link` makes them again in a fresh clone).
+- **Building:** `reagentlive/tools/build_project.ps1` loads Visual Studio's
+  x64 environment, builds into `build/` and, with `-Check`, loads the DLL
+  into a throwaway Python process and checks its `status`.
+- **Updating:** the submodule moves to a newer commit; the project's
+  copies of the kit's files change only by hand, from the kit's diff
+  ([the update procedure](agents/update.md#4-bring-the-kits-changes-over)).
+
+Each project pins its own commit, so updating one never breaks another;
+nothing is installed machine-wide. Why there is no global install or
+prebuilt package: [design](design/principles.md#not-now).
 
 ## Host checklist
 
@@ -86,7 +114,9 @@ Windows x64 with MSVC or clang-cl, CMake 3.25 or newer, C++23. On any other
 platform the library configures with a warning and defines no targets, so
 a cross-platform parent still configures.
 
-Add the folder, or fetch it pinned to a release tag:
+Add it as a submodule (a project from a kit does; the skill, the MCP
+server and the docs then sit at a fixed path in the project), or fetch it
+pinned to a release tag when the project only links the library:
 
 ```cmake
 add_subdirectory(reagentlive)
@@ -94,6 +124,8 @@ add_subdirectory(reagentlive)
 include(FetchContent)
 FetchContent_Declare(reagentlive GIT_REPOSITORY <repository> GIT_TAG <release tag>)
 FetchContent_MakeAvailable(reagentlive)
+# or, with CPM.cmake (CPM_SOURCE_CACHE shares one download per version between projects)
+CPMAddPackage("gh:Krixx1337/ReAgentLive@<version>")
 
 target_link_libraries(my-mod PRIVATE reagentlive::ue-base)    # agent: core + the whole Unreal pack, no SDK
 # or reagentlive::ue: the same, with your Dumper-7 SDK as the layout;
@@ -187,7 +219,7 @@ Ops and numbers: [protocol](protocol.md#ops).
   writes (`write` with `clear`) before stopping it. This holds only for a
   build with the same protocol: after a protocol change the section keeps
   the old layout, so restart the process instead
-  ([the update procedure](agents/update.md#7-running-targets)).
+  ([the update procedure](agents/update.md#8-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.
 
 ## Host thread

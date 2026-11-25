@@ -24,6 +24,7 @@ are under `src/reagentlive/`.
 | Know what a command takes and returns | `help` with `verb`, the [verb reference](commands/reference.md), [result shapes](commands/results.md) |
 | Decompile live functions in IDA, carry names both ways | [IDA loader](commands/ida-loader.md), [labels](commands/labels.md) |
 | Have an AI agent set it up or update it | [agents](agents/README.md) ([setup](agents/setup.md), [update](agents/update.md)) |
+| Start a project of my own from a kit | [starting from a kit](hosting.md#starting-from-a-kit) |
 | Try it in any process, no mod or SDK (T0) | [own-thread example](../examples/own_thread/README.md) |
 | Any UE5 game, no dump (T1-T2; T3 once `game-thread` is on) | [Unreal example](../examples/unreal/README.md) |
 | Put the agent into a process, or host it in a mod (T4) | [hosting](hosting.md) |

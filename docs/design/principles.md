@@ -72,3 +72,9 @@ out of scope; [ideas](../ideas.md) holds what waits for a trigger.
   its own repository, consumed as a submodule or with `FetchContent` at a
   pinned tag, each consumer compiling its sources with its own flags
   ([hosting](../hosting.md#using-it-in-your-project)).
+- A machine-wide install or prebuilt releases: every user builds a project
+  of their own from a kit, which pins its own commit, so an update for one
+  project never breaks another and no shared copy goes stale
+  ([starting from a kit](../hosting.md#starting-from-a-kit)). Prebuilt kit
+  binaries would spare a compiler for people who only look at a target;
+  they wait for releases and CI that build on Windows.

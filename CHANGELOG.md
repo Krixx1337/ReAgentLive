@@ -29,6 +29,15 @@ before 0.6.0 are one line each; git history has the detail.
 Smaller, more uniform tool surface: about a third fewer MCP tool-list
 tokens, one way to page, one count, one time unit.
 
+### New
+
+- **Projects from a kit:** setup copies the `own_thread` or `unreal` kit
+  into a folder of your own, named after it, with ReAgentLive as its
+  pinned `reagentlive/` submodule and the skill and MCP server set up for
+  that project. By hand: `tools/project.py init`, then
+  `tools/build_project.ps1 -Check`
+  ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
+
 ### Improved
 
 - **Smaller MCP tool list:** shorter verb help and refusals; `max_chars` and
@@ -37,19 +46,21 @@ tokens, one way to page, one count, one time unit.
 - **`xrefs`, `touches` and `sig-bytes` take a pointer chain** as `addr`
   ([pointer chains](docs/commands/native-objects.md#pointer-chains)).
 - **`find` pages reuse the first page's `total`** instead of recounting.
-- **One script builds and checks the examples:** `tools/build_examples.ps1
-  -Check` ([setup](docs/agents/setup.md#3-clone-and-build)).
-- **Codex and Cursor get the skill** linked into `~/.agents/skills`
-  ([skill install](docs/agents/setup.md#6-install-the-skill)); **a failed
-  update rolls back** ([update](docs/agents/update.md#3-pull-and-rebuild)).
+- **Codex and Cursor get the skill** through the project's
+  `.agents/skills` link ([setup](docs/agents/setup.md#3-create-the-project));
+  **an update shows the kit's changes** for your copies of its files, and
+  **a failed update rolls back** ([update](docs/agents/update.md#4-bring-the-kits-changes-over)).
 
 ### Breaking
 
 Setup and docs:
 
-- **The skill is linked, not copied**, and the setup record drops
-  `skill_commit` and `scratch`. A copy install: ask your agent to "update
-  ReAgentLive".
+- **Setup makes a project; the machine-wide install is gone:** no clone of
+  its own, no user-level MCP entry or skill link, and the project record
+  `reagentlive.json` replaces `%LOCALAPPDATA%\reagentlive\setup.json`.
+  An install from before: ask your agent to run the
+  [setup](docs/agents/setup.md) again; its last step retires the old one.
+  Your lessons stay.
 - **The docs index is `docs/README.md`** (was `docs/INDEX.md`): fix the
   `ReAgentLive docs:` line in your agent's instructions file. Commands
   are in `docs/commands/README.md`, design in `docs/design/`.
@@ -124,7 +135,7 @@ plans run in the background, and IDA names native functions in one step.
 
 - **"Update ReAgentLive" is enough:** the skill follows the newest update
   procedure from `origin/main`; submodule hosts get their own checked steps
-  ([update](docs/agents/update.md#host-projects-with-a-submodule)).
+  ([update](docs/agents/update.md#1-find-the-project)).
 - **Clients share the agent in short turns:** any number of consoles,
   sessions and MCP calls attach at once
   ([protocol](docs/protocol.md#handshake)).

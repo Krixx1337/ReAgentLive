@@ -5,10 +5,9 @@ skill itself: the maintaining reference.
 
 ## Mode
 
-Read `improvement` from the setup record
-(`%LOCALAPPDATA%\reagentlive\setup.json`). No record or key: `user`. Change
-it there (`{"improvement": "dev"}` is enough when setup never ran), or ask
-the agent to.
+Read `improvement` from the project record (`reagentlive.json` in the
+project root). No record or key: `user`. Change it there, or ask the agent
+to.
 
 - `off`: skip this file.
 - `user` (default): writes only the [lessons folder](#local-lessons), itself,
@@ -16,8 +15,10 @@ the agent to.
   (code, docs, tests, tracked skill files, host notes, the project's
   findings).
 - `dev`: may change anything (skill, docs, code, tests). Interactive, the
-  core first; code on a branch with the build and tests run. Never commits
-  or pushes unless asked.
+  core first; code on a branch with the build and tests run. ReAgentLive's
+  own files change in a ReAgentLive clone the user names, never in a
+  project's `reagentlive/` submodule. Never commits or pushes unless
+  asked.
 
 Never change approval or safety rules silently: `user` drops such a lesson,
 `dev` proposes it with that warning and applies it only on an explicit yes.

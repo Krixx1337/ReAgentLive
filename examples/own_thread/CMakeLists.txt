@@ -1,6 +1,7 @@
 # reagentlive own-thread example: a host DLL that works in any x64 process
 # (memory commands and the fast lane, no engine pack) and the generic console
-# for it. Builds on its own, as any consumer of the library would:
+# for it. Builds on its own, as any consumer of the library would, and is the kit
+# tools/project.py copies into a new project:
 #
 #   cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build/own-thread
@@ -11,7 +12,15 @@ project(reagentlive-own-thread LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL)
     set(REAGENTLIVE_BUILD_TESTS OFF)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../.." reagentlive)
+    # No engine pack: this host cannot run the Unreal verbs.
+    set(REAGENTLIVE_PACKS "" CACHE STRING "Engine packs to define; none for this host")
+    # A project made from this kit carries ReAgentLive as its reagentlive/
+    # submodule; in ReAgentLive's own tree the library is two folders up.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/reagentlive/CMakeLists.txt")
+        add_subdirectory(reagentlive)
+    else()
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../.." reagentlive)
+    endif()
 endif()
 
 add_library(reagentlive-own-thread SHARED host.cpp)

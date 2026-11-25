@@ -17,7 +17,7 @@ its tools; you can ask from a command line.
 
 ## Quick start
 
-**Needs:** Windows x64, Visual Studio's C++ tools and Python.
+**Needs:** Windows x64, Visual Studio's C++ tools, Git and Python.
 
 Paste this into Claude Code, Codex, Cursor or any coding agent:
 
@@ -25,20 +25,34 @@ Paste this into Claude Code, Codex, Cursor or any coding agent:
 Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/setup.md and follow it.
 ```
 
-The agent builds the example for your target, registers its MCP tools,
-installs the skill and checks the result. It may offer a command-line DLL
-loader; say no if you load DLLs your own way.
+The agent makes a project of your own from a starter kit, builds it,
+registers its MCP tools, links the skill and checks the result. It may
+offer a command-line DLL loader; say no if you load DLLs your own way.
 
-By hand, start from the example for your target:
+By hand, pick the kit for your target:
 
-| Your target | Start from | Tier |
+| Your target | Kit | Tier |
 |---|---|---|
-| Any Windows x64 process | [`examples/own_thread`](examples/own_thread/README.md) | T0 |
-| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
+| Any Windows x64 process | [`own_thread`](examples/own_thread/README.md) | T0 |
+| Any UE5 game, no dump, no mod | [`unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
 | A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
 
-**To update later** (pull, rebuild, re-inject, check), ask your agent to
-"update ReAgentLive": the skill routes it. Without the skill, paste:
+and make a project from it, in a new folder:
+
+```powershell
+git init my-tool; cd my-tool
+git submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
+python -I reagentlive\tools\project.py init --kit unreal --name my-tool
+powershell -NoProfile -ExecutionPolicy Bypass -File reagentlive\tools\build_project.ps1 -Check
+```
+
+`host.cpp` and `console.cpp` are yours to build on; ReAgentLive stays in
+`reagentlive/`, pinned, and you never edit it there
+([starting from a kit](docs/hosting.md#starting-from-a-kit)).
+
+**To update later** (move the submodule, rebuild, re-inject, check), ask
+your agent to "update ReAgentLive": the skill routes it. Without the
+skill, paste:
 
 ```text
 Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.
