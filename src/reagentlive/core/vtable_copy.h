@@ -6,9 +6,12 @@
 // table, and the entry is swapped in the copy. One copy per (object, vptr
 // offset), shared by every user, so several entries of one object coexist.
 //
-// The copy holds the table's entries up to the first that is not in an
-// executable section of a loaded module (at most MaxCopyEntries), and the
-// slot before them (table[-1], where MSVC keeps the RTTI locator). It never
+// The copy mirrors the table: the slot before it (table[-1], where MSVC
+// keeps the RTTI locator) and every readable qword after it within its
+// module's image, up to MaxCopyMirror, so a call through any entry the
+// game uses still reaches the table's own. Only the run of entries up to the
+// first not in an executable section of a loaded module can be taken; a run
+// that reaches MaxCopyMirror (a table that may be longer) is refused. It never
 // moves and is never freed: a call that read the vptr may still be inside
 // it. A copy whose vptr was put back is reused for another object only
 // after CopyReuseGraceMs (at once for the same table: its entries are the
@@ -28,7 +31,7 @@
 #include <stdint.h>
 
 namespace reagentlive::vtable {
-constexpr uint32_t MaxCopies = 8, MaxCopyEntries = 256;
+constexpr uint32_t MaxCopies = 8, MaxCopyMirror = 1024;
 constexpr uint64_t CopyReuseGraceMs = 1000;
 
 // One taken entry. `cell` and `entries` point into the copy and stay valid
@@ -41,7 +44,8 @@ struct Entry {
     void* object;
     uint32_t offset;        // Of the vptr in the object.
     uint32_t index;         // Of the entry.
-    uint32_t count;         // Entries copied.
+    uint32_t count;         // Entries that can be taken (the code run).
+    uint32_t mirrored;      // Entries copied (count or more).
     uint32_t copy;          // Which copy (< MaxCopies).
 };
 
@@ -50,7 +54,8 @@ enum class Taken {
     Unreadable,  // The object's vptr cannot be read or written.
     Foreign,     // The vptr points outside a loaded module's image (another
                  // owner's copy) or at one of ours for another object.
-    NotCode,     // The entry is past the copy or not in the table's module's code.
+    NotCode,     // The entry is past the code run or not in the table's module's code.
+    TooLong,     // The code run reaches MaxCopyMirror: the table may be longer than the copy.
     Busy,        // The entry is taken already.
     Changed,     // The vptr changed while installing, or no longer holds the
                  // copy taken earlier for this object (another owner).

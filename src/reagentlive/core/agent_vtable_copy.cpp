@@ -17,13 +17,13 @@ enum class CopyState : uint32_t { Free, Installed, Abandoned };
 // Heap, allocated on first need and never freed: calls may still run through it.
 struct Copy {
     CopyState state;
-    uint32_t offset, count, users;
+    uint32_t offset, count, mirrored, users; // count: the entries that can be taken; mirrored: all copied.
     void* object;
     void** table;
     uint64_t restoredMs;                     // When the vptr went back: reuse for another table waits the grace.
-    uint8_t taken[MaxCopyEntries];
-    void* originals[MaxCopyEntries];
-    void* volatile slots[MaxCopyEntries + 1]; // slots[0] is table[-1]; the vptr points at slots + 1.
+    uint8_t taken[MaxCopyMirror];
+    void* originals[MaxCopyMirror];
+    void* volatile slots[MaxCopyMirror + 1]; // slots[0] is table[-1]; the vptr points at slots + 1.
 };
 
 Copy* g_copies[MaxCopies];
@@ -40,6 +40,16 @@ HMODULE ModuleOf(const void* address) {
     HMODULE module = nullptr;
     return GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         static_cast<LPCWSTR>(address), &module) ? module : nullptr;
+}
+
+// The end of a loaded module's image, or 0.
+uintptr_t ImageEnd(HMODULE module) {
+    const auto* base = reinterpret_cast<const uint8_t*>(module);
+    IMAGE_DOS_HEADER dos{};
+    IMAGE_NT_HEADERS64 nt{};
+    if (!GuardedCopy(&dos, base, sizeof(dos)) || dos.e_magic != IMAGE_DOS_SIGNATURE ||
+        !GuardedCopy(&nt, base + dos.e_lfanew, sizeof(nt)) || nt.Signature != IMAGE_NT_SIGNATURE) return 0;
+    return reinterpret_cast<uintptr_t>(base) + nt.OptionalHeader.SizeOfImage;
 }
 
 // The loaded module whose executable section holds `address`, or null.
@@ -80,7 +90,7 @@ Taken Hand(Copy& copy, uint32_t number, uint32_t index, Entry& out) {
     copy.taken[index] = 1;
     ++copy.users;
     out = {&copy.slots[index + 1], copy.originals[index], copy.table, First(copy), copy.object, copy.offset, index,
-        copy.count, number};
+        copy.count, copy.mirrored, number};
     return Taken::Ok;
 }
 
@@ -122,23 +132,46 @@ Taken Take(void* object, uint32_t offset, uint32_t index, Entry& out) {
     auto** table = static_cast<void**>(current);
     const HMODULE module = table ? ModuleOf(table) : nullptr;
     if (!module || ModuleOf(table - 1) != module) return Taken::Foreign;
-    void* entries[MaxCopyEntries + 1];
-    if (!GuardedCopy(&entries[0], table - 1, sizeof(void*))) return Taken::Unreadable;
+    // Copied: within the table's image, at most MaxCopyMirror entries.
+    const uintptr_t end = ImageEnd(module);
+    const auto room = end > reinterpret_cast<uintptr_t>(table) ? (end - reinterpret_cast<uintptr_t>(table)) / sizeof(void*) : 0;
+    const auto limit = static_cast<uint32_t>(room < MaxCopyMirror ? room : MaxCopyMirror);
+    // Takeable: the run of entries in a loaded module's code. Reaching the
+    // cap, the table may go on past what the copy holds: refused.
     uint32_t count = 0;
-    for (; count < MaxCopyEntries; ++count)
-        if (!GuardedCopy(&entries[count + 1], table + count, sizeof(void*)) || !CodeModule(entries[count + 1])) break;
-    if (index >= count || CodeModule(entries[index + 1]) != module) return Taken::NotCode;
+    void* entry = nullptr;
+    for (; count < limit; ++count)
+        if (!GuardedCopy(&entry, table + count, sizeof(entry)) || !CodeModule(entry)) break;
+    if (count == MaxCopyMirror) return Taken::TooLong;
+    if (index >= count || !GuardedCopy(&entry, table + index, sizeof(entry)) || CodeModule(entry) != module)
+        return Taken::NotCode;
     const uint32_t number = Pick(table);
     if (number == MaxCopies) return Taken::Full;
     if (!g_copies[number] && !(g_copies[number] = new (std::nothrow) Copy{})) return Taken::NoMemory;
     Copy& copy = *g_copies[number];
     // Free: nothing points at it now, and a call that read it before is
-    // past the grace or sees the same entries.
-    for (uint32_t i = 0; i <= count; ++i) copy.slots[i] = entries[i];
+    // past the grace or sees the same entries. Every slot up to the old
+    // mirror length is rewritten: no entry of an earlier table survives.
+    void* value = nullptr;
+    if (!GuardedCopy(&value, table - 1, sizeof(value))) return Taken::Unreadable;
+    copy.object = nullptr;
+    copy.slots[0] = value;
+    // Mirrored: every readable qword after the table (the game may call an
+    // entry past the run, such as one another owner swapped).
+    uint32_t mirrored = 0;
+    for (; mirrored < limit; ++mirrored) {
+        if (!GuardedCopy(&value, table + mirrored, sizeof(value))) break;
+        copy.slots[mirrored + 1] = value;
+    }
+    const uint32_t stale = copy.mirrored;
+    copy.mirrored = mirrored > stale ? mirrored : stale; // What a later fill rewrites.
+    if (mirrored < count) return Taken::Unreadable;      // Changed under us.
+    for (uint32_t i = mirrored; i < stale; ++i) copy.slots[i + 1] = nullptr;
     for (uint32_t i = 0; i < count; ++i) {
-        copy.originals[i] = entries[i + 1];
+        copy.originals[i] = copy.slots[i + 1];
         copy.taken[i] = 0;
     }
+    copy.mirrored = mirrored;
     copy.table = table;
     copy.count = count;
     copy.users = 0;

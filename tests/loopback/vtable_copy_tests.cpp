@@ -7,6 +7,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <iterator>
 #include <memory>
 #include <vector>
 #include "reagentlive/core/vtable_copy.h"
@@ -28,6 +29,11 @@ int g_data = 2;    // Data in the image, not code: ends the copy.
 void* g_table[] = {&g_marker, reinterpret_cast<void*>(&First), reinterpret_cast<void*>(&Second),
                    reinterpret_cast<void*>(&Third), &g_data};
 void* g_other[] = {&g_marker, reinterpret_cast<void*>(&Third), &g_data};
+// Data in the middle of the code: the run ends there, the entries after it are still called.
+void* g_gap[] = {&g_marker, reinterpret_cast<void*>(&First), &g_data, reinterpret_cast<void*>(&Second),
+                 reinterpret_cast<void*>(&Third), &g_data};
+// A code run as long as the copy can hold (filled at run time).
+void* g_long[vtable::MaxCopyMirror + 2];
 // Its second entry is another module's code (filled at run time).
 void* g_mixed[] = {&g_marker, reinterpret_cast<void*>(&First), nullptr, reinterpret_cast<void*>(&Second), &g_data};
 
@@ -48,6 +54,8 @@ TEST_CASE("a vtable copy keeps table[-1], stops at the first entry not in code, 
     CHECK(entry.count == 3);
     CHECK(entry.entries[-1] == &g_marker);
     for (uint32_t i = 0; i < 3; ++i) CHECK(entry.entries[i] == g_table[i + 1]);
+    CHECK(entry.mirrored > 3);
+    CHECK(entry.entries[3] == &g_data); // Mirrored past the run.
     CHECK(entry.table == g_table + 1);
     CHECK(entry.original == reinterpret_cast<void*>(&Second));
     CHECK(const_cast<void* const*>(entry.cell) == entry.entries + 1);
@@ -166,4 +174,38 @@ TEST_CASE("copies are bounded, and a restored copy of the same table is reused a
     vtable::Entry entry{};
     REQUIRE(vtable::Take(&objects.back(), Offset, 0, entry) == vtable::Taken::Ok);
     CHECK(vtable::Give(entry) == vtable::Given::Restored);
+}
+
+TEST_CASE("entries past a non-code entry are mirrored, so calls through the copy still reach them") {
+    Object object;
+    object.vptr = g_gap + 1;
+    vtable::Entry entry{};
+    CHECK(vtable::Take(&object, Offset, 2, entry) == vtable::Taken::NotCode); // Past the run.
+    vtable::Taken taken = vtable::Take(&object, Offset, 0, entry);
+    if (taken == vtable::Taken::Full) { // Every copy restored too recently for another table (one process).
+        Sleep(static_cast<DWORD>(vtable::CopyReuseGraceMs) + 50);
+        taken = vtable::Take(&object, Offset, 0, entry);
+    }
+    REQUIRE(taken == vtable::Taken::Ok);
+    CHECK(entry.count == 1);
+    CHECK(entry.mirrored >= 5);
+    CHECK(object.vptr == entry.entries);
+    REQUIRE(vtable::Swap(entry, reinterpret_cast<void*>(&Hook)));
+    CHECK(Call(object, 0) == 99);
+    CHECK(object.vptr[1] == &g_data);
+    CHECK(Call(object, 2) == 20);
+    CHECK(Call(object, 3) == 30);
+    REQUIRE(vtable::Unswap(entry, reinterpret_cast<void*>(&Hook)));
+    CHECK(vtable::Give(entry) == vtable::Given::Restored);
+    CHECK(object.vptr == g_gap + 1);
+}
+
+TEST_CASE("a code run that reaches the copy's cap is refused") {
+    g_long[0] = &g_marker;
+    for (size_t i = 1; i < std::size(g_long); ++i) g_long[i] = reinterpret_cast<void*>(&First);
+    Object object;
+    object.vptr = g_long + 1;
+    vtable::Entry entry{};
+    CHECK(vtable::Take(&object, Offset, 0, entry) == vtable::Taken::TooLong);
+    CHECK(object.vptr == g_long + 1);
 }

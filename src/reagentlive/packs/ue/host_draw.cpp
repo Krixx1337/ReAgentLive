@@ -107,6 +107,8 @@ void Install() {
         return Enter(GameThreadMode::Conflict, "the interface table has no Draw entry in the game's code; not installed");
     case vtable::Taken::Unreadable:
         return Enter(GameThreadMode::Conflict, "the viewport's interface table is unreadable; not installed");
+    case vtable::Taken::TooLong:
+        return Enter(GameThreadMode::Conflict, "the interface table is longer than its copy can hold; not installed");
     case vtable::Taken::Busy:
         return Enter(GameThreadMode::Conflict, "the viewport's Draw entry is taken already; not installed");
     case vtable::Taken::Changed:
