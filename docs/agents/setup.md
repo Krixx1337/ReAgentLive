@@ -10,10 +10,12 @@ project as its `reagentlive/` submodule and is never edited there. Run
 every step yourself. Ask the user only where a step says to. Use
 PowerShell. `<project>`, `<name>` and `<kit>` are the values step 2 picks.
 The same steps make every further project: each is separate, with its own
-submodule, and an earlier one stays as it is. Later updates:
-[the update procedure](update.md).
+submodule, and an earlier one stays as it is. What belongs to the machine
+(the injector, the IDA side, the user's answers) is set up once and kept in
+the machine record, so a later project asks only about itself. Later
+updates: [the update procedure](update.md).
 
-## 1. Check prerequisites
+## 1. Check the machine
 
 All of these must be present. Check each one; do not install anything
 without asking the user.
@@ -31,9 +33,36 @@ without asking the user.
 The build script loads the developer shell itself (step 4): check CMake and
 Ninja again there before you report them missing.
 
+Then read the machine record, `%LOCALAPPDATA%\reagentlive\machine.json`.
+No file: this is the first project on the machine; with an old
+`setup.json` beside it (step 9), take that file's `improvement` as this
+record's. Its fields:
+
+| Field | Written by | Value |
+|---|---|---|
+| `projects` | `project.py` (step 3) | every project made or linked on this machine, absolute paths |
+| `improvement` | step 2 | the user's answer, the default for every later project |
+| `injector` | step 7 | the path of `Injector.exe`, or `declined` |
+| `ida` | step 8 | `true` once the IDA side is set up, or `declined` |
+
+Write a field this way (it keeps the others; for `true`, pass `$true`,
+not a string):
+
+```powershell
+$path = "$env:LOCALAPPDATA\reagentlive\machine.json"
+$record = if (Test-Path $path) { Get-Content $path -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+$record | Add-Member -Force -NotePropertyName "<field>" -NotePropertyValue "<value>"
+New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
+[IO.File]::WriteAllText($path, ($record | ConvertTo-Json))
+```
+
+`WriteAllText` writes UTF-8 without a byte order mark, which every JSON
+reader accepts.
+
 ## 2. Ask what to make
 
-Ask the user, in one message:
+Ask the user, in one message (question 4 only when the machine record has
+no `improvement`):
 
 1. "Is the target any Windows x64 process, or an Unreal Engine 5 game?"
    That picks the kit:
@@ -49,8 +78,10 @@ Ask the user, in one message:
    with `reagentlive` (the library's targets). It names the DLL
    (`<name>.dll`), the console (`<name>-console.exe`) and the agent's
    section, so two projects never see each other's agents.
-3. "Where should it go?" `<project>`, default `$HOME\<name>`. It must not
-   exist yet, or be an empty folder.
+3. "Where should it go?" `<project>`, default
+   `$HOME\reagentlive-projects\<name>`: one folder for all of them, so the
+   user and an agent find them. It must not exist yet, or be an empty
+   folder.
 4. "Do you use ReAgentLive as a user or as a developer?" picks
    `<improvement>`: after a task the skill reviews what slowed it down
    ([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
@@ -60,6 +91,9 @@ Ask the user, in one message:
    | user (the default, also when unsure) | `user` | keep its own lessons, without asking, in `%LOCALAPPDATA%\reagentlive\lessons\` and write nothing else; anything else (docs or code problems, host notes, findings) becomes a one-line suggestion at the end of a task |
    | developer | `dev` | propose changes to the skill, docs and ReAgentLive code, each on the user's yes; code changes on a branch with the build and tests run, never committed unasked |
    | neither ("off", "no") | `off` | nothing |
+
+   Write the answer to the record's `improvement`. With the record's
+   `improvement` already set, use it and say so in the report.
 
 A mod with a host of its own does not start from a kit: it adds the
 submodule and links a target ([hosting](../hosting.md#using-it-in-your-project));
@@ -92,6 +126,9 @@ project's names, and writes:
 | `README.md` | for the user: the same, by hand |
 | `.gitignore` | `build/` and the skill links |
 | the MCP files of `<clients>` | step 5 |
+
+It also adds the project to the machine record's `projects` (`registered`
+in its output names the record).
 
 It links the skill into `.claude\skills\reagentlive` (Claude Code) and
 `.agents\skills\reagentlive` (Codex, Cursor and others that read Agent
@@ -168,22 +205,26 @@ It prints the number of verbs and the table hash. [The update
 procedure](update.md) generates it again when the file exists. How scripts
 use it: [generated functions](../client.md#generated-python-functions).
 
-## 7. (Optional) Get an injector
+## 7. The injector, once per machine
 
-ReAgentLive does not load itself. Ask whether the user wants
-[Injector](https://github.com/nefarius/Injector) (MIT, third-party
-command-line DLL injector); if they have a loader or say no, skip.
+ReAgentLive does not load itself. The machine record's `injector` is a
+path: use it (gone from disk: ask again). `declined`: skip. Neither: ask
+whether the user wants [Injector](https://github.com/nefarius/Injector)
+(MIT, third-party command-line DLL injector); if they have a loader or say
+no, write `declined` and skip.
 
 ```powershell
-$zip = "<project>\build\injector.zip"
+$dir = "$env:LOCALAPPDATA\reagentlive\injector"
+New-Item -ItemType Directory -Force $dir | Out-Null
 $url = (Invoke-RestMethod https://api.github.com/repos/nefarius/Injector/releases/latest).assets |
   Where-Object name -like '*.zip' | Select-Object -First 1 -ExpandProperty browser_download_url
-Invoke-WebRequest $url -OutFile $zip
-Expand-Archive $zip "<project>\build\injector" -Force
-Get-ChildItem "<project>\build\injector" -Recurse -Filter Injector.exe | Select-Object FullName
+Invoke-WebRequest $url -OutFile "$dir\injector.zip"
+Expand-Archive "$dir\injector.zip" $dir -Force
+Get-ChildItem $dir -Recurse -Filter Injector.exe | Select-Object FullName
 ```
 
-Use the x64 binary. If antivirus quarantines it, tell the user and skip.
+Use the x64 binary and write its path to the record's `injector`. If
+antivirus quarantines it, tell the user and skip.
 
 Load the DLL into a process by name or by pid:
 
@@ -197,25 +238,28 @@ Inject only into a process the user names. The DLL is never unloaded: no
 command stalls the game once
 ([before the first command](../commands/unreal.md#before-the-first-command)).
 
-Add this line to the project's `AGENTS.md`:
+With an injector, add this line to the project's `AGENTS.md`:
 
 ```
 Load the DLL with <injector.exe> --process-name <target.exe> --inject build\<name>.dll, only into a process the user names.
 ```
 
-## 8. (Optional) Set up the IDA side
+## 8. The IDA side, once per machine
 
-Ask whether the user uses IDA Pro 9 and wants live decompiling
-([IDA loader](../commands/ida-loader.md)). No: skip.
+The machine record's `ida` is `declined`: skip. Otherwise ask whether the
+user uses IDA Pro 9 and wants live decompiling
+([IDA loader](../commands/ida-loader.md)); with `ida` true, ask only
+whether IDA should run this project's copy from now on. No: skip (write
+`declined` when `ida` was unset).
 
 ```powershell
 python -I "<project>\reagentlive\tools\ida_setup.py" --install
 ```
 
-It passes when `state` is `current`. On "no IDA Python found", ask for the
-`python.exe` IDA uses and add `--python <exe>`; on any other `why`, tell the
-user and skip. IDA then runs this project's copy of the IDA side; setting
-it up from another project moves it there.
+It passes when `state` is `current`: write `true` to the record's `ida`.
+On "no IDA Python found", ask for the `python.exe` IDA uses and add
+`--python <exe>`; on any other `why`, tell the user and skip. IDA runs the
+copy of the project that set it up last.
 
 ## 9. Retire an old install
 
@@ -234,8 +278,8 @@ MCP entry and skill link. Ask the user before each removal:
   `$HOME\.codex\AGENTS.md`);
 - `setup.json` itself, and the old clone once the user says so.
 
-Keep `%LOCALAPPDATA%\reagentlive\lessons\`: the user's lessons serve every
-project.
+Keep `%LOCALAPPDATA%\reagentlive\lessons\` and `machine.json`: they serve
+every project.
 
 ## 10. Report
 
@@ -249,9 +293,9 @@ Tell the user:
 │  ✓ Tier      <T0, or T1-T2 (T3 after game-thread on)> │
 │  ✓ MCP       reagentlive (<project file or client>)   │
 │  ✓ Skill     .claude\skills, .agents\skills (links)   │
-│  ✓ Injector  <path, or "skipped">                     │
-│  ✓ IDA       <state, or "skipped">                    │
-│  ✓ Mode      <user, dev or off>                       │
+│  ✓ Injector  <path, declined, or "skipped">           │
+│  ✓ IDA       <state, declined, or "skipped">          │
+│  ✓ Mode      <user, dev or off; asked or from record>  │
 │  ✓ Old setup <retired, kept, or "none">               │
 │                                                       │
 │  ⚡ Start your agent in <project> to load the tools    │

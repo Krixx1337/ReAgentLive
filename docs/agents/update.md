@@ -13,6 +13,10 @@ yourself. Ask the user only where a step says to. Use PowerShell.
 
 The project is the folder you work in, or the one the user names. It holds
 the submodule when `git -C <project> submodule status` lists `reagentlive`.
+The user asks for every project: take the `projects` of the machine record
+([its fields](setup.md#1-check-the-machine)) and update them one at a time,
+each with its own report; a path that no longer exists: ask before
+dropping it from the record.
 
 - With `reagentlive.json` (a project made by [agent setup](setup.md)):
   read it ([its fields](setup.md#3-create-the-project)) and follow every
@@ -151,7 +155,7 @@ Code, Codex) or reload its MCP servers (other clients).
 A process that loaded the old DLL still runs the old agent. Ask the user
 to restart each such target (close it and start it again), then load the
 new DLL into the fresh process (the injector from setup, if any:
-[agent setup](setup.md#7-optional-get-an-injector)).
+[agent setup](setup.md#7-the-injector-once-per-machine)).
 
 After a protocol change (step 2) the restart is required: the old agent's
 shared section stays mapped with the old layout, so never load the new DLL

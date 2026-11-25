@@ -10,9 +10,11 @@ the project with its names made the project's (DLL `<name>.dll`, console `<name>
 `Local\\<name>-<pid>`), writes the project record (reagentlive.json), README.md, AGENTS.md and CLAUDE.md,
 .gitignore, the MCP config for each client in --mcp, and links the skill. It refuses when any of those
 files exists. `link` (re)creates only the skill links, for a fresh clone of a project: a junction on
-Windows (no admin rights), a symlink elsewhere, both ignored by git.
+Windows (no admin rights), a symlink elsewhere, both ignored by git. Both add the project to the machine
+record's `projects` (%LOCALAPPDATA%\\reagentlive\\machine.json; docs/agents/setup.md#1-check-the-machine).
 
-Prints one JSON object: `project`, `written` (files), `links`, `dll`, `console`; or `error`. Exit 0 or 1.
+Prints one JSON object: `project`, `written` (files), `links`, `registered` (the machine record, or null
+without LOCALAPPDATA), `dll`, `console`; or `error`. Exit 0 or 1.
 """
 import argparse
 import json
@@ -189,6 +191,42 @@ def link_skill():
     return made
 
 
+def machine_record():
+    """The machine record's path and contents, or (None, None) without LOCALAPPDATA. Read before any write,
+    so a broken record refuses the command before it changes anything."""
+    base = os.environ.get('LOCALAPPDATA')
+    if not base:
+        return None, None
+    path = os.path.join(base, 'reagentlive', 'machine.json')
+    if not os.path.isfile(path):
+        return path, {}
+    try:
+        with open(path, encoding='utf-8-sig') as handle:
+            record = json.load(handle)
+    except (OSError, ValueError) as error:
+        raise Refused(f'{path} is not readable JSON ({error}): fix or remove it')
+    if not isinstance(record, dict):
+        raise Refused(f'{path} is not a JSON object: fix or remove it')
+    return path, record
+
+
+def register(path, record):
+    """Adds the project to the record's projects; returns the record's path, or None."""
+    if path is None:
+        return None
+    projects = record.get('projects') or []
+    if not isinstance(projects, list):
+        projects = [projects]
+    known = {os.path.normcase(os.path.normpath(p)) for p in projects if isinstance(p, str)}
+    if os.path.normcase(os.path.normpath(PROJECT)) not in known:
+        projects.append(PROJECT)
+    record['projects'] = projects
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8', newline='\n') as handle:
+        handle.write(json.dumps(record, indent=2) + '\n')
+    return path
+
+
 def init(args):
     if args.kit not in KITS:
         raise Refused(f'--kit is one of {", ".join(KITS)}')
@@ -201,6 +239,7 @@ def init(args):
     if unknown:
         raise Refused(f'--mcp: unknown {", ".join(unknown)} (one or more of {", ".join(MCP_FILES)})')
     check_project()
+    machine = machine_record()
     files = project_files(args.kit, args.name, args.improvement, clients)
     taken = [path for path in files if os.path.lexists(os.path.join(PROJECT, *path.split('/')))]
     if taken:
@@ -211,13 +250,14 @@ def init(args):
         with open(target, 'w', encoding='utf-8', newline='\n') as handle:
             handle.write(text)
     record = json.loads(files[RECORD])
-    return {'project': PROJECT, 'written': sorted(files), 'links': link_skill(),
+    return {'project': PROJECT, 'written': sorted(files), 'links': link_skill(), 'registered': register(*machine),
             'dll': record['dll'], 'console': record['console']}
 
 
 def link(_args):
     check_project()
-    return {'project': PROJECT, 'links': link_skill()}
+    machine = machine_record()
+    return {'project': PROJECT, 'links': link_skill(), 'registered': register(*machine)}
 
 
 def main(argv=None):

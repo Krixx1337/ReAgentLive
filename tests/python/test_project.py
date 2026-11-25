@@ -21,6 +21,7 @@ class Project:
 
     def __init__(self, submodule=True):
         self.root = tempfile.mkdtemp()
+        self.local = os.path.join(self.root, 'local')  # LOCALAPPDATA: holds the machine record
         clone = os.path.join(self.root, 'reagentlive')
         for folder in ('tools', 'examples', os.path.join('.claude', 'skills')):
             shutil.copytree(os.path.join(REPO, folder), os.path.join(clone, folder))
@@ -30,7 +31,8 @@ class Project:
 
     def run(self, *args):
         script = os.path.join(self.root, 'reagentlive', 'tools', 'project.py')
-        result = subprocess.run([sys.executable, '-I', script, *args], capture_output=True, text=True)
+        env = dict(os.environ, LOCALAPPDATA=self.local)
+        result = subprocess.run([sys.executable, '-I', script, *args], capture_output=True, text=True, env=env)
         return result.returncode, json.loads(result.stdout)
 
     def read(self, path):
@@ -98,6 +100,21 @@ class ProjectTests(unittest.TestCase):
             for path in re.findall(r'`(reagentlive/[^`\s]+\.(?:md|py|ps1))`', self.project.read(file)):
                 if not path.startswith('reagentlive/src/'):
                     self.assertTrue(os.path.exists(os.path.join(REPO, *path.split('/')[1:])), path)
+
+    def test_the_machine_record_lists_each_project_once(self):
+        record = os.path.join(self.project.local, 'reagentlive', 'machine.json')
+        os.makedirs(os.path.dirname(record))
+        with open(record, 'w') as handle:
+            json.dump({'improvement': 'dev', 'injector': 'declined'}, handle)
+        code, out = self.project.run('init', '--kit', 'own_thread', '--name', 'probe')
+        self.assertEqual((code, out['registered']), (0, record))
+        self.assertEqual(self.project.run('link')[1]['registered'], record)
+        with open(record) as handle:
+            self.assertEqual(json.load(handle), {'improvement': 'dev', 'injector': 'declined',
+                                                 'projects': [self.project.root]})
+        with open(record, 'w') as handle:
+            handle.write('not json')
+        self.assertIn('not readable JSON', self.project.run('link')[1]['error'])
 
     def test_link_again_replaces_the_links(self):
         self.assertEqual(self.project.run('init', '--kit', 'own_thread', '--name', 'probe')[0], 0)

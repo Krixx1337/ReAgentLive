@@ -229,7 +229,7 @@ Check this table before adding a fact; if it has a home, link there.
 | Why it is built this way, what was rejected | [design](design/README.md); the tool interface: [tool-interface.md](tool-interface.md) | elsewhere |
 | What may come next, and what will not | [ideas.md](ideas.md) | elsewhere |
 | How to describe it | [positioning.md](positioning.md) | README: the short pitch |
-| Agent procedures (setup, update), the project record | [agents/](agents/README.md) | README: the prompts only |
+| Agent procedures (setup, update), the project and machine records | [agents/](agents/README.md) | README: the prompts only |
 | Kits, and what a project made from one holds | [hosting.md](hosting.md#starting-from-a-kit) | README: the commands only |
 | When and how an agent proposes skill lessons | the skill's `references/improving.md`; the user's lessons live outside the repo | anything tracked |
 | Commands, hard rules, large changes for an agent changing this repo | [`AGENTS.md`](../AGENTS.md) | this page keeps the details |

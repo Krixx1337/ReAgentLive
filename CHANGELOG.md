@@ -36,7 +36,13 @@ tokens, one way to page, one count, one time unit.
   pinned `reagentlive/` submodule and the skill and MCP server set up for
   that project. By hand: `tools/project.py init`, then
   `tools/build_project.ps1 -Check`
-  ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
+  ([starting from a kit](docs/hosting.md#starting-from-a-kit)). Projects
+  go in `~\reagentlive-projects` unless you pick a folder.
+- **Later projects ask only about themselves:** the injector, the IDA side
+  and your improvement mode are set up once and kept in
+  `%LOCALAPPDATA%\reagentlive\machine.json`, which also lists every
+  project, so "update all my ReAgentLive projects" works
+  ([setup](docs/agents/setup.md#1-check-the-machine)).
 
 ### Improved
 
