@@ -50,6 +50,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File reagentlive\tools\build_proj
 `reagentlive/`, pinned, and you never edit it there
 ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
 
+**Another project** (a second game, a new mod): paste the same prompt
+again, or run the same commands in a new folder. Each project pins its
+own ReAgentLive, so updating one never touches another.
+
 **To update later** (move the submodule, rebuild, re-inject, check), ask
 your agent to "update ReAgentLive": the skill routes it. Without the
 skill, paste:

@@ -9,7 +9,9 @@ process and the console your tools drive. ReAgentLive itself sits in the
 project as its `reagentlive/` submodule and is never edited there. Run
 every step yourself. Ask the user only where a step says to. Use
 PowerShell. `<project>`, `<name>` and `<kit>` are the values step 2 picks.
-Later updates: [the update procedure](update.md).
+The same steps make every further project: each is separate, with its own
+submodule, and an earlier one stays as it is. Later updates:
+[the update procedure](update.md).
 
 ## 1. Check prerequisites
 
