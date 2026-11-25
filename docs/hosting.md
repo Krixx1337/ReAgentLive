@@ -59,12 +59,11 @@ copied from an example or not:
 - **`tools/agent_link.py --console <exe> --dll <dll>`** wires the project
   to that checkout: the project record `reagentlive.json` (where the
   checkout is, the clients, `console`, `dll`, an optional `build` command,
-  `check`), the ReAgentLive server in each
-  client's project MCP file (the project's own when it has one), a
-  ReAgentLive block in `AGENTS.md` and skill links (ignored by git); a
-  skill folder the project tracks stays. It writes nothing outside the
-  project. Run again, it updates all of it in place; a fresh clone of the
-  project runs it once.
+  `check`), the ReAgentLive server in each client's project MCP file (the
+  project's own when it has one), a ReAgentLive block in `AGENTS.md` and
+  pointer skills; a skill folder the project tracks stays. Commit them
+  all: a clone of the project then works with no setup. It writes nothing
+  outside the project. Run again, it updates all of it in place.
 - **`tools/build_project.ps1`** loads Visual Studio's x64 environment and
   runs the record's `build`, or CMake on the project into `build/`. With
   `-Check` it loads the DLL into a throwaway Python process and checks its

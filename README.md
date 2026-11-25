@@ -27,7 +27,8 @@ Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/se
 
 The agent puts ReAgentLive into your project (a mod that hosts it) or a
 new one started from an example, builds it, registers its MCP tools,
-links the skill and checks the result. It may offer a command-line DLL
+adds the skill and checks the result. Everything it writes is committed
+with your project, so whoever clones it gets the same setup. It may offer a command-line DLL
 loader; say no if you load DLLs your own way.
 
 **By hand**, it is a C++ library. Add it to your project as a submodule

@@ -128,6 +128,9 @@ function Update-Project([string]$dir) {
     if ($protocol.Count -or $protocolLine.Count) { Write-Host "NOTE ${label}: protocol change: restart every target and load the new DLL into the fresh process" }
     $server = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', 'src/reagentlive/frontends/mcp', 'src/reagentlive/frontends/python'))
     if ($server.Count) { Write-Host "NOTE ${label}: the MCP server changed: restart the agent's session after the update" }
+    # The project's pointer skills copy the skill's front matter (tools/agent_link.py).
+    $front = @(Invoke-Git $sub @('diff', $old, $new, '--', '.claude/skills/reagentlive/SKILL.md') | Where-Object { $_ -match '^\+(name|description):' })
+    if ($front.Count) { Write-Host "NOTE ${label}: the skill's description changed: after the update run tools/agent_link.py again and commit the project's pointer skills" }
     # The headers a host includes (docs/hosting.md): a change there may need the host's code to follow.
     $hostHeaders = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', 'src/reagentlive/core/agent.h',
         'src/reagentlive/core/protocol.h', 'src/reagentlive/packs/*/protocol_*.h', 'src/reagentlive/core/client.h',

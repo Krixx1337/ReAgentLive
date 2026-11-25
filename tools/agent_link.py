@@ -18,11 +18,13 @@ Paths are relative to the project. Writes, and on every later run updates in pla
   servers stay;
 - a ReAgentLive block in AGENTS.md, between `<!-- reagentlive -->` markers (an existing CLAUDE.md that does
   not import AGENTS.md gets the block too; none is made: Claude Code reads AGENTS.md);
-- skill links in .claude/skills and .agents/skills (a junction on Windows, a symlink elsewhere), and
-  their lines in .gitignore; a skill folder the project tracks there is its own and stays.
+- a pointer skill in .claude/skills/reagentlive and .agents/skills/reagentlive: a SKILL.md with the
+  skill's name and description that sends the agent to the submodule's skill. It is committed, so a clone
+  has the skill at once; run this again when an update changes the skill's description (update.ps1 says
+  so). A skill folder there that the project tracks without the pointer marker is its own and stays.
 
 Nothing outside the project is written. Prints one JSON object: `project`, `record`, `written`, `servers`
-(each client's server name), `links`, `kept` (the project's own skill folders); or `error`. Exit 0 or 1.
+(each client's server name), `kept` (the project's own skill folders); or `error`. Exit 0 or 1.
 """
 import argparse
 import json
@@ -32,8 +34,9 @@ import subprocess
 import sys
 
 CLONE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILL = os.path.join(CLONE, '.claude', 'skills', 'reagentlive')
-LINKS = ('.claude/skills/reagentlive', '.agents/skills/reagentlive')
+SKILL = os.path.join(CLONE, '.claude', 'skills', 'reagentlive', 'SKILL.md')
+SKILL_DIRS = ('.claude/skills/reagentlive', '.agents/skills/reagentlive')
+POINTER = '<!-- reagentlive pointer: written by tools/agent_link.py -->'
 RECORD = 'reagentlive.json'
 SERVER_SCRIPT = 'src/reagentlive/frontends/mcp/reagentlive_mcp.py'
 BEGIN, END = '<!-- reagentlive -->', '<!-- /reagentlive -->'
@@ -162,40 +165,55 @@ def tracked(project, relative):
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
+def is_pointer(folder):
+    """The folder holds a pointer skill this script wrote."""
+    path = os.path.join(folder, 'SKILL.md')
+    return os.path.isfile(path) and POINTER in read_text(path)[0]
+
+
 def own_skills(project):
-    """The link paths that hold the project's own skill (a real folder it tracks), kept as they are; refuses
-    before any write on an untracked real folder (a stale copy)."""
+    """The skill folders that hold the project's own skill (tracked, not a pointer), kept as they are;
+    refuses before any write on an untracked one (a stale copy)."""
     kept = []
-    for relative in LINKS:
-        link = os.path.join(project, *relative.split('/'))
-        if os.path.exists(link) and not is_link(link):
+    for relative in SKILL_DIRS:
+        folder = os.path.join(project, *relative.split('/'))
+        if os.path.exists(folder) and not is_link(folder) and not is_pointer(folder):
             if not tracked(project, relative):
-                raise Refused(f'{relative} is an untracked folder, not a link: move it away first')
+                raise Refused(f'{relative} is an untracked skill folder: move it away first')
             kept.append(relative)
     return kept
 
 
-def link_skill(project, kept):
-    made = []
-    for relative in LINKS:
+def pointer(clone):
+    """The pointer skill: the submodule skill's name and description, and where to read it."""
+    head = read_text(SKILL)[0].split('\n---\n', 1)[0]  # the front matter, opening --- included
+    return f'''{head}
+---
+
+{POINTER}
+# ReAgentLive (pointer)
+
+The skill is ReAgentLive's own, in the `{clone}/` submodule, so it updates
+with it. Read `{clone}/.claude/skills/reagentlive/SKILL.md` now and follow it:
+its `references/...` paths resolve inside that folder, its repo paths
+(`docs/...`, `src/...`) inside `{clone}/`.
+'''
+
+
+def put_skills(project, clone, kept):
+    """Writes the pointer skill where the project has no skill of its own; the folders it changed."""
+    text, changed = pointer(clone), []
+    for relative in SKILL_DIRS:
         if relative in kept:
             continue
-        link = os.path.join(project, *relative.split('/'))
-        if is_link(link):
-            os.rmdir(link) if os.name == 'nt' else os.unlink(link)
-        os.makedirs(os.path.dirname(link), exist_ok=True)
-        if os.name == 'nt':
-            try:
-                import _winapi
-                _winapi.CreateJunction(SKILL, link)
-            except (ImportError, AttributeError, OSError):
-                result = subprocess.run(['cmd', '/c', 'mklink', '/J', link, SKILL], capture_output=True, text=True)
-                if result.returncode:
-                    raise Refused(f'cannot link {relative}: {result.stdout.strip()} {result.stderr.strip()}')
-        else:
-            os.symlink(SKILL, link, target_is_directory=True)
-        made.append(relative)
-    return made
+        folder = os.path.join(project, *relative.split('/'))
+        if is_link(folder):  # a link into the submodule: writing through it would edit the submodule
+            os.rmdir(folder) if os.name == 'nt' else os.unlink(folder)
+        path = os.path.join(folder, 'SKILL.md')
+        if not os.path.isfile(path) or read_text(path)[0] != text:
+            write(path, text)
+            changed.append(relative)
+    return changed
 
 
 def is_server(entry):
@@ -304,15 +322,8 @@ def run(args):
         written.append('AGENTS.md')
     if os.path.isfile(claude) and put_block(claude, None if imports_agents(claude) else text):
         written.append('CLAUDE.md')
-    ignore = os.path.join(project, '.gitignore')
-    current, ending = read_text(ignore) if os.path.isfile(ignore) else ('', '\n')
-    missing = [link for link in LINKS if link not in kept and link not in current.split('\n')]
-    if missing:
-        current = current.rstrip('\n')
-        write(ignore, (current + '\n' if current else '') + ''.join(f'{link}\n' for link in missing), ending)
-        written.append('.gitignore')
-    return {'project': project, 'record': record, 'written': written, 'servers': names,
-            'links': link_skill(project, kept), 'kept': kept}
+    written += [f'{folder}/SKILL.md' for folder in put_skills(project, clone, kept)]
+    return {'project': project, 'record': record, 'written': written, 'servers': names, 'kept': kept}
 
 
 def main(argv=None):

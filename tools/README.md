@@ -8,7 +8,7 @@ when to run it.
 
 | Script | What | Who runs it | Explained in |
 |---|---|---|---|
-| `agent_link.py` | wires an AI agent to a host project: the project record, the MCP files, an `AGENTS.md` block, the skill links, the machine's list of projects; run again, it updates them | the [setup](../docs/agents/setup.md#4-wire-the-agent) procedure, or the user | [an agent in your project](../docs/hosting.md#an-agent-in-your-project) |
+| `agent_link.py` | wires an AI agent to a host project: the project record, the MCP files, an `AGENTS.md` block, pointer skills; all committed, so a clone needs no setup; run again, it updates them | the [setup](../docs/agents/setup.md#4-wire-the-agent) procedure, or the user | [an agent in your project](../docs/hosting.md#an-agent-in-your-project) |
 | `build_project.ps1` | builds a project (the record's `build`, or CMake) in Visual Studio's x64 environment; with `-Check`, loads its DLL into a throwaway Python process and checks its `status` | the [setup](../docs/agents/setup.md#5-build-and-check) and [update](../docs/agents/update.md#4-update) procedures, or the user | [setup](../docs/agents/setup.md#5-build-and-check) |
 | `update.ps1` | updates a project's submodule: a preview that only reads (a person is then asked whether to apply), `-Apply` (move, rebuild, check) and `-Rollback` | the [update](../docs/agents/update.md) procedure, or the user | [update](../docs/agents/update.md#2-show-what-is-coming) |
 | `ida_setup.py` | checks whether IDA's side of the [IDA loader](../docs/commands/ida-loader.md) is set up; with `--install`, sets it up | the user once, or the setup and update procedures | [IDA loader](../docs/commands/ida-loader.md) |

@@ -150,16 +150,16 @@ nothing). It writes, keeping what the project already has:
 | `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`; the skill and the scripts read it, and it is committed, so nothing personal goes in it |
 | the MCP files of `<clients>` | the ReAgentLive server: the project's own when it has one (any server running `reagentlive_mcp.py`, under its name, its other flags kept), else a new `reagentlive`; other servers stay. `servers` in the output names it |
 | `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); no `CLAUDE.md` is made (Claude Code reads `AGENTS.md`), and an existing one that does not import `AGENTS.md` gets the block too |
-| `.gitignore` | the skill links |
+| `.claude\skills\reagentlive\SKILL.md`, `.agents\skills\reagentlive\SKILL.md` | a pointer skill for Claude Code and for Codex, Cursor and others that read Agent Skills there: the skill's name and description, sending the agent to the submodule's skill, so updating the submodule updates the skill |
 
-It links the skill into `.claude\skills\reagentlive` (Claude Code) and
-`.agents\skills\reagentlive` (Codex, Cursor and others that read Agent
-Skills there), each a junction into the submodule, so updating the
-submodule updates the skill; a client without Agent Skills reads it
-through the `AGENTS.md` block. A skill folder the project tracks at either
-path is its own (a host's pointer skill, say): it stays, and `kept` names
-it. It writes nothing outside the project. Run
-it again after any change to these values.
+Every file is meant to be committed: a clone of the project has the
+server, the skill and the block with no setup of its own. A client
+without Agent Skills reads the skill through the `AGENTS.md` block. A
+skill folder the project tracks at either path without the pointer
+marker is its own (a host's own pointer, say): it stays, and `kept` names
+it. It writes nothing outside the project. Run it again after any change
+to these values, and when an update changes the skill's description
+(`update.ps1` says so).
 
 ## 5. Build and check
 

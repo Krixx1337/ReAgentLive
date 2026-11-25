@@ -33,9 +33,10 @@ tokens, one way to page, one count, one time unit.
 
 - **Wire your agent to any host project:** `tools/agent_link.py --console
   <exe> --dll <dll>` writes the project's MCP server entry, an `AGENTS.md`
-  block and the skill links for the ReAgentLive submodule it carries, for
+  block and pointer skills for the ReAgentLive submodule it carries, for
   a mod of your own or a copy of an example
   ([an agent in your project](docs/hosting.md#an-agent-in-your-project)).
+  All of it is committed: a clone of the project works with no setup.
   A project wired by hand keeps its own server (name and flags) and its
   own tracked skill folder. No `CLAUDE.md` is made: Claude Code reads
   `AGENTS.md`.

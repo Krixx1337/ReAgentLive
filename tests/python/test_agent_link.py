@@ -79,10 +79,16 @@ class AgentLinkTests(unittest.TestCase):
         # Wrapped, but a code span (a command) is never split.
         self.assertTrue(all(len(line) <= 80 or line.strip().count('`') == 2 for line in agents.split('\n')), agents)
         self.assertTrue(all(line.count('`') % 2 == 0 for line in agents.split('\n')), agents)
-        ignored = self.project.read('.gitignore').split('\n')
-        for link in out['links']:
-            self.assertIn(link, ignored)
-            self.assertTrue(os.path.isfile(os.path.join(self.project.path(link), 'SKILL.md')), link)
+        # A plain pointer file in each skill folder, committable: the skill's front matter, the real path.
+        with open(os.path.join(REPO, '.claude', 'skills', 'reagentlive', 'SKILL.md'), encoding='utf-8') as handle:
+            head = handle.read().split('\n---\n', 1)[0]
+        for folder in ('.claude/skills/reagentlive', '.agents/skills/reagentlive'):
+            self.assertIn(f'{folder}/SKILL.md', out['written'])
+            self.assertFalse(os.path.islink(self.project.path(folder)))
+            skill = self.project.read(f'{folder}/SKILL.md')
+            self.assertTrue(skill.startswith(head + '\n---\n'), skill)
+            self.assertIn('`external/reagentlive/.claude/skills/reagentlive/SKILL.md`', skill)
+        self.assertFalse(os.path.exists(self.project.path('.gitignore')))
         self.assertFalse(os.path.exists(self.project.local))
         # Every repo path the block names exists in ReAgentLive.
         for path in ('.claude/skills/reagentlive/SKILL.md', 'docs/README.md', 'tools/update.ps1',
@@ -100,7 +106,7 @@ class AgentLinkTests(unittest.TestCase):
         self.assertTrue(self.project.read('AGENTS.md').startswith('# My mod\n\nOur rules.\n\n<!-- reagentlive -->'))
         self.assertIn('<!-- reagentlive -->', self.project.read('CLAUDE.md'))
         self.assertEqual(set(json.loads(self.project.read('.mcp.json'))['mcpServers']), {'other', 'reagentlive'})
-        self.assertTrue(self.project.read('.gitignore').startswith('bin/\n.claude/skills/reagentlive\n'))
+        self.assertEqual(self.project.read('.gitignore'), 'bin/')
         record = json.loads(self.project.read('reagentlive.json'))
         self.assertEqual((record['build'], record['check']), ('cmake --build out', False))
         agents = ' '.join(self.project.read('AGENTS.md').split())
@@ -116,7 +122,11 @@ class AgentLinkTests(unittest.TestCase):
         agents = self.project.read('AGENTS.md')
         self.assertEqual(agents.count('<!-- reagentlive -->'), 1)
         self.assertIn('out/renamed.exe', agents)
-        self.assertEqual(self.project.read('.gitignore').count('.claude/skills/reagentlive'), 1)
+        # A stale pointer (an update changed the description) is rewritten.
+        self.project.put('.agents/skills/reagentlive/SKILL.md',
+                         self.project.read('.agents/skills/reagentlive/SKILL.md').replace('description:', 'description: old'))
+        code, out = self.project.run()
+        self.assertEqual(out['written'], ['.agents/skills/reagentlive/SKILL.md'])
         # Nothing changed: nothing is written.
         code, out = self.project.run()
         self.assertEqual((code, out['written']), (0, []), out)
@@ -137,7 +147,7 @@ class AgentLinkTests(unittest.TestCase):
         os.remove(self.project.path('.mcp.json'))
         os.makedirs(self.project.path('.agents/skills/reagentlive'))
         code, out = self.link()
-        self.assertIn('is an untracked folder, not a link', out['error'])
+        self.assertIn('is an untracked skill folder', out['error'])
         self.assertEqual(sorted(os.listdir(self.project.root)), ['.agents', 'external'])
         code, out = self.project.run('--console', 'a.exe', '--dll', 'a.dll', '--project', self.project.clone)
         self.assertIn('this clone itself', out['error'])
@@ -154,8 +164,9 @@ class AgentLinkTests(unittest.TestCase):
         subprocess.run(['git', '-C', self.project.root, 'add', '.claude/skills/reagentlive/SKILL.md'], check=True)
         code, out = self.link()
         self.assertEqual(code, 0, out)
-        self.assertEqual((out['servers'], out['kept'], out['links']),
-                         ({'claude-code': 'my-dev'}, ['.claude/skills/reagentlive'], ['.agents/skills/reagentlive']))
+        self.assertEqual((out['servers'], out['kept']), ({'claude-code': 'my-dev'}, ['.claude/skills/reagentlive']))
+        self.assertIn('.agents/skills/reagentlive/SKILL.md', out['written'])
+        self.assertNotIn('.claude/skills/reagentlive/SKILL.md', out['written'])
         servers = json.loads(self.project.read('.mcp.json'))['mcpServers']
         self.assertEqual(set(servers), {'other', 'my-dev'})
         self.assertEqual(servers['my-dev'], {'command': 'python', 'env': {'A': '1'}, 'args': [
@@ -163,9 +174,9 @@ class AgentLinkTests(unittest.TestCase):
             '--console', 'out/tool.exe', '--name', 'my-dev', '--packs', 'explore']})
         self.assertEqual(self.project.read('.claude/skills/reagentlive/SKILL.md'), '# pointer\n')
         self.assertIn('`my-dev` MCP tools', self.project.read('AGENTS.md'))
-        ignored = self.project.read('.gitignore').split('\n')
-        self.assertNotIn('.claude/skills/reagentlive', ignored)
-        self.assertIn('.agents/skills/reagentlive', ignored)
+        # A pointer this script wrote is its own, tracked or not: a later run rewrites it.
+        subprocess.run(['git', '-C', self.project.root, 'add', '.agents'], check=True)
+        self.assertEqual(self.link()[1]['kept'], ['.claude/skills/reagentlive'])
         # Two ReAgentLive servers: refused.
         servers['second'] = servers['my-dev']
         self.project.put('.mcp.json', json.dumps({'mcpServers': servers}))
