@@ -34,7 +34,7 @@ files: Unreal pack (`docs/commands/labels.md#names-that-survive-a-patch`).
    `expect` set to the target. A call instruction (`E8 rel32`) at match
    offset C is `resolve` `"C+5,C+1"` (C = 0: `"5,1"`); `lea rcx, [rip+d]`
    at C is `"C+7,C+3"`.
-6. `{"verb": "sig-check", "args": {"pattern": "48 8b 05 ?? ?? ?? ?? 48 85 c0 74", "expect": {"module": "game.exe", "rva": "0x1234"}}}`
+6. `{"verb": "sig-check", "args": {"pattern": "48 8b 05 ?? ?? ?? ?? 48 85 c0 74", "expect": {"module": "target.exe", "rva": "0x1234"}}}`
    after every attempt; act on what it reports: mismatches, where it
    diverges or turns unique (the extra bytes must be ones you would keep
    fixed), warnings (a fixed field holds an address: wildcard).

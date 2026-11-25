@@ -35,11 +35,11 @@ with `verb` (`{"verb": "help", "args": {"verb": "find"}}`). Behaviour:
 
 | Question | Verb |
 |---|---|
-| Run a getter / any reflected function | `call-pure` or `call-each` (approval only for the first call on a new host or game) / `call` (approval), `release` a kept result |
+| Run a getter / any reflected function | `call-pure` or `call-each` (approval only for the first call on a new host or target) / `call` (approval), `release` a kept result |
 | What a Blueprint function reads and calls | `script` |
 | Which Blueprints name a tag or name | `name-refs` |
 | What a line from A to B hits | `line-trace` |
-| What the game passed to a function | `calls-start`, `calls-read` (`stop` ends it; approval) |
+| What the target passed to a function | `calls-start`, `calls-read` (`stop` ends it; approval) |
 | Get the game-thread tick | `game-thread` (approval for `on`) |
 
 ## Memory (`docs/commands/memory.md`, `docs/commands/native-objects.md`)
@@ -68,7 +68,7 @@ and signatures references.
 ## Refs
 
 - Pass the literal ref a result prints (`<ref>` in this skill). A module
-  address works as `{"module": "game.exe", "rva": "0x1234"}`
+  address works as `{"module": "target.exe", "rva": "0x1234"}`
   (`docs/commands/console.md#addresses-and-refs`).
 - `name-find` can return binary junk beside real names: skip rows with
   control characters, confirm with `{"verb": "name", "args": {"indices": [12345]}}`.

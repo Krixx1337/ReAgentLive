@@ -31,7 +31,7 @@
   range on its container catches it. A C++ client probe in a scratch
   folder only for data whose address moves every tick.
 
-## What the game passed to a function
+## What the target passed to a function
 
 - `{"verb": "calls-start", "args": {"object": "0x1f2e3d4c50#123:4", "function": "Owner:Function", "duration": 10}}`
   records each call with its

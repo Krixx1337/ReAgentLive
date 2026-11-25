@@ -69,5 +69,5 @@ Loader behaviour: `docs/commands/ida-loader.md`; what a save holds:
   database that is not the workspace or a reference; leaked workers pile
   up. Close the workspace when done, and delete stale database files
   before reopening a save under the same name.
-- After a game patch: a new full database (the RVAs change), then
+- After the target updates: a new full database (the RVAs change), then
   `labels-port` and import the labels again.

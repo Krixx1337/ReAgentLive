@@ -15,7 +15,7 @@ Approval: SKILL.md rules. Call semantics and named inputs:
   `call`. Before asking for a `call`, put its `dry` output in the request
   (the function, its `exec` address, `pure`, the exact block).
 - A call refused as faulted was caught inside the engine; the
-  game may now be unstable. Tell the user, and confirm later readings with
+  target may now be unstable. Tell the user, and confirm later readings with
   a second read.
 - A `funcs` row declared only on a native interface (`help` on `funcs`): never
   `call` it; follow the native-and-blueprint reference.
@@ -36,9 +36,9 @@ Approval: SKILL.md rules. Call semantics and named inputs:
   block can be reused for another type.
 - Never write through a pointer chain: resolve it, read, then write to that
   address with `expect`.
-- When a game setter refuses (authority, validation), look at the object it
-  writes: native value objects often keep plain fields the game reads
-  directly. Verify the layout against the game's own getter right before
+- When a setter refuses (authority, validation), look at the object it
+  writes: native value objects often keep plain fields the target reads
+  directly. Verify the layout against the target's own getter right before
   each write.
 - A value that snaps back within one tick is a copy (movement components
   can keep a copy of prediction state). Find the source before trying
@@ -54,7 +54,7 @@ Approval: SKILL.md rules. Call semantics and named inputs:
 
 - Use it to settle which way a lead goes (does a multiplier shorten an
   action?): it writes once and the agent restores the original; a value
-  the game rewrites meanwhile ends `conflict`. Evidence of direction, not
+  the target rewrites meanwhile ends `conflict`. Evidence of direction, not
   validation of a shipped feature. Compare against an untouched run, or an
   untouched character in the same capture (the capture-and-timing
   reference).
@@ -69,5 +69,5 @@ Approval: SKILL.md rules. Call semantics and named inputs:
 - `hold` writes the same bytes every tick and, when it runs out, leaves
   them as they are (it restores nothing); an `addr` of
   `{"base": "0x1f2e3d4c50#123:4", "offset": 16}` stops when the object
-  dies. A held value that holds is integrated state; one the game still
+  dies. A held value that holds is integrated state; one the target still
   overrides each frame is recomputed from scratch.

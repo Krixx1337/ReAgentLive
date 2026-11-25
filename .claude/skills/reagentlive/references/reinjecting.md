@@ -16,9 +16,9 @@ failures.
   Restart the target, then inject: never load a DLL with a changed
   protocol into a process that runs the old agent.
 - Re-injecting into the same process stacks host copies; prefer a fresh
-  game start for behaviour checks.
+  target start for behaviour checks.
 - `status` shows the answering agent's `build` time and `replaced_agents`.
   The build time stamps the agent core only: after a host-only change,
   check that `replaced_agents` went up.
-- A reinjection or game restart empties the console's cache: the first
+- A reinjection or a restart of the target empties the console's cache: the first
   class lookup scans again.

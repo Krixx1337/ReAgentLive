@@ -13,7 +13,7 @@ improvement reference.
 - Repo files outside the skill are inline code paths with anchors
   (`docs/tiers.md#the-ladder`), never URLs: SKILL.md's resolver maps them
   to the user's build. Links between skill files stay relative.
-- Never name a game, mod or host (the `reagentlive.docs` test checks).
+- Never name a target (a game or app), mod or host (the `reagentlive.docs` test checks).
 - A verb in prose stands alone (`find`), an arg by its key or path (`cls`,
   `view.limit`), never `--flag`. Examples are one-line JSON calls with
   real-looking values (`"0x7ff6a1b2c3d0"`, a literal ref, a class name),

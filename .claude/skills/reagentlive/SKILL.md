@@ -1,6 +1,6 @@
 ---
 name: reagentlive
-description: Investigate a running game with ReAgentLive, an in-process agent driven by MCP tools, a console or Python - find objects and UObject instances, read reflected and native fields, decode FName and gameplay tag indices, call engine getters on the game thread, capture runtime behaviour, read live code (disasm, xrefs, signatures) and turn findings into evidence-backed changes. Use for any runtime question about game data, engine objects or a mod's behaviour, before guessing from an SDK dump; also to read which tier a target gives and to climb it, and to install or update ReAgentLive itself.
+description: Investigate a running game or app with ReAgentLive, an in-process agent driven by MCP tools, a console or Python - find objects and UObject instances, read reflected and native fields, decode FName and gameplay tag indices, call engine getters on the game thread, capture runtime behaviour, read live code (disasm, xrefs, signatures) and turn findings into evidence-backed changes. Use for any runtime question about a target's data, engine objects or a mod's behaviour, before guessing from an SDK dump; also to read which tier a target gives and to climb it, and to install or update ReAgentLive itself.
 ---
 
 # ReAgentLive investigations
@@ -21,7 +21,7 @@ skill folder lives in (in a project, its `reagentlive/` submodule), else
 
 ## First command: `status`
 
-- `packs` empty (T0): the core, for any game: memory, native code,
+- `packs` empty (T0): the core, for any target: memory, native code,
   signatures, captures. Unreal verbs need a host with the pack
   (`docs/tiers.md#the-ladder`). Go to Rules.
 - `packs: ["ue"]`: the Unreal pack. Read your tier below.
@@ -42,7 +42,7 @@ answers; `engine` is T3; real serials (not `:0`) T4.
 
 - **Approval.** Reads need none: every verb `help` does not mark `writes`,
   and pure getters through `call-pure` or `call-each` (say what you call),
-  except the first call on a new host or in a new game (a wrong engine
+  except the first call on a new host or in a new target (a wrong engine
   layout can crash it). Ask first for every `write` (`hold` too; `undo` as
   the host's rules say), `write` with `clear`, `calls-start`,
   `game-thread` `on` and any `call` that could change state: give the
@@ -66,7 +66,7 @@ console `-c` when MCP is absent. Packs and the ceiling:
 
 ## Load when
 
-Any game:
+Any target (a game or app):
 
 | When you... | Load |
 |---|---|

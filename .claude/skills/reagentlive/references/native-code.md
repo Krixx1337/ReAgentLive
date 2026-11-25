@@ -33,7 +33,7 @@ Verbs: `disasm`, `xrefs`, `touches`, `disp-scan`, `sig-check`,
   (vtables, `func` on an interface), what a global holds at run time (the
   image file has zeros where the engine fills names at start-up).
 - Printed `module` + `rva`: in the static tool, image base plus RVA. Back,
-  pass `{"module": "game.exe", "rva": "0x1234"}` as any address.
+  pass `{"module": "target.exe", "rva": "0x1234"}` as any address.
 - A global shown as `qword_…`: `peek` it; an FName index shows as
   `name_hint`. Accept the hint only when the code uses it where a tag is
   expected, then `peek` with `label` records it
@@ -69,7 +69,7 @@ Verbs: `disasm`, `xrefs`, `touches`, `disp-scan`, `sig-check`,
 Walk references one address at a time; check each answer before the next.
 
 1. **A source-path or assert string → the function using it.**
-   `{"verb": "search", "args": {"type": "text", "value": "Weapon.cpp", "scope": {"module": "game.exe"}}}`
+   `{"verb": "search", "args": {"type": "text", "value": "Weapon.cpp", "scope": {"module": "target.exe"}}}`
    (`type` `wtext` for UTF-16), then `xrefs` of the hit: `lea` rows with a
    `function`. Goes wrong: a string shared by several classes (read each
    with `disasm` with `whole`), or the hit is inside a longer string
