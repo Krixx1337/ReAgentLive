@@ -96,16 +96,17 @@ Ask the user, in one message:
 
    Write the answer to the machine record's `improvement`. With it
    already set, use it and say so in the report.
-3. "Before which writes into the target should I ask you?" picks
-   `<approval>`, the project's (committed, so the team's):
+3. "May I change the target on my own: never, the safe changes, or
+   everything?" picks `<approval>`, the project's (committed, so the
+   team's):
 
-   | Answer | `<approval>` | The agent asks first for |
+   | Answer | `<approval>` | The agent |
    |---|---|---|
-   | every one (the default, also when unsure) | `each` | every write, state-changing call, `calls-start`, `game-thread` `on` |
-   | only invasive ones (a target the user owns, offline) | `invasive` | writes to code, read-only data, vtables or hook slots, `calls-start`, `game-thread` `on`; it says what any other write does first |
+   | never (a target others rely on) | `read-only` | reads only; lists the changes it would make for the user to run or approve |
+   | the safe ones (the default, also when unsure) | `auto` | writes values and calls functions on its own, saying what each does; asks first for code, read-only data, vtables, hook slots, `calls-start`, `game-thread` `on`, and the first call on a new host or target |
+   | everything (a target the user owns, offline) | `bypass` | asks nothing |
 
-   Either way the first call on a new host or target is asked, and the
-   project's own notes can ask for more
+   The project's own notes can ask for more
    ([the rule](../../.claude/skills/reagentlive/SKILL.md#rules)).
 
 A clone of a project wired earlier (it has `reagentlive.json`) carries

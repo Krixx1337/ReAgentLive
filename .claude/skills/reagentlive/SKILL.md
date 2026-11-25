@@ -33,21 +33,21 @@ From `status` (`docs/tiers.md#read-your-tier-from-status`): `host_thread`
 answers; `engine` is T3; real serials (not `:0`) T4.
 
 - T1 (that `get` refused with a layout-group check): load `references/unreal/new-game.md`.
-- T2: load `references/unreal/game-thread.md`, confirm Draw read-only, then ask to turn `game-thread` on.
+- T2: load `references/unreal/game-thread.md`, confirm Draw read-only, then turn `game-thread` on (Approval rule).
 - T3 and below: `docs/tiers.md`; `not on the game thread` means climb or
   answer by reads.
 
 ## Rules
 
-- **Approval** (the project record's `approval`; none: `each`). Reads need
-  none: every verb `help` does not mark `writes`, and pure getters
-  (`call-pure`, `call-each`; say what you call). Always ask for the first
-  call on a new host or target (a wrong engine layout can crash it).
-  `each`: also every `write` (`hold`, `clear`; `undo` as the host says),
-  `calls-start`, `game-thread` `on`, any `call` that could change state.
-  `invasive`: only writes to code, read-only data, vtables or hook slots,
-  `calls-start`, `game-thread` `on`; say what the others do first. Asking: address,
-  bytes now and new, effect (a call: its `dry` output); one yes, one write.
+- **Approval** (the project record's `approval`; none: `auto`). Reads and
+  pure getters (`call-pure`, `call-each`) run in every mode; say what each
+  change does before it runs. `read-only`: no write, state-changing `call`,
+  `calls-start` or `game-thread` `on`; list them for the user instead.
+  `auto`: ask first only for writes to code, read-only data, vtables or
+  hook slots, `calls-start`, `game-thread` `on`, and the first call on a
+  new host or target (a wrong engine layout can crash it); the rest runs.
+  `bypass`: ask nothing. Asking: address, bytes now and new, effect (a
+  call: its `dry` output); one yes, one change. Host notes can ask more.
 - Never guess an arg or a result key: `{"verb": "help", "args": {"verb": "get"}}`
   (no target needed). Behaviour: the verb's page (`docs/commands/README.md`).
 - Pass literal refs (`0x<address>#<index>:<serial>`), never `$N`. Values

@@ -65,7 +65,7 @@ class AgentLinkTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(json.loads(self.project.read('reagentlive.json')),
                          {'library': 'external/reagentlive', 'mcp': ['claude-code', 'copilot'], 'console': 'out/tool.exe',
-                          'dll': 'out/host.dll', 'check': True, 'approval': 'each'})
+                          'dll': 'out/host.dll', 'check': True, 'approval': 'auto'})
         self.assertIn('build_project.ps1 -Project .`, with `-Check` to check',
                       ' '.join(self.project.read('AGENTS.md').split()))
         claude = json.loads(self.project.read('.mcp.json'))['mcpServers']['reagentlive']
@@ -104,14 +104,14 @@ class AgentLinkTests(unittest.TestCase):
         self.project.put('CLAUDE.md', '# Claude notes\n')
         self.project.put('.mcp.json', json.dumps({'mcpServers': {'other': {'command': 'x'}}}))
         self.project.put('.gitignore', 'bin/')
-        code, out = self.link('--build', 'cmake --build out', '--check', 'no', '--approval', 'invasive')
+        code, out = self.link('--build', 'cmake --build out', '--check', 'no', '--approval', 'read-only')
         self.assertEqual(code, 0, out)
         self.assertTrue(self.project.read('AGENTS.md').startswith('# My mod\n\nOur rules.\n\n<!-- reagentlive -->'))
         self.assertIn('<!-- reagentlive -->', self.project.read('CLAUDE.md'))
         self.assertEqual(set(json.loads(self.project.read('.mcp.json'))['mcpServers']), {'other', 'reagentlive'})
         self.assertEqual(self.project.read('.gitignore'), 'bin/')
         record = json.loads(self.project.read('reagentlive.json'))
-        self.assertEqual((record['build'], record['check'], record['approval']), ('cmake --build out', False, 'invasive'))
+        self.assertEqual((record['build'], record['check'], record['approval']), ('cmake --build out', False, 'read-only'))
         agents = ' '.join(self.project.read('AGENTS.md').split())
         self.assertIn('Build: `cmake --build out` (it ticks only in the game', agents)
         self.assertNotIn('-Check', agents)  # check is false: no check to run
