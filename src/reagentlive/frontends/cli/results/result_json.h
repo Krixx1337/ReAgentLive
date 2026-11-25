@@ -4,8 +4,12 @@
 // generated from it. The Unreal pack's are in packs/ue/cli/results/result_ue_*.h.
 //
 // Conventions every result follows:
-//   rows          the result's list.           total        how many there are in all, when rows may show fewer.
-//   from, next_cursor   a page: where it began, and what to pass back as `view.cursor` for the next (absent when done).
+//   rows          the result's list.           total        how many there were after any filter, before rows were cut; present on every page.
+//   from, next_cursor   a page: where the page began (a row index; find: the object-table slot), and what to pass back as `view.cursor` for the next (absent when done).
+//                 `from` means nothing else: an address range scanned is scan_from, scan_to.
+//   ref           an object's own id (the ref string); `object` is only the {ref, name, class} struct.
+//   *_ms          every time is milliseconds: duration_ms (how long a thing ran or was asked to), elapsed_ms (took), at_ms (offset
+//                 from a start), scan_ms (a scan took).
 //   capped        rows were cut at a hard limit; there is no cursor (never the cut of a list that has next_cursor).
 //   truncated     a value in the result is incomplete.
 //   module, rva   beside an address inside a loaded module (absent elsewhere), so it opens in a static tool.
@@ -207,7 +211,7 @@ struct TimedWrite {
     std::string state;
     uint32_t remainingMs = 0;
     std::optional<HexBytes> original;
-    std::optional<Addr> owner, object;
+    std::optional<Addr> owner, objectAddr;
     std::optional<uint64_t> changedTick;
     std::optional<std::string> guard;
     std::optional<bool> guarded;
@@ -223,7 +227,7 @@ struct TimedWrite {
         v("remaining_ms", &TimedWrite::remainingMs);
         v("original", &TimedWrite::original);
         v("owner", &TimedWrite::owner);
-        v("object", &TimedWrite::object);
+        v("object_addr", &TimedWrite::objectAddr);
         v("changed_tick", &TimedWrite::changedTick);
         v("guard", &TimedWrite::guard, "owner replaced or freed|object vtable changed|target unreadable|unknown");
         v("guarded", &TimedWrite::guarded);
@@ -278,8 +282,8 @@ struct Search {
         v("rows", &Search::rows);
         v("job", &Search::job);
         v("state", &Search::state, "running|done|stopped");
-        v("from", &Search::from);
-        v("to", &Search::to);
+        v("scan_from", &Search::from);
+        v("scan_to", &Search::to);
         v("scanned", &Search::scanned);
         v("next_cursor", &Search::nextCursor);
     }
@@ -306,13 +310,14 @@ struct WatchRange {
 // `lost` rows and `resumed` ones (with the new object's address) bound each gap.
 struct WatchSample {
     static constexpr std::string_view TypeName = "WatchSample";
-    uint64_t tick = 0, us = 0;
+    uint64_t tick = 0;
+    double atMs = 0;                    // Since the capture began.
     std::optional<std::vector<Json>> values;
     std::optional<bool> lost, resumed;
     std::optional<Addr> root;
     template<class V> static void Describe(V& v) {
         v("tick", &WatchSample::tick);
-        v("us", &WatchSample::us);
+        v("at_ms", &WatchSample::atMs);
         v("values", &WatchSample::values);
         v("lost", &WatchSample::lost);
         v("resumed", &WatchSample::resumed);
@@ -320,11 +325,11 @@ struct WatchSample {
     }
 };
 struct WatchGap {
-    uint64_t fromUs = 0;
-    std::optional<uint64_t> toUs;
+    double startMs = 0;
+    std::optional<double> endMs;
     template<class V> static void Describe(V& v) {
-        v("from_us", &WatchGap::fromUs);
-        v("to_us", &WatchGap::toUs);
+        v("start_ms", &WatchGap::startMs);
+        v("end_ms", &WatchGap::endMs);
     }
 };
 // A typed range's value over the capture: `element` for one of an [n] range.
@@ -356,7 +361,7 @@ struct WatchStart {
     std::optional<std::string> file;
     template<class V> static void Describe(V& v) {
         v("capacity", &WatchStart::capacity);
-        v("ms", &WatchStart::ms);
+        v("duration_ms", &WatchStart::ms);
         v("interval_ms", &WatchStart::intervalMs);
         v("root", &WatchStart::root);
         v("ranges", &WatchStart::ranges);
@@ -379,7 +384,7 @@ struct WatchCapture {
         v("running", &WatchCapture::running);
         v("stopped", &WatchCapture::stopped, WatchStops);
         v("capacity", &WatchCapture::capacity);
-        v("ms", &WatchCapture::ms);
+        v("duration_ms", &WatchCapture::ms);
         v("interval_ms", &WatchCapture::intervalMs);
         v("root", &WatchCapture::root);
         v("ranges", &WatchCapture::ranges);
@@ -431,7 +436,7 @@ inline std::vector<WatchSummary> SummariseWatch(std::span<const WatchRange> rang
             WatchSummary summary;
             summary.range = r;
             if (several) summary.element = e;
-            uint64_t firstUs = 0, lastUs = 0;
+            double firstMs = 0, lastMs = 0;
             for (const auto& row : rows) {
                 if (!row.values || r >= row.values->size()) continue;
                 const Json& cell = (*row.values)[r];
@@ -440,18 +445,18 @@ inline std::vector<WatchSummary> SummariseWatch(std::span<const WatchRange> rang
                 const double number = value->get<double>();
                 if (!summary.samples) {
                     summary.first = summary.least = summary.greatest = number;
-                    firstUs = row.us;
+                    firstMs = row.atMs;
                 }
                 if (summary.samples && number != summary.last) ++summary.changes;
                 summary.last = number;
-                lastUs = row.us;
+                lastMs = row.atMs;
                 summary.least = std::min(summary.least, number);
                 summary.greatest = std::max(summary.greatest, number);
                 ++summary.samples;
             }
             if (!summary.samples) continue;
-            if (summary.samples > 1 && lastUs > firstUs)
-                summary.perSecond = (summary.last - summary.first) * 1e6 / static_cast<double>(lastUs - firstUs);
+            if (summary.samples > 1 && lastMs > firstMs)
+                summary.perSecond = (summary.last - summary.first) * 1e3 / (lastMs - firstMs);
             out.push_back(summary);
         }
     }
@@ -556,7 +561,7 @@ struct RunStep {
         v("step", &RunStep::step);
         v("verb", &RunStep::verb);
         v("calls", &RunStep::calls);
-        v("ms", &RunStep::ms);
+        v("elapsed_ms", &RunStep::ms);
     }
 };
 struct RunReport {
@@ -574,7 +579,7 @@ struct RunReport {
         v("refused", &RunReport::refused);
         v("expect_met", &RunReport::expectMet);
         v("expect_failed", &RunReport::expectFailed);
-        v("ms", &RunReport::ms);
+        v("elapsed_ms", &RunReport::ms);
         v("timings", &RunReport::timings);
         v("console", &RunReport::console);
         v("commit", &RunReport::commit);

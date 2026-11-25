@@ -35,7 +35,8 @@ SIG = {'pattern': '48 8b', 'list': '0x48, 0x8B', 'module': 'Game.exe', 'unique':
 CALL = {'ref': '0x10#1:1', 'function': 'Pawn:Fn', 'mode': 'raw', 'block_size': 2, 'hex': '01 02', 'kept': False}
 PIN = {'id': 'hold:1', 'mode': 'hold', 'address': '0x10', 'bytes': '00 00 80 3f', 'guarded': True, 'state': 'active',
        'writes': 1, 'remaining_ms': 2500}
-TRIAL = {'id': 'undo:1', 'mode': 'undo', 'address': '0x38', 'bytes': '00', 'original': '01', 'owner': '0x10', 'state': 'active',
+TRIAL = {'id': 'undo:1', 'mode': 'undo', 'address': '0x38', 'bytes': '00', 'original': '01', 'owner': '0x10', 'object_addr': '0x30',
+         'state': 'active',
          'changed_tick': 5, 'remaining_ms': 5000}
 REF = '0x10#1:1'
 GAME = {'module': 'Game.exe', 'rva': '0x10'}           # An address by module and rva.
@@ -82,11 +83,11 @@ CALLS = [
     [C('write', {'addr': '0x1000', 'data': '0102', 'expect': 'ffff'}), error(kind='agent', message='memory differs', found='00 00')],
     [C('search', {'type': 'ptr', 'value': '0x7ff600001234', 'heap': True, 'module': 'Game.exe', 'max': 512}),
      ok({'rows': [{'address': '0x10'}, {'address': '0x20', 'module': 'Game.exe', 'rva': '0x20'}], 'job': 2,
-         'state': 'done', 'from': '0x0', 'to': '0x100', 'scanned': 0.13, 'next_cursor': '0x21'})],
+         'state': 'done', 'scan_from': '0x0', 'scan_to': '0x100', 'scanned': 0.13, 'next_cursor': '0x21'})],
     [C('search', {'type': 'text', 'value': 'Fatal error', 'max': 1}),
-     ok({'rows': [], 'job': 3, 'state': 'running', 'from': '0x0', 'to': '0x100', 'scanned': 0.5})],
+     ok({'rows': [], 'job': 3, 'state': 'running', 'scan_from': '0x0', 'scan_to': '0x100', 'scanned': 0.5})],
     [C('search-job', {'job': 3, 'stop': True}),
-     ok({'rows': [], 'job': 3, 'state': 'stopped', 'from': '0x0', 'to': '0x100', 'scanned': 0.6, 'next_cursor': '0x60'})],
+     ok({'rows': [], 'job': 3, 'state': 'stopped', 'scan_from': '0x0', 'scan_to': '0x100', 'scanned': 0.6, 'next_cursor': '0x60'})],
     [C('batch', {'calls': [C('read', {'addr': '0x10', 'len': 1}), C('get', {'object': REF, 'paths': [['X']]})]}),
      ok({'all_ok': False, 'same_tick': True, 'first_tick': 4, 'last_tick': 4, 'spans_ticks': [], 'rows': [
          {'command': 'read', 'ok': True, 'result': {'address': '0x10', 'size': 1, 'hex': '01'}, 'tick': 4},
@@ -106,38 +107,38 @@ CALLS = [
         'capped': False, 'scan_ms': 3})],
     [C('touches', {'addr': GAME, 'offsets': [0x538, 0x540], 'range': 0x1000}), ok({
         'address': '0x10', 'offsets': ['0x538', '0x540'], 'range': 4096,
-        'scanned': {'from': '0x0', 'to': '0x1010', 'functions': 2, 'unlisted': 0, 'bytes': 64}, 'total': 1, 'capped': False, 'scan_ms': 1,
+        'scanned': {'scan_from': '0x0', 'scan_to': '0x1010', 'functions': 2, 'unlisted': 0, 'bytes': 64}, 'total': 1, 'capped': False, 'scan_ms': 1,
         'rows': [{'function': {'start': '0x20', 'end': '0x40'}, 'distinct': 1, 'writes': False, 'total': 0, 'uses': []}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x3e4}, 'data': '0000803f', 'expect': '00000000', 'hold': 2.5}),
      ok({'address': '0x10', 'size': 4, 'timed': PIN})],
     [C('timed-writes'), ok({'rows': [TRIAL, PIN]})],
     [C('write', {'clear': 'hold:1'}), ok({'cleared': [dict(PIN, state='cleared')]})],
     [C('watch-start', {'duration': 600, 'ranges': [{'offset': 0x538, 'len': 16}], 'every': 10, 'follow': 'pawn'}), ok({
-        'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
+        'capacity': 9000, 'duration_ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
         'ranges': [{'offset': '0x538', 'length': 16, 'guarded': True}]})],
-    [C('watch-read'), ok({'running': True, 'capacity': 9000, 'ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
+    [C('watch-read'), ok({'running': True, 'capacity': 9000, 'duration_ms': 600000, 'interval_ms': 10000, 'root': 'pawn',
                           'ranges': [{'offset': '0x538', 'length': 16, 'guarded': True}],
-                          'rows': [{'tick': 5, 'us': 0, 'values': ['01 00'], 'root': '0x10'}, {'tick': 9, 'us': 10, 'lost': True},
-                                   {'tick': 12, 'us': 20, 'values': ['02 00'], 'resumed': True, 'root': '0x20'}],
-                          'gaps': [{'from_us': 10, 'to_us': 20}]})],
+                          'rows': [{'tick': 5, 'at_ms': 0, 'values': ['01 00'], 'root': '0x10'}, {'tick': 9, 'at_ms': 0.01, 'lost': True},
+                                   {'tick': 12, 'at_ms': 0.02, 'values': ['02 00'], 'resumed': True, 'root': '0x20'}],
+                          'gaps': [{'start_ms': 0.01, 'end_ms': 0.02}]})],
     [C('watch-start', {'duration': 0.3, 'ranges': [{'object': REF, 'field': ['Health']}, {'addr': '0x9000', 'len': 1}],
                        'file': 'cap.jsonl'}), ok({
-        'capacity': 100, 'ms': 300, 'interval_ms': 0, 'ranges': [RANGE, RANGE], 'file': 'cap.jsonl'})],
-    [C('watch-read', {'stop': True}), ok({'running': False, 'stopped': 'stopped', 'capacity': 100, 'ms': 300, 'interval_ms': 0,
+        'capacity': 100, 'duration_ms': 300, 'interval_ms': 0, 'ranges': [RANGE, RANGE], 'file': 'cap.jsonl'})],
+    [C('watch-read', {'stop': True}), ok({'running': False, 'stopped': 'stopped', 'capacity': 100, 'duration_ms': 300, 'interval_ms': 0,
                           'ranges': [RANGE, RANGE], 'file': 'cap.jsonl',
-                          'rows': [{'tick': 5, 'us': 0, 'values': ['01 00', None]}, {'tick': 6, 'us': 9000, 'values': ['02 00', 'ff']}]})],
+                          'rows': [{'tick': 5, 'at_ms': 0, 'values': ['01 00', None]}, {'tick': 6, 'at_ms': 9, 'values': ['02 00', 'ff']}]})],
     [C('write', {'addr': {'base': REF, 'offset': 0x28}, 'data': '0000000000000040', 'expect': '000000000000f03f',
                  'undo': {'after': 5, 'owner': REF, 'object': '0x2000'}}), ok({'address': '0x38', 'size': 8, 'timed': TRIAL})],
     [C('write', {'clear': 'undo:1'}), ok({'cleared': [dict(TRIAL, state='restored')]})],
     [C('find', {'text': 'A', 'cls': 'Pawn'}), ok({'rows': [OBJECT], 'total': 2, 'from': 0, 'next_cursor': 24})],
-    [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'cursor': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'from': 24})],
+    [C('find', {'text': 'A', 'cls': 'Pawn', 'view': {'cursor': 24}}), ok({'rows': [dict(OBJECT, name='B')], 'total': 2, 'from': 24})],
     [C('get', {'object': REF, 'mode': 'changed'}), ok({'ref': REF, 'rows': [{'name': 'Ammo', 'offset': '0x100', 'value': 4, 'before': 5}],
                                                      'truncated': False, 'capped': False})],
     [C('get', {'object': REF, 'mode': 'changed', 'view': {'match': 'Ammo'}}), ok({
         'ref': REF, 'rows': [], 'truncated': False, 'capped': False})],
     [C('get', {'object': REF, 'mode': 'snap'}), ok({'ref': REF, 'rows': [], 'snap': {'size': 1264}})],
     [C('census', {'cls': 'Actor', 'diff': True}), ok({'classes': 4, 'instances': 11, 'before': {'classes': 3, 'instances': 9},
-                                                       'ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
+                                                       'scan_ms': 4, 'total': 1, 'from': 0, 'filter': 'Actor', 'rows': [
         {'class': 'Proj', 'ref': '0x30#3:1', 'count': 2, 'before': 0, 'samples': ['0x90#9:1']}]})],
     [C('describe', {'object': REF}), ok(dict(OBJECT, class_size=1264))],
     [C('describe', {'slot': 5, 'serial': 9}), dict(ok(dict(OBJECT, class_size=1264)), context_warning=WARNING)],
@@ -407,7 +408,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(rows[1]['values'], [bytes([2, 0]), bytes([255])])
         self.assertEqual(self.c.watch_start(600, [{'offset': 0x538, 'len': 16}], every=10, follow='pawn')['capacity'], 9000)
         rows = dl.samples(self.c.watch_read())
-        self.assertEqual(rows[2], {'tick': 12, 'us': 20, 'values': [b'\x02\x00'], 'resumed': True, 'root': '0x20'})
+        self.assertEqual(rows[2], {'tick': 12, 'at_ms': 0.02, 'values': [b'\x02\x00'], 'resumed': True, 'root': '0x20'})
 
     def test_pack_verbs(self):
         self.assertEqual(self.c.ue.find(text='A', cls='Pawn')['total'], 2)
@@ -515,6 +516,8 @@ class SessionTests(unittest.TestCase):
                 time.sleep(0.05)
             status = runs.status(capped)
             self.assertEqual(status['state'], 'stopped')
+            self.assertIsInstance(status['elapsed_ms'], int)              # Milliseconds, a whole number.
+            self.assertNotIn('seconds', status)
             self.assertIn('passed the cap', status['stopped'])
             with self.assertRaises(dl.ReAgentLiveError) as caught:
                 runs.read(capped)

@@ -74,10 +74,10 @@ struct Command {
     // `target` names the module (empty: the exe). sig-check file: `file`.
     // sig-bytes: request address and length.
     // help: `target` is the verb asked about (empty: all), `all` is json, `hashOnly` is hash.
-    // usage: `all` is report all. watch-read: `all` is all (every sample).
+    // usage: `all` is scope all. watch-read: `all` is all (every sample).
     bool hashOnly = false;
-    bool listSessions = false;  // usage report sessions; session <id> is `target`.
-    bool advice = false;        // usage advice: verbs often digested or unfiltered, with a proposed change.
+    bool listSessions = false;  // usage scope sessions; scope <id> is `target`.
+    bool advice = false;        // usage only: ["advice"]: verbs often digested or unfiltered, with a proposed change.
     std::vector<std::string> parts; // usage only: the report's parts kept (empty: all).
     std::string baseline;       // usage baseline: a saved report to compare with. usage save: `file`.
     enum class SigMode { Check, File, Bytes } sigMode = SigMode::Check;

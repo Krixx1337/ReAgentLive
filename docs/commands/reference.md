@@ -30,7 +30,7 @@ verb takes the keys that apply to its result (its row lists them); a key it does
 |---|---|---|---|---|
 | `cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `limit` | `int` |  |  | rows at most (0: see notes) |
-| `match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 | `fields` | `[path]` |  |  | the row members to keep (paths into structs and arrays) |
 | `nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 | `elements` | `int` |  | `8` | elements per array, set or map (1..256) |
@@ -117,14 +117,12 @@ Pack `explore`.
 
 | Key | Type | Required | Default | What |
 |---|---|---|---|---|
-| `report` | `sessions\|all` |  |  | sessions: list the log's sessions; all: every session together |
-| `session` | `str` |  |  | a session id |
-| `advice` | `bool` |  |  | verbs often digested or unfiltered, with a proposed view.limit or hint |
+| `scope` | `str` |  |  | none: this session; sessions: list the log's sessions; all: every session together; any other value: that session id |
 | `baseline` | `file` |  |  | a saved report: what got worse or better |
 | `save` | `file` |  |  | write this report to a file as a baseline |
-| `only` | `[totals\|rows\|largest\|never_called\|session_rows\|context\|refusals\|advice\|compare]` |  |  | keep only these parts (advice turns it on) |
+| `only` | `[totals\|rows\|largest\|never_called\|session_rows\|context\|refusals\|advice\|compare]` |  |  | keep only these parts (advice: verbs often digested or unfiltered, with a proposed view.limit or hint) |
 
-Result: `{session?: str, sessions?: u64, since?: str, totals?: {calls: u64, batched: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, ms: f64, slot_ms: f64, slot_ms_max: f64}, rows?: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, ms: f64, slot_ms?: f64, batched?: u64, unfiltered?: u64, repeated?: u64, same_args?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64, followed?: u64, raised?: u64}], largest?: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}], context?: {chars: u64, limit: u64, over: bool}, refusals?: [{verb: str, kind: str, key?: str, count: u64}], advice?: [{verb: str, calls: u64, digested: u64, unfiltered: u64, followed: u64, raised: u64, limit?: {key: str, now: u64, proposed: u64}, hint: str}], saved?: str, compare?: {baseline: str, checked: u64, worse: [{what: str, verb?: str, before: f64, after: f64}], better: [{what: str, verb?: str, before: f64, after: f64}]}}`
+Result: `{session?: str, sessions?: u64, since?: str, totals?: {calls: u64, batched: u64, in: u64, out: u64, out_by_caller: {<key>: u64}, calls_by_pack: {<key>: u64}, refused: u64, digested: u64, saved: u64, elapsed_ms: f64, slot_ms: f64, slot_ms_max: f64}, rows?: [{verb: str, origin: str, calls: u64, out: u64, largest: u64, elapsed_ms: f64, slot_ms?: f64, batched?: u64, unfiltered?: u64, repeated?: u64, same_args?: u64, refused?: u64, refused_by?: {<key>: u64}, digested?: u64, saved?: u64, followed?: u64, raised?: u64}], largest?: [{verb: str, keys: [str], out: u64, caller: str, batch?: bool, digest?: u64}], never_called?: [str], session_rows?: [{session: str, since: str, until: str, callers: [str], calls: u64, out: u64, tool_out: u64, digested: u64, saved: u64, refused: u64}], context?: {chars: u64, limit: u64, over: bool}, refusals?: [{verb: str, kind: str, key?: str, count: u64}], advice?: [{verb: str, calls: u64, digested: u64, unfiltered: u64, followed: u64, raised: u64, limit?: {key: str, now: u64, proposed: u64}, hint: str}], saved?: str, compare?: {baseline: str, checked: u64, worse: [{what: str, verb?: str, before: f64, after: f64}], better: [{what: str, verb?: str, before: f64, after: f64}]}}`
 
 Reads the usage log beside the console; works with no target. out is characters; out_by_caller.tool is what reached an agent's context. Marks and compare rules: docs/commands/console.md#usage-log-and-usage. Past --context-limit (default 400000) every envelope carries context_warning; nothing stops.
 
@@ -287,7 +285,7 @@ Pack `native`.
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `max` | `int` |  | `64` | hits at most (1..507); the job stops when full |
 
-Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, from: addr, to: addr, scanned: f64, next_cursor?: addr}`
+Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, scan_from: addr, scan_to: addr, scanned: f64, next_cursor?: addr}`
 
 Still running after wait: state running and hits so far; search-job with its id for more or stop. A new search stops the last job. next_cursor continues it: the same search with view.cursor.
 
@@ -306,7 +304,7 @@ Pack `native`.
 | `job` | `int` | yes |  | the job a search returned |
 | `stop` | `bool` |  |  | end the job first; its next_cursor continues it (search with view.cursor) |
 
-Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, from: addr, to: addr, scanned: f64, next_cursor?: addr}`
+Result: `{rows: [{address: addr, module?: str, rva?: hex, text?: str}], job: u32, state: running\|done\|stopped, scan_from: addr, scan_to: addr, scanned: f64, next_cursor?: addr}`
 
 Only the last job answers. scanned: share of searchable bytes behind the cursor.
 
@@ -347,9 +345,9 @@ Pack `observe`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.limit` | `int` |  | `64` | rows at most (0: see notes) |
 
-Result: `{address: addr, module?: str, rva?: hex, length: u64, type: str, compare: changed\|unchanged\|increased\|decreased, compared: u64, matched: u64, tick: u64, rows: [{address: addr, before: value, after: value}], capped: bool, kept?: bool}`
+Result: `{address: addr, module?: str, rva?: hex, length: u64, type: str, compare: changed\|unchanged\|increased\|decreased, compared: u64, total: u64, tick: u64, rows: [{address: addr, before: value, after: value}], capped: bool, kept?: bool}`
 
-changed and unchanged compare bytes, increased and decreased numbers (NaN never passes). matched counts all; rows show view.limit (1..256). A snap from another agent instance is refused.
+changed and unchanged compare bytes, increased and decreased numbers (NaN never passes). total counts all; rows show view.limit (1..256). A snap from another agent instance is refused.
 
 ```json
 {"args":{"compare":"changed","type":"f32"},"verb":"mem-diff"}
@@ -369,7 +367,7 @@ Pack `observe`.
 | `follow` | `str` |  |  | a host root: ranges are offsets from it |
 | `file` | `file` |  |  | keep every sample here (JSON lines) |
 
-Result: `{capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [WatchRange], file?: str}`
+Result: `{capacity: u32, duration_ms: u32, interval_ms: u32, root?: str, ranges: [WatchRange], file?: str}`
 
 status lists the roots. The capture outlives the console. Typed ranges add a summary (first, last, least, greatest, change/s). file persists in the cache; a later watch-start without it drops it. For a blocking capture: start, wait, stop.
 
@@ -388,7 +386,7 @@ Pack `observe`.
 | `all` | `bool` |  |  | every sample, not only the changes |
 | `stop` | `bool` |  |  | end the capture first (the answer is the final record) |
 
-Result: `{running: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, capacity: u32, ms: u32, interval_ms: u32, root?: str, ranges: [WatchRange], rows: [WatchSample], samples?: u64, dropped?: u64, gaps?: [{from_us: u64, to_us?: u64}], summary?: [WatchSummary], file?: str}`
+Result: `{running: bool, stopped?: deadline\|stopped\|buffer full\|object replaced, capacity: u32, duration_ms: u32, interval_ms: u32, root?: str, ranges: [WatchRange], rows: [WatchSample], samples?: u64, dropped?: u64, gaps?: [{start_ms: f64, end_ms?: f64}], summary?: [WatchSummary], file?: str}`
 
 Past 200 rows the middle is dropped (dropped). samples counts all; the summary covers every sample.
 
@@ -467,7 +465,7 @@ Pack `native`.
 | `file` | `file` |  |  | the labels file (default: names file) |
 | `module` | `str` |  |  | the module (default: the exe) |
 
-Result: `{path: str, module: str, timestamp: u32, ported: u64, missing: u64, ambiguous: u64, present: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, from: u32, status: ported\|missing\|ambiguous, rva?: hex, matches?: u64, reason?: str}]}`
+Result: `{path: str, module: str, timestamp: u32, ported: u64, missing: u64, ambiguous: u64, present: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, from_build: u32, status: ported\|missing\|ambiguous, rva?: hex, matches?: u64, reason?: str}]}`
 
 Per name this build lacks, matches the newest signed row of another build; one match appends a row (sig, ported_from); none (missing) or several (ambiguous) are listed, never written. Old rows stay.
 
@@ -489,7 +487,7 @@ Pack `native`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.limit` | `int` |  |  | rows at most (0: see notes) |
 
-Result: `{path: str, module: str, timestamp: u32, ok: u64, moved: u64, missing: u64, ambiguous: u64, invalid: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, rva: hex, status: ok\|moved\|missing\|ambiguous\|invalid, found?: hex, matches?: u64, reason?: str}], matched?: u64, capped: bool, scan_ms: i64}`
+Result: `{path: str, module: str, timestamp: u32, ok: u64, moved: u64, missing: u64, ambiguous: u64, invalid: u64, unsigned: u64, searches: u64, rows: [{name: str, kind: str, rva: hex, status: ok\|moved\|missing\|ambiguous\|invalid, found?: hex, matches?: u64, reason?: str}], total?: u64, capped: bool, scan_ms: i64}`
 
 Per signed row: ok, moved (found), missing, ambiguous (matches) or invalid. unsigned counts rows with no sig. status keeps only those statuses; view.limit the first rows (0: all). Read-only.
 
@@ -516,7 +514,7 @@ Pack `native`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
-Result: `{address: addr, module?: str, rva?: hex, size: u64, stop: str, next_cursor?: addr, rows?: [{address: addr, module?: str, rva?: hex, bytes?: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, import?: str, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool, value?: f64, value_type?: str, value_hex?: bytes}], strings?: [{text: str, wide?: bool, at: [addr]}], saved?: str, saved_rows?: u64, functions?: [{start: addr, end: addr, rows: u64, depth?: u32}], skipped?: [{address: addr, why: str}], chunks?: [{start: addr, end: addr, rows: u64, depth?: u32}], tables?: [{jump: addr, table: addr, targets: u32}], jumpouts_left?: [addr], capped?: bool, layouts?: {classes: [str], types: u64}, piece?: {start: addr, end: addr}, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{from: addr, to: addr, to_module?: str, to_rva?: hex}], chain?: Chain}`
+Result: `{address: addr, module?: str, rva?: hex, size: u64, stop: str, next_cursor?: addr, rows?: [{address: addr, module?: str, rva?: hex, bytes?: bytes, text: str, target?: addr, target_module?: str, target_rva?: hex, string?: str, wide?: bool, import?: str, fields?: [{offset: u64, size: u64, kind: str}], ends?: bool, value?: f64, value_type?: str, value_hex?: bytes}], strings?: [{text: str, wide?: bool, at: [addr]}], saved?: str, saved_rows?: u64, functions?: [{start: addr, end: addr, rows: u64, depth?: u32}], skipped?: [{address: addr, why: str}], chunks?: [{start: addr, end: addr, rows: u64, depth?: u32}], tables?: [{jump: addr, table: addr, targets: u32}], jumpouts_left?: [addr], capped?: bool, layouts?: {classes: [str], types: u64}, piece?: {start: addr, end: addr}, function?: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, end?: {address: addr, offset: u64, reason: str}, followed?: [{source: addr, target: addr, target_module?: str, target_rva?: hex}], chain?: Chain}`
 
 Keep count small: a whole function belongs in save, not a reply. whole stops at 2048 instructions or 16 KB (next_cursor: the same call with view.cursor continues there; a cursor also starts a save at that exact address). save leaves rows out of the result. Without an exception-table entry, save refuses a walk from past padding unless view.cursor names the address.
 
@@ -558,7 +556,7 @@ Pack `native`.
 | `access` | `write\|read\|any` |  | `"any"` | write: stores and read-modify-writes; read: loads and read-modify-writes, ranked by offsets loaded, rows storing every offset they load dropped; any: all uses, lea too |
 | `bases` | `[rax\|rbx\|rcx\|rdx\|rsi\|rdi\|rbp\|rsp\|r8\|r9\|r10\|r11\|r12\|r13\|r14\|r15]` |  |  | only operands on these base registers (default: any but rsp and rbp) |
 
-Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {from: addr, to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64, chain?: Chain}`
+Result: `{address: addr, module?: str, rva?: hex, offsets: [hex], range: u64, scanned: {scan_from: addr, scan_to: addr, functions: u64, unlisted: u64, bytes: u64}, total: u64, rows: [{function: {start: addr, end: addr, module?: str, rva?: hex, chunk?: {start: addr, end: addr}}, unlisted?: bool, distinct: u64, writes: bool, total: u64, uses: [{offset: hex, instruction: addr, module?: str, rva?: hex, write: bool, text: str}]}], capped: bool, scan_ms: i64, chain?: Chain}`
 
 Most offsets first, writes marked. Unlisted code is scanned in pieces (rows carry unlisted). Stack slots ([rsp + d], [rbp + d]) are left out unless bases names their register. access read drops struct copies and constructors. The whole image for a few offsets: disp-scan.
 
@@ -584,7 +582,7 @@ Pack `native`.
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `128` | rows at most (0: see notes) |
 
-Result: `{disps: [hex], access: str, module: str, from: addr, to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, disp: hex, base: str, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], functions?: [{function: hex, base: str, hits: u64}], next_cursor?: addr, scan_ms: i64, read_ms: i64}`
+Result: `{disps: [hex], access: str, module: str, scan_from: addr, scan_to: addr, scanned: f64, total: u64, rows: [{address: addr, rva: hex, disp: hex, base: str, access: write\|read\|both\|address, width: u64, text: str, function?: hex}], functions?: [{function: hex, base: str, hits: u64}], next_cursor?: addr, scan_ms: i64, read_ms: i64}`
 
 Each call scans up to 8 s and stops at view.limit hits (default 128, at most 4096). view.cursor continues at next_cursor (absent at the end). A full sweep takes seconds through the agent's image window, else about 1 MB/s. Sweeps over many pages belong in a run plan. Jump tables can decode as code: check a surprising hit with disasm. Near one function: touches.
 
@@ -635,9 +633,9 @@ Pack `explore`.
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  |  | rows at most (0: see notes) |
 
-Result: `{rows: [Object], total?: u64, from: u32, next_cursor?: u32}`
+Result: `{rows: [Object], total: u64, from: u32, next_cursor?: u32}`
 
-Give text, cls or outer. Only the first page counts total. view.limit 1..1000; next_cursor continues.
+Give text, cls or outer. total counts every match on every page (a later page reuses the first page's count; without it, it counts again). view.limit 1..1000; next_cursor continues.
 
 ```json
 {"args":{"text":"Player"},"verb":"find"}
@@ -657,9 +655,9 @@ Pack `observe`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
-| `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `view.match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 
-Result: `{filter?: str, classes: u64, instances: u64, before?: {classes: u64, instances: u64}, ms: i64, rows: [{class: str, ref: ref, count: u32, before?: u32, samples: [ref]}], total: u64, from: u64, next_cursor?: u64, hint?: str}`
+Result: `{filter?: str, classes: u64, instances: u64, before?: {classes: u64, instances: u64}, scan_ms: i64, rows: [{class: str, ref: ref, count: u32, before?: u32, samples: [ref]}], total: u64, from: u64, next_cursor?: u64, hint?: str}`
 
 view.cursor (next_cursor) pages the stored census without a rescan. Every census is the next diff's baseline; diff is refused with no earlier census under the same filter.
 
@@ -721,7 +719,7 @@ Pack `explore`.
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 | `view.elements` | `int` |  | `8` | elements per array, set or map (1..256) |
 
-Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], seconds?: f64, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, matched?: u64, omitted?: u64, unnamed?: u32}`
+Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], duration_ms?: u64, polls?: u64, changes?: [{at_ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, total?: u64, unnamed?: u32}`
 
 Read-only: a function is refused (call-each calls one). A path through a pointer is followed per instance (same_tick false). A failed cell is null with an errors entry.
 
@@ -794,7 +792,7 @@ Pack `observe`.
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 
-Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], seconds?: f64, polls?: u64, changes?: [{ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, matched?: u64, omitted?: u64, unnamed?: u32}`
+Result: `{class: str, class_ref: ref, columns: [str], mode: field\|call, rows: [{ref: ref, name?: str, values: [value], hex?: bytes}], same_tick: bool, capped: bool, truncated: bool, errors?: [{ref: ref, column: u32, message: str}], duration_ms?: u64, polls?: u64, changes?: [{at_ms: i64, tick: u64, ref: ref, before: value, after: value}], poll_error?: str, total?: u64, unnamed?: u32}`
 
 call-pure's checks per instance. The function takes no inputs; its block is 1..64 bytes.
 
@@ -872,9 +870,9 @@ Pack `native`.
 | `dir` | `file` | yes |  | the folder to write (created when missing) |
 | `classes` | `[str]` | yes |  | the classes (and their subclasses) to export, up to 16 |
 | `view` | `obj` |  |  | paging and filters |
-| `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `view.match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 
-Result: `{dir: str, index: str, exported: u64, tables: u64, failed: u64, capped: bool, rows: [ExportedAsset], omitted?: u64}`
+Result: `{dir: str, index: str, exported: u64, tables: u64, failed: u64, capped: bool, rows: [ExportedAsset], total?: u64}`
 
 Up to 2000 objects per call (capped). Files <dir>/<Class>/<name>.json and <dir>/index.json; files are replaced on rerun.
 
@@ -954,7 +952,7 @@ Pack `explore`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 | `view.limit` | `int` |  | `100` | rows at most (0: see notes) |
-| `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `view.match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 | `view.fields` | `[path]` |  |  | the row members to keep (paths into structs and arrays) |
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 
@@ -980,11 +978,11 @@ Pack `explore`.
 | `own` | `bool` |  |  | only the fields the object's own class declares, none it inherits |
 | `file` | `file` |  |  | with snap or changed: the snapshot file (across runs) |
 | `view` | `obj` |  |  | paging and filters |
-| `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `view.match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 | `view.nonzero` | `bool` |  |  | leave out zero values (0, false, empty, None) |
 | `view.elements` | `int` |  | `8` | elements per array, set or map (1..256) |
 
-Result: `{ref: ref, rows: [{path?: str, name?: str, raw?: str, owner?: str, type?: str, offset?: hex, size?: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: hex, value_struct?: str, subtype?: str, value_subtype?: str, stride?: u32, native?: bool, stale?: bool, value?: value, before?: value, truncated?: bool, address?: addr, module?: str, rva?: hex, holder?: ref, value_module?: str, value_rva?: hex, object?: Object, preview?: {total: u64, elements: [{key?: value, value: value, object?: Object, key_object?: Object, value_object?: Object}]}, preview_error?: str, meta?: ue.FieldInfo, hex?: bytes, error?: str}], same_tick?: bool, truncated?: bool, capped?: bool, filtered?: {shown: u64, total: u64}, native_refused?: [{line: u64, name: str, owner: str, offset: hex, reason: str}], snap?: {size: u64, path?: str}, tick_accurate?: bool, unnamed?: u32}`
+Result: `{ref: ref, rows: [{path?: str, name?: str, raw?: str, owner?: str, type?: str, offset?: hex, size?: u32, struct?: str, bool_mask?: u32, element_type?: str, element_size?: u32, value_type?: str, value_size?: u32, value_offset?: hex, value_struct?: str, subtype?: str, value_subtype?: str, stride?: u32, native?: bool, stale?: bool, value?: value, before?: value, truncated?: bool, address?: addr, module?: str, rva?: hex, holder?: ref, value_module?: str, value_rva?: hex, object?: Object, preview?: {total: u64, elements: [{key?: value, value: value, object?: Object, key_object?: Object, value_object?: Object}]}, preview_error?: str, meta?: ue.FieldInfo, hex?: bytes, error?: str}], same_tick?: bool, truncated?: bool, capped?: bool, native_refused?: [{line: u64, name: str, owner: str, offset: hex, reason: str}], snap?: {size: u64, path?: str}, tick_accurate?: bool, unnamed?: u32}`
 
 No paths: every field, compact; check truncated before treating values as complete. Paths: one row per path (path, value, address), Owner:Field where ambiguous; a bad path fails its row naming the closest fields. snap answers only {size, path}. view.match, own and the modes but values take no paths; types reads no values.
 
@@ -1027,7 +1025,7 @@ Pack `modify`; **writes or calls**.
 | `duration` | `dur` | yes |  | how long, in seconds (at most 60) |
 | `dry` | `bool` |  |  | resolve and show the pointer that would be swapped; write nothing |
 
-Result: `{function: str, slot: u32, exec: addr, thunk: addr, block_size: u32, object?: addr, seconds: f64, dry: bool, note?: str}`
+Result: `{function: str, slot: u32, exec: addr, thunk: addr, block_size: u32, object_addr?: addr, duration_ms: u64, dry: bool, note?: str}`
 
 Swaps the function's native pointer (UFunction::Func, heap data) for a forwarding thunk; restores it at the end or on calls-read with stop. Sees ProcessEvent calls (C++, RPCs, Blueprint events, delegates) with parameters; Blueprint-to-native calls show only the object; direct C++ calls are not seen. 256 rows per recording.
 
@@ -1048,7 +1046,7 @@ Pack `modify`.
 | `view` | `obj` |  |  | paging and filters |
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
 
-Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, ms: f64, thread: u32, object: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
+Result: `{function: str, state: recording\|expired\|finished\|replaced, slot: u32, calls: u64, events: u64, vm: u64, dropped: u64, rows: [{sequence: u64, at_ms: f64, thread: u32, ref: ref, object_name?: str, object_class?: str, via: event\|vm, values?: [{name: str, direction: in\|out\|return, value: value, truncated: bool}]}], next_cursor?: u64, unnamed?: u32}`
 
 values: in, out and return by name, read after the call. Objects named while they live; strings and containers print headers only. A recording past its time is restored first. state replaced: something else swapped the pointer since; it was left alone and the thunk keeps forwarding.
 
@@ -1109,9 +1107,9 @@ Pack `explore`.
 | `entry` | `int` |  |  | with decode: one event from this offset to its return, pop or goto |
 | `to` | `int` |  |  | with decode: statements before this offset; with entry, to here, past returns |
 | `view` | `obj` |  |  | paging and filters |
-| `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `view.match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 
-Result: `{ref: ref, function: str, size: u32, names: [{offset: hex, count: u32, index: i32, name: str}], functions: [{offset: hex, count: u32, ref: ref, function: str}], properties: [{offset: hex, count: u32, address: addr, property: str, raw?: str}], statements?: [{offset: hex, op: str, text: str}], events?: [{offset: hex, event: str}], stopped?: str, filtered?: {shown: u64, total: u64}}`
+Result: `{ref: ref, function: str, size: u32, names: [{offset: hex, count: u32, index: i32, name: str}], functions: [{offset: hex, count: u32, ref: ref, function: str}], properties: [{offset: hex, count: u32, address: addr, property: str, raw?: str}], statements?: [{offset: hex, op: str, text: str}], events?: [{offset: hex, event: str}], stopped?: str}`
 
 decode reads every expression (no game thread) and stops at an unknown opcode (stopped); an uber graph adds events. view.match keeps statements whose text or op contains it; entry and to bound an offset range. A Function ref (name-refs' rows) as object needs no function.
 
@@ -1226,7 +1224,7 @@ Pack `explore`.
 | `object` | `str` | yes |  | an object (ref or "0x..."), or a class or struct by name |
 | `view` | `obj` |  |  | paging and filters |
 | `view.cursor` | `int` |  |  | the previous result's next_cursor, as it gave it (a number or "0x...") |
-| `view.match` | `str` |  |  | keep rows whose name contains this (any case) |
+| `view.match` | `str` |  |  | keep rows whose name contains this (any case); a verb whose rows have no name says what it matches |
 
 Result: `{ref: ref, rows: [{owner?: str, name: str, via?: str}], from: u32, next_cursor?: u32}`
 

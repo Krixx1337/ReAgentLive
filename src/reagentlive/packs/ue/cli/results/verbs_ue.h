@@ -37,7 +37,7 @@ inline const std::vector<Verb>& UnrealVerbs() {
              {"live", "bool", "live instances only: no Default__ or archetype objects"},
              outer,
              View("cursor limit")},
-            Of<shape::Find>, build::Find, "Give text, cls or outer. Only the first page counts total. view.limit 1..1000; next_cursor continues."},
+            Of<shape::Find>, build::Find, "Give text, cls or outer. total counts every match on every page (a later page reuses the first page's count; without it, it counts again). view.limit 1..1000; next_cursor continues."},
         {"census", "ue", ToolPack::Observe, "live instances per class, most first; 100 rows a page; diff: only changed counts",
             {cls,
              outer,

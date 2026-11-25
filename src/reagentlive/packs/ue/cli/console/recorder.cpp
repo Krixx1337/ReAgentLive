@@ -88,15 +88,15 @@ shape::Calls MakeCalls(Session& session, const ue::CallsState& state, std::span<
     for (const auto& call : calls) {
         shape::CallsRow row;
         row.sequence = call.row.sequence;
-        row.ms = static_cast<double>(call.row.microseconds) / 1000.0;
+        row.atMs = static_cast<double>(call.row.microseconds) / 1000.0;
         row.thread = call.row.thread;
         row.via = call.row.via == ue::CallsEvent ? "event" : "vm";
         if (const auto* named = reader.Named("ObjectProperty", caller(call))) {
-            row.object = FullRef(named->ref);
+            row.ref = FullRef(named->ref);
             row.objectName = named->name;
             row.objectClass = named->className;
         } else {
-            row.object = {ReusableRef(Ref{static_cast<uintptr_t>(call.row.object), -1, 0}).text};
+            row.ref = {ReusableRef(Ref{static_cast<uintptr_t>(call.row.object), -1, 0}).text};
         }
         if (function.known && !call.block.empty()) {
             std::vector<shape::CallsValue> values;
@@ -148,8 +148,8 @@ void RunCalls(Session& session, const Command& original, std::string_view jsonCo
         out.exec = started->original;
         out.thunk = started->thunk;
         out.blockSize = started->blockSize;
-        if (filter) out.object = filter;
-        out.seconds = static_cast<double>(request.args[1]) / 1000.0;
+        if (filter) out.objectAddr = filter;
+        out.durationMs = request.args[1];
         out.dry = dry;
         // A Blueprint function runs through the shared script entry: a call
         // from another Blueprint never goes through its pointer.

@@ -349,7 +349,7 @@ TEST_CASE("no form of a verb outside the modify pack writes or calls") {
         {"help", {R"({})", R"({"verb": "read"})", R"({"json": true})", R"({"hash": true})"}},
         {"status", {R"({})"}},
         {"quit", {R"({})"}},
-        {"usage", {R"({})", R"({"report": "all"})", R"({"report": "sessions"})", R"({"session": "abc"})", R"({"only": ["totals", "advice"]})"}},
+        {"usage", {R"({})", R"({"scope": "all"})", R"({"scope": "sessions"})", R"({"scope": "abc"})", R"({"only": ["totals", "advice"]})"}},
         {"batch", {R"({"calls": [{"verb": "read", "args": {"addr": "0x1000", "len": 8}}, {"verb": "modules"}]})"}},
         {"run", {R"({"plan": "plan.json"})", R"({"plan": "plan.json", "out": "lines.jsonl"})"}},
         {"read", {R"({"addr": "0x1000"})", R"({"addr": "0x1000", "len": 16, "type": "f32"})",

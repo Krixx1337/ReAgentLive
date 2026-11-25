@@ -44,7 +44,7 @@ TEST_CASE("find and describe results") {
     CHECK(first["total"] == 1);
     CHECK(first["next_cursor"] == 25);
     const auto later = Checked(MakeFind(found, 25));
-    CHECK_FALSE(later.contains("total")); // Only the first page counts.
+    CHECK(later["total"] == 1);   // Every page carries the total.
     CHECK(later["from"] == 25);
     const ue::FindResult last{{{Pawn, "Pawn_0", "Pawn"}}, 1, 0};
     CHECK_FALSE(Checked(MakeFind(last, 0)).contains("next_cursor")); // Done: no cursor.
@@ -222,11 +222,11 @@ TEST_CASE("a typed watch range is summarised per value") {
     ranges[0].type = "f64";
     ranges[1].type = "i32[2]";      // ranges[2] is raw: no summary.
     std::vector<shape::WatchSample> rows(3);
-    rows[0].us = 0;
+    rows[0].atMs = 0;
     rows[0].values = std::vector<Json>{41.9, Json::array({30452, 30549}), "01 02"};
-    rows[1].us = 500000;
+    rows[1].atMs = 500;
     rows[1].values = std::vector<Json>{nullptr, Json::array({30452, 30549}), "01 02"};  // Unreadable once.
-    rows[2].us = 2000000;
+    rows[2].atMs = 2000;
     rows[2].values = std::vector<Json>{41.8, Json::array({30549, 30650}), "01 03"};
     const auto summary = shape::SummariseWatch(ranges, rows);
     REQUIRE(summary.size() == 3);
@@ -247,38 +247,38 @@ TEST_CASE("a typed watch range is summarised per value") {
 }
 
 TEST_CASE("watch rows keep the first sample, each change with its time and the last") {
-    const auto row = [](uint64_t us, Json value) {
+    const auto row = [](double ms, Json value) {
         shape::WatchSample sample;
-        sample.us = us;
+        sample.atMs = ms;
         sample.values = std::vector<Json>{std::move(value)};
         return sample;
     };
     // A bullet list: 0, then 1 for 63 ms, then 0 again, sampled every 10 ms.
     std::vector<shape::WatchSample> rows;
-    for (uint64_t t = 0; t < 1000; t += 10) rows.push_back(row(t * 1000, t >= 300 && t < 363 ? 1 : 0));
+    for (uint64_t t = 0; t < 1000; t += 10) rows.push_back(row(static_cast<double>(t), t >= 300 && t < 363 ? 1 : 0));
     uint64_t dropped = 9;
     const auto kept = shape::WatchChanges(rows, shape::MaxWatchChangeRows, dropped);
     CHECK(dropped == 0);
     REQUIRE(kept.size() == 4);
-    CHECK(kept[0].us == 0);
-    CHECK((kept[1].us == 300000 && (*kept[1].values)[0] == 1));
-    CHECK((kept[2].us == 370000 && (*kept[2].values)[0] == 0));
-    CHECK(kept[3].us == 990000);  // The last sample, unchanged, ends the capture.
+    CHECK(kept[0].atMs == 0);
+    CHECK((kept[1].atMs == 300 && (*kept[1].values)[0] == 1));
+    CHECK((kept[2].atMs == 370 && (*kept[2].values)[0] == 0));
+    CHECK(kept[3].atMs == 990);  // The last sample, unchanged, ends the capture.
     // A gap's lost and resumed rows always stay, and so does the row after a gap.
     std::vector<shape::WatchSample> gap{row(0, 5), row(10, 5), shape::WatchSample{}, row(30, 5), row(40, 5)};
-    gap[2].us = 20;
+    gap[2].atMs = 20;
     gap[2].lost = true;
     gap[3].resumed = true;
     CHECK(shape::WatchChanges(gap, 200, dropped).size() == 4);
     // A value that changes every sample is cut to the limit, half from each end.
     std::vector<shape::WatchSample> moving;
-    for (uint64_t i = 0; i < 1000; ++i) moving.push_back(row(i, static_cast<double>(i)));
+    for (uint64_t i = 0; i < 1000; ++i) moving.push_back(row(static_cast<double>(i) / 1000.0, static_cast<double>(i)));
     const auto cut = shape::WatchChanges(moving, 200, dropped);
     CHECK(cut.size() == 200);
     CHECK(dropped == 800);
-    CHECK(cut[99].us == 99);
-    CHECK(cut[100].us == 900);
-    CHECK(cut.back().us == 999);
+    CHECK(cut[99].atMs == doctest::Approx(0.099));
+    CHECK(cut[100].atMs == doctest::Approx(0.9));
+    CHECK(cut.back().atMs == doctest::Approx(0.999));
     CHECK(shape::WatchChanges({}, 200, dropped).empty());
 }
 

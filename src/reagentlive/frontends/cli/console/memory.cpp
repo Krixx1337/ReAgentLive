@@ -189,7 +189,7 @@ shape::TimedWrite MakeTrial(const TrialState& trial) {
     row.bytes = HexBytes(std::span(spec.bytes, spec.length));
     row.original = HexBytes(std::span(trial.original, spec.length));
     row.owner = spec.ownerAddress;
-    row.object = NonZero(spec.object);
+    row.objectAddr = NonZero(spec.object);
     row.state = TrialStopText(trial.stop);
     row.changedTick = trial.changedTick;
     row.remainingMs = trial.remaining;
@@ -302,10 +302,10 @@ std::vector<shape::WatchSample> WatchSamples(const WatchSpec& spec, const WatchR
     for (const auto& row : rows.rows) {
         shape::WatchSample sample;
         sample.tick = row.header.tick;
-        sample.us = row.header.microseconds;
+        sample.atMs = static_cast<double>(row.header.microseconds) / 1000.0;
         if (row.header.flags & WatchRowLost) {
             sample.lost = true;
-            gaps.push_back({row.header.microseconds, std::nullopt});
+            gaps.push_back({static_cast<double>(row.header.microseconds) / 1000.0, std::nullopt});
             samples.push_back(std::move(sample));
             continue;
         }
@@ -326,7 +326,7 @@ std::vector<shape::WatchSample> WatchSamples(const WatchSpec& spec, const WatchR
         if (spec.root[0] && row.header.root != lastRoot) sample.root = Addr(row.header.root);
         if (row.header.flags & WatchRowResumed) {
             sample.resumed = true;
-            if (!gaps.empty() && !gaps.back().toUs) gaps.back().toUs = row.header.microseconds;
+            if (!gaps.empty() && !gaps.back().endMs) gaps.back().endMs = static_cast<double>(row.header.microseconds) / 1000.0;
         }
         lastRoot = row.header.root;
         samples.push_back(std::move(sample));

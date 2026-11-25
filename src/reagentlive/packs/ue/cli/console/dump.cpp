@@ -129,13 +129,11 @@ void PrintTypes(Session& session, const Ref& object, const Command& command, std
     const auto native = NativeMembers(session, object, sorted, command.className.empty());
     for (const auto& check : native.shown) result.rows.push_back(MakeNativeTypeRow(*check.member, check.stale));
     SortRowsByOffset(result.rows);
-    const size_t total = result.rows.size();
     std::erase_if(result.rows, [&](const shape::GetRow& row) {
         if (command.own && !ue::SameWireName(row.owner.value_or(""), ownClass, ue::FindClassBytes)) return true;
         return !command.match.empty() && !text::ContainsNoCase(row.name.value_or(""), command.match) &&
             !text::ContainsNoCase(row.raw.value_or(""), command.match);
     });
-    if (!command.match.empty() || command.own) result.filtered = shape::Filtered{result.rows.size(), total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
     return Emit(session, jsonCommand, std::move(result));
 }
@@ -217,7 +215,6 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     auto bytes = ReadObjectBytes(client, object, end);
     if (!bytes) return CommandError(session, "get", bytes.error());
     std::vector<bool> keep(sorted.size(), true);
-    size_t shown = 0;
     for (size_t i = 0; i < sorted.size(); ++i) {
         const auto& f = sorted[i];
         const auto data = FieldBytes(*bytes, f);
@@ -234,7 +231,6 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             keep[i] = f.type == "BoolProperty" && f.boolMask && !old.empty() && !data.empty() ?
                 (old[0] & f.boolMask) != (data[0] & f.boolMask) : !std::ranges::equal(old, data);
         }
-        shown += keep[i];
     }
 
     // Top-level arrays, sets and maps: their first elements (`view.elements`, else
@@ -395,7 +391,6 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
             keepRow = !old.empty() && !std::ranges::equal(old, data);
         }
         if (!keepRow) continue;
-        ++shown;
         shape::GetRow row;
         row.name = field.name;
         row.offset = field.offset;
@@ -416,10 +411,8 @@ void PrintDump(Session& session, const Ref& object, std::vector<Ref>& refs, Stru
     if (command.nonzero)
         for (auto& row : result.rows)
             if (row.value) KeepNonZero(*row.value);
-    const size_t total = sorted.size() + native.shown.size();
     result.truncated = truncated;
     if (const uint32_t unnamed = live.Unnamed() + held.Unnamed()) result.unnamed = unnamed;
-    if (!command.match.empty() || command.nonzero || command.changed || command.own) result.filtered = shape::Filtered{shown, total};
     if (!native.refused.empty()) result.nativeRefused = MakeNativeRefused(native.refused);
     if (!TickAccurate(session)) result.tickAccurate = false;
     return Emit(session, "get", std::move(result));

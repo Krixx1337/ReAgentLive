@@ -29,10 +29,16 @@ layer and discovery in the console.
 - **One verb, one result type.** An arg may add optional keys and never
   changes a key's type; a mode that would change one is a verb of its own
   (`sig-bytes`, `watch-start`). One name for a result's list (`rows`), one
-  paging convention (`from`, `next_cursor`, passed back as `view.cursor`; a
-  `capped` is never the cut of a list that has one), `capped` for a hard-limit cut with
-  no way to the rest and `truncated` for an incomplete value. Every time arg
-  is a `dur` (seconds, a number).
+  paging convention (`from`, where the page began, a row index or for `find`
+  the object-table slot, and `next_cursor`, passed
+  back as `view.cursor`; a `capped` is never the cut of a list that has one),
+  `total` for how many existed after any filter and before the rows were cut
+  (on every page), `capped` for a hard-limit cut with no way to the rest and
+  `truncated` for an incomplete value. `from` never holds an address: a scanned
+  range is `scan_from` and `scan_to`. `ref` is an object's own id, `object`
+  only the `{ref, name, class}` struct. Every time arg is a `dur` (seconds, a
+  number); every time in a result is a number of milliseconds in a key ending
+  `_ms` (`duration_ms`, `elapsed_ms`, `at_ms`, `scan_ms`).
 - **Result structs have one field list.** A result's `Describe` lists key
   and member once (`results/schema.h`); that list writes the JSON and
   describes it, so a builder cannot emit a key the description lacks. The
@@ -207,7 +213,9 @@ caller already had a JSON path. So JSON is the only input.
 - **One `view` for output shaping.** What only shapes a result (`cursor`,
   `limit`, `match`, `fields`, `nonzero`, `elements`) is one object with one
   schema (`ViewKeys`) on every list-returning verb. A view key given at the
-  top is refused with where it goes. Options that decide what the agent
+  top is refused with where it goes. `match` keeps the rows whose `name`
+  contains the text; a verb whose rows have no name says what it matches in
+  its note (`script`: a statement's text or op). Options that decide what the agent
   reads or does (`disasm`'s `count`, `search`'s `max`) are not a view.
   `cursor` is the one view key that also says where a read starts, so
   `disasm` and `search` take a view holding only it: every continuation is

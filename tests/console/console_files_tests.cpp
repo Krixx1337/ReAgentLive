@@ -177,8 +177,31 @@ TEST_CASE("find with limit pages until N rows and continues after the last") {
     const auto rest = Result(CallText("find", {{"text", "Extra_"}, {"view", {{"limit", 200}, {"cursor", first["next_cursor"]}}}}));
     REQUIRE(rest["rows"].size() == 120);
     CHECK(rest["rows"][0]["name"] == "Extra_30");
+    CHECK(rest["total"] == 150);                    // Every page counts, not only the first.
     CHECK_FALSE(rest.contains("next_cursor"));
     CHECK(Result(CallText("find", {{"text", "Extra_"}}))["rows"].size() == 24);   // One agent page without it.
+}
+
+TEST_CASE("a later find page in the same console reuses the first page's total, without a second count") {
+    TheFixture();
+    const Json firstCall = CallOf("find", {{"text", "Extra_"}, {"view", {{"limit", 30}}}});
+    const auto cursor = Result(firstCall.dump())["next_cursor"];
+    const Json laterCall = CallOf("find", {{"text", "Extra_"}, {"view", {{"limit", 30}, {"cursor", cursor}}}});
+    auto& world = TheWorld();
+    // In one console run: the first page counts, the later page reads the memo.
+    auto before = world.scansFromZero.load();
+    auto records = RunLines(CallsText({firstCall, laterCall}));
+    REQUIRE(records.size() == 2);
+    CHECK(world.scansFromZero.load() - before == 1);
+    CHECK(records[1]["result"]["total"] == 150);
+    CHECK(records[1]["result"]["rows"][0]["name"] == "Extra_30");
+    // Another filter is no hit: its later page counts again.
+    const Json otherCall = CallOf("find", {{"text", "Extra_1"}, {"view", {{"limit", 30}, {"cursor", cursor}}}});
+    before = world.scansFromZero.load();
+    records = RunLines(CallsText({firstCall, otherCall}));
+    REQUIRE(records.size() == 2);
+    CHECK(world.scansFromZero.load() - before == 2);
+    CHECK(records[1]["result"]["total"] == 61);     // Extra_1, Extra_10..19, Extra_100..149.
 }
 
 TEST_CASE("a cls that names no class is refused by find, census and each; any case names one") {
@@ -312,7 +335,7 @@ TEST_CASE("run: a plan's steps as NDJSON lines, under the packs ceiling, with ex
     CHECK(report["expect_failed"] == 1);
     REQUIRE(report["timings"].size() == 6);
     CHECK(report["timings"][4]["calls"] == 2);
-    CHECK(report["timings"][4]["ms"].get<double>() >= 0);
+    CHECK(report["timings"][4]["elapsed_ms"].get<double>() >= 0);
     CHECK_FALSE(report["console"].get<std::string>().empty());
     CHECK_FALSE(report["table_hash"].get<std::string>().empty());
     // out: the lines and a last report line go to the file; the result keeps the report.

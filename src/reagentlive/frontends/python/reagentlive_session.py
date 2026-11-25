@@ -144,7 +144,7 @@ def samples(result):
     """A watch result's rows with values as bytes (None while unreadable); lost and resumed rows keep their marks."""
     out = []
     for row in result['rows']:
-        sample = {key: row[key] for key in ('tick', 'us', 'lost', 'resumed', 'root') if row[key] is not None}
+        sample = {key: row[key] for key in ('tick', 'at_ms', 'lost', 'resumed', 'root') if row[key] is not None}
         sample['values'] = [None if value is None else unhex(value) for value in row['values'] or []]
         out.append(sample)
     return out
@@ -395,7 +395,7 @@ class Runs:
 
     @_locked
     def status(self, run):
-        """{run, state (running, done or stopped), progress (the newest progress line, or None), seconds,
+        """{run, state (running, done or stopped), progress (the newest progress line, or None), elapsed_ms,
         stopped (why, when stopped)}."""
         entry = self._get(run)
         process = entry['process']
@@ -414,7 +414,7 @@ class Runs:
         except OSError:
             pass
         out = {'run': run, 'state': state, 'progress': progress,
-               'seconds': round(time.monotonic() - entry['started'], 1)}
+               'elapsed_ms': int((time.monotonic() - entry['started']) * 1000)}
         if entry['stopped']:
             out['stopped'] = entry['stopped']
         return out
@@ -620,7 +620,7 @@ class Session:
         return self._runs
 
     def run_status(self, run):
-        """A background run's state (running, done or stopped), its newest progress line and its seconds."""
+        """A background run's state (running, done or stopped), its newest progress line and elapsed_ms."""
         return self.runs.status(run)
 
     def run_read(self, run):

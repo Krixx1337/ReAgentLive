@@ -356,6 +356,7 @@ class McpTests(unittest.TestCase):
                 await asyncio.sleep(0.05)
             self.assertEqual(status['state'], 'done')
             self.assertEqual(status['progress'], '2/2 steps')
+            self.assertIsInstance(status['elapsed_ms'], int)
             read = await client.call_tool('run_read', {'run': run})
             self.assertEqual(read.structured_content['lines'], 2)
             stopped = await client.call_tool('run_stop', {'run': run})

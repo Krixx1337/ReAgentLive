@@ -50,7 +50,7 @@ comes as `meta` with `meta` true.
 - **Filters:** `view.match` (field name or readable label), `view.nonzero`
   (a bool tests its own bit, not the byte it shares) and `own` (only the
   fields the object's own class declares). Filtered rows cost no pointer
-  lookups or array previews; the result adds `filtered`.
+  lookups or array previews; the result adds `total`, the rows left.
 - **`mode` `snap` and `changed`:** to see what changes when something
   happens, take the baseline on a live instance, act, then ask for the
   changes; `changed` prints the fields that differ, each with `before`:

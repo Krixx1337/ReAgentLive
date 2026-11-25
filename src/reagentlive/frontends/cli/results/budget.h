@@ -27,8 +27,8 @@ constexpr size_t ToolMaxChars = 25000;
 // Beside them a digest keeps every other top-level scalar (a count, a
 // module, a path; text up to MaxStatusText characters) and every top-level
 // object of numbers (counts by kind): the totals a reader acts on.
-inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "matched", "omitted", "errors",
-    "tick_accurate", "same_tick", "total", "next_cursor", "filtered", "saved", "job", "state", "scanned"};
+inline constexpr std::string_view StatusKeys[] = {"capped", "truncated", "unnamed", "errors",
+    "tick_accurate", "same_tick", "total", "next_cursor", "saved", "job", "state", "scanned"};
 // The verb args that narrow a result, as the digest names them; a list of
 // enum words (labels-check's status) narrows too.
 inline constexpr std::string_view Narrowing[] = {"fields", "where", "match", "limit", "nonzero", "own", "cls", "to",

@@ -27,8 +27,8 @@ Never change approval or safety rules silently: `user` drops such a lesson,
 Only when the task ran 10 or more calls, or any mark or refusal appeared.
 Budget: one `usage` call and at most 10 lines.
 
-1. `{"verb": "usage", "args": {"session": "<id>", "advice": true}}` (drop
-   `session` while it runs): its marks, `advice` rows and `refusals` are
+1. `{"verb": "usage", "args": {"scope": "<id>", "only": ["advice", "rows", "refusals"]}}`
+   (drop `scope` while it runs): its marks, `advice` rows and `refusals` are
    the friction, with this conversation's user corrections and wrong turns.
 2. Turn each into a candidate; drop it unless all hold:
    - It would have saved a step, a refusal or an approval round.

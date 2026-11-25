@@ -101,6 +101,7 @@ struct World {
     std::vector<std::string> names{"None"};     // The FName pool, by comparison index.
     std::deque<Function> functions;             // The last one is the recording calls-read reads.
     std::vector<std::pair<int32_t, std::vector<std::pair<std::string, int64_t>>>> enums; // By the enum's slot.
+    std::atomic<uint32_t> scansFromZero{0};     // Find requests from slot 0: each counts the whole table.
 
     uint8_t* Alloc(size_t size) {
         memory.emplace_back(std::max<size_t>(size, 16), uint8_t{0});
@@ -273,6 +274,7 @@ inline Progress Find(const Request& request, Response& response, bool, const Hos
     const bool exact = request.flags & ue::FindExact;
     auto* entries = reinterpret_cast<ue::FindEntry*>(response.data);
     uint32_t count = 0, total = 0, next = 0;
+    if (!request.args[1]) ++world.scansFromZero;
     for (size_t slot = request.args[1]; slot < world.objects.size(); ++slot) {
         const auto& object = world.objects[slot];
         if (!text.empty() && (exact ? object.name != text : !ue::NameMatches(object.name, text))) continue;

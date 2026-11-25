@@ -18,7 +18,7 @@ namespace reagentlive::cli {
 namespace shape {
 struct Find {
     std::vector<Object> rows;
-    std::optional<uint64_t> total;      // Only the first page counts.
+    uint64_t total = 0;                 // Every match, on every page.
     uint32_t from = 0;
     std::optional<uint32_t> nextCursor;
     template<class V> static void Describe(V& v) {
@@ -167,12 +167,12 @@ struct EachError {
     }
 };
 struct EachChange {
-    int64_t ms = 0;
+    int64_t atMs = 0;               // Since the polling began.
     uint64_t tick = 0;
     RefId ref;
     Json before, after;
     template<class V> static void Describe(V& v) {
-        v("ms", &EachChange::ms);
+        v("at_ms", &EachChange::atMs);
         v("tick", &EachChange::tick);
         v("ref", &EachChange::ref);
         v("before", &EachChange::before);
@@ -204,11 +204,11 @@ struct Each {
     std::vector<EachRow> rows;
     bool sameTick = false, capped = false, truncated = false;
     std::optional<std::vector<EachError>> errors;
-    std::optional<double> seconds;
+    std::optional<uint64_t> durationMs;   // `duration`: how long the polling ran.
     std::optional<uint64_t> polls;
     std::optional<std::vector<EachChange>> changes;
     std::optional<std::string> pollError;
-    std::optional<uint64_t> matched, omitted; // `where`: instances that matched; past `view.limit`: rows not shown.
+    std::optional<uint64_t> total;      // With `where` or past `view.limit`: the instances left after `where`, before the row cut.
     std::optional<uint32_t> unnamed;    // Distinct pointers past the lookup cap, left as addresses.
     template<class V> static void Describe(V& v) {
         v("class", &Each::className);
@@ -220,12 +220,11 @@ struct Each {
         v("capped", &Each::capped);
         v("truncated", &Each::truncated);
         v("errors", &Each::errors);
-        v("seconds", &Each::seconds);
+        v("duration_ms", &Each::durationMs);
         v("polls", &Each::polls);
         v("changes", &Each::changes);
         v("poll_error", &Each::pollError);
-        v("matched", &Each::matched);
-        v("omitted", &Each::omitted);
+        v("total", &Each::total);
         v("unnamed", &Each::unnamed);
     }
 };
@@ -250,7 +249,7 @@ struct ExportAssets {
     uint64_t objects = 0, tables = 0, failed = 0;
     bool capped = false;
     std::vector<ExportedAsset> rows;
-    std::optional<uint64_t> omitted;
+    std::optional<uint64_t> total;      // Past the rows shown: every object exported.
     template<class V> static void Describe(V& v) {
         v("dir", &ExportAssets::dir);
         v("index", &ExportAssets::index);
@@ -259,7 +258,7 @@ struct ExportAssets {
         v("failed", &ExportAssets::failed);
         v("capped", &ExportAssets::capped);
         v("rows", &ExportAssets::rows);
-        v("omitted", &ExportAssets::omitted);
+        v("total", &ExportAssets::total);
     }
 };
 }
@@ -282,7 +281,7 @@ inline shape::Find MakeFind(const ue::FindResult& found, uint32_t from, std::spa
             }
         out.rows.push_back(std::move(row));
     }
-    if (!from) out.total = found.total;
+    out.total = found.total;
     out.from = from;
     if (found.next) out.nextCursor = found.next;
     return out;

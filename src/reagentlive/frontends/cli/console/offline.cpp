@@ -33,8 +33,8 @@ std::expected<shape::UsageReport, std::string> BuildUsage(const std::filesystem:
         std::ifstream in{std::filesystem::path(command.baseline), std::ios::binary};
         if (!in) return std::unexpected("baseline: cannot read " + command.baseline);
         baseline = Json::parse(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>(), nullptr, false);
-        if (baseline.is_discarded() || !baseline.is_object() || !baseline.contains("totals") || !baseline.contains("rows"))
-            return std::unexpected("baseline: " + command.baseline + " is no usage report (write one with save)");
+        if (auto problem = BaselineProblem(baseline, command.baseline); !problem.empty())
+            return std::unexpected(std::move(problem));
     }
     if (!command.file.empty()) {
         std::ofstream out{std::filesystem::path(command.file), std::ios::binary | std::ios::trunc};

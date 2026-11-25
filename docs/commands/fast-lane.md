@@ -163,7 +163,7 @@ module, where `touches` looks near one function:
 - `bases` takes rbp by default (a field hunt over the whole image would miss
   writers that hold the struct in rbp); only stack slots are left out.
 - Each call scans up to 8 s and stops at `view.limit` hits (default 128, at
-  most 4096); `scanned` is the share of the code behind the cursor and
+  most 4096); `scan_from` and `scan_to` bound what the call read, `scanned` is the share of the code behind the cursor and
   `read_ms` the share of `scan_ms` spent reading. `same_base` answers whole
   functions, up to that many rows, and cuts a page at a function's start.
   The image window is copied by the agent's worker thread while the host

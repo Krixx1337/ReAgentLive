@@ -36,7 +36,7 @@ struct UsageTotals {
         v("refused", &UsageTotals::refused);
         v("digested", &UsageTotals::digested);
         v("saved", &UsageTotals::saved);
-        v("ms", &UsageTotals::ms);
+        v("elapsed_ms", &UsageTotals::ms);
         v("slot_ms", &UsageTotals::slotMs);
         v("slot_ms_max", &UsageTotals::slotMsMax);
     }
@@ -59,7 +59,7 @@ struct UsageVerb {
         v("calls", &UsageVerb::calls);
         v("out", &UsageVerb::out);
         v("largest", &UsageVerb::largest);
-        v("ms", &UsageVerb::ms);
+        v("elapsed_ms", &UsageVerb::ms);
         v("slot_ms", &UsageVerb::slotMs);
         v("batched", &UsageVerb::batched);
         v("unfiltered", &UsageVerb::unfiltered);
@@ -128,7 +128,7 @@ struct UsageAdvice {
 };
 // usage with baseline: one figure that moved against the saved report.
 struct UsageChange {
-    std::string what;                   // calls, refused, digested, context, ms, refused_by.<kind>, ms_per_call.
+    std::string what;                   // calls, refused, digested, context, elapsed_ms, refused_by.<kind>, elapsed_ms_per_call.
     std::optional<std::string> verb;    // A verb's figure; absent for the session's totals.
     double before = 0, after = 0;
     template<class V> static void Describe(V& v) {
@@ -162,7 +162,7 @@ struct UsageRefusal {
         v("count", &UsageRefusal::count);
     }
 };
-// usage with report sessions: one session of the log.
+// usage with scope sessions: one session of the log.
 struct UsageSession {
     std::string session, since, until;  // Its first and last call.
     std::vector<std::string> callers;
@@ -181,7 +181,7 @@ struct UsageSession {
     }
 };
 // usage: this session (the latest in the log when no target is attached),
-// or with `all` every session the log holds and the verbs none called.
+// or with scope `all` every session the log holds and the verbs none called.
 struct UsageReport {
     std::optional<std::string> session;
     std::optional<uint64_t> sessions;
@@ -418,6 +418,16 @@ inline std::vector<shape::UsageAdvice> MakeAdvice(std::span<const UsageLine> lin
     return out;
 }
 
+// Why a parsed baseline file cannot be compared, or empty. An older report
+// without totals.elapsed_ms would read as zero time and show every time worse.
+inline std::string BaselineProblem(const Json& baseline, const std::string& file) {
+    if (baseline.is_discarded() || !baseline.is_object() || !baseline.contains("totals") || !baseline.contains("rows"))
+        return "baseline: " + file + " is no usage report (write one with save)";
+    if (!baseline["totals"].is_object() || !baseline["totals"].contains("elapsed_ms"))
+        return "baseline: " + file + " predates elapsed_ms (write it again with save)";
+    return {};
+}
+
 // usage with baseline: a report (as save wrote it) against this one. Counts
 // are worse when they grew; time when it grew by a quarter and more than
 // noise (100 ms in all, 50 ms a call). Totals first, then refusals by kind,
@@ -449,7 +459,7 @@ inline shape::UsageCompare CompareUsage(const Json& before, const Json& after, s
     const Json& now = after.value("totals", Json::object());
     for (const char* key : {"calls", "refused", "digested"}) count(key, std::nullopt, number(was, key), number(now, key));
     count("context", std::nullopt, tool(before), tool(after));
-    time("ms", std::nullopt, number(was, "ms"), number(now, "ms"), 100);
+    time("elapsed_ms", std::nullopt, number(was, "elapsed_ms"), number(now, "elapsed_ms"), 100);
     const auto rowsOf = [](const Json& report) {
         std::map<std::string, Json> rows;
         if (report.contains("rows") && report["rows"].is_array())
@@ -476,7 +486,7 @@ inline shape::UsageCompare CompareUsage(const Json& before, const Json& after, s
         for (const char* key : {"calls", "refused", "digested"}) count(key, verb, number(a, key), number(b, key));
         const double callsA = number(a, "calls"), callsB = number(b, "calls");
         if (callsA && callsB)
-            time("ms_per_call", verb, number(a, "ms") / callsA, number(b, "ms") / callsB, 50);
+            time("elapsed_ms_per_call", verb, number(a, "elapsed_ms") / callsA, number(b, "elapsed_ms") / callsB, 50);
     }
     const auto byMove = [](const shape::UsageChange& c) { return c.after > c.before ? c.after - c.before : c.before - c.after; };
     const auto order = [&](std::vector<shape::UsageChange>& list) {
@@ -500,7 +510,7 @@ inline std::string LatestSession(std::span<const UsageLine> lines) {
 
 constexpr size_t UsageSessionRows = 30;
 
-// usage with report sessions: totals over the whole log, and its newest sessions one row each.
+// usage with scope sessions: totals over the whole log, and its newest sessions one row each.
 inline shape::UsageReport MakeSessionList(std::span<const UsageLine> lines, std::span<const Verb> verbs) {
     auto stats = MakeUsage(lines, std::nullopt, verbs);
     stats.rows.reset();
@@ -550,7 +560,7 @@ inline void KeepParts(shape::UsageReport& report, std::span<const std::string> p
     if (!keep("compare")) report.compare.reset();
 }
 
-// What `usage` asked for: report `all` or `sessions`, one `session`, or the current
+// What `usage` asked for: scope `all` or `sessions`, one session by id, or the current
 // session (`current`; nullopt with no target: the log's latest).
 struct UsageQuery {
     bool all = false, sessions = false, advice = false;
@@ -574,7 +584,7 @@ inline std::expected<shape::UsageReport, std::string> UsageFor(std::span<const U
     };
     if (!query.session.empty()) {
         if (std::ranges::none_of(lines, [&](const UsageLine& line) { return line.session == query.session; }))
-            return std::unexpected("no session '" + query.session + "' in the usage log (usage with report sessions lists them)");
+            return std::unexpected("no session '" + query.session + "' in the usage log (usage with scope sessions lists them)");
         return one(query.session);
     }
     return one(current ? *current : LatestSession(lines));

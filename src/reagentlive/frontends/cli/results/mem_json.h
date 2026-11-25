@@ -37,7 +37,7 @@ struct MemDiff {
     Location where;
     uint64_t length = 0;
     std::string type, compare;
-    uint64_t compared = 0, matched = 0, tick = 0;
+    uint64_t compared = 0, total = 0, tick = 0;
     std::vector<MemDiffRow> rows;
     bool capped = false;
     std::optional<bool> kept;
@@ -48,7 +48,7 @@ struct MemDiff {
         v("type", &MemDiff::type);
         v("compare", &MemDiff::compare, "changed|unchanged|increased|decreased");
         v("compared", &MemDiff::compared);
-        v("matched", &MemDiff::matched);
+        v("total", &MemDiff::total);
         v("tick", &MemDiff::tick);
         v("rows", &MemDiff::rows);
         v("capped", &MemDiff::capped);
@@ -81,7 +81,7 @@ inline shape::MemDiff MakeMemDiff(const memsnap::Snapshot& before, std::span<con
     out.type = type;
     out.compare = test;
     out.compared = diff.compared;
-    out.matched = diff.matched;
+    out.total = diff.matched;
     out.tick = tick;
     for (const uint32_t offset : diff.offsets) {
         if (out.rows.size() == limit) { out.capped = true; break; }

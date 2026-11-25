@@ -75,6 +75,9 @@ struct PackState {
     std::optional<CensusBaseline> censusBefore; // The census before it, for a later page (`view.cursor`) of census with `diff`.
     std::vector<ClassRef> defaultObjects;  // Default__ objects by exact name, for the session (DefaultObject).
     std::unordered_map<std::string, int32_t> nameIndices; // Pooled names by lowercase text, for the session (NameIndex).
+    // find's total by its filter (FindKey), set by a page from slot 0; a later
+    // page with the same filter reuses it instead of counting the table again.
+    std::unordered_map<std::string, uint64_t> findTotals;
 
     explicit PackState(Session& session) : structs(session) {}
 };

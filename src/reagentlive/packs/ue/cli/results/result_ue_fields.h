@@ -163,13 +163,6 @@ struct GetRow {
         v("error", &GetRow::error);
     }
 };
-struct Filtered {
-    uint64_t shown = 0, total = 0;
-    template<class V> static void Describe(V& v) {
-        v("shown", &Filtered::shown);
-        v("total", &Filtered::total);
-    }
-};
 struct SnapInfo {
     uint64_t size = 0;
     std::optional<std::string> path;
@@ -185,7 +178,6 @@ struct Get {
     RefId ref;
     std::vector<GetRow> rows;
     std::optional<bool> sameTick, truncated, capped;
-    std::optional<Filtered> filtered;
     std::optional<std::vector<NativeRefused>> nativeRefused;
     std::optional<SnapInfo> snap;
     std::optional<bool> tickAccurate;
@@ -196,7 +188,6 @@ struct Get {
         v("same_tick", &Get::sameTick);
         v("truncated", &Get::truncated);
         v("capped", &Get::capped);
-        v("filtered", &Get::filtered);
         v("native_refused", &Get::nativeRefused);
         v("snap", &Get::snap);
         v("tick_accurate", &Get::tickAccurate);

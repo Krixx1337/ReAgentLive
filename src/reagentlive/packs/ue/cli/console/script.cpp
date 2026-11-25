@@ -269,7 +269,6 @@ void RunScriptDecode(Session& session, const Command& command, std::string_view 
         out.statements->push_back({statement.offset, std::move(op), std::move(rendered)});
         Lists(statement, *resolved, out);
     }
-    if (!command.match.empty()) out.filtered = shape::Filtered{out.statements->size(), decoded.statements.size()};
     if (!decoded.stopped.empty()) out.stopped = decoded.stopped;
     if (function->name.starts_with("ExecuteUbergraph")) {
         auto entries = UbergraphEntries(session, object, *function);

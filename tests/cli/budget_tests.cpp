@@ -250,6 +250,7 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     Json result = VendorCall(200);
     result["capped"] = true;
     result["unnamed"] = 7;
+    result["total"] = 40;
     result["errors"] = Json::array({{{"column", 0}}, {{"column", 1}}});
     result["tick_accurate"] = false;
     Json record = Envelope(result);
@@ -261,7 +262,7 @@ TEST_CASE("digest: status keys survive, a list as its length") {
     CHECK(status["unnamed"] == 7);
     CHECK(status["errors"] == 2);
     CHECK(status["tick_accurate"] == false);
-    CHECK_FALSE(status.contains("omitted"));
+    CHECK(status["total"] == 40);
     // A file the call wrote and a cut listing's resume address survive too.
     Json listing = VendorCall(200);
     listing["saved"] = "fn.jsonl";

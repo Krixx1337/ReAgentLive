@@ -12,10 +12,13 @@ a table of fields over every live instance of a class in one tick, and
 
 Objects whose full name (`Base_N`) contains `text` (any case) and/or whose
 class or a parent class is named `cls` (`Character` includes vendors), in
-pages from the object-table slot `view.cursor`. The first page scans the
-whole table and counts the total; a later page starts at its cursor, so
-paging a broad class is linear, not quadratic. `live` skips class default
-and archetype objects, as `census` does.
+pages from the object-table slot `view.cursor`. The agent counts the total
+only on a scan from slot 0, so the first page scans the whole table; a later
+page reads from its cursor and carries the `total` the first page of the
+same `text`, `cls`, `live` and `outer` left in that console. Without one (a
+cursor from another console run) the console counts the table again, one
+more table scan.
+`live` skips class default and archetype objects, as `census` does.
 
 - **Class index:** with `cls` (and in `each`) the agent visits only the slots
   its class index names, rebuilt once a minute. A candidate still gets every
@@ -115,13 +118,14 @@ reads: a function column is refused and named to `call-each`
 - **`duration`** (one column, up to 60 s; seconds, fractions allowed) repeats on the cached instance list and prints
   each changed row to stderr as it happens. Not in a `batch`.
 - **`where`** (`{"field": ["Name"], "contains": "text"}`) keeps the instances
-  whose field's value contains the text, any case; `matched` counts them. Not
+  whose field's value contains the text, any case; `total` counts them. Not
   with `duration`.
 - **`Outer`, `Name` and `Class`** name the instance itself, as columns and in
   `where`, when no field takes the name. They match text: `where` on
   `["Class"]` containing `Body` is a substring of the class's own name, while
   `cls` takes a class and its subclasses.
-- **`view.limit`** caps the rows shown; `omitted` counts the rest.
+- **`view.limit`** caps the rows shown; `total` counts every row there was
+  (after `where`), shown or not.
   Unfiltered output over a whole class is large: locate the object first, or
   filter.
 

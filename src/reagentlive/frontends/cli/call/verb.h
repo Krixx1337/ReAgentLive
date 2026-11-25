@@ -206,7 +206,7 @@ inline const std::vector<Arg>& ViewKeys() {
     static const std::vector<Arg> keys = {
         {"cursor", "int", "the previous result's next_cursor, as it gave it (a number or \"0x...\")"},
         {"limit", "int", "rows at most (0: see notes)"},
-        {"match", "str", "keep rows whose name contains this (any case)"},
+        {"match", "str", "keep rows whose name contains this (any case); a verb whose rows have no name says what it matches"},
         {"fields", "path", "the row members to keep (paths into structs and arrays)", {}, false, true},
         {"nonzero", "bool", "leave out zero values (0, false, empty, None)"},
         {"elements", "int", "elements per array, set or map (1..256)", "8"},

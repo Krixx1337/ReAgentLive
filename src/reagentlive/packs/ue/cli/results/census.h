@@ -147,7 +147,7 @@ struct Census {
         v("classes", &Census::classes);
         v("instances", &Census::instances);
         v("before", &Census::before);
-        v("ms", &Census::ms);
+        v("scan_ms", &Census::ms);
         v("rows", &Census::rows);
         v("total", &Census::total);
         v("from", &Census::from);

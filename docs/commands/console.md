@@ -149,7 +149,7 @@ investigation.
 
 `{"verb": "run", "args": {"plan": "plan.json", "out": "lines.jsonl"}}`
 
-- One line per result: `{step, run?, at_ms, ms, command, ok,
+- One line per result: `{step, run?, at_ms, elapsed_ms, command, ok,
   result|error|digest}`. With `out` the lines go to the file, followed by a
   `{report}` line; without it they come back as `rows`. The report counts
   calls, ok, failed, refused by kind and expects, with each step's time and
@@ -245,7 +245,7 @@ session cost. Every path ends in the console, so one log covers them
   - `refused` counts by error kind; one refused for its pack is not in
     `calls_by_pack`.
 - **Counting:** `calls` counts top-level calls (a batch is one, its calls
-  are `batched`), as do `calls_by_pack` and `ms`; a verb's row counts its
+  are `batched`), as do `calls_by_pack` and `elapsed_ms`; a verb's row counts its
   calls wherever they ran, and the `batch` row holds its wrapper. `out` is
   characters; `out_by_caller.tool` is what reached an agent's context.
 - **Context limit:** `--context-limit <chars>` (default 400000; 0: none) is
@@ -255,28 +255,29 @@ session cost. Every path ends in the console, so one log covers them
 - **Capped:** the log is trimmed to its newest sessions at 4 MB; a line
   another console appends mid-trim can be lost, accepted.
 
-`{"verb": "usage"}` reports the current session; `report` `all` every
-session, `advice` proposes smaller defaults for verbs often digested,
-`save` and `baseline` compare two runs, `only` keeps parts:
+`{"verb": "usage"}` reports the current session; `scope` picks another:
+`all` every session, `sessions` the list of sessions, any other value that
+session's id. `only` keeps parts (`advice` proposes smaller defaults for
+verbs often digested), `save` and `baseline` compare two runs:
 `{"verb": "usage", "args": {"only": ["totals", "refusals"]}}`. Sizes are
 the console's JSON Lines: the MCP adapter hands a client each result twice
 (as text and as structured content), and which one a model sees is the
 client's choice.
 
-- `report` `sessions` lists up to 30 sessions as `session_rows`, with totals
+- `scope` `sessions` lists up to 30 sessions as `session_rows`, with totals
   over the whole log. `only` keeps the parts named (`session`, `sessions`,
   `since` and `saved` always stay); `save` still writes the whole report.
-- `advice` lists verbs with at least two digested or unfiltered calls (or
+- `only` `advice` lists verbs with at least two digested or unfiltered calls (or
   half their calls), most first: `limit` proposes a smaller default
   `view.limit` (the default scaled to what the cap held of the largest
   digested result), `hint` says what else to change in the row or its help.
 - `save` writes the report (JSON) and answers `saved`; `baseline` compares
   this session with such a file. `compare.worse` and `compare.better` list
   the figures that moved (totals `calls`, `refused`, `digested`, `context`
-  and `ms`; `refused_by.<kind>`; per verb `calls`, `refused`, `digested` and
-  `ms_per_call`), totals first, largest move first. A count is worse when it
+  and `elapsed_ms`; `refused_by.<kind>`; per verb `calls`, `refused`, `digested` and
+  `elapsed_ms_per_call`), totals first, largest move first. A count is worse when it
   grew, time when it grew by a quarter and past noise (100 ms in all, 50 ms
-  a call). `baseline` and `save` take one session, never a report.
+  a call). `baseline` and `save` take one session (no `scope`, or a session id), never `all` or `sessions`.
 - `refusals` lists refused calls by verb, error kind and the arg at fault.
 
 ## JSON Lines

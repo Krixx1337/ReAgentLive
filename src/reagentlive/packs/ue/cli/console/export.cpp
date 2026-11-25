@@ -124,7 +124,7 @@ void RunExportAssets(Session& session, const Command& command, std::string_view 
     if (!out || !(out << index.dump(1) << '\n'))
         return JsonError(session, jsonCommand, ErrorKind::File, "cannot write " + indexPath.string());
     result.index = indexPath.string();
-    if (result.objects > result.rows.size()) result.omitted = result.objects - result.rows.size();
+    if (result.objects > result.rows.size()) result.total = result.objects;
     Emit(session, jsonCommand, std::move(result));
 }
 }

@@ -64,7 +64,7 @@ struct LabelsSign {
 };
 struct LabelPortRow {
     std::string name, kind;
-    uint32_t from = 0;                  // The build (timestamp) the signature came from.
+    uint32_t fromBuild = 0;             // The build (timestamp) the signature came from.
     std::string status;                 // ported, missing or ambiguous.
     std::optional<HexNum> rva;          // Ported: where it lies in this build.
     std::optional<uint64_t> matches;    // Ambiguous: how many.
@@ -72,7 +72,7 @@ struct LabelPortRow {
     template<class V> static void Describe(V& v) {
         v("name", &LabelPortRow::name);
         v("kind", &LabelPortRow::kind);
-        v("from", &LabelPortRow::from);
+        v("from_build", &LabelPortRow::fromBuild);
         v("status", &LabelPortRow::status, "ported|missing|ambiguous");
         v("rva", &LabelPortRow::rva);
         v("matches", &LabelPortRow::matches);
@@ -101,7 +101,7 @@ struct LabelsCheck {
     uint32_t timestamp = 0;
     uint64_t ok = 0, moved = 0, missing = 0, ambiguous = 0, invalid = 0, unsignedRows = 0, searches = 0;
     std::vector<LabelCheckRow> rows;    // This build's signed rows the status kept, in file order.
-    std::optional<uint64_t> matched;    // With status: the rows it kept, before view.limit.
+    std::optional<uint64_t> total;      // With status: the rows it kept, before view.limit.
     bool capped = false;                // view.limit cut the rows.
     int64_t scanMs = 0;
     template<class V> static void Describe(V& v) {
@@ -116,7 +116,7 @@ struct LabelsCheck {
         v("unsigned", &LabelsCheck::unsignedRows);
         v("searches", &LabelsCheck::searches);
         v("rows", &LabelsCheck::rows);
-        v("matched", &LabelsCheck::matched);
+        v("total", &LabelsCheck::total);
         v("capped", &LabelsCheck::capped);
         v("scan_ms", &LabelsCheck::scanMs);
     }

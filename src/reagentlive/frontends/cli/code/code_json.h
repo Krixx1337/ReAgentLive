@@ -106,9 +106,9 @@ struct DisasmHop {
     Addr from, to;
     Location toWhere;
     template<class V> static void Describe(V& v) {
-        v("from", &DisasmHop::from);
-        v("to", &DisasmHop::to);
-        v.flat("to_", &DisasmHop::toWhere);
+        v("source", &DisasmHop::from);
+        v("target", &DisasmHop::to);
+        v.flat("target_", &DisasmHop::toWhere);
     }
 };
 // disasm save: one saved function or chunk, its bounds and instruction
@@ -372,8 +372,8 @@ struct TouchScanned {
     Addr from, to;
     uint64_t functions = 0, unlisted = 0, bytes = 0;  // unlisted: pieces outside every entry.
     template<class V> static void Describe(V& v) {
-        v("from", &TouchScanned::from);
-        v("to", &TouchScanned::to);
+        v("scan_from", &TouchScanned::from);
+        v("scan_to", &TouchScanned::to);
         v("functions", &TouchScanned::functions);
         v("unlisted", &TouchScanned::unlisted);
         v("bytes", &TouchScanned::bytes);
@@ -439,7 +439,7 @@ struct DispFunction {
         v("hits", &DispFunction::hits);
     }
 };
-// disp-scan: one page of the sweep. from and to bound what this call read;
+// disp-scan: one page of the sweep. scan_from and scan_to bound what this call read;
 // scanned is the share of the module's code behind next_cursor (1 when done).
 struct DispScan {
     std::vector<HexNum> disps;
@@ -456,8 +456,8 @@ struct DispScan {
         v("disps", &DispScan::disps);
         v("access", &DispScan::access);
         v("module", &DispScan::module);
-        v("from", &DispScan::from);
-        v("to", &DispScan::to);
+        v("scan_from", &DispScan::from);
+        v("scan_to", &DispScan::to);
         v("scanned", &DispScan::scanned);
         v("total", &DispScan::total);
         v("rows", &DispScan::rows);

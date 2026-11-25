@@ -26,70 +26,77 @@ before 0.6.0 are one line each; git history has the detail.
 
 ## Unreleased
 
+Smaller, more uniform tool surface: about a third fewer MCP tool-list
+tokens, one way to page, one count, one time unit.
+
 ### Improved
 
-- **`xrefs`, `touches` and `sig-bytes` take a pointer chain** as `addr`, as
-  `read` does ([native objects](docs/commands/native-objects.md#pointer-chains)).
-- **Setup and update build and check with one script:**
-  `tools/build_examples.ps1` builds the examples and, with `-Check`, checks
-  each DLL's `status` ([setup](docs/agents/setup.md#3-clone-and-build)).
-- **Codex and Cursor get the skill itself:** setup links it into
-  `~/.agents/skills` ([skill install](docs/agents/setup.md#6-install-the-skill)).
-- **A failed update can roll back** to the previous commit
-  ([update](docs/agents/update.md#3-pull-and-rebuild)).
-- **Shorter verb help, tool descriptions and refusals:** MCP tool lists are
-  smaller; `max_chars` is described once in the server instructions.
+- **Smaller MCP tool list:** shorter verb help and refusals; `max_chars` and
+  the `view` keys are described once in the server instructions; no
+  `Example:` lines (`help` and refusals keep them).
+- **`xrefs`, `touches` and `sig-bytes` take a pointer chain** as `addr`
+  ([pointer chains](docs/commands/native-objects.md#pointer-chains)).
+- **`find` pages reuse the first page's `total`** instead of recounting.
+- **One script builds and checks the examples:** `tools/build_examples.ps1
+  -Check` ([setup](docs/agents/setup.md#3-clone-and-build)).
+- **Codex and Cursor get the skill** linked into `~/.agents/skills`
+  ([skill install](docs/agents/setup.md#6-install-the-skill)); **a failed
+  update rolls back** ([update](docs/agents/update.md#3-pull-and-rebuild)).
 
 ### Breaking
 
-- **The setup record's `scratch` key is gone**; the skill keeps no scratch
-  file. Delete the key from an existing record.
-- **The skill is no longer installed as a copy**, and the setup record has
-  no `skill_commit`. A copy install: ask your agent to "update
-  ReAgentLive"; it replaces the copy with a link.
-- **The docs index is `docs/README.md`** (was `docs/INDEX.md`): change the
-  `ReAgentLive docs:` line in your agent's instructions file. The command
-  table moved to `docs/commands/README.md`, and `docs/design.md` became
-  `docs/design/README.md` plus `docs/design/principles.md`.
-- **Verb arguments renamed:** `route` `outer` is `up`; `name-refs` `index`
-  is `name_index`; `describe` `index` is `slot`; `disp-scan` `disps` is
-  `offsets`; `assets-export` `cls` is `classes`; `each` and `call-each`
-  `seconds` is `duration`.
-- **`calls-start` takes `object`, not `owner`:** pass the instance or class
-  as `object`; an instance now records only its own calls (the old `object`
-  filter is gone).
-- **`release` `object` is a string** like `call`'s (a ref, `"0x..."` or a
-  `Default__` name).
+Setup and docs:
+
+- **The skill is linked, not copied**, and the setup record drops
+  `skill_commit` and `scratch`. A copy install: ask your agent to "update
+  ReAgentLive".
+- **The docs index is `docs/README.md`** (was `docs/INDEX.md`): fix the
+  `ReAgentLive docs:` line in your agent's instructions file. Commands
+  are in `docs/commands/README.md`, design in `docs/design/`.
+
+Verbs and args:
+
+- **Renamed args:** `route` `outer` → `up`; `name-refs` `index` →
+  `name_index`; `describe` `index` → `slot`; `disp-scan` `disps` →
+  `offsets`; `assets-export` `cls` → `classes`; `each`/`call-each`
+  `seconds` → `duration`; `disasm` `function` → `whole`, `follow` → `jumps`;
+  `xrefs` `all` → `loose`.
+- **`calls-start` takes `object` only** (instance or class); an instance
+  records only its own calls. `release` `object` is a string like `call`'s.
 - **`watch-stop` and `calls-stop` are gone:** pass `stop` to `watch-read`
-  or `calls-read`; the answer is the same as the old stop verb gave.
-- **`touches` `reads` is `access`:** `write`, `read` or `any` as in
-  `disp-scan`; `reads: true` is `access: "read"`, the default (all uses) is
-  `any`. `write` is new. `read` now counts read-modify-writes and leaves
-  `lea` out.
-- **One cursor to continue any result:** a result that can go on says
-  `next_cursor` (absent when done); pass it back as `view.cursor` on the
-  same call. `view.start` is `view.cursor` (find, census, name-find,
-  entries, rows, funcs, calls-read, disp-scan); `search` and `search-job`
-  continue with `view.cursor` instead of `scope.start`, and `scope.start`
-  is `scope.from` (the range's start); `disasm`'s result `next` is
-  `next_cursor`, its `resume` is gone (pass `next_cursor` as `view.cursor`,
-  which also starts a save at that exact address). A `call` result's
-  returned array says `from` instead of `start`.
-- **`capped` is gone from `disp-scan`:** a page that can go on carries
-  `next_cursor`; `capped` now only means a cut with no way to the rest.
-- **Every time arg is seconds as a number** (`dur`): `each` and
-  `call-each` `duration` and `search` `wait` take fractions; `search` `wait`
-  must be above 0 (`0.1` returns almost at once). `each`'s result
-  `seconds` is a number.
-- **Distinct names for the flags that shared one:** `disasm` `function` is
-  `whole`, `disasm` `follow` is `jumps`, `xrefs` `all` is `loose`.
-- **MCP result schemas are opt-in:** `--output-schemas on` (was `compact`;
-  `off` is the default, `compact` is gone). Tool descriptions drop the
-  `Example:` line (`help` and refusals keep examples), and a `view` key's help
-  is stated once in the server instructions; the tool list shrinks by about a
-  third.
-- **`timed-writes` moved from the `observe` pack to `modify`**, beside
-  `write` `clear`: add `modify` to `--packs` to list timed writes.
+  or `calls-read`.
+- **`touches` `reads` → `access`** (`write`, `read`, `any`; default `any`),
+  as `disp-scan`; `read` now counts read-modify-writes, not `lea`.
+- **Time args are seconds as a number:** `duration` and `search` `wait` take
+  fractions; `wait` must be above 0.
+- **`usage` takes `scope`** (omitted: this session; `"sessions"`; `"all"`;
+  a session id) instead of `report` and `session`; advice is
+  `only: ["advice"]`.
+- **`timed-writes` is in the `modify` pack** (was `observe`).
+- **MCP output schemas are opt-in:** `--output-schemas on` (`compact` is
+  gone; `off` is the default).
+
+Results:
+
+- **One cursor:** continue with a result's `next_cursor` as `view.cursor`
+  (was `view.start`, `search` `scope.start`, `disasm` `next` + `resume`);
+  `search` `scope.start` → `scope.from`. `capped` means a cut with no way
+  to the rest, so `disp-scan` drops it.
+- **One count, `total`** (after filters, before the row cut, every page):
+  replaces `matched`, `omitted` and `filtered`; `get` and `script` drop it.
+- **`from` is where a page began;** address keys are `scan_from`/`scan_to`
+  (`search`, `search-job`, `disp-scan`, `touches`); `disasm` `followed`
+  rows say `source`/`target`; `labels-port` `from` → `from_build`; `call`
+  arrays' `start` → `from`.
+- **`ref` is an id, `object` the `{ref, name, class}` struct:** `calls-read`
+  rows' `object` → `ref`; address-valued `object` → `object_addr`
+  (`calls-start`, timed writes).
+- **Times are milliseconds in `_ms` keys:** `seconds` → `duration_ms`
+  (`each`, `call-each`, `calls-start`); watch `ms` → `duration_ms`, rows'
+  `us` → `at_ms`, gaps → `start_ms`/`end_ms`; change and `calls-read` rows'
+  `ms` → `at_ms`; `census` `ms` → `scan_ms`; `run` and `usage` `ms` →
+  `elapsed_ms`; `run_status` `seconds` → `elapsed_ms`. An older `usage`
+  baseline is refused: save it again.
 
 ## 0.6.0
 

@@ -135,20 +135,21 @@ Parsed Quit(const Args&, const ParseContext&) {
 Parsed Usage(const Args& args, const ParseContext&) {
     Command command;
     command.kind = Kind::Usage;
-    command.all = args.Str("report") == "all";
-    command.listSessions = args.Str("report") == "sessions";
-    command.target = args.Str("session");
+    // scope: "sessions" lists the log's sessions, "all" reports every session, any other value is one
+    // session's id; none: this session.
+    const std::string scope = args.Str("scope");
+    command.all = scope == "all";
+    command.listSessions = scope == "sessions";
+    if (!command.all && !command.listSessions) command.target = scope;
     command.baseline = args.Str("baseline");
     command.file = args.Str("save");
     command.parts = args.Strs("only");
     const auto asked = [&](std::string_view part) { return std::ranges::find(command.parts, part) != command.parts.end(); };
-    command.advice = args.Has("advice") || asked("advice");
-    if ((command.all || command.listSessions) && !command.target.empty())
-        return Fail("report: one session is session alone; report takes sessions or all in its place");
+    command.advice = asked("advice");
     if ((command.all || command.listSessions) && !command.baseline.empty())
-        return Fail("baseline compares one session: give session, or nothing for this one");
+        return Fail("baseline compares one session: give scope a session id, or nothing for this one");
     if ((command.all || command.listSessions) && !command.file.empty())
-        return Fail("save keeps one session's report: give session, or nothing for this one");
+        return Fail("save keeps one session's report: give scope a session id, or nothing for this one");
     if (asked("compare") && command.baseline.empty()) return Fail("only: compare needs baseline");
     return command;
 }

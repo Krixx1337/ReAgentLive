@@ -65,7 +65,8 @@ unless `align` says otherwise.
 **Range.** The main module unless `scope` says otherwise: another module, an
 address range, `scope.heap` (process-private memory) or `scope.writable`.
 `scope.from` alone ends with the module it lies in. `search-job` answers
-only for the last job; `scanned` is the share of the range's searchable
+only for the last job; `scan_from` and `scan_to` bound the range it
+searches and `scanned` is the share of the range's searchable
 bytes (the committed, readable memory `scope` takes) behind the cursor, 0
 while the job first measures them.
 
@@ -158,7 +159,7 @@ or replaced the capture stops with the rows so far (`stopped` says why).
 ```
 
 - **Rows are the changes, not every sample:** the first sample, every
-  sample that differs from the one before it (with its time) and the last,
+  sample that differs from the one before it (with its time, `at_ms`) and the last,
   so a transition keeps its time and a value that sits still is a handful of
   rows. A long run drops the middle (`dropped` counts it); `summary` is
   computed from every sample first.

@@ -491,18 +491,20 @@ TEST_CASE("local verbs build no request") {
     CHECK(Call(R"({"verb": "quit"})")->kind == Kind::Quit);
     CHECK(Call(R"({"verb": "usage"})")->kind == Kind::Usage);
     CHECK_FALSE(Call(R"({"verb": "usage"})")->all);
-    CHECK(Call(R"({"verb": "usage", "args": {"report": "all"}})")->all);
-    CHECK(Call(R"({"verb": "usage", "args": {"report": "sessions"}})")->listSessions);
-    CHECK(Call(R"({"verb": "usage", "args": {"session": "mcp-1"}})")->target == "mcp-1");
-    CHECK(Why(R"({"verb": "usage", "args": {"report": "every"}})").starts_with("report: "));
-    CHECK(Why(R"({"verb": "usage", "args": {"report": "sessions", "session": "mcp-1"}})").starts_with("report: one session"));
+    CHECK(Call(R"({"verb": "usage", "args": {"scope": "all"}})")->all);
+    CHECK(Call(R"({"verb": "usage", "args": {"scope": "sessions"}})")->listSessions);
+    CHECK(Call(R"({"verb": "usage", "args": {"scope": "mcp-1"}})")->target == "mcp-1");
+    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"scope": "mcp-1"}})")->all);
+    CHECK(Why(R"({"verb": "usage", "args": {"scope": "sessions", "baseline": "b.json"}})").starts_with("baseline compares one session"));
     const auto parts = Call(R"({"verb": "usage", "args": {"only": ["totals", "advice"]}})");
     REQUIRE(parts.has_value());
     CHECK(parts->parts == std::vector<std::string>{"totals", "advice"});
     CHECK(parts->advice);                                   // Asking for the part asks for advice.
+    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"only": ["totals"]}})")->advice);
+    CHECK(Why(R"({"verb": "usage", "args": {"advice": true}})").starts_with("unknown key 'advice'"));
     CHECK(Why(R"({"verb": "usage", "args": {"only": ["compare"]}})").starts_with("only: compare needs baseline"));
     CHECK(Why(R"({"verb": "usage", "args": {"only": ["everything"]}})").starts_with("only: "));
-    CHECK(Why(R"({"verb": "usage", "args": {"session": 1}})").starts_with("session: "));
+    CHECK(Why(R"({"verb": "usage", "args": {"scope": 1}})").starts_with("scope: "));
 }
 
 TEST_CASE("batch keeps its calls as JSON and refuses what cannot be held") {

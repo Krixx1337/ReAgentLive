@@ -475,7 +475,8 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
         std::optional<Error> pollError;
         size_t polls = 0;
         const auto start = Clock::now();
-        const auto deadline = start + std::chrono::milliseconds(static_cast<int64_t>(command.seconds * 1000));
+        const auto durationMs = static_cast<uint64_t>(command.seconds * 1000 + 0.5);    // One rounding: deadline and result.
+        const auto deadline = start + std::chrono::milliseconds(durationMs);
         query.reuse = true;
         std::fprintf(stderr, "  watching %zu instances for %g s\n", last.size(), command.seconds);
         while (Clock::now() < deadline) {
@@ -499,7 +500,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                 changes.push_back(std::move(change));
             }
         }
-        record.seconds = command.seconds;
+        record.durationMs = durationMs;
         record.polls = polls;
         record.changes = std::move(changes);
         if (pollError) record.pollError = pollError->message;
@@ -549,7 +550,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
                 if (session.meta) item.hex = HexBytes(row.value);
                 record.rows.push_back(std::move(item));
             }
-            if (omittedRows) record.omitted = omittedRows;
+            if (omittedRows) record.total = shownRows + omittedRows;
             NameRows(client, refs, record);
             record.columns = {target};
             record.mode = "call";
@@ -743,8 +744,7 @@ void RunEach(Session& session, const Command& command, std::vector<Ref>& refs, S
     }
     NameRows(client, refs, record);
     record.columns = command.fields;
-    if (whereColumn) record.matched = matched;
-    if (omittedRows) record.omitted = omittedRows;
+    if (whereColumn || omittedRows) record.total = whereColumn ? matched : shownRows + omittedRows;
     record.mode = "field";
     record.capped = capped;
     // Container elements are read per instance after the pass (`meta` prints headers only).

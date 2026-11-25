@@ -197,8 +197,8 @@ struct CallsStart {
     uint32_t slot = 0;
     Addr exec, thunk;
     uint32_t blockSize = 0;
-    std::optional<Addr> object;
-    double seconds = 0;
+    std::optional<Addr> objectAddr;
+    uint64_t durationMs = 0;
     bool dry = false;
     std::optional<std::string> note;    // What the recording will not see, when that is known up front.
     template<class V> static void Describe(V& v) {
@@ -207,8 +207,8 @@ struct CallsStart {
         v("exec", &CallsStart::exec);
         v("thunk", &CallsStart::thunk);
         v("block_size", &CallsStart::blockSize);
-        v("object", &CallsStart::object);
-        v("seconds", &CallsStart::seconds);
+        v("object_addr", &CallsStart::objectAddr);
+        v("duration_ms", &CallsStart::durationMs);
         v("dry", &CallsStart::dry);
         v("note", &CallsStart::note);
     }
@@ -227,17 +227,17 @@ struct CallsValue {
 };
 struct CallsRow {
     uint64_t sequence = 0;
-    double ms = 0;
+    double atMs = 0;                    // Since the recording began.
     uint32_t thread = 0;
-    RefId object;
+    RefId ref;
     std::optional<std::string> objectName, objectClass;
     std::string via;
     std::optional<std::vector<CallsValue>> values;
     template<class V> static void Describe(V& v) {
         v("sequence", &CallsRow::sequence);
-        v("ms", &CallsRow::ms);
+        v("at_ms", &CallsRow::atMs);
         v("thread", &CallsRow::thread);
-        v("object", &CallsRow::object);
+        v("ref", &CallsRow::ref);
         v("object_name", &CallsRow::objectName);
         v("object_class", &CallsRow::objectClass);
         v("via", &CallsRow::via, "event|vm");

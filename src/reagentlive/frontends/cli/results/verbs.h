@@ -40,13 +40,12 @@ inline const std::vector<Verb>& CoreVerbs() {
             "table_hash changes when a verb's args or result change: a cached script or skill is stale."},
         {"quit", "core", ToolPack::Explore, "end the console", {}, Of<shape::Quit>, build::Quit},
         {"usage", "core", ToolPack::Explore, "this session's cost: calls, output and refusals per verb, largest first",
-            {{"report", "sessions|all", "sessions: list the log's sessions; all: every session together"},
-             {"session", "str", "a session id"},
-             {"advice", "bool", "verbs often digested or unfiltered, with a proposed view.limit or hint"},
+            {{"scope", "str", "none: this session; sessions: list the log's sessions; all: every session together; "
+              "any other value: that session id"},
              {"baseline", "file", "a saved report: what got worse or better"},
              {"save", "file", "write this report to a file as a baseline"},
              {"only", "totals|rows|largest|never_called|session_rows|context|refusals|advice|compare",
-              "keep only these parts (advice turns it on)", {}, false, true}},
+              "keep only these parts (advice: verbs often digested or unfiltered, with a proposed view.limit or hint)", {}, false, true}},
             Of<shape::UsageReport>, build::Usage,
             "Reads the usage log beside the console; works with no target. out is characters; out_by_caller.tool is "
             "what reached an agent's context. Marks and compare rules: docs/commands/console.md#usage-log-and-usage. "
@@ -130,7 +129,7 @@ inline const std::vector<Verb>& CoreVerbs() {
              {"keep", "bool", "keep only the matches as candidates and today's bytes as the new baseline"},
              View("limit", "64")},
             Of<shape::MemDiff>, build::MemDiff,
-            "changed and unchanged compare bytes, increased and decreased numbers (NaN never passes). matched counts "
+            "changed and unchanged compare bytes, increased and decreased numbers (NaN never passes). total counts "
             "all; rows show view.limit (1..256). A snap from another agent instance is refused."},
         {"watch-start", "core", ToolPack::Observe, "a capture the agent keeps (up to 60 min); returns at once",
             {{"duration", "dur", "how long, in seconds", {}, true},

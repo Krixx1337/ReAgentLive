@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <optional>
 #include <ranges>
@@ -209,6 +210,23 @@ void RunUnreal(Session& session, const Command& original, std::vector<Ref>& refs
             {command.outerText, command.outerRef}};
         auto found = ue::Find(client, request.text, options);
         if (!found) return CommandError(session, jsonCommand, found.error());
+        // Only a scan from slot 0 counts every match. A later page reuses the
+        // total the first page of the same filter left; without one it counts
+        // the table again, its rows dropped.
+        const auto& outer = options.outer;
+        const std::string key = std::format("{}\x1f{}\x1f{}\x1f{}\x1f{:x}#{}:{}", request.text, className, options.live,
+            outer.text, outer.object.address, outer.object.index, outer.object.serial);
+        auto& totals = Ue(session).findTotals;
+        if (!from) {
+            if (totals.size() >= 256) totals.clear();
+            totals[key] = found->total;
+        } else if (const auto memo = totals.find(key); memo != totals.end()) {
+            found->total = memo->second;
+        } else {
+            auto counted = ue::Find(client, request.text, {className, 0, false, options.live, options.outer});
+            if (!counted) return CommandError(session, jsonCommand, counted.error());
+            found->total = totals[key] = counted->total;
+        }
         // Nothing under a class filter: a name that is no class is refused, not read as no objects.
         if (found->objects.empty() && !from && !className.empty())
             if (auto type = ResolveClassAnyCase(session, std::string(className)); !type)

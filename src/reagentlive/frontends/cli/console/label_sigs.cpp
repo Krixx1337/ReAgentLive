@@ -365,7 +365,7 @@ void RunLabelsCheck(Session& session, const Command& command, std::string_view j
         result.rows.push_back(std::move(out));
     }
     turn.reset();
-    if (!command.statuses.empty()) result.matched = matched;
+    if (!command.statuses.empty() || result.capped) result.total = matched;
     result.searches = checker.Searches();
     result.scanMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
     Emit(session, jsonCommand, std::move(result));

@@ -168,7 +168,7 @@ TEST_CASE("usage counts digests and what they kept out, and lists and picks sess
     CHECK(old->totals->calls == 1);
     const auto missing = UsageFor(lines, AllVerbs(), {false, false, false, "gone"}, std::nullopt);
     REQUIRE_FALSE(missing.has_value());
-    CHECK(missing.error().find("usage with report sessions") != std::string::npos);
+    CHECK(missing.error().find("usage with scope sessions") != std::string::npos);
     // only: the parts named; the identity stays.
     auto some = *UsageFor(lines, AllVerbs(), {false, false, false, "new"}, std::nullopt);
     KeepParts(some, std::vector<std::string>{"totals"});
@@ -304,15 +304,15 @@ TEST_CASE("usage advice: verbs often digested or unfiltered, with a smaller defa
 }
 
 TEST_CASE("usage baseline: what got worse and better against a saved report") {
-    const Json before = Json::parse(R"({"totals": {"calls": 10, "refused": 1, "digested": 2, "ms": 1000,
+    const Json before = Json::parse(R"({"totals": {"calls": 10, "refused": 1, "digested": 2, "elapsed_ms": 1000,
         "out_by_caller": {"tool": 50000}}, "rows": [
-        {"verb": "find", "calls": 4, "ms": 400, "refused": 1, "refused_by": {"schema": 1}},
-        {"verb": "get", "calls": 6, "ms": 600, "digested": 2}]})");
-    const Json after = Json::parse(R"({"totals": {"calls": 14, "refused": 3, "digested": 1, "ms": 1050},
+        {"verb": "find", "calls": 4, "elapsed_ms": 400, "refused": 1, "refused_by": {"schema": 1}},
+        {"verb": "get", "calls": 6, "elapsed_ms": 600, "digested": 2}]})");
+    const Json after = Json::parse(R"({"totals": {"calls": 14, "refused": 3, "digested": 1, "elapsed_ms": 1050},
         "context": {"chars": 80000, "limit": 400000, "over": false}, "rows": [
-        {"verb": "find", "calls": 4, "ms": 1200, "refused": 3, "refused_by": {"schema": 2, "pack": 1}},
-        {"verb": "get", "calls": 6, "ms": 600, "digested": 1},
-        {"verb": "census", "calls": 4, "ms": 40}]})");
+        {"verb": "find", "calls": 4, "elapsed_ms": 1200, "refused": 3, "refused_by": {"schema": 2, "pack": 1}},
+        {"verb": "get", "calls": 6, "elapsed_ms": 600, "digested": 1},
+        {"verb": "census", "calls": 4, "elapsed_ms": 40}]})");
     const auto compare = CompareUsage(before, after, "base.json");
     Checked(compare);
     CHECK(compare.baseline == "base.json");
@@ -324,16 +324,22 @@ TEST_CASE("usage baseline: what got worse and better against a saved report") {
     CHECK(has(compare.worse, "context", std::nullopt));             // Total tool output: 50000 then 80000.
     CHECK(has(compare.worse, "refused_by.schema", std::nullopt));
     CHECK(has(compare.worse, "refused_by.pack", std::nullopt));
-    CHECK(has(compare.worse, "ms_per_call", std::string("find")));   // 100 ms a call, then 300.
+    CHECK(has(compare.worse, "elapsed_ms_per_call", std::string("find")));   // 100 ms a call, then 300.
     CHECK(has(compare.worse, "calls", std::string("census")));       // New: from none.
-    CHECK_FALSE(has(compare.worse, "ms", std::nullopt));             // 5% slower: noise.
+    CHECK_FALSE(has(compare.worse, "elapsed_ms", std::nullopt));             // 5% slower: noise.
     CHECK(has(compare.better, "digested", std::nullopt));
     CHECK(has(compare.better, "digested", std::string("get")));
     CHECK_FALSE(compare.worse.front().verb.has_value());             // Totals first.
+    // A baseline is refused when it is no report, or an older one without totals.elapsed_ms.
+    CHECK(BaselineProblem(before, "base.json").empty());
+    CHECK(BaselineProblem(Json::parse(R"({"rows": []})"), "base.json") ==
+          "baseline: base.json is no usage report (write one with save)");
+    CHECK(BaselineProblem(Json::parse(R"({"totals": {"calls": 1, "seconds": 2}, "rows": []})"), "old.json") ==
+          "baseline: old.json predates elapsed_ms (write it again with save)");
     // baseline and save take one session's report.
-    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"report": "all", "baseline": "b.json"}})").has_value());
-    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"report": "sessions", "save": "b.json"}})").has_value());
-    CHECK(Call(R"({"verb": "usage", "args": {"session": "s", "baseline": "b.json", "save": "c.json"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"scope": "all", "baseline": "b.json"}})").has_value());
+    CHECK_FALSE(Call(R"({"verb": "usage", "args": {"scope": "sessions", "save": "b.json"}})").has_value());
+    CHECK(Call(R"({"verb": "usage", "args": {"scope": "s", "baseline": "b.json", "save": "c.json"}})").has_value());
 }
 
 TEST_CASE("usage refusals: by verb, kind and the arg at fault, most first") {

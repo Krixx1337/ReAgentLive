@@ -103,7 +103,7 @@ void RunPlan(Session& session, const Command& command, std::string_view jsonComm
             Json line = {{"step", index + 1}};
             if (runs > 1) line["run"] = run + 1;
             line["at_ms"] = tenths(since(began));
-            line["ms"] = tenths(ms);
+            line["elapsed_ms"] = tenths(ms);
             for (auto& [key, value] : envelope.items()) line[key] = std::move(value);
             if (step.expect) {
                 const auto why = plan::Mismatch(*step.expect, line);
