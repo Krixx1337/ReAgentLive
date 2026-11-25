@@ -11,7 +11,8 @@ project's host notes (console name, host verbs, approval rules) win over
 this skill.
 
 **Setup:** read the project record `reagentlive.json` in the project root if
-present (`console`, `improvement`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
+present (`console`), the machine record `%LOCALAPPDATA%\reagentlive\machine.json`
+if present (`improvement`), then `%LOCALAPPDATA%\reagentlive\lessons\INDEX.md`
 if present and what it routes to (`general.md`; the game's file once `status`
 names the exe): the user's lessons, which extend, never override, these rules. Repo paths here (`docs/...`, `src/...`) resolve to the clone this
 skill folder lives in (in a project, its `reagentlive/` submodule), else

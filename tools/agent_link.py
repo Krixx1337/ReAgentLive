@@ -1,8 +1,7 @@
 """Wire an AI agent to a host project: the MCP server for its console, the skill, agent instructions.
 
     python -I <clone>/tools/agent_link.py --console <exe> --dll <dll> [--build <command>] [--check yes|no]
-                                          [--improvement user|dev|off] [--mcp claude-code,cursor,copilot]
-                                          [--project <dir>]
+                                          [--mcp claude-code,cursor,copilot] [--project <dir>]
 
 The project is any folder that builds a host DLL and its console and carries this clone at a fixed path
 inside it (a git submodule; default project: the git project it is a submodule of, else pass --project).
@@ -11,8 +10,9 @@ Paths are relative to the project. Writes, and on every later run updates in pla
 - reagentlive.json, the project record: `library` (this clone's path in the project), `mcp` (the clients),
   `console`, `dll`, `build` (a command run in the project folder;
   without it tools/build_project.ps1 runs CMake on the project), `check` (false for a host that ticks
-  only inside the game, so the update builds without loading the DLL into a test process),
-  `improvement`. Arguments left out keep the record's values.
+  only inside the game, so the update builds without loading the DLL into a test process). Arguments
+  left out keep the record's values. It is committed: nothing personal goes in it (the improvement mode is
+  the machine record's).
 - the ReAgentLive server in each client's project MCP file: the one already there (any server running
   reagentlive_mcp.py, under its own name, keeping its other arguments), else a new `reagentlive`; other
   servers stay;
@@ -263,7 +263,7 @@ def run(args):
         raise Refused(f'--mcp: unknown {", ".join(unknown)} (one or more of {", ".join(MCP_FILES)})')
     record['library'] = clone
     record['mcp'] = clients
-    for key in ('console', 'dll', 'build', 'improvement'):
+    for key in ('console', 'dll', 'build'):
         value = getattr(args, key)
         if value is not None:
             record[key] = slash(value) if key in ('console', 'dll') else value
@@ -277,9 +277,6 @@ def run(args):
             raise Refused('--check is yes or no')
         record['check'] = args.check == 'yes'
     record.setdefault('check', True)
-    record.setdefault('improvement', 'user')
-    if record['improvement'] not in ('user', 'dev', 'off'):
-        raise Refused('--improvement is user, dev or off')
     configs, names = {}, {}
     for client in clients:
         path, key, _ = MCP_FILES[client]
@@ -324,7 +321,6 @@ def main(argv=None):
     parser.add_argument('--dll', help='the host DLL, relative to the project')
     parser.add_argument('--build', help='the build command, run in the project folder (default: CMake)')
     parser.add_argument('--check', help='yes or no: whether a build loads the DLL into a test process (no: it ticks only in the game)')
-    parser.add_argument('--improvement', help='user, dev or off: what the skill may change after a task')
     parser.add_argument('--mcp', help='comma-separated: ' + ', '.join(MCP_FILES) + " (default: the record's, else claude-code)")
     parser.add_argument('--project', help='the project folder (default: the git project this clone is a submodule of)')
     try:

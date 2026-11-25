@@ -5,8 +5,9 @@ skill itself: the maintaining reference.
 
 ## Mode
 
-Read `improvement` from the project record (`reagentlive.json` in the
-project root). No record or key: `user`. Change it there, or ask the agent
+Read `improvement` from the machine record
+(`%LOCALAPPDATA%\reagentlive\machine.json`): it is the user's, the same in
+every project. No record or key: `user`. Change it there, or ask the agent
 to.
 
 - `off`: skip this file.

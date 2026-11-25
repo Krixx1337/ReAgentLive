@@ -40,7 +40,7 @@ record's. Its fields:
 
 | Field | Written by | Value |
 |---|---|---|
-| `improvement` | step 2 | the user's answer, the default for every later project |
+| `improvement` | step 2 | the user's answer; the skill reads it here, in every project |
 | `injector` | step 8 | the path of `Injector.exe`, or `declined` |
 | `ida` | step 9 | `true` once the IDA side is set up, or `declined` |
 
@@ -93,8 +93,8 @@ Ask the user, in one message:
    | developer | `dev` | propose changes to the skill, docs and ReAgentLive code, each on the user's yes; code changes on a branch with the build and tests run, never committed unasked |
    | neither ("off", "no") | `off` | nothing |
 
-   Write the answer to the record's `improvement`. With the record's
-   `improvement` already set, use it and say so in the report.
+   Write the answer to the machine record's `improvement`. With it
+   already set, use it and say so in the report.
 
 A clone of a project wired earlier needs only `git submodule update
 --init`, then step 4 with no arguments but `--project` (the record keeps
@@ -132,7 +132,7 @@ files are the user's from now on.
 ## 4. Wire the agent
 
 ```powershell
-python -I "<project>\<sub>\tools\agent_link.py" --project "<project>" --console <console> --dll <dll> --improvement <improvement> --mcp <clients>
+python -I "<project>\<sub>\tools\agent_link.py" --project "<project>" --console <console> --dll <dll> --mcp <clients>
 ```
 
 Add `--build "<command>"` for a project with a build of its own, and
@@ -147,7 +147,7 @@ nothing). It writes, keeping what the project already has:
 
 | File | What |
 |---|---|
-| `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`, `improvement`; the skill and the scripts read it |
+| `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`; the skill and the scripts read it, and it is committed, so nothing personal goes in it |
 | the MCP files of `<clients>` | the ReAgentLive server: the project's own when it has one (any server running `reagentlive_mcp.py`, under its name, its other flags kept), else a new `reagentlive`; other servers stay. `servers` in the output names it |
 | `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); no `CLAUDE.md` is made (Claude Code reads `AGENTS.md`), and an existing one that does not import `AGENTS.md` gets the block too |
 | `.gitignore` | the skill links |

@@ -47,7 +47,8 @@ tokens, one way to page, one count, one time unit.
   and your improvement mode are set up once and kept in
   `%LOCALAPPDATA%\reagentlive\machine.json`
   ([setup](docs/agents/setup.md#1-check-the-machine)); the agent writes
-  nothing else outside the project.
+  nothing else outside the project. The skill reads your improvement mode
+  there, so the committed project record holds nothing personal.
 
 ### Improved
 

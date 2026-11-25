@@ -65,7 +65,7 @@ class AgentLinkTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(json.loads(self.project.read('reagentlive.json')),
                          {'library': 'external/reagentlive', 'mcp': ['claude-code', 'copilot'], 'console': 'out/tool.exe',
-                          'dll': 'out/host.dll', 'check': True, 'improvement': 'user'})
+                          'dll': 'out/host.dll', 'check': True})
         self.assertIn('build_project.ps1 -Project .`, with `-Check` to check',
                       ' '.join(self.project.read('AGENTS.md').split()))
         claude = json.loads(self.project.read('.mcp.json'))['mcpServers']['reagentlive']
@@ -95,14 +95,14 @@ class AgentLinkTests(unittest.TestCase):
         self.project.put('CLAUDE.md', '# Claude notes\n')
         self.project.put('.mcp.json', json.dumps({'mcpServers': {'other': {'command': 'x'}}}))
         self.project.put('.gitignore', 'bin/')
-        code, out = self.link('--build', 'cmake --build out', '--check', 'no', '--improvement', 'dev')
+        code, out = self.link('--build', 'cmake --build out', '--check', 'no')
         self.assertEqual(code, 0, out)
         self.assertTrue(self.project.read('AGENTS.md').startswith('# My mod\n\nOur rules.\n\n<!-- reagentlive -->'))
         self.assertIn('<!-- reagentlive -->', self.project.read('CLAUDE.md'))
         self.assertEqual(set(json.loads(self.project.read('.mcp.json'))['mcpServers']), {'other', 'reagentlive'})
         self.assertTrue(self.project.read('.gitignore').startswith('bin/\n.claude/skills/reagentlive\n'))
         record = json.loads(self.project.read('reagentlive.json'))
-        self.assertEqual((record['build'], record['check'], record['improvement']), ('cmake --build out', False, 'dev'))
+        self.assertEqual((record['build'], record['check']), ('cmake --build out', False))
         agents = ' '.join(self.project.read('AGENTS.md').split())
         self.assertIn('Build: `cmake --build out` (it ticks only in the game', agents)
         self.assertNotIn('-Check', agents)  # check is false: no check to run
@@ -125,8 +125,7 @@ class AgentLinkTests(unittest.TestCase):
         cases = [(('--dll', 'out/host.dll'), '--console'),
                  (('--console', 'out/tool.exe', '--dll', '../host.dll'), 'inside the project'),
                  (('--console', 'out/tool.exe', '--dll', 'out/host.dll', '--mcp', 'x'), '--mcp'),
-                 (('--console', 'out/tool.exe', '--dll', 'out/host.dll', '--check', 'maybe'), '--check'),
-                 (('--console', 'out/tool.exe', '--dll', 'out/host.dll', '--improvement', 'x'), '--improvement')]
+                 (('--console', 'out/tool.exe', '--dll', 'out/host.dll', '--check', 'maybe'), '--check')]
         for args, word in cases:
             code, out = self.project.run(*args)
             self.assertEqual(code, 1, args)

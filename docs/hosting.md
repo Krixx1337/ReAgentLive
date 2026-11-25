@@ -59,7 +59,7 @@ copied from an example or not:
 - **`tools/agent_link.py --console <exe> --dll <dll>`** wires the project
   to that checkout: the project record `reagentlive.json` (where the
   checkout is, the clients, `console`, `dll`, an optional `build` command,
-  `check`, the skill's `improvement` mode), the ReAgentLive server in each
+  `check`), the ReAgentLive server in each
   client's project MCP file (the project's own when it has one), a
   ReAgentLive block in `AGENTS.md` and skill links (ignored by git); a
   skill folder the project tracks stays. It writes nothing outside the
