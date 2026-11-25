@@ -280,7 +280,9 @@ python -I "<project>\<sub>\tools\ida_setup.py" --install
 
 It passes when `state` is `current`: write `true` to the record's `ida`.
 On "no IDA Python found", ask for the `python.exe` IDA uses and add
-`--python <exe>`; on any other `why`, tell the user and skip. IDA runs the
+`--python <exe>`; on "landed in" (a Microsoft Store Python, before IDA
+made its folder), ask the user to start IDA once, then run it again; on
+any other `why`, tell the user and skip. IDA runs the
 copy of the project that set it up last.
 
 ## 10. Retire an old install

@@ -121,7 +121,21 @@ def install(loaders, python):
     for path in removed:
         os.remove(path)
     shutil.copyfile(STUB, os.path.join(loaders, STUB_NAME))
+    for path in (pth, os.path.join(loaders, STUB_NAME)):
+        where = redirected(path)
+        if where:
+            raise SystemExit(f'{path} landed in {where}: this Python (from the Microsoft Store) redirects new '
+                             'AppData files where IDA does not look. Start IDA once so it makes its folder, or '
+                             'run this script with a python.org Python')
     return {'path_file': pth, 'stub': os.path.join(loaders, STUB_NAME), 'removed': removed}
+
+
+def redirected(path):
+    """Where a file this process wrote really is when Windows redirected it (a Microsoft Store Python writing
+    a new AppData folder), else None."""
+    real = os.path.realpath(path)
+    moved = os.path.normcase(real) != os.path.normcase(os.path.abspath(path))
+    return real if moved and '\\localcache\\' in os.path.normcase(real) else None
 
 
 def main(argv=None):

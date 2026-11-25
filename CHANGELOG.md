@@ -56,6 +56,9 @@ tokens, one way to page, one count, one time unit.
 - **`xrefs`, `touches` and `sig-bytes` take a pointer chain** as `addr`
   ([pointer chains](docs/commands/native-objects.md#pointer-chains)).
 - **`find` pages reuse the first page's `total`** instead of recounting.
+- **`tools/ida_setup.py --install` fails loudly** when a Microsoft Store
+  Python redirected the loader where IDA does not look, instead of
+  reporting it installed.
 - **Codex and Cursor get the skill** through the project's
   `.agents/skills` link ([setup](docs/agents/setup.md#4-wire-the-agent));
   **a failed update rolls back** ([update](docs/agents/update.md#4-update)).
