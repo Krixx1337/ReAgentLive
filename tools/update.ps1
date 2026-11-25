@@ -95,7 +95,12 @@ function Update-Project([string]$dir) {
         if ($named) { $library = $named }
     }
     $sub = Join-Path $dir ($library -replace '/', '\')
-    if (-not (Test-Path (Join-Path $sub '.git'))) { Write-Host "SKIP ${label}: no reagentlive submodule at $sub"; return }
+    if (-not (Test-Path (Join-Path $sub '.git'))) {
+        # A clone made without its submodules lists the path with a leading '-'.
+        $status = @(Invoke-Git $dir @('submodule', 'status', '--', $library))
+        if ($status.Count -and $status[0].StartsWith('-')) { Fail "${label}: the submodule $library is not initialized: git -C `"$dir`" submodule update --init"; return }
+        Write-Host "SKIP ${label}: no reagentlive submodule at $sub"; return
+    }
 
     # Never move a submodule that holds work of its own.
     $changed = @(Invoke-Git $sub @('status', '--short', '--untracked-files=no'))

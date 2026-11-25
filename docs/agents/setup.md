@@ -34,9 +34,10 @@ The build script loads the developer shell itself (step 5): check CMake and
 Ninja again there before you report them missing.
 
 Then read the machine record, `%LOCALAPPDATA%\reagentlive\machine.json`.
-No file: this is the first project on the machine; with an old
-`setup.json` beside it (step 10), take that file's `improvement` as this
-record's. Its fields:
+No file: this is the first project on the machine. With an old
+`setup.json` beside it, take that file's `improvement` as this record's
+and do step 10 now, before any other step: its user-level MCP entry and
+skill links would clash with the project's. Its fields:
 
 | Field | Written by | Value |
 |---|---|---|
@@ -96,9 +97,10 @@ Ask the user, in one message:
    Write the answer to the machine record's `improvement`. With it
    already set, use it and say so in the report.
 
-A clone of a project wired earlier needs only `git submodule update
---init`, then step 4 with no arguments but `--project` (the record keeps
-the rest, the clients too), then step 5.
+A clone of a project wired earlier (it has `reagentlive.json`) carries
+everything step 4 writes. It needs `git submodule update --init`, step 1,
+step 5, and step 6 for Codex or another client without a project MCP
+file; then steps 8 and 9 as on any machine.
 
 ## 3. Put ReAgentLive into the project
 
@@ -261,10 +263,11 @@ command stalls the game once
 ([before the first command](../commands/unreal.md#before-the-first-command)).
 
 With an injector, add this line to the project's `AGENTS.md`, outside the
-ReAgentLive block (step 4 rewrites the block):
+ReAgentLive block (step 4 rewrites the block). It names no path: the file
+is committed, and each machine keeps its own injector:
 
 ```
-Load the DLL with <injector.exe> --process-name <target.exe> --inject <dll>, only into a process the user names.
+Load the DLL with the `injector` in %LOCALAPPDATA%\reagentlive\machine.json: --process-name <target.exe> --inject <dll>, only into a process the user names.
 ```
 
 ## 9. The IDA side, once per machine
@@ -319,7 +322,7 @@ Tell the user:
 │  ✓ Check     <status ok, ticking, packs; or skipped>  │
 │  ✓ Tier      <T0, or T1-T2 (T3 after game-thread on)> │
 │  ✓ MCP       reagentlive (<project file or client>)   │
-│  ✓ Skill     .claude\skills, .agents\skills (links)   │
+│  ✓ Skill     .claude\skills, .agents\skills (pointers)│
 │  ✓ Injector  <path, declined, or "skipped">           │
 │  ✓ IDA       <state, declined, or "skipped">          │
 │  ✓ Mode      <user, dev or off; asked or from record>  │

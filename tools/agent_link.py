@@ -95,7 +95,8 @@ def write_json(path, value):
 
 def block(clone, record, names):
     """The ReAgentLive lines for an agent in the project; names: its MCP servers."""
-    script = f'powershell -NoProfile -ExecutionPolicy Bypass -File {clone}/tools'
+    # -NonInteractive: an agent's shell may have a console, and update.ps1 asks only a person.
+    script = f'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {clone}/tools'
     own = f'{script}/build_project.ps1 -Project .'
     if record.get('build'):
         build = f"`{record['build']}`"
@@ -231,6 +232,17 @@ def server_name(servers, path):
     return names[0] if names else 'reagentlive'
 
 
+def allows_modify(entry, path):
+    """Refuses a committed server whose ceiling names modify: that is one person's, never the team's."""
+    if not is_server(entry):
+        return
+    args = entry['args']
+    for flag in ('--packs', '--allow'):
+        if flag in args and args.index(flag) + 1 < len(args) and 'modify' in str(args[args.index(flag) + 1]).split(','):
+            raise Refused(f'{path}: the ReAgentLive server names modify in {flag}; the file is committed, so take it '
+                          'out and keep it for yourself as a local-scope server (docs/client.md#mcp-tools)')
+
+
 def server_entry(entry, script, console):
     """The server entry with this script and console; its other keys and arguments (--packs, --allow, --name) stay."""
     if not is_server(entry):
@@ -303,6 +315,7 @@ def run(args):
         if not isinstance(servers, dict):
             raise Refused(f'{path}: `{key}` is not a JSON object: fix it')
         names[client] = server_name(servers, path)
+        allows_modify(servers.get(names[client]), path)
     kept = own_skills(project)
 
     written = []

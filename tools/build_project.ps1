@@ -23,6 +23,7 @@ if (-not $Project) {
     $Project = (git -C $root rev-parse --show-superproject-working-tree 2>$null)
     if (-not $Project) { Write-Host "FAIL arguments: $root is no git submodule of a project; pass -Project"; exit 1 }
 }
+if (-not (Test-Path $Project -PathType Container)) { Write-Host "FAIL arguments: -Project $Project is not a folder"; exit 1 }
 $Project = (Resolve-Path $Project).Path
 $recordPath = Join-Path $Project 'reagentlive.json'
 if (-not (Test-Path $recordPath)) {
@@ -70,7 +71,8 @@ function Step([string]$name, [string]$log, [scriptblock]$run) {
     # Windows PowerShell stops on a native tool's stderr line under Stop.
     $ErrorActionPreference = 'Continue'
     $start = Get-Date
-    & $run *> $log
+    # UTF-8 text lines (Windows PowerShell's *> writes UTF-16 and wraps stderr lines as error records).
+    & $run 2>&1 | ForEach-Object { "$_" } | Out-File $log -Encoding utf8
     $code = $LASTEXITCODE
     $seconds = [int]((Get-Date) - $start).TotalSeconds
     if ($code -eq 0) {

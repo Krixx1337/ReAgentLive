@@ -177,6 +177,12 @@ class AgentLinkTests(unittest.TestCase):
         # A pointer this script wrote is its own, tracked or not: a later run rewrites it.
         subprocess.run(['git', '-C', self.project.root, 'add', '.agents'], check=True)
         self.assertEqual(self.link()[1]['kept'], ['.claude/skills/reagentlive'])
+        # A committed ceiling with modify: refused (it is one person's).
+        servers['my-dev']['args'] += ['--allow', 'observe,modify']
+        self.project.put('.mcp.json', json.dumps({'mcpServers': servers}))
+        code, out = self.link()
+        self.assertIn('names modify in --allow', out['error'])
+        servers['my-dev']['args'] = servers['my-dev']['args'][:-2]
         # Two ReAgentLive servers: refused.
         servers['second'] = servers['my-dev']
         self.project.put('.mcp.json', json.dumps({'mcpServers': servers}))

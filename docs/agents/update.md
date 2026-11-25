@@ -29,7 +29,9 @@ folders and follow these steps for each.
   there is no project here. With
   `%LOCALAPPDATA%\reagentlive\setup.json` present, the user has an
   install from before projects: run [agent setup](setup.md) to make a
-  project; its last step retires the old install.
+  project; it retires the old install first.
+- `FAIL ... not initialized`: a clone made without its submodules. Run
+  `git -C "<project>" submodule update --init`, then start again.
 
 ## 2. Show what is coming
 
@@ -50,6 +52,7 @@ person at a terminal, it then asks whether to apply; under an agent
 | `PASS ... <old> -> <new>`, then the commits and `changelog` lines | what is coming | summarise in a few bullets; keep `<old>` for a roll back |
 | `NOTE ... protocol change` | every running target must be restarted and get the new DLL | step 6 |
 | `NOTE ... the MCP server changed` | the client must start the server again | step 5 |
+| `NOTE ... the skill's description changed` | the project's committed pointer skills copy it | step 5 |
 | `NOTE ... host headers changed` | the headers a host includes changed, so the project's host code may need the CHANGELOG's breaking changes | step 3 |
 
 How the protocol-change flag is found: the CHANGELOG line
@@ -92,9 +95,11 @@ then skip to step 8, and report `<old>` as the commit, and the failure.
 
 ## 5. Skill and MCP server
 
-**Skill:** nothing to do: the links point into the submodule, and the
-client reads the skill each session. A link missing (a fresh clone of the
-project): `python -I "<sub>\tools\agent_link.py" --project "<project>"`.
+**Skill:** nothing to do in most updates: the project's pointer skills send
+the agent to the submodule's skill, which moved with it. With step 2's
+skill `NOTE`, write the pointers again and tell the user their
+`SKILL.md` files changed, to commit with the submodule pointer:
+`python -I "<sub>\tools\agent_link.py" --project "<project>"`.
 
 **MCP server:** nothing to do in most updates: the server starts a console
 for each call, so it uses the rebuilt console on the next call and sends
@@ -125,8 +130,12 @@ Step 4's `PASS check` covers the build. Once the user runs a target with
 the new DLL (step 6), read its `status` too:
 
 ```powershell
-& "<project>\<console>" -c '{"verb": "status"}'
+Set-Content "$env:TEMP\rl-status.json" '{"verb": "status"}'
+& "<project>\<console>" -c "@$env:TEMP\rl-status.json"
 ```
+
+(A file, since Windows PowerShell 5.1 drops the inner quotes of a JSON
+argument.)
 
 | Check | Pass when |
 |---|---|

@@ -63,7 +63,7 @@ tokens, one way to page, one count, one time unit.
   Python redirected the loader where IDA does not look, instead of
   reporting it installed.
 - **Codex and Cursor get the skill** through the project's
-  `.agents/skills` link ([setup](docs/agents/setup.md#4-wire-the-agent));
+  `.agents/skills` pointer skill ([setup](docs/agents/setup.md#4-wire-the-agent));
   **a failed update rolls back** ([update](docs/agents/update.md#4-update)).
 
 ### Breaking
@@ -74,13 +74,14 @@ Setup and docs:
   gone:** your mod, or a new folder started from an example, carries it as
   a submodule; no clone of its own, no user-level MCP entry or skill link,
   and the project record `reagentlive.json` replaces
-  `%LOCALAPPDATA%\reagentlive\setup.json`.
+  `%LOCALAPPDATA%\reagentlive\setup.json` (your improvement mode moves to
+  `%LOCALAPPDATA%\reagentlive\machine.json`).
   An install from before: ask your agent to run the
-  [setup](docs/agents/setup.md) again; its last step retires the old one.
+  [setup](docs/agents/setup.md) again; it retires the old one first.
 - **Lessons live in the project:** `.reagentlive/lessons/` in the project
   root, committed with it by default so they survive a reinstall and reach
   the team (was `%LOCALAPPDATA%\reagentlive\lessons\`, lost with the
-  machine). Setup's last step moves old ones in; to keep them private,
+  machine). Setup moves old ones in; to keep them private,
   list the folder in your `.gitignore`.
 - **The docs index is `docs/README.md`** (was `docs/INDEX.md`): fix the
   `ReAgentLive docs:` line in your agent's instructions file. Commands
