@@ -9,17 +9,15 @@ game, start from [`examples/unreal`](../unreal/README.md) instead.
 Tier: T0 Core ([tiers](../../docs/tiers.md)); why and what it cannot do:
 [hosting](../../docs/hosting.md#own-thread-example).
 
-## Start a project from it
+## Build it
 
-This folder is a kit: copy it into a project of your own and build on
-`host.cpp` and `console.cpp`
-([starting from a kit](../../docs/hosting.md#starting-from-a-kit);
-[agent setup](../../docs/agents/setup.md) does it for you). The project's
-DLL and console are then named after it; below they keep this example's
-names.
+Use it here, or copy `CMakeLists.txt`, `host.cpp` and `console.cpp` into a
+project of your own as a starting point
+([starting from an example](../../docs/hosting.md#starting-from-an-example);
+[agent setup](../../docs/agents/setup.md) can do it for you).
 
-To build it here, in ReAgentLive's own tree, from a Visual Studio x64
-developer shell in the ReAgentLive folder:
+To build it here, from a Visual Studio x64 developer shell in the
+ReAgentLive folder:
 
 ```powershell
 cmake -S examples/own_thread -B build/own-thread -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -48,7 +46,7 @@ only, and needs a pid for the rest. `status` shows `host_thread: own` and
 
 - **Commands:** [console](../../docs/commands/console.md).
 - **MCP tools for an AI agent:** [agent setup](../../docs/agents/setup.md)
-  (it makes a project from this kit and registers the server).
+  (it starts a project from this example and registers the server).
 - **Unreal objects and engine calls (T1-T3):** the
   [Unreal example](../unreal/README.md).
 - **Your own host** (T4 with an SDK): [hosting](../../docs/hosting.md#host-checklist).

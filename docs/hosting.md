@@ -1,6 +1,6 @@
 # Hosting the agent
 
-*Home of:* putting the agent into a process: projects made from a kit, the host checklist, CMake targets and options, the `Tick` call, the host thread, the game-thread tick host API (`reagentlive::ue-draw`) and host verbs.
+*Home of:* putting the agent into a process: starting from an example, the agent tooling in a project, the host checklist, CMake targets and options, the `Tick` call, the host thread, the game-thread tick host API (`reagentlive::ue-draw`) and host verbs.
 
 **TL;DR:** The agent only runs when something inside the target calls its
 `Tick`: that code is the host. Start from an example DLL (any process, or
@@ -36,32 +36,42 @@ point for a real host, not a supported one.
 Each example uses its own section prefix, which keeps it apart from
 another host's agent in the same process.
 
-## Starting from a kit
+## Starting from an example
 
-Both examples are kits: a project of the user's own starts as a copy of
-one, and ReAgentLive stays apart from it, as the project's `reagentlive/`
-submodule, never edited there. `tools/new.ps1` makes the project in one
-command (the folder, the submodule, the copy through `tools/project.py
-init`, the build; [agent setup](agents/setup.md#3-create-and-build-the-project)
-runs it; by hand: the [README](../README.md#quick-start)):
+Either example works as a starting point outside this tree: copy its
+`CMakeLists.txt`, `host.cpp` and `console.cpp` into a project of your own
+that carries ReAgentLive as its `reagentlive/` submodule; the copied
+`CMakeLists.txt` finds the library there (elsewhere: set
+`REAGENTLIVE_DIR`). Change the section prefix
+(`SectionPrefix` in both files) to your own, so its console never attaches
+to another host's agent; rename the targets as you like. From then on the
+files are yours: an update of ReAgentLive never touches them, and the
+CHANGELOG's breaking entries say when the host API changes.
 
-- **The project's names:** the kit's files with the DLL, the console and
-  the section prefix renamed after the project (`<name>.dll`,
-  `<name>-console.exe`, `Local\<name>-<pid>`), so two projects never see
-  each other's agents. The kit's `CMakeLists.txt` finds the library in
-  `reagentlive/` when it is a project and two folders up in this tree.
-- **The agent files:** the project record `reagentlive.json` (kit, outputs,
-  packs, the skill's improvement mode), `AGENTS.md` and `CLAUDE.md`, a
-  project MCP file per client, and skill links into the submodule (ignored
-  by git; `project.py link` makes them again in a fresh clone).
-- **Building:** `reagentlive/tools/build_project.ps1` loads Visual Studio's
-  x64 environment, builds into `build/` and, with `-Check`, loads the DLL
-  into a throwaway Python process and checks its `status`.
-- **Updating:** `reagentlive/tools/update.ps1` previews, then with
-  `-Apply` moves the submodule to a newer commit, rebuilds and checks
-  (`-All`: every project on the machine); the project's copies of the
-  kit's files change only by hand, from the kit's diff
-  ([the update procedure](agents/update.md#3-bring-the-kits-changes-over)).
+## An agent in your project
+
+The agent tooling (the MCP server, the skill, the docs it reads) runs from
+the library's checkout, so a project that wants it carries ReAgentLive at
+a fixed path: a git submodule, anywhere in the project (with `FetchContent`
+or CPM the checkout lives in the build tree and moves). For any host,
+copied from an example or not:
+
+- **`tools/agent_link.py --console <exe> --dll <dll>`** wires the project
+  to that checkout: the project record `reagentlive.json` (where the
+  checkout is, the clients, `console`, `dll`, an optional `build` command,
+  `check`, the skill's `improvement` mode), the `reagentlive` server in each client's project MCP file, a
+  ReAgentLive block in `AGENTS.md`, skill links (ignored by git), and the
+  project in the machine's list of projects. Run again, it updates all of
+  it in place; a fresh clone of the project runs it once.
+- **`tools/build_project.ps1`** loads Visual Studio's x64 environment and
+  runs the record's `build`, or CMake on the project into `build/`. With
+  `-Check` it loads the DLL into a throwaway Python process and checks its
+  `status`, which fits a host that ticks on its own thread (`check` false
+  for one that ticks only inside the game).
+- **`tools/update.ps1`** previews an update (what is coming, and whether
+  the headers a host includes changed), then with `-Apply` moves the
+  submodule, rebuilds and checks; `-Rollback` goes back, `-All` runs on
+  every project on the machine.
 
 Each project pins its own commit, so updating one never breaks another;
 nothing is installed machine-wide. Why there is no global install or
@@ -117,9 +127,9 @@ Windows x64 with MSVC or clang-cl, CMake 3.25 or newer, C++23. On any other
 platform the library configures with a warning and defines no targets, so
 a cross-platform parent still configures.
 
-Add it as a submodule (a project from a kit does; the skill, the MCP
-server and the docs then sit at a fixed path in the project), or fetch it
-pinned to a release tag when the project only links the library:
+Add it as a submodule (the agent tooling then sits at a fixed path in the
+project: [an agent in your project](#an-agent-in-your-project)), or fetch
+it pinned to a release tag when the project only links the library:
 
 ```cmake
 add_subdirectory(reagentlive)

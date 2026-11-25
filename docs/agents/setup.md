@@ -1,19 +1,19 @@
 # ReAgentLive agent setup
 
-Instructions an AI agent follows to set up a ReAgentLive project on the
+Instructions an AI agent follows to set up ReAgentLive in a project on the
 user's machine; humans: see the [README](../../README.md).
 
-These steps make a project: a folder of the user's own, copied from one of
-ReAgentLive's kits, that builds a DLL to load into a running Windows x64
-process and the console your tools drive. ReAgentLive itself sits in the
-project as its `reagentlive/` submodule and is never edited there. Run
-every step yourself. Ask the user only where a step says to. Use
-PowerShell. `<project>`, `<name>` and `<kit>` are the values step 2 picks.
-The same steps make every further project: each is separate, with its own
-submodule, and an earlier one stays as it is. What belongs to the machine
-(the injector, the IDA side, the user's answers) is set up once and kept in
-the machine record, so a later project asks only about itself. Later
-updates: [the update procedure](update.md).
+ReAgentLive is a C++ library a project carries as a git submodule. These
+steps put it into a project, either the user's own (a mod that hosts the
+agent) or a new one started from an example, and wire you to it: the MCP
+server for the project's console, the skill, the docs. Run every step
+yourself. Ask the user only where a step says to. Use PowerShell.
+`<project>` is the project folder; `<sub>` the submodule's path in it
+(`reagentlive` unless the project put it elsewhere); `<console>` and
+`<dll>` the host's console and DLL, relative to `<project>`. Run the same
+steps for every further project: what belongs to the machine (the
+injector, the IDA side, the user's answers) is set up once and kept in the
+machine record. Later updates: [the update procedure](update.md).
 
 ## 1. Check the machine
 
@@ -30,20 +30,20 @@ without asking the user.
 | Python 3.10 or newer | `python --version` | ask |
 | The MCP Python SDK 2 | `python -c "import mcp.server.subscriptions"` | `python -m pip install --upgrade "mcp>=2"` (ask first) |
 
-The build script loads the developer shell itself (step 4): check CMake and
+The build script loads the developer shell itself (step 5): check CMake and
 Ninja again there before you report them missing.
 
 Then read the machine record, `%LOCALAPPDATA%\reagentlive\machine.json`.
 No file: this is the first project on the machine; with an old
-`setup.json` beside it (step 9), take that file's `improvement` as this
+`setup.json` beside it (step 10), take that file's `improvement` as this
 record's. Its fields:
 
 | Field | Written by | Value |
 |---|---|---|
-| `projects` | `project.py` (step 3) | every project made or linked on this machine, absolute paths |
+| `projects` | `agent_link.py` (step 4) | every project wired on this machine, absolute paths |
 | `improvement` | step 2 | the user's answer, the default for every later project |
-| `injector` | step 7 | the path of `Injector.exe`, or `declined` |
-| `ida` | step 8 | `true` once the IDA side is set up, or `declined` |
+| `injector` | step 8 | the path of `Injector.exe`, or `declined` |
+| `ida` | step 9 | `true` once the IDA side is set up, or `declined` |
 
 Write a field this way (it keeps the others; for `true`, pass `$true`,
 not a string):
@@ -59,30 +59,33 @@ New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
 `WriteAllText` writes UTF-8 without a byte order mark, which every JSON
 reader accepts.
 
-## 2. Ask what to make
+## 2. Ask about the project
 
-Ask the user, in one message (question 4 only when the machine record has
-no `improvement`):
+Ask the user, in one message:
 
-1. "Is the target any Windows x64 process, or an Unreal Engine 5 game?"
-   That picks the kit:
+1. "Should ReAgentLive go into a project of yours (a mod that hosts it),
+   or into a new one to look at a game?"
+   - **Their project:** ask for its folder (`<project>`), its console and
+     DLL once built (`<console>`, `<dll>`), its build command when it is
+     not a CMake project at the folder's top, and whether its host ticks
+     on a thread of its own (a `-Check` test can load it) or only inside
+     the game. Its own notes win; [hosting](../hosting.md) says what a
+     host needs.
+   - **A new one:** "Is the target any Windows x64 process, or an Unreal
+     Engine 5 game?" picks the example:
 
-   | Target | `<kit>` | Starts at |
-   |---|---|---|
-   | Any x64 process | `own_thread` ([kit](../../examples/own_thread/README.md)) | T0 |
-   | A UE5 game (no dump, no mod needed) | `unreal` ([kit](../../examples/unreal/README.md)) | T1-T2; T3 once `game-thread` is on |
+     | Target | `<example>` | `<console>` | `<dll>` | Starts at |
+     |---|---|---|---|---|
+     | Any x64 process | [`own_thread`](../../examples/own_thread/README.md) | `build/reagentlive.exe` | `build/reagentlive-own-thread.dll` | T0 |
+     | A UE5 game (no dump, no mod needed) | [`unreal`](../../examples/unreal/README.md) | `build/reagentlive-ue.exe` | `build/reagentlive-unreal.dll` | T1-T2; T3 once `game-thread` is on |
 
-   What each tier can do: [tiers](../tiers.md).
-2. "What should the project be called?" `<name>`: lowercase letters,
-   digits and dashes, starting with a letter, at most 32, not starting
-   with `reagentlive` (the library's targets). It names the DLL
-   (`<name>.dll`), the console (`<name>-console.exe`) and the agent's
-   section, so two projects never see each other's agents.
-3. "Where should it go?" `<project>`: wherever the user keeps their
-   code; there is no default, and the machine record lists every project
-   wherever it is. It must not exist yet, or be an empty folder.
-4. "Do you use ReAgentLive as a user or as a developer?" picks
-   `<improvement>`: after a task the skill reviews what slowed it down
+     What each tier can do: [tiers](../tiers.md). Then ask for a short
+     name (`<name>`: lowercase letters, digits and dashes; it names the
+     agent's section) and a folder (`<project>`: new or empty, wherever
+     the user keeps their code; there is no default).
+2. Only when the machine record has no `improvement`: "Do you use
+   ReAgentLive as a user or as a developer?" picks `<improvement>`: after
+   a task the skill reviews what slowed it down
    ([the improvement guide](../../.claude/skills/reagentlive/references/improving.md)).
 
    | Answer | `<improvement>` | The skill may |
@@ -94,101 +97,107 @@ no `improvement`):
    Write the answer to the record's `improvement`. With the record's
    `improvement` already set, use it and say so in the report.
 
-A mod with a host of its own does not start from a kit: it adds the
-submodule and links a target ([hosting](../hosting.md#using-it-in-your-project));
-its own notes say how it builds. A clone of a project made earlier needs
-no kit either: `git clone --recurse-submodules <url> <project>`, then
-`python -I <project>\reagentlive\tools\project.py link`, then steps 4 to 9.
+A clone of a project wired earlier needs only `git submodule update
+--init`, then step 4 with no arguments but `--project` (the record keeps
+the rest, the clients too), then step 5.
 
-## 3. Create and build the project
+## 3. Put ReAgentLive into the project
 
-One script does steps 3 and 4: it checks the machine again, creates
-`<project>` with ReAgentLive as its `reagentlive/` submodule, runs
-`tools/project.py init` and builds with `-Check`. No clone exists yet, so
-run it from the repository:
+**Their project**, when `git -C <project> submodule status` does not list
+ReAgentLive yet:
 
 ```powershell
-& ([scriptblock]::Create((Invoke-RestMethod https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/tools/new.ps1))) -Kit <kit> -Name <name> -Dir "<project>" -Improvement <improvement> -Mcp <clients>
+git -C "<project>" submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
 ```
 
-`<clients>` lists the clients that read a project MCP file,
-comma-separated: `claude-code` (`.mcp.json`), `cursor`
-(`.cursor/mcp.json`), `copilot` (`.vscode/mcp.json`). For Codex or another
-client, pass `claude-code` and register it by hand in step 5. Pass every
-argument: the script asks only a person at a terminal, so under an agent
-a missing one is a `FAIL arguments` line, never a prompt. Each step
-prints `PASS` or `FAIL`; the first `FAIL` stops it. A `FAIL` before `git
-init` (a missing prerequisite, a folder that is not empty) has created
-nothing: report it, fix it with the user, run it again. A later one leaves
-`<project>` (and, once `project.py` ran, its entry in the machine record's
-`projects`): report it; once fixed, remove the folder and that entry and
-run it again. Run from the web, the script returns instead of exiting, so
-the shell stays open.
+Then link the project's targets to the library
+([using it in your project](../hosting.md#using-it-in-your-project)) when
+it does not yet, with the user.
 
-`project.py` copies the kit's `CMakeLists.txt`, `host.cpp` and
-`console.cpp` with the project's names, and writes:
+**A new one:**
+
+```powershell
+New-Item -ItemType Directory -Force "<project>" | Out-Null
+git -C "<project>" init
+git -C "<project>" submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
+Copy-Item "<project>\reagentlive\examples\<example>\CMakeLists.txt", "<project>\reagentlive\examples\<example>\host.cpp", "<project>\reagentlive\examples\<example>\console.cpp" "<project>"
+Set-Content "<project>\.gitignore" "build/"
+```
+
+In the copied `host.cpp` and `console.cpp`, set `SectionPrefix` to
+`L"Local\\<name>-"` (both files the same), so this project's console never
+attaches to another project's agent
+([starting from an example](../hosting.md#starting-from-an-example)). The
+files are the user's from now on.
+
+## 4. Wire the agent
+
+```powershell
+python -I "<project>\<sub>\tools\agent_link.py" --project "<project>" --console <console> --dll <dll> --improvement <improvement> --mcp <clients>
+```
+
+Add `--build "<command>"` for a project with a build of its own, and
+`--check no` for a host that ticks only inside the game. `<clients>` lists
+the clients that read a project MCP file, comma-separated: `claude-code`
+(`.mcp.json`), `cursor` (`.cursor/mcp.json`), `copilot`
+(`.vscode/mcp.json`). For Codex or another client, pass `claude-code` and
+register it by hand in step 6.
+
+It prints one JSON object; `error`: report it and stop (a refusal changes
+nothing). It writes, keeping what the project already has:
 
 | File | What |
 |---|---|
-| `reagentlive.json` | the project record: `kit`, `name`, `dll`, `console`, `packs`, `improvement`; the skill, the scripts and [the update procedure](update.md) read it |
-| `AGENTS.md`, `CLAUDE.md` | for an agent in the project: read the skill, where the docs are, how to build and update |
-| `README.md` | for the user: the same, by hand |
-| `.gitignore` | `build/` and the skill links |
-| the MCP files of `<clients>` | step 5 |
+| `reagentlive.json` | the project record: `library` (the submodule's path), `mcp` (the clients), `console`, `dll`, `build`, `check`, `improvement`; the skill and the scripts read it |
+| the MCP files of `<clients>` | the `reagentlive` server; other servers stay |
+| `AGENTS.md` | a ReAgentLive block (read the skill, the docs, build, update); `CLAUDE.md` imports it, or gets the block when it does not |
+| `.gitignore` | the skill links |
 
-It also adds the project to the machine record's `projects`, and links
-the skill into `.claude\skills\reagentlive` (Claude Code) and
+It links the skill into `.claude\skills\reagentlive` (Claude Code) and
 `.agents\skills\reagentlive` (Codex, Cursor and others that read Agent
 Skills there), each a junction into the submodule, so updating the
-submodule updates the skill. A client without Agent Skills reads the
-skill through `AGENTS.md`'s first line.
+submodule updates the skill; a client without Agent Skills reads it
+through the `AGENTS.md` block. It adds the project to the machine record's
+`projects`. Run it again after any change to these values.
 
-## 4. Build and check
-
-The build ran as the last part of step 3; to run it again (after a fix,
-or for a clone of a project made earlier):
+## 5. Build and check
 
 ```powershell
-powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<project>\reagentlive\tools\build_project.ps1" -Check
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<project>\<sub>\tools\build_project.ps1" -Project "<project>" -Check
 ```
 
-The build script loads the x64 Visual Studio environment itself and builds the
-project into `<project>\build` (the first build fetches the library's
-dependencies, so it needs network access). It prints one `PASS` or `FAIL`
-line per step and the console and DLL paths. Exit 2: the environment did
-not load (step 1's Visual Studio check); exit 1: a step failed, and its
-`FAIL` line names the log under `<project>\build\logs`. Report a failure;
-do not work around it.
+Leave out `-Check` when the record's `check` is false. The script loads
+the x64 Visual Studio environment itself and runs the record's `build`, or
+CMake on the project into `<project>\build` (the first build fetches the
+library's dependencies, so it needs network access). It prints one `PASS`
+or `FAIL` line per step and the console and DLL paths. Exit 2: the
+environment did not load (step 1's Visual Studio check); exit 1: a step
+failed, and its `FAIL` line names the log under `<project>\build\logs`.
+Report a failure; do not work around it.
 
 `-Check` then loads the DLL into a throwaway Python process, asks it for
-`status` (and, for the `unreal` kit, `help` for `game-thread`; both only
-read) and ends the process:
-
-| Kit | `PASS check` means |
-|---|---|
-| own_thread | `status` ok, ticking, `host_thread` `own`, no packs, and the submodule's commit |
-| unreal | the same with packs `ue` and `game_thread` mode `off` (the DLL has the Draw tick); the console knows `game-thread` |
-
-A `FAIL check` line names each failed check: report it. Do not run Unreal
-commands such as `find` in a Python process (no engine), and never send
-`game-thread` as a check: it arms the tick.
+`status` (it only reads) and ends the process. `PASS check` means `status`
+ok, ticking, and the submodule's commit; it names the `host_thread` and
+the packs (`[]` for `own_thread`, `[ue]` for `unreal`). A `FAIL check`
+line names each failed check: report it. Do not run Unreal commands such
+as `find` in a Python process (no engine).
 
 In the real target, `status` tells you the tier
 ([how to read it](../tiers.md#read-your-tier-from-status)).
 `{"verb": "game-thread", "args": {"action": "on"}}` moves a UE5 agent onto
 the game thread for engine calls, and needs the user's approval first.
 
-## 5. Register the MCP server
+## 6. Register the MCP server
 
 MCP tools are your default way to drive the agent; when to use Python or
 the console instead is the skill's
 [`interfaces.md`](../../.claude/skills/reagentlive/references/interfaces.md).
-The server is `reagentlive/src/reagentlive/frontends/mcp/reagentlive_mcp.py`
+The server is `<sub>/src/reagentlive/frontends/mcp/reagentlive_mcp.py`
 with `--console` set to the project's console; optional flags `--packs`
 and `--allow` (name `modify` only for a session that may write):
 [MCP tools](../client.md#mcp-tools).
 
-- **Claude Code, Cursor, Copilot:** step 3 wrote the project's MCP file.
+- **Claude Code, Cursor, Copilot:** step 4 wrote the project's MCP file.
   The client asks once to allow the project's server; Claude Code runs it
   from the folder it starts in, so start it in `<project>`.
 - **Codex and other clients:** register it under the name `reagentlive`
@@ -196,32 +205,33 @@ and `--allow` (name `modify` only for a session that may write):
   replaces the entry.
 
   ```powershell
-  codex mcp add reagentlive -- python "<project>\reagentlive\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<project>\build\<name>-console.exe"
+  codex mcp add reagentlive -- python "<project>\<sub>\src\reagentlive\frontends\mcp\reagentlive_mcp.py" --console "<project>\<console>"
   ```
 
 Tools that write or call into the process are marked destructive, so the
 client asks first. Which writes need approval is the skill's rule.
 
-## 6. (Optional) Generate the typed functions
+## 7. (Optional) Generate the typed functions
 
 Only for Python scripts; the MCP server needs no module (it reads the
 console's table each time it starts).
 
 ```powershell
-python "<project>\reagentlive\src\reagentlive\frontends\python\reagentlive_gen.py" --console "<project>\build\<name>-console.exe" -o "<project>\build\console_api.py"
+python "<project>\<sub>\src\reagentlive\frontends\python\reagentlive_gen.py" --console "<project>\<console>" -o "<project>\build\console_api.py"
 ```
 
-It prints the number of verbs and the table hash. [The update
-procedure](update.md) generates it again when the file exists. How scripts
-use it: [generated functions](../client.md#generated-python-functions).
+It prints the number of verbs and the table hash. The update script
+generates it again when the file exists. How scripts use it:
+[generated functions](../client.md#generated-python-functions).
 
-## 7. The injector, once per machine
+## 8. The injector, once per machine
 
-ReAgentLive does not load itself. The machine record's `injector` is a
-path: use it (gone from disk: ask again). `declined`: skip. Neither: ask
-whether the user wants [Injector](https://github.com/nefarius/Injector)
-(MIT, third-party command-line DLL injector); if they have a loader or say
-no, write `declined` and skip.
+ReAgentLive does not load itself. A mod is loaded with the game; skip this
+for it. The machine record's `injector` is a path: use it (gone from disk:
+ask again). `declined`: skip. Neither: ask whether the user wants
+[Injector](https://github.com/nefarius/Injector) (MIT, third-party
+command-line DLL injector); if they have a loader or say no, write
+`declined` and skip.
 
 ```powershell
 $dir = "$env:LOCALAPPDATA\reagentlive\injector"
@@ -239,8 +249,8 @@ antivirus quarantines it, tell the user and skip.
 Load the DLL into a process by name or by pid:
 
 ```powershell
-& "<injector.exe>" --process-name <target.exe> --inject "<project>\build\<name>.dll"
-& "<injector.exe>" --process-id <pid> --inject "<project>\build\<name>.dll"
+& "<injector.exe>" --process-name <target.exe> --inject "<project>\<dll>"
+& "<injector.exe>" --process-id <pid> --inject "<project>\<dll>"
 ```
 
 Inject only into a process the user names. The DLL is never unloaded: no
@@ -248,13 +258,14 @@ Inject only into a process the user names. The DLL is never unloaded: no
 command stalls the game once
 ([before the first command](../commands/unreal.md#before-the-first-command)).
 
-With an injector, add this line to the project's `AGENTS.md`:
+With an injector, add this line to the project's `AGENTS.md`, outside the
+ReAgentLive block (step 4 rewrites the block):
 
 ```
-Load the DLL with <injector.exe> --process-name <target.exe> --inject build\<name>.dll, only into a process the user names.
+Load the DLL with <injector.exe> --process-name <target.exe> --inject <dll>, only into a process the user names.
 ```
 
-## 8. The IDA side, once per machine
+## 9. The IDA side, once per machine
 
 The machine record's `ida` is `declined`: skip. Otherwise ask whether the
 user uses IDA Pro 9 and wants live decompiling
@@ -263,7 +274,7 @@ whether IDA should run this project's copy from now on. No: skip (write
 `declined` when `ida` was unset).
 
 ```powershell
-python -I "<project>\reagentlive\tools\ida_setup.py" --install
+python -I "<project>\<sub>\tools\ida_setup.py" --install
 ```
 
 It passes when `state` is `current`: write `true` to the record's `ida`.
@@ -271,7 +282,7 @@ On "no IDA Python found", ask for the `python.exe` IDA uses and add
 `--python <exe>`; on any other `why`, tell the user and skip. IDA runs the
 copy of the project that set it up last.
 
-## 9. Retire an old install
+## 10. Retire an old install
 
 Only when `%LOCALAPPDATA%\reagentlive\setup.json` exists: an install from
 before projects, a clone of its own (the record's `dir`) with a user-level
@@ -291,15 +302,15 @@ MCP entry and skill link. Ask the user before each removal:
 Keep `%LOCALAPPDATA%\reagentlive\lessons\` and `machine.json`: they serve
 every project.
 
-## 10. Report
+## 11. Report
 
 Tell the user:
 
 ```
 ┌─ ReAgentLive setup complete ──────────────────────────┐
-│  ✓ Project   <project> (<kit> kit)                    │
-│  ✓ Built     <name>.dll, <name>-console.exe            │
-│  ✓ Check     status ok, ticking, packs <packs>        │
+│  ✓ Project   <project> (<theirs, or the example>)     │
+│  ✓ Built     <dll>, <console>                         │
+│  ✓ Check     <status ok, ticking, packs; or skipped>  │
 │  ✓ Tier      <T0, or T1-T2 (T3 after game-thread on)> │
 │  ✓ MCP       reagentlive (<project file or client>)   │
 │  ✓ Skill     .claude\skills, .agents\skills (links)   │
@@ -314,7 +325,7 @@ Tell the user:
 └───────────────────────────────────────────────────────┘
 ```
 
-Then say in one line that `host.cpp` and `console.cpp` are theirs to build
-on ([hosting](../hosting.md); a UE5 mod with its SDK hosts it for T4), that
-the project is a git repository they can commit when they like, and that
-"update ReAgentLive" updates it later.
+Then say in one line that the project's code is theirs to build on
+([hosting](../hosting.md); a UE5 mod with its SDK hosts it for T4), that
+the submodule pointer and the new files are theirs to commit when they
+like, and that "update ReAgentLive" updates it later.

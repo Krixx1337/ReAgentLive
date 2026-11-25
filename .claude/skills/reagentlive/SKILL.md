@@ -101,7 +101,7 @@ This skill:
 
 ## Installing or updating ReAgentLive
 
-Procedures: `docs/agents/setup.md` (a new project from a kit) and
+Procedures: `docs/agents/setup.md` (ReAgentLive into a project) and
 `docs/agents/update.md` (a project's `reagentlive/` submodule). Never edit
 the submodule. Fetch first (`git -C <clone> fetch origin`) and read
 `git -C <clone> show origin/main:docs/agents/update.md` (offline: the local

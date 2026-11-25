@@ -25,37 +25,47 @@ Paste this into Claude Code, Codex, Cursor or any coding agent:
 Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/setup.md and follow it.
 ```
 
-The agent makes a project of your own from a starter kit, builds it,
-registers its MCP tools, links the skill and checks the result. It may
-offer a command-line DLL loader; say no if you load DLLs your own way.
+The agent puts ReAgentLive into your project (a mod that hosts it) or a
+new one started from an example, builds it, registers its MCP tools,
+links the skill and checks the result. It may offer a command-line DLL
+loader; say no if you load DLLs your own way.
 
-By hand, pick the kit for your target:
-
-| Your target | Kit | Tier |
-|---|---|---|
-| Any Windows x64 process | [`own_thread`](examples/own_thread/README.md) | T0 |
-| Any UE5 game, no dump, no mod | [`unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
-| A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
-
-and make a project from it, in a new folder (it checks your machine,
-creates the folder, builds and checks the result; leave out the arguments
-to be asked for them):
+**By hand**, it is a C++ library. Add it to your project as a submodule
+and link a target ([hosting](docs/hosting.md#using-it-in-your-project)):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/tools/new.ps1))) -Kit unreal -Name my-tool -Dir C:\code\my-tool
+git submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
 ```
 
-`host.cpp` and `console.cpp` are yours to build on; ReAgentLive stays in
-`reagentlive/`, pinned, and you never edit it there
-([starting from a kit](docs/hosting.md#starting-from-a-kit)).
+```cmake
+add_subdirectory(reagentlive)
+target_link_libraries(my-host PRIVATE reagentlive::ue-base)     # the DLL inside the target
+target_link_libraries(my-console PRIVATE reagentlive::console)  # the console your agent drives
+```
 
-**Another project** (a second game, a new mod): paste the same prompt
-again, or run the same command with a new name and folder. Each project pins its
-own ReAgentLive, so updating one never touches another.
+No host yet? Copy an example's three files into your project and build on
+them ([starting from an example](docs/hosting.md#starting-from-an-example)):
+
+| Your target | Start from | Tier |
+|---|---|---|
+| Any Windows x64 process | [`examples/own_thread`](examples/own_thread/README.md) | T0 |
+| Any UE5 game, no dump, no mod | [`examples/unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
+| A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
+
+Then wire your agent to it: MCP server, skill and instructions, for any
+host ([an agent in your project](docs/hosting.md#an-agent-in-your-project)):
+
+```powershell
+python -I reagentlive\tools\agent_link.py --console build\reagentlive-ue.exe --dll build\reagentlive-unreal.dll
+```
+
+Every project carries its own pinned ReAgentLive, so updating one never
+touches another.
 
 **To update later** (move the submodule, rebuild, re-inject, check), ask
-your agent to "update ReAgentLive": the skill routes it. Without the
-skill, paste:
+your agent to "update ReAgentLive": the skill routes it. By hand:
+`reagentlive\tools\update.ps1` shows what is coming and asks to apply it.
+Without the skill, paste:
 
 ```text
 Read https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/docs/agents/update.md and follow it.

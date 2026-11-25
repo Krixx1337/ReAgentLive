@@ -5,13 +5,14 @@
 #   reagentlive/tools/update.ps1 -Apply           moves the submodule, rebuilds, checks, regenerates console_api.py
 #   reagentlive/tools/update.ps1 -Rollback <old>  moves it back to <old> and rebuilds
 #
-# -Project picks the project (default: the folder that holds this clone); -All runs on every project in
+# -Project picks the project (default: the git project this clone is a submodule of); -All runs on every project in
 # the machine record (docs/agents/setup.md#1-check-the-machine), each with its own copy of the scripts;
 # -Revision updates to a branch, tag or commit instead of origin/main. Preview only reads (it fetches).
-# Lines: PASS, FAIL, SKIP, and NOTE for what the user must still decide or do: the kit's changes to bring
-# into the project's own files, a protocol change (restart the targets), a changed MCP server (restart
-# the session). The kit's changes are never applied here: they go into the user's own code. A project
-# without reagentlive.json (a host of its own) is moved but not built. Exits 1 on any FAIL. A person at a
+# Lines: PASS, FAIL, SKIP, and NOTE for what the user must still decide or do: changed host headers (the
+# host's code may need the CHANGELOG's breaking changes), a protocol change (restart the targets), a
+# changed MCP server (restart the session). The host's code is never changed here. A project without
+# reagentlive.json is moved but not built. The build runs -Check unless the record's `check` is false (a
+# host that ticks only inside the game). Exits 1 on any FAIL. A person at a
 # terminal is asked after the preview whether to apply it; with redirected input or -NonInteractive (an
 # agent) the preview only prints, and the agent runs -Apply once the user agrees.
 # Windows PowerShell 5.1 and PowerShell 7.
@@ -58,9 +59,11 @@ function Build([string]$dir, [string]$sub, [string]$label) {
     }
     # In its own process, with its own copy of the script: its errors cannot end this one, and the
     # execution policy is bypassed for it. Its lines go to the host; only its exit code counts.
-    & $script:shell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $sub 'tools\build_project.ps1') -Project $dir -Check | Out-Host
-    if ($LASTEXITCODE -ne 0) { return $false }
     $record = Get-Content (Join-Path $dir 'reagentlive.json') -Raw | ConvertFrom-Json
+    $check = @()
+    if ($record.check -ne $false) { $check = @('-Check') }
+    & $script:shell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $sub 'tools\build_project.ps1') -Project $dir @check | Out-Host
+    if ($LASTEXITCODE -ne 0) { return $false }
     $api = Join-Path $dir 'build\console_api.py'
     if (Test-Path $api) {
         $gen = Join-Path $sub 'src\reagentlive\frontends\python\reagentlive_gen.py'
@@ -87,8 +90,15 @@ function Resolve-Revision([string]$sub) {
 
 function Update-Project([string]$dir) {
     $label = Split-Path -Leaf $dir
-    $sub = Join-Path $dir 'reagentlive'
-    if (-not (Test-Path (Join-Path $sub '.git'))) { Write-Host "SKIP ${label}: no reagentlive submodule in $dir"; return }
+    # The record names where the project carries ReAgentLive; without one, reagentlive/.
+    $library = 'reagentlive'
+    $recordPath = Join-Path $dir 'reagentlive.json'
+    if (Test-Path $recordPath) {
+        $named = (Get-Content $recordPath -Raw | ConvertFrom-Json).library
+        if ($named) { $library = $named }
+    }
+    $sub = Join-Path $dir ($library -replace '/', '\')
+    if (-not (Test-Path (Join-Path $sub '.git'))) { Write-Host "SKIP ${label}: no reagentlive submodule at $sub"; return }
 
     # Never move a submodule that holds work of its own.
     $changed = @(Invoke-Git $sub @('status', '--short', '--untracked-files=no'))
@@ -97,8 +107,8 @@ function Update-Project([string]$dir) {
     if ($Rollback) {
         Invoke-Git $sub @('checkout', '--detach', "$Rollback^{commit}") | Out-Null
         if ($script:gitCode -ne 0) { Fail "${label}: cannot check out $Rollback"; return }
-        if (Build $dir $sub $label) { Write-Host "PASS ${label}: rolled back to $Rollback; undo any kit edits made for the update" }
-        else { Fail "${label}: rolled back to $Rollback, but the build fails; undo the kit edits made for the update and build again" }
+        if (Build $dir $sub $label) { Write-Host "PASS ${label}: rolled back to $Rollback; undo any host edits made for the update" }
+        else { Fail "${label}: rolled back to $Rollback, but the build fails; undo the host edits made for the update and build again" }
         return
     }
     $branch = (Invoke-Git $sub @('branch', '--show-current'))
@@ -121,20 +131,20 @@ function Update-Project([string]$dir) {
     if ($protocol.Count -or $protocolLine.Count) { Write-Host "NOTE ${label}: protocol change: restart every target and load the new DLL into the fresh process" }
     $server = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', 'src/reagentlive/frontends/mcp', 'src/reagentlive/frontends/python'))
     if ($server.Count) { Write-Host "NOTE ${label}: the MCP server changed: restart the agent's session after the update" }
-    $kitChanged = $false
-    $kit = $null
-    $recordPath = Join-Path $dir 'reagentlive.json'
-    if (Test-Path $recordPath) { $kit = (Get-Content $recordPath -Raw | ConvertFrom-Json).kit }
-    if ($kit) {
-        $kitFiles = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', "examples/$kit"))
-        if ($kitFiles.Count) {
-            $kitChanged = $true
-            Write-Host "NOTE ${label}: the $kit kit changed ($($kitFiles -join ', ')); bring what the project needs into its own files: git -C `"$sub`" diff $old $new -- examples/$kit"
-        }
+    # The headers a host includes (docs/hosting.md): a change there may need the host's code to follow.
+    $hostHeaders = @(Invoke-Git $sub @('diff', '--name-only', $old, $new, '--', 'src/reagentlive/core/agent.h',
+        'src/reagentlive/core/protocol.h', 'src/reagentlive/packs/*/protocol_*.h', 'src/reagentlive/core/client.h',
+        'src/reagentlive/packs/*/client_*.h',
+        'src/reagentlive/packs/*/agent_*.h', 'src/reagentlive/packs/*/host_*.h', 'src/reagentlive/frontends/cli/console/console.h',
+        'src/reagentlive/frontends/cli/call/build.h', 'src/reagentlive/frontends/cli/call/verb.h',
+        'src/reagentlive/frontends/cli/results/schema.h', ':(exclude)src/reagentlive/packs/*/agent_*_internal.h',
+        ':(exclude)src/reagentlive/packs/*/agent_*_base.h'))
+    if ($hostHeaders.Count) {
+        Write-Host "NOTE ${label}: host headers changed ($($hostHeaders -join ', ')); the host's code may need the CHANGELOG's breaking changes; the examples show the new use: git -C `"$sub`" diff $old $new -- examples"
     }
     if (-not $Apply) {
         $question = "Apply the update to ${label}? [y/N]"
-        if ($kitChanged) { $question = "Apply the update to ${label}? Bring the kit's changes over first if the build needs them. [y/N]" }
+        if ($hostHeaders.Count) { $question = "Apply the update to ${label}? The host may need changes first. [y/N]" }
         if (-not $script:interactive -or (Read-Host $question) -notmatch '^(y|yes)$') {
             Write-Host "  preview only: run again with -Apply to update"
             return
@@ -146,7 +156,7 @@ function Update-Project([string]$dir) {
     if (Build $dir $sub $label) {
         Write-Host "PASS ${label}: updated to $new; the project's submodule pointer changed: commit it when you like"
     } else {
-        Fail "${label}: the build or check fails at $new; a missing kit change is the usual cause. To go back: update.ps1 -Project `"$dir`" -Rollback $old"
+        Fail "${label}: the build or check fails at $new; a host change the update needs is the usual cause. To go back: update.ps1 -Project `"$dir`" -Rollback $old"
     }
 }
 
@@ -161,7 +171,10 @@ if ($All) {
     }
     $projects = @($projects | Where-Object { Test-Path $_ })
 } else {
-    if (-not $Project) { $Project = Split-Path -Parent $here }
+    if (-not $Project) {
+        $Project = (git -C $here rev-parse --show-superproject-working-tree 2>$null)
+        if (-not $Project) { Write-Host "FAIL arguments: $here is no git submodule of a project; pass -Project"; exit 1 }
+    }
     $projects = @((Resolve-Path $Project).Path)
 }
 foreach ($dir in $projects) { Update-Project $dir }

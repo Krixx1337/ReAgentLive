@@ -31,14 +31,15 @@ tokens, one way to page, one count, one time unit.
 
 ### New
 
-- **Projects from a kit:** setup copies the `own_thread` or `unreal` kit
-  into a folder of your own, named after it, with ReAgentLive as its
-  pinned `reagentlive/` submodule and the skill and MCP server set up for
-  that project. By hand, one command: `tools/new.ps1`, which asks for
-  what you leave out ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
-- **Updates are a script too:** `tools/update.ps1` previews what is coming,
-  `-Apply` moves, rebuilds and checks, `-Rollback` goes back, `-All` runs
-  on every project ([update](docs/agents/update.md)).
+- **Wire your agent to any host project:** `tools/agent_link.py --console
+  <exe> --dll <dll>` writes the project's MCP server entry, an `AGENTS.md`
+  block and the skill links for the ReAgentLive submodule it carries, for
+  a mod of your own or a copy of an example
+  ([an agent in your project](docs/hosting.md#an-agent-in-your-project)).
+- **Build, check and update a project by script:** `tools/build_project.ps1
+  -Check`; `tools/update.ps1` previews what is coming (and whether the
+  host headers changed), `-Apply` moves, rebuilds and checks, `-Rollback`
+  goes back, `-All` runs on every project ([update](docs/agents/update.md)).
 - **Later projects ask only about themselves:** the injector, the IDA side
   and your improvement mode are set up once and kept in
   `%LOCALAPPDATA%\reagentlive\machine.json`, which also lists every
@@ -54,17 +55,18 @@ tokens, one way to page, one count, one time unit.
   ([pointer chains](docs/commands/native-objects.md#pointer-chains)).
 - **`find` pages reuse the first page's `total`** instead of recounting.
 - **Codex and Cursor get the skill** through the project's
-  `.agents/skills` link ([setup](docs/agents/setup.md#3-create-and-build-the-project));
-  **an update shows the kit's changes** for your copies of its files, and
-  **a failed update rolls back** ([update](docs/agents/update.md#3-bring-the-kits-changes-over)).
+  `.agents/skills` link ([setup](docs/agents/setup.md#4-wire-the-agent));
+  **a failed update rolls back** ([update](docs/agents/update.md#4-update)).
 
 ### Breaking
 
 Setup and docs:
 
-- **Setup makes a project; the machine-wide install is gone:** no clone of
-  its own, no user-level MCP entry or skill link, and the project record
-  `reagentlive.json` replaces `%LOCALAPPDATA%\reagentlive\setup.json`.
+- **Setup puts ReAgentLive into a project; the machine-wide install is
+  gone:** your mod, or a new folder started from an example, carries it as
+  a submodule; no clone of its own, no user-level MCP entry or skill link,
+  and the project record `reagentlive.json` replaces
+  `%LOCALAPPDATA%\reagentlive\setup.json`.
   An install from before: ask your agent to run the
   [setup](docs/agents/setup.md) again; its last step retires the old one.
   Your lessons stay.

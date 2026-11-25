@@ -380,9 +380,9 @@ if(REAGENTLIVE_BUILD_TESTS)
         add_test(NAME reagentlive.docs
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_docs.py" ${forbid_args})
         set_tests_properties(reagentlive.docs PROPERTIES LABELS "reagentlive" TIMEOUT 60)
-        # tools/project.py: a project made from each kit carries its own names and agent files.
-        add_test(NAME reagentlive.project
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_project.py")
-        set_tests_properties(reagentlive.project PROPERTIES LABELS "reagentlive" TIMEOUT 60)
+        # tools/agent_link.py: wiring an agent to a host project, new or existing, and again.
+        add_test(NAME reagentlive.agent-link
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/python/test_agent_link.py")
+        set_tests_properties(reagentlive.agent-link PROPERTIES LABELS "reagentlive" TIMEOUT 60)
     endif()
 endif()

@@ -8,8 +8,9 @@ moves the submodule to a newer commit, rebuilds and checks.
 `tools/update.ps1` does the work in three modes: a preview that only
 reads, `-Apply` and `-Rollback`. Run every step yourself. Ask the user
 only where a step says to. Use PowerShell. `<project>` is the project's
-folder and `<sub>` is `<project>\reagentlive`; `<kit>` means the same as
-in [agent setup](setup.md#2-ask-what-to-make).
+folder and `<sub>` the submodule in it (`<project>\reagentlive` unless the
+project put it elsewhere); `<console>` is the project record's
+`console`.
 
 ## 1. Find the project
 
@@ -22,12 +23,13 @@ of the scripts, and prints `SKIP` for a path that is gone (ask before
 dropping it from the record). `-Rollback` takes one project, never
 `-All`.
 
-- With `reagentlive.json` (a project made by [agent setup](setup.md)):
+- With `reagentlive.json` (a project [agent setup](setup.md) wired):
   follow every step.
-- Without it: a host project of its own (a mod that added the submodule).
-  `update.ps1` moves the submodule but does not build: build with the
-  host's own build (its notes win) and check the target's `status` only.
-- No submodule (`update.ps1` prints `SKIP ... no reagentlive submodule`):
+- Without it: `update.ps1` moves the submodule but does not build; build
+  with the project's own build (its notes win) and check the target's
+  `status` only. [Agent setup](setup.md#4-wire-the-agent) writes the
+  record for next time.
+- No submodule (`update.ps1` prints `SKIP ... no reagentlive submodule at ...`):
   there is no project here. With
   `%LOCALAPPDATA%\reagentlive\setup.json` present, the user has an
   install from before projects: run [agent setup](setup.md) to make a
@@ -52,22 +54,21 @@ person at a terminal, it then asks whether to apply; under an agent
 | `PASS ... <old> -> <new>`, then the commits and `changelog` lines | what is coming | summarise in a few bullets; keep `<old>` for a roll back |
 | `NOTE ... protocol change` | every running target must be restarted and get the new DLL | step 6 |
 | `NOTE ... the MCP server changed` | the client must start the server again | step 5 |
-| `NOTE ... the <kit> kit changed` | the project's own copies of the kit's files may need the change | step 3 |
+| `NOTE ... host headers changed` | the headers a host includes changed, so the project's host code may need the CHANGELOG's breaking changes | step 3 |
 
 How the protocol-change flag is found: the CHANGELOG line
 `Protocol change: rebuild and re-inject`
 ([the convention](../contributing.md#docs)) or a changed protocol header.
 Show the user the summary and the `NOTE` lines, and ask before step 4.
 
-## 3. Bring the kit's changes over
+## 3. Bring the host along
 
-Only with a kit `NOTE`. The project's `CMakeLists.txt`, `host.cpp` and
-`console.cpp` are the user's copies of the kit, so an update never
-changes them. Run the `git diff` the `NOTE` names, show the user the diff,
-say which changes the build needs (the host API changed) and which are
-optional, and on their yes apply them to the project's files by hand,
-keeping the project's names and the user's own changes. They build only
-against the new ReAgentLive: step 4 checks them.
+Only with a host-headers `NOTE`. The project's host code is the user's, so
+an update never changes it. Show the user the CHANGELOG's breaking entries
+from step 2, and, when the project started from an example, what changed
+there (the `git diff` the `NOTE` names); say which changes the build needs
+and which are optional, and on their yes make them in the project's files.
+They build only against the new ReAgentLive: step 4 checks them.
 
 ## 4. Update
 
@@ -75,15 +76,16 @@ against the new ReAgentLive: step 4 checks them.
 powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<sub>\tools\update.ps1" -Project "<project>" -Apply
 ```
 
-It checks again, moves the submodule to the new commit, rebuilds with
-`-Check` (the lines of [agent setup](setup.md#4-build-and-check)), and
+It checks again, moves the submodule to the new commit, rebuilds (with
+`-Check` unless the record's `check` is false; the lines of
+[agent setup](setup.md#5-build-and-check)), and
 regenerates `build\console_api.py` when it exists. The project's
 submodule pointer then shows as changed: commit it only when the user
 asks. If the link step cannot write the DLL, a running process still has
 it loaded: ask the user to close it, then run `-Apply` again.
 
-**Roll back** on a `FAIL` here: report it (a compile error in `host.cpp`
-or `console.cpp` usually means step 3 left a needed change out) and ask
+**Roll back** on a `FAIL` here: report it (a compile error in the host's
+code usually means step 3 left a needed change out) and ask
 the user. On their yes, undo step 3's edits and:
 
 ```powershell
@@ -96,7 +98,7 @@ then skip to step 8, and report `<old>` as the commit, and the failure.
 
 **Skill:** nothing to do: the links point into the submodule, and the
 client reads the skill each session. A link missing (a fresh clone of the
-project): `python -I "<sub>\tools\project.py" link`.
+project): `python -I "<sub>\tools\agent_link.py" --project "<project>"`.
 
 **MCP server:** nothing to do in most updates: the server starts a console
 for each call, so it uses the rebuilt console on the next call and sends
@@ -109,7 +111,7 @@ Codex) or reload its MCP servers (other clients).
 A process that loaded the old DLL still runs the old agent. Ask the user
 to restart each such target (close it and start it again), then load the
 new DLL into the fresh process (the injector from setup, if any:
-[agent setup](setup.md#7-the-injector-once-per-machine)).
+[agent setup](setup.md#8-the-injector-once-per-machine)).
 
 After a protocol change (step 2) the restart is required: the old agent's
 shared section stays mapped with the old layout, so never load the new DLL
@@ -127,7 +129,7 @@ Step 4's `PASS check` covers the build. Once the user runs a target with
 the new DLL (step 6), read its `status` too:
 
 ```powershell
-& "<project>\build\<name>-console.exe" -c '{"verb": "status"}'
+& "<project>\<console>" -c '{"verb": "status"}'
 ```
 
 | Check | Pass when |
@@ -166,8 +168,8 @@ Tell the user:
 ```
 ┌─ ReAgentLive update complete ─────────────────────────┐
 │  ✓ Commit    <old> → <new>                            │
-│  ✓ Project   <project> (<kit> kit, or "own host")     │
-│  ✓ Kit       <changes applied, none, or "own host">   │
+│  ✓ Project   <project>                                │
+│  ✓ Host      <changes made, or none needed>           │
 │  ✓ Changes   <a few bullets from step 2>              │
 │  ✓ Check     status ok, commit <new>                  │
 │  ✓ IDA       <state, or "skipped">                    │

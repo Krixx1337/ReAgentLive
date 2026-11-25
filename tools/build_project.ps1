@@ -1,13 +1,17 @@
-# Builds a ReAgentLive project (a folder made by tools/project.py, holding this clone as its reagentlive/
-# submodule) in Visual Studio's x64 environment, and with -Check loads its DLL into a throwaway Python
-# process and checks its status. The DLL, console and packs come from the project record
-# (reagentlive.json). Prints one PASS/FAIL line per step, with the console and DLL paths. Exits 1 on any
+# Builds a host project in Visual Studio's x64 environment, and with -Check loads its DLL into a
+# throwaway Python process and checks its status. The project is the folder that carries this clone
+# (default: the git project it is a submodule of) and its record, reagentlive.json (tools/agent_link.py writes it):
+# `dll` and `console`, and `build`, a command run in the project folder; without `build`, CMake builds the
+# project into build/. Prints one PASS/FAIL line per step, with the console and DLL paths. Exits 1 on any
 # failure, 2 when the compiler environment cannot load (nothing is built then). Runs in Windows
 # PowerShell 5.1 and PowerShell 7.
 #
 #   reagentlive/tools/build_project.ps1
 #   reagentlive/tools/build_project.ps1 -Check
 #   reagentlive/tools/build_project.ps1 -Project <folder> -Check
+#
+# -Check fits a host that ticks on its own thread (the examples and hosts made from them): a host that
+# ticks from the game only ticks inside the game, so check its status there.
 [CmdletBinding()]
 param(
     [string]$Project,
@@ -15,16 +19,19 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Project) { $Project = Split-Path -Parent $root }
+if (-not $Project) {
+    $Project = (git -C $root rev-parse --show-superproject-working-tree 2>$null)
+    if (-not $Project) { Write-Host "FAIL arguments: $root is no git submodule of a project; pass -Project"; exit 1 }
+}
 $Project = (Resolve-Path $Project).Path
 $recordPath = Join-Path $Project 'reagentlive.json'
 if (-not (Test-Path $recordPath)) {
-    Write-Host "FAIL arguments: no reagentlive.json in $Project; make the project with tools/project.py init, or build a host project with its own build"
+    Write-Host "FAIL arguments: no reagentlive.json in $Project; write it with tools/agent_link.py"
     exit 1
 }
 $record = Get-Content $recordPath -Raw | ConvertFrom-Json
 $build = Join-Path $Project 'build'
-$example = @{ Console = $record.console; Dll = $record.dll; Packs = (@($record.packs | Where-Object { $_ }) -join ',') }
+$example = @{ Console = $record.console; Dll = $record.dll }
 Set-Location $Project
 
 # The compiler environment: cl, the linker, CMake and Ninja on PATH.
@@ -99,9 +106,7 @@ function Test-Project([string]$name, $example, [string]$commit) {
         $script:failed++
         return
     }
-    $lines = @('{"verb": "status"}')
-    if ($example.Packs -eq 'ue') { $lines += '{"verb": "help", "args": {"verb": "game-thread"}}' }
-    [IO.File]::WriteAllLines($calls, $lines)
+    [IO.File]::WriteAllLines($calls, @('{"verb": "status"}'))
     $out = @()
     for ($i = 0; $i -lt 10; $i++) {
         $out = @(& $console $target.Trim() --no-usage -c "@$calls" 2>$null)
@@ -117,33 +122,34 @@ function Test-Project([string]$name, $example, [string]$commit) {
         $why += "status failed: $($out -join ' ')"
     } else {
         $r = $status.result
-        if (-not $r.ticking) { $why += 'not ticking' }
-        if ($r.host_thread -ne 'own') { $why += "host_thread $($r.host_thread), not own" }
-        $packs = @($r.packs | Where-Object { $_ }) -join ','
-        if ($packs -ne $example.Packs) { $why += "packs [$packs], not [$($example.Packs)]" }
+        if (-not $r.ticking) { $why += 'not ticking (a host that ticks from the game ticks only inside it: check status there)' }
         if ($r.commit -ne $commit) { $why += "commit $($r.commit), not $commit" }
-        if ($example.Packs -eq 'ue') {
-            if (-not $r.game_thread) { $why += 'no game_thread: the wrong DLL' }
-            elseif ($r.game_thread.mode -ne 'off') { $why += "game_thread mode $($r.game_thread.mode), not off" }
-            $help = $envelopes | Where-Object { $_.command -eq 'help' } | Select-Object -First 1
-            if (-not $help -or -not $help.ok) { $why += 'help for game-thread failed: the console lacks the verb' }
-        }
+        $packs = @($r.packs | Where-Object { $_ }) -join ','
     }
     if ($why.Count) {
         Write-Host "FAIL check ${name}: $($why -join '; ')"
         $script:failed++
     } else {
-        Write-Host "PASS check ${name}: status ok, ticking, packs [$($example.Packs)], commit $commit"
+        Write-Host "PASS check ${name}: status ok, ticking, host_thread $($r.host_thread), packs [$packs], commit $commit"
     }
 }
 
-$name = $record.name
-$configure = @('-S', $Project, '-B', $build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release')
-if (Step "configure $name" (Join-Path $logs "configure.log") { cmake @configure }) {
-    if (Step "build $name" (Join-Path $logs "build.log") { cmake --build $build }) {
-        Write-Host "  console $(Join-Path $Project $example.Console)"
-        Write-Host "  dll     $(Join-Path $Project $example.Dll)"
+$name = Split-Path -Leaf $Project
+$built = $false
+if ($record.build) {
+    # The project's own build, in this compiler environment.
+    # cmd reads the command from a variable, so its own quotes reach it as written.
+    $env:REAGENTLIVE_BUILD = $record.build
+    $built = Step "build $name" (Join-Path $logs "build.log") { cmd /d /c "%REAGENTLIVE_BUILD%" }
+} else {
+    $configure = @('-S', $Project, '-B', $build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release')
+    if (Step "configure $name" (Join-Path $logs "configure.log") { cmake @configure }) {
+        $built = Step "build $name" (Join-Path $logs "build.log") { cmake --build $build }
     }
+}
+if ($built) {
+    Write-Host "  console $(Join-Path $Project ($example.Console -replace '/', '\'))"
+    Write-Host "  dll     $(Join-Path $Project ($example.Dll -replace '/', '\'))"
 }
 
 if ($Check -and $failed -eq 0) {

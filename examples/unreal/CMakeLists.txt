@@ -1,8 +1,8 @@
 # reagentlive Unreal example: a host DLL for any UE5 game with no dump (the
 # whole Unreal pack on its own thread, and a game-thread tick through the
 # game viewport's Draw on request) and its console. Builds on its own, as any
-# consumer of the library would, and is the kit
-# tools/project.py copies into a new project:
+# consumer of the library would, and works as a
+# starting point copied into a project of its own:
 #
 #   cmake -S examples/unreal -B build/unreal -G Ninja -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build/unreal
@@ -13,12 +13,18 @@ project(reagentlive-unreal LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL)
     set(REAGENTLIVE_BUILD_TESTS OFF)
-    # A project made from this kit carries ReAgentLive as its reagentlive/
-    # submodule; in ReAgentLive's own tree the library is two folders up.
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/reagentlive/CMakeLists.txt")
+    # Where ReAgentLive is: REAGENTLIVE_DIR when set; else, in a copy of this
+    # example, its reagentlive/ submodule; in ReAgentLive's own tree, two
+    # folders up.
+    set(REAGENTLIVE_DIR "" CACHE PATH "The ReAgentLive checkout (default: reagentlive/ beside this file)")
+    if(REAGENTLIVE_DIR)
+        add_subdirectory("${REAGENTLIVE_DIR}" reagentlive)
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/reagentlive/CMakeLists.txt")
         add_subdirectory(reagentlive)
-    else()
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../src/reagentlive/version.h")
         add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../.." reagentlive)
+    else()
+        message(FATAL_ERROR "ReAgentLive not found: git submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive (or git submodule update --init), or set REAGENTLIVE_DIR to its checkout")
     endif()
 endif()
 

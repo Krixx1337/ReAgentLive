@@ -7,10 +7,10 @@ Instructions an AI agent follows on the user's machine; humans: see the
 
 | The user wants | Follow |
 |---|---|
-| A new project from a kit, a fresh clone of a project made earlier, or to replace an install from before projects (`%LOCALAPPDATA%\reagentlive\setup.json`) | [setup.md](setup.md) |
+| ReAgentLive in a project: the user's own (a mod), a new one from an example, a fresh clone of a project wired earlier, or replacing an install from before projects (`%LOCALAPPDATA%\reagentlive\setup.json`) | [setup.md](setup.md) |
 | An update of the ReAgentLive in a project (its `reagentlive/` submodule) | [update.md](update.md) |
 
-The project record's fields: [setup.md](setup.md#3-create-and-build-the-project);
+The project record's fields: [setup.md](setup.md#4-wire-the-agent);
 the machine record's (every project, the injector, the IDA side, the
 improvement mode): [setup.md](setup.md#1-check-the-machine).
 

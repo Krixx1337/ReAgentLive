@@ -160,8 +160,8 @@ Suites, by folder (each test file's header says what it covers):
 - `tests/cli/`: the verb table, builders, typed values and results, state files.
 - `tests/table/`, `tests/python/`: the generated docs match the table, every
   verb and JSON call the docs show is valid, the Python and MCP frontends,
-  the IDA loader, layering and engine-offset rules, projects made from the
-  kits (`tools/project.py`), and the docs test.
+  the IDA loader, layering and engine-offset rules, wiring an agent to a
+  host project (`tools/agent_link.py`), and the docs test.
 - `tests/ue/`: the Unreal pack's bounds and layouts, with no CLI headers.
 - `tests/example/`, `tests/consumer/`: the example DLLs loaded in-process,
   and host projects built in their own tree.
@@ -230,7 +230,7 @@ Check this table before adding a fact; if it has a home, link there.
 | What may come next, and what will not | [ideas.md](ideas.md) | elsewhere |
 | How to describe it | [positioning.md](positioning.md) | README: the short pitch |
 | Agent procedures (setup, update), the project and machine records | [agents/](agents/README.md) | README: the prompts only |
-| Kits, and what a project made from one holds | [hosting.md](hosting.md#starting-from-a-kit) | README: the commands only |
+| Starting from an example; the agent tooling in a project (`agent_link.py`, `build_project.ps1`, `update.ps1`) | [hosting.md](hosting.md#starting-from-an-example) | README: the commands only |
 | When and how an agent proposes skill lessons | the skill's `references/improving.md`; the user's lessons live outside the repo | anything tracked |
 | Commands, hard rules, large changes for an agent changing this repo | [`AGENTS.md`](../AGENTS.md) | this page keeps the details |
 | Where code goes, tests, these rules | this page | |
