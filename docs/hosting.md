@@ -149,6 +149,7 @@ target_link_libraries(my-console PRIVATE reagentlive::console) # client + Unreal
 | Option or variable | Effect |
 |---|---|
 | `REAGENTLIVE_CONSOLE` (on) | Defines `reagentlive::console`, which needs nlohmann/json and Zydis. Off: an agent-only host configures with no downloads |
+| `CPM_SOURCE_CACHE` (environment or CMake) | Where the library's dependencies are downloaded, through its own pinned [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) (`cmake/CPM.cmake`): one copy per version, shared by every project, offline after the first. Unset: `%LOCALAPPDATA%\reagentlive\cpm`, safe to delete; `OFF`: each build tree downloads its own. A parent that uses CPM itself keeps its own setting |
 | `REAGENTLIVE_PACKS` (`ue`) | The engine packs to define, by folder under `src/reagentlive/packs/`; one at most. Empty: no pack targets, and the verb table (so `help`, the generated functions and MCP tools) holds core and host rows only. For a target that is not Unreal |
 | `REAGENTLIVE_BUILD_TESTS` (on when top-level) | Builds the library's tests and the examples they test |
 | `REAGENTLIVE_HOST_SOURCES`, `REAGENTLIVE_FORBIDDEN_NAMES`, `REAGENTLIVE_AGENT_TARGETS` | A host's own files, forbidden words and agent targets for the library's checks; see the comments in `CMakeLists.txt` |

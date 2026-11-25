@@ -147,4 +147,5 @@ More: [safety model](docs/positioning.md#safety-model).
 
 MIT ([LICENSE](LICENSE)). Dependencies, all MIT: nlohmann/json and Zydis
 (with Zycore) for the console and doctest for the tests, each fetched at
-configure at a pinned version.
+configure at a pinned version through CPM.cmake, which is kept in `cmake/`
+(its licence is in its header).

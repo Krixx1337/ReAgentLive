@@ -188,8 +188,9 @@ powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<project>\<
 
 Leave out `-Check` when the record's `check` is false. The script loads
 the x64 Visual Studio environment itself and runs the record's `build`, or
-CMake on the project into `<project>\build` (the first build fetches the
-library's dependencies, so it needs network access). It prints one `PASS`
+CMake on the project into `<project>\build` (the first build on a machine
+fetches the library's dependencies into a shared cache, so it needs
+network access; later projects build offline). It prints one `PASS`
 or `FAIL` line per step and the console and DLL paths. Exit 2: the
 environment did not load (step 1's Visual Studio check); exit 1: a step
 failed, and its `FAIL` line names the log under `<project>\build\logs`.

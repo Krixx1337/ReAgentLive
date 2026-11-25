@@ -50,6 +50,11 @@ tokens, one way to page, one count, one time unit.
   `agent_link.py` writes the MCP pack ceiling from it: `read-only` keeps
   `modify` out, so no write tool can appear; `auto` and `bypass` allow it
   ([MCP tools](docs/client.md#mcp-tools)).
+- **Dependencies download once per machine:** nlohmann/json, Zydis and
+  doctest come through a pinned [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake)
+  kept in `cmake/`, into a shared source cache (`CPM_SOURCE_CACHE`; unset:
+  `%LOCALAPPDATA%\reagentlive\cpm`). A second project's first build needs
+  no network ([hosting](docs/hosting.md#using-it-in-your-project)).
 - **`tools/check.ps1`** checks, and only reads, the machine and a project:
   build tools, Python and its MCP SDK, the submodule, record, built
   console and DLL, MCP entry; each failed item names its fix

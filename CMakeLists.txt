@@ -43,6 +43,26 @@ if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT MSVC)
     return()
 endif()
 
+# Third-party sources come through CPM.cmake v0.43.2, kept in cmake/ (never
+# fetched at configure). Its source cache shares one download per version
+# between projects and works offline after it: CPM_SOURCE_CACHE from the
+# environment or a parent wins (OFF: each build tree downloads its own);
+# else %LOCALAPPDATA%\reagentlive\cpm, a cache safe to delete.
+if(NOT DEFINED CPM_SOURCE_CACHE AND NOT DEFINED ENV{CPM_SOURCE_CACHE} AND DEFINED ENV{LOCALAPPDATA})
+    file(TO_CMAKE_PATH "$ENV{LOCALAPPDATA}/reagentlive/cpm" reagentlive_cpm_cache)
+    set(CPM_SOURCE_CACHE "${reagentlive_cpm_cache}" CACHE PATH "CPM's shared source cache (ReAgentLive's default)")
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/CPM.cmake")
+# CPM takes any folder in its cache as downloaded, so an interrupted download
+# leaves an empty one that fails later as a missing target: stop at the cause.
+function(reagentlive_check_package name)
+    file(GLOB entries "${${name}_SOURCE_DIR}/*")
+    if(NOT entries)
+        message(FATAL_ERROR "reagentlive: ${name}'s source folder ${${name}_SOURCE_DIR} is empty (an interrupted "
+                            "download in CPM's cache); delete it and configure again.")
+    endif()
+endfunction()
+
 option(REAGENTLIVE_BUILD_TESTS "Build reagentlive's tests" ${PROJECT_IS_TOP_LEVEL})
 # The console targets need nlohmann/json and the Zydis decoder, fetched at
 # configure unless the parent project already provides them. A host that
@@ -130,15 +150,16 @@ endif()
 if(REAGENTLIVE_CONSOLE)
     add_library(reagentlive-console INTERFACE)
     add_library(reagentlive::console ALIAS reagentlive-console)
-    include(FetchContent)
     # A parent's own target or an installed package wins; otherwise the pinned
     # release is fetched.
     if(NOT TARGET nlohmann_json::nlohmann_json)
-        FetchContent_Declare(nlohmann_json
+        CPMFindPackage(NAME nlohmann_json VERSION 3.12.0
             URL https://codeload.github.com/nlohmann/json/tar.gz/refs/tags/v3.12.0
             URL_HASH SHA256=4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187
-            FIND_PACKAGE_ARGS 3.12 CONFIG)
-        FetchContent_MakeAvailable(nlohmann_json)
+            FIND_PACKAGE_ARGUMENTS CONFIG)
+        if(nlohmann_json_ADDED)
+            reagentlive_check_package(nlohmann_json)
+        endif()
     endif()
     # A call's arguments are JSON: the call layer reads them.
     target_link_libraries(reagentlive-cli INTERFACE nlohmann_json::nlohmann_json)
@@ -154,10 +175,10 @@ if(REAGENTLIVE_CONSOLE)
         set(ZYDIS_BUILD_DOXYGEN OFF)
         set(ZYDIS_FEATURE_ENCODER OFF)
         set(ZYDIS_FEATURE_FORMATTER ON)
-        FetchContent_Declare(zydis
+        CPMAddPackage(NAME zydis
             GIT_REPOSITORY https://github.com/zyantific/zydis.git
             GIT_TAG a2278f1d254e492f6a6b39f6cb5d1f5d515659dc) # v4.1.1
-        FetchContent_MakeAvailable(zydis)
+        reagentlive_check_package(zydis)
     endif()
     if(reagentlive_pack_count EQUAL 1)
         target_sources(reagentlive-console INTERFACE ${reagentlive_console_sources} ${reagentlive_pack_console_sources})
@@ -230,12 +251,11 @@ endif()
 if(REAGENTLIVE_BUILD_TESTS)
     enable_testing()
     # doctest v2.5.3: the header and its test discovery, fetched at configure.
-    include(FetchContent)
-    FetchContent_Declare(doctest
+    CPMAddPackage(NAME doctest
         URL https://codeload.github.com/doctest/doctest/tar.gz/refs/tags/v2.5.3
         URL_HASH SHA256=174ebc4e769928959614789c5b4e9c3d0a0f81a62bb608756b127bfebfb21331
-        SOURCE_SUBDIR doctest) # A folder with no CMakeLists.txt: the header only, none of doctest's own targets.
-    FetchContent_MakeAvailable(doctest)
+        DOWNLOAD_ONLY YES) # The header and its CMake script only, none of doctest's own targets.
+    reagentlive_check_package(doctest)
     add_library(reagentlive-doctest INTERFACE)
     target_include_directories(reagentlive-doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}/doctest")
     include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
