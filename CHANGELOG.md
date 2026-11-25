@@ -34,9 +34,11 @@ tokens, one way to page, one count, one time unit.
 - **Projects from a kit:** setup copies the `own_thread` or `unreal` kit
   into a folder of your own, named after it, with ReAgentLive as its
   pinned `reagentlive/` submodule and the skill and MCP server set up for
-  that project. By hand: `tools/project.py init`, then
-  `tools/build_project.ps1 -Check`
+  that project. By hand, one command: `tools/new.ps1`
   ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
+- **Updates are a script too:** `tools/update.ps1` previews what is coming,
+  `-Apply` moves, rebuilds and checks, `-Rollback` goes back, `-All` runs
+  on every project ([update](docs/agents/update.md)).
 - **Later projects ask only about themselves:** the injector, the IDA side
   and your improvement mode are set up once and kept in
   `%LOCALAPPDATA%\reagentlive\machine.json`, which also lists every
@@ -52,9 +54,9 @@ tokens, one way to page, one count, one time unit.
   ([pointer chains](docs/commands/native-objects.md#pointer-chains)).
 - **`find` pages reuse the first page's `total`** instead of recounting.
 - **Codex and Cursor get the skill** through the project's
-  `.agents/skills` link ([setup](docs/agents/setup.md#3-create-the-project));
+  `.agents/skills` link ([setup](docs/agents/setup.md#3-create-and-build-the-project));
   **an update shows the kit's changes** for your copies of its files, and
-  **a failed update rolls back** ([update](docs/agents/update.md#4-bring-the-kits-changes-over)).
+  **a failed update rolls back** ([update](docs/agents/update.md#3-bring-the-kits-changes-over)).
 
 ### Breaking
 

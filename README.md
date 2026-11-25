@@ -37,13 +37,11 @@ By hand, pick the kit for your target:
 | Any UE5 game, no dump, no mod | [`unreal`](examples/unreal/README.md) | T1-T2; T3 once `game-thread` is on |
 | A UE5 game you mod, with its SDK | your mod as the host ([hosting](docs/hosting.md)) | T4 |
 
-and make a project from it, in a new folder:
+and make a project from it, in a new folder (it checks your machine,
+creates the folder, builds and checks the result):
 
 ```powershell
-git init my-tool; cd my-tool
-git submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
-python -I reagentlive\tools\project.py init --kit unreal --name my-tool
-powershell -NoProfile -ExecutionPolicy Bypass -File reagentlive\tools\build_project.ps1 -Check
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/tools/new.ps1))) -Kit unreal -Name my-tool -Dir C:\code\my-tool
 ```
 
 `host.cpp` and `console.cpp` are yours to build on; ReAgentLive stays in
@@ -51,7 +49,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File reagentlive\tools\build_proj
 ([starting from a kit](docs/hosting.md#starting-from-a-kit)).
 
 **Another project** (a second game, a new mod): paste the same prompt
-again, or run the same commands in a new folder. Each project pins its
+again, or run the same command with a new name and folder. Each project pins its
 own ReAgentLive, so updating one never touches another.
 
 **To update later** (move the submodule, rebuild, re-inject, check), ask

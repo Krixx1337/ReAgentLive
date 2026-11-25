@@ -133,8 +133,9 @@ by moving its commit, never edited here.
 - **After a fresh clone:** `git submodule update --init`, then
   `python -I {SUBMODULE}/tools/project.py link`, then build.
 - **Hosting** (what `host.cpp` must provide): `{SUBMODULE}/docs/hosting.md`.
-- **Update ReAgentLive:** ask your agent to "update ReAgentLive", or follow
-  `{SUBMODULE}/docs/agents/update.md`.
+- **Update ReAgentLive:** ask your agent to "update ReAgentLive", or run
+  `{SUBMODULE}\\tools\\update.ps1` (a preview), then again with `-Apply`
+  (`{SUBMODULE}/docs/agents/update.md`).
 '''
     files['AGENTS.md'] = f'''# {name}
 

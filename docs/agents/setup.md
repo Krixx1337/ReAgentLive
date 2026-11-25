@@ -100,36 +100,42 @@ its own notes say how it builds. A clone of a project made earlier needs
 no kit either: `git clone --recurse-submodules <url> <project>`, then
 `python -I <project>\reagentlive\tools\project.py link`, then steps 4 to 9.
 
-## 3. Create the project
+## 3. Create and build the project
+
+One script does steps 3 and 4: it checks the machine again, creates
+`<project>` with ReAgentLive as its `reagentlive/` submodule, runs
+`tools/project.py init` and builds with `-Check`. No clone exists yet, so
+run it from the repository:
 
 ```powershell
-New-Item -ItemType Directory -Force "<project>" | Out-Null
-git -C "<project>" init
-git -C "<project>" submodule add https://github.com/Krixx1337/ReAgentLive.git reagentlive
-python -I "<project>\reagentlive\tools\project.py" init --kit <kit> --name <name> --improvement <improvement> --mcp <clients>
+& ([scriptblock]::Create((Invoke-RestMethod https://raw.githubusercontent.com/Krixx1337/ReAgentLive/main/tools/new.ps1))) -Kit <kit> -Name <name> -Dir "<project>" -Improvement <improvement> -Mcp <clients>
 ```
 
 `<clients>` lists the clients that read a project MCP file,
 comma-separated: `claude-code` (`.mcp.json`), `cursor`
 (`.cursor/mcp.json`), `copilot` (`.vscode/mcp.json`). For Codex or another
-client, pass `claude-code` and register it by hand in step 5.
+client, pass `claude-code` and register it by hand in step 5. Each step
+prints `PASS` or `FAIL`; the first `FAIL` stops it. A `FAIL` before `git
+init` (a missing prerequisite, a folder that is not empty) has created
+nothing: report it, fix it with the user, run it again. A later one leaves
+`<project>` (and, once `project.py` ran, its entry in the machine record's
+`projects`): report it; once fixed, remove the folder and that entry and
+run it again. Run from the web, the script returns instead of exiting, so
+the shell stays open.
 
-`project.py` prints one JSON object. `error`: report it and stop. It
-copies the kit's `CMakeLists.txt`, `host.cpp` and `console.cpp` with the
-project's names, and writes:
+`project.py` copies the kit's `CMakeLists.txt`, `host.cpp` and
+`console.cpp` with the project's names, and writes:
 
 | File | What |
 |---|---|
-| `reagentlive.json` | the project record: `kit`, `name`, `dll`, `console`, `packs`, `improvement`; the skill, the build script and [the update procedure](update.md) read it |
+| `reagentlive.json` | the project record: `kit`, `name`, `dll`, `console`, `packs`, `improvement`; the skill, the scripts and [the update procedure](update.md) read it |
 | `AGENTS.md`, `CLAUDE.md` | for an agent in the project: read the skill, where the docs are, how to build and update |
 | `README.md` | for the user: the same, by hand |
 | `.gitignore` | `build/` and the skill links |
 | the MCP files of `<clients>` | step 5 |
 
-It also adds the project to the machine record's `projects` (`registered`
-in its output names the record).
-
-It links the skill into `.claude\skills\reagentlive` (Claude Code) and
+It also adds the project to the machine record's `projects`, and links
+the skill into `.claude\skills\reagentlive` (Claude Code) and
 `.agents\skills\reagentlive` (Codex, Cursor and others that read Agent
 Skills there), each a junction into the submodule, so updating the
 submodule updates the skill. A client without Agent Skills reads the
@@ -137,11 +143,14 @@ skill through `AGENTS.md`'s first line.
 
 ## 4. Build and check
 
+The build ran as the last part of step 3; to run it again (after a fix,
+or for a clone of a project made earlier):
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "<project>\reagentlive\tools\build_project.ps1" -Check
 ```
 
-The script loads the x64 Visual Studio environment itself and builds the
+The build script loads the x64 Visual Studio environment itself and builds the
 project into `<project>\build` (the first build fetches the library's
 dependencies, so it needs network access). It prints one `PASS` or `FAIL`
 line per step and the console and DLL paths. Exit 2: the environment did

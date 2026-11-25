@@ -10,7 +10,7 @@ Instructions an AI agent follows on the user's machine; humans: see the
 | A new project from a kit, a fresh clone of a project made earlier, or to replace an install from before projects (`%LOCALAPPDATA%\reagentlive\setup.json`) | [setup.md](setup.md) |
 | An update of the ReAgentLive in a project (its `reagentlive/` submodule) | [update.md](update.md) |
 
-The project record's fields: [setup.md](setup.md#3-create-the-project);
+The project record's fields: [setup.md](setup.md#3-create-and-build-the-project);
 the machine record's (every project, the injector, the IDA side, the
 improvement mode): [setup.md](setup.md#1-check-the-machine).
 

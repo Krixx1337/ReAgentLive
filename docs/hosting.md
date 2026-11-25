@@ -40,9 +40,10 @@ another host's agent in the same process.
 
 Both examples are kits: a project of the user's own starts as a copy of
 one, and ReAgentLive stays apart from it, as the project's `reagentlive/`
-submodule, never edited there. `tools/project.py init` makes the copy
-([agent setup](agents/setup.md#3-create-the-project) runs it; by hand: the
-[README](../README.md#quick-start)):
+submodule, never edited there. `tools/new.ps1` makes the project in one
+command (the folder, the submodule, the copy through `tools/project.py
+init`, the build; [agent setup](agents/setup.md#3-create-and-build-the-project)
+runs it; by hand: the [README](../README.md#quick-start)):
 
 - **The project's names:** the kit's files with the DLL, the console and
   the section prefix renamed after the project (`<name>.dll`,
@@ -56,9 +57,11 @@ submodule, never edited there. `tools/project.py init` makes the copy
 - **Building:** `reagentlive/tools/build_project.ps1` loads Visual Studio's
   x64 environment, builds into `build/` and, with `-Check`, loads the DLL
   into a throwaway Python process and checks its `status`.
-- **Updating:** the submodule moves to a newer commit; the project's
-  copies of the kit's files change only by hand, from the kit's diff
-  ([the update procedure](agents/update.md#4-bring-the-kits-changes-over)).
+- **Updating:** `reagentlive/tools/update.ps1` previews, then with
+  `-Apply` moves the submodule to a newer commit, rebuilds and checks
+  (`-All`: every project on the machine); the project's copies of the
+  kit's files change only by hand, from the kit's diff
+  ([the update procedure](agents/update.md#3-bring-the-kits-changes-over)).
 
 Each project pins its own commit, so updating one never breaks another;
 nothing is installed machine-wide. Why there is no global install or
@@ -219,7 +222,7 @@ Ops and numbers: [protocol](protocol.md#ops).
   writes (`write` with `clear`) before stopping it. This holds only for a
   build with the same protocol: after a protocol change the section keeps
   the old layout, so restart the process instead
-  ([the update procedure](agents/update.md#8-running-targets)).
+  ([the update procedure](agents/update.md#6-running-targets)).
 - Idle cost per tick: one atomic increment and one compare.
 
 ## Host thread
